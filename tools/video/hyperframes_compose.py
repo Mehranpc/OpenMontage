@@ -25,6 +25,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+from lib.node_env import node_subprocess_env, resolve_npm_cache
 from tools.base_tool import (
     BaseTool,
     Determinism,
@@ -279,6 +280,12 @@ class HyperFramesCompose(BaseTool):
         `npm view hyperframes version` (5s timeout) and caches the answer
         for the rest of the process.
 
+        The subprocess environment comes from `lib.node_env` so npm always
+        gets a writable cache. Without it, a sandboxed or read-only `$HOME`
+        makes even `npm view` fail with EPERM, and the runtime is reported
+        unavailable for a reason the user cannot act on (npm's own hint
+        blames root-owned cache files that are not there).
+
         Returns {"version": "X.Y.Z"} on success, {"error": "<short>"} on any
         failure (404, timeout, network error, npm missing). Never raises.
         """
@@ -290,15 +297,23 @@ class HyperFramesCompose(BaseTool):
             cls._npm_resolve_cache = {"error": "npm not on PATH"}
             return cls._npm_resolve_cache
 
+        cache = resolve_npm_cache()
+        if cache["source"] == "unavailable":
+            cls._npm_resolve_cache = {
+                "error": f"no writable npm cache directory: {cache['reason']}"
+            }
+            return cls._npm_resolve_cache
+
         try:
             proc = subprocess.run(
                 [npm, "view", cls._NPM_PACKAGE, "version"],
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=20,
+                env=node_subprocess_env(),
             )
         except subprocess.TimeoutExpired:
-            cls._npm_resolve_cache = {"error": "timeout (5s) — offline or slow registry"}
+            cls._npm_resolve_cache = {"error": "timeout (20s) — offline or slow registry"}
             return cls._npm_resolve_cache
         except (OSError, subprocess.SubprocessError) as e:
             cls._npm_resolve_cache = {"error": f"npm view failed: {type(e).__name__}"}
@@ -345,10 +360,11 @@ class HyperFramesCompose(BaseTool):
                 [npx, "--yes", cls._NPM_PACKAGE, "doctor", "--json"],
                 capture_output=True,
                 text=True,
-                timeout=20,
+                timeout=180,
+                env=node_subprocess_env(),
             )
         except subprocess.TimeoutExpired:
-            cls._cli_probe_cache = {"error": "doctor timed out after 20s"}
+            cls._cli_probe_cache = {"error": "doctor timed out after 180s"}
             return cls._cli_probe_cache
         except (OSError, subprocess.SubprocessError) as exc:
             cls._cli_probe_cache = {"error": f"doctor failed: {type(exc).__name__}"}
@@ -403,6 +419,8 @@ class HyperFramesCompose(BaseTool):
             if "error" in cli_probe:
                 reasons.append(f"published CLI is not executable: {cli_probe['error']}")
 
+        npm_cache = resolve_npm_cache()
+
         return {
             "runtime_available": not reasons,
             "node_major": node_major,
@@ -411,6 +429,9 @@ class HyperFramesCompose(BaseTool):
             "npm_package": self._NPM_PACKAGE,
             "npm_package_version": npm_resolve.get("version"),
             "npm_resolve_error": npm_resolve.get("error"),
+            "npm_cache_dir": npm_cache["cache_dir"],
+            "npm_cache_source": npm_cache["source"],
+            "npm_cache_note": npm_cache["reason"],
             "cli_probe_status": cli_probe.get("status"),
             "cli_probe_error": cli_probe.get("error"),
             "reasons": reasons,
@@ -1359,6 +1380,9 @@ class HyperFramesCompose(BaseTool):
         We intentionally bypass `self.run_command` here because we do NOT
         want to raise CalledProcessError on non-zero exits — the caller
         parses lint/validate/render exit codes itself.
+
+        The environment comes from `lib.node_env` so npm has a writable cache
+        even when `$HOME` is sandboxed or read-only.
         """
         cmd = ["npx", "--yes", "hyperframes", *args]
         # On Windows, resolve the .cmd wrapper so subprocess can find it
@@ -1375,6 +1399,7 @@ class HyperFramesCompose(BaseTool):
                 timeout=timeout,
                 cwd=str(cwd) if cwd else None,
                 check=False,
+                env=node_subprocess_env(),
             )
         except subprocess.TimeoutExpired as e:
             # Surface timeouts as a failed CompletedProcess so callers get a

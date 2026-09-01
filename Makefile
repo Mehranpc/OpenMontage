@@ -64,8 +64,8 @@ setup: ensure-venv
 	@echo "==> Installing HyperFrames runtime (cache-warm via npx)..."
 	@echo "    Pulls the 'hyperframes' npm package into the local npx cache so the"
 	@echo "    first render doesn't pay a 30-60s cold-fetch penalty. ~20MB of disk."
-	@npx --yes hyperframes --version >/dev/null 2>&1 && echo "    HyperFrames CLI cached (npx)" || echo "  [skip] HyperFrames cache-warm failed — offline or npm unavailable; first render will fetch on demand"
-	@$(RUN_PYTHON) -c "from tools.video.hyperframes_compose import HyperFramesCompose; HyperFramesCompose._npm_resolve_cache=None; c=HyperFramesCompose()._runtime_check(); print(f'    HyperFrames runtime_available={c[\"runtime_available\"]}, npm={c.get(\"npm_package_version\") or c.get(\"npm_resolve_error\")}'); [print(f'    note: {r}') for r in c['reasons']]" || echo "  [skip] HyperFrames check failed — runtime can be set up later"
+	@npm_config_cache="$$($(RUN_PYTHON) -m lib.node_env)" npx --yes hyperframes --version >/dev/null 2>&1 && echo "    HyperFrames CLI cached (npx)" || echo "  [skip] HyperFrames cache-warm failed — offline or npm unavailable; first render will fetch on demand"
+	@$(RUN_PYTHON) -c "from tools.video.hyperframes_compose import HyperFramesCompose; HyperFramesCompose._npm_resolve_cache=None; c=HyperFramesCompose()._runtime_check(); print(f'    HyperFrames runtime_available={c[\"runtime_available\"]}, npm={c.get(\"npm_package_version\") or c.get(\"npm_resolve_error\")}'); print(f'    npm cache: {c.get(\"npm_cache_dir\")} ({c.get(\"npm_cache_source\")})'); [print(f'    note: {r}') for r in c['reasons']]" || echo "  [skip] HyperFrames check failed — runtime can be set up later"
 	@echo ""
 	$(RUN_PYTHON) -c "import shutil, os; e=os.path.exists('.env'); shutil.copy('.env.example','.env') if not e else None; print('==> Created .env from .env.example — add your API keys there.' if not e else '==> .env already exists — skipping.')"
 	@echo ""
@@ -107,7 +107,7 @@ hyperframes-doctor: ensure-venv
 hyperframes-warm:
 	@echo "==> Refreshing the HyperFrames npx cache to latest..."
 	@echo "    Uses --prefer-online so npx picks up new releases since your last run."
-	npx --yes --prefer-online hyperframes --version
+	npm_config_cache="$$($(RUN_PYTHON) -m lib.node_env)" npx --yes --prefer-online hyperframes --version
 	@echo "==> Cache warm complete."
 
 demo: ensure-venv

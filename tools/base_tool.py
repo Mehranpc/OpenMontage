@@ -414,17 +414,36 @@ class BaseTool(ABC):
         *,
         timeout: Optional[int] = None,
         cwd: Optional[Path] = None,
+        env: Optional[dict[str, str]] = None,
     ) -> subprocess.CompletedProcess:
         """Run a subprocess command with standard error handling.
 
         On Windows, resolves .cmd/.bat wrappers (e.g. npx, npm) via
         shutil.which() so subprocess.run() can find them without shell=True.
+
+        When the command is an npm/npx/node invocation and no explicit `env`
+        is given, the environment is prepared by `lib.node_env` so npm always
+        has a writable cache directory. npm writes to its cache even for
+        read-only operations like `npm view`; if `$HOME/.npm` is unwritable
+        (file sandbox, read-only home, container mount) every Node-backed
+        runtime fails with an `EPERM` whose printed hint blames root-owned
+        cache files that do not exist. Centralizing the fix here keeps that
+        false negative from reappearing at the next call site.
         """
         resolved_cmd = list(cmd)
         if platform.system() == "Windows" and resolved_cmd:
             exe = shutil.which(resolved_cmd[0])
             if exe:
                 resolved_cmd[0] = exe
+
+        run_env = env
+        if run_env is None and resolved_cmd:
+            program = Path(resolved_cmd[0]).name.lower()
+            if program.split(".")[0] in {"npm", "npx", "node"}:
+                from lib.node_env import node_subprocess_env
+
+                run_env = node_subprocess_env()
+
         try:
             return subprocess.run(
                 resolved_cmd,
@@ -439,6 +458,7 @@ class BaseTool(ABC):
                 timeout=timeout,
                 cwd=cwd,
                 check=True,
+                env=run_env,
             )
         except subprocess.CalledProcessError as exc:
             stderr = (exc.stderr or "").strip()
