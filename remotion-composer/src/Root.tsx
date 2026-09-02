@@ -16,6 +16,12 @@ import { ProductReveal, ProductRevealProps } from "./components/ProductReveal";
 import { CaptionOverlay, WordCaption } from "./components/CaptionOverlay";
 import { CollageBurst, CollageBurstProps } from "./CollageBurst";
 import { LyricOverlay, LyricOverlayProps } from "./LyricOverlay";
+import {
+  PersianFootageVideo,
+  calculatePersianMetadata,
+  PERSIAN_FPS,
+} from "./persian/PersianFootageVideo";
+import { persianDemoFixture, persianDemoFixtureLandscape, persianEmptyFixture, persianEmptyFixtureLandscape } from "./persian/fixtures";
 
 // ---------------------------------------------------------------------------
 // Theme System — prevents every video from looking like dark fintech
@@ -329,6 +335,74 @@ export const Root: React.FC = () => {
           fadeOutSeconds: 1.5,
           overlay: true,
         } as EndTagProps}
+      />
+      {/*
+        Persian (Farsi / RTL) footage compositions.
+
+        Two entries for one component, because format is a layout decision that
+        must be fixed before `calculateMetadata` runs — width and height cannot be
+        chosen from props at registration time. `calculatePersianMetadata` still
+        re-derives the dimensions from `props.format`, so passing a mismatched
+        format to either ID corrects itself rather than rendering at the wrong
+        aspect ratio.
+
+        `durationInFrames` here is only a placeholder for the studio; every render
+        overrides it from `props.durationSeconds` via calculateMetadata.
+
+        `defaultProps` is deliberately the EMPTY fixture, not the demo fixture.
+        Remotion shallow-merges `--props` over `defaultProps`, so any key a render
+        omits is inherited. With the demo fixture here, a real render that passes no
+        `typographicBeats` inherited the demo's two beats, and the typographic plate —
+        which paints an opaque background by design — covered the footage for the first
+        18 seconds of every video. The render succeeded, the props were valid, and the
+        footage was invisible.
+
+        The demo fixture is still available in the studio: `persianDemoFixture` is
+        registered as its own composition below, where an opaque default is exactly
+        what is wanted.
+      */}
+      <Composition
+        id="PersianFootageVertical"
+        component={PersianFootageVideo}
+        durationInFrames={PERSIAN_FPS * 60}
+        fps={PERSIAN_FPS}
+        width={1080}
+        height={1920}
+        defaultProps={persianEmptyFixture}
+        calculateMetadata={calculatePersianMetadata}
+      />
+      <Composition
+        id="PersianFootageLandscape"
+        component={PersianFootageVideo}
+        durationInFrames={PERSIAN_FPS * 60}
+        fps={PERSIAN_FPS}
+        width={1920}
+        height={1080}
+        defaultProps={persianEmptyFixtureLandscape}
+        calculateMetadata={calculatePersianMetadata}
+      />
+      {/* Studio-only previews. Not render targets: the pipeline always renders the
+          two IDs above with explicit props. These exist so the demo content stays
+          openable in `remotion studio` without it being any composition's default. */}
+      <Composition
+        id="PersianFootageDemoVertical"
+        component={PersianFootageVideo}
+        durationInFrames={PERSIAN_FPS * 60}
+        fps={PERSIAN_FPS}
+        width={1080}
+        height={1920}
+        defaultProps={persianDemoFixture}
+        calculateMetadata={calculatePersianMetadata}
+      />
+      <Composition
+        id="PersianFootageDemoLandscape"
+        component={PersianFootageVideo}
+        durationInFrames={PERSIAN_FPS * 60}
+        fps={PERSIAN_FPS}
+        width={1920}
+        height={1080}
+        defaultProps={persianDemoFixtureLandscape}
+        calculateMetadata={calculatePersianMetadata}
       />
     </>
   );

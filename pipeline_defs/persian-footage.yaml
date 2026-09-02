@@ -1,0 +1,255 @@
+name: persian-footage
+version: "1.0"
+description: >
+  Persian (Farsi) video production over real stock footage. Reads a source (an
+  article, a topic, or a supplied script), writes a Persian script, sources
+  VIDEO-ONLY footage from Pexels and Pixabay, and composes a typographically
+  correct RTL result with Estedad, glass subtitles, karaoke emphasis locked to
+  narration word timings, and an animated brand watermark. Renders vertical
+  1080x1920 by default and landscape 1920x1080 for long-form YouTube.
+
+  Two things this pipeline treats as non-negotiable, because default Persian
+  output fails at both: readability (correct ZWNJ, RTL, Persian digits, and line
+  breaks that never strand a proclitic or enclitic) and beauty (a considered
+  motion grammar rather than CSS defaults).
+category: hybrid
+stability: beta
+default_checkpoint_policy: guided
+
+# The pipeline reads a source document or topic, not a reference video. Style
+# comes from this pipeline's own art direction, so there is nothing for a
+# reference-video analysis to inform.
+reference_input:
+  supported: false
+
+orchestration:
+  mode: executive-producer
+  skill: pipelines/persian-footage/executive-producer
+  # Stock footage and local transcription cost nothing. The budget is nonzero only
+  # to leave room for an optional paid TTS if the user chooses one.
+  budget_default_usd: 0.50
+  max_revisions_per_stage: 3
+  max_send_backs: 2
+  max_wall_time_minutes: 45
+
+extensions:
+  custom_scripts: true
+  custom_playbooks: true
+  custom_skills: true
+  # This pipeline ships the tools it needs. New capabilities go through
+  # skills/meta/capability-extension.md rather than being added per project.
+  custom_tools: false
+
+required_skills:
+  - pipelines/persian-footage/executive-producer
+  - pipelines/persian-footage/idea-director
+  - pipelines/persian-footage/script-director
+  - pipelines/persian-footage/scene-director
+  - pipelines/persian-footage/asset-director
+  - pipelines/persian-footage/edit-director
+  - pipelines/persian-footage/compose-director
+  - meta/reviewer
+  - meta/checkpoint-protocol
+
+compatible_playbooks:
+  # The Persian composition carries its own art direction in
+  # remotion-composer/src/persian/tokens.ts — type scale set for Estedad's
+  # metrics, glass panel, palette. A stock playbook would fight it: every shipped
+  # playbook specifies a Latin font stack and a type scale tuned for it.
+  custom_allowed: true
+
+production_modes:
+  - name: narrated
+    description: >
+      The user supplies (or records) Persian narration audio. Word-level timings
+      are transcribed from that audio, so karaoke emphasis lands on the syllable
+      actually spoken. This is the intended default.
+    required_tools:
+      - direct_clip_search
+      - persian_compose
+    optional_tools:
+      - mlx_whisper_transcriber
+      - transcriber
+      - audio_mixer
+      - pixabay_music
+    agent_skills:
+      - speech-to-text
+
+  - name: silent
+    description: >
+      No narration. Cue timings are derived from reading speed, and music carries
+      the pace. Chosen when the user wants a video without recording, or before
+      narration exists.
+    required_tools:
+      - direct_clip_search
+      - persian_compose
+    optional_tools:
+      - pixabay_music
+      - audio_mixer
+
+stages:
+  - name: idea
+    skill: pipelines/persian-footage/idea-director
+    produces:
+      - brief
+    tools_available:
+      - web_search
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - production_mode is chosen and recorded (narrated or silent) — NOT inferred later
+      - format is chosen and recorded (vertical or landscape)
+      - Target duration is concrete, in seconds
+      - The one idea the video delivers is a single Persian sentence
+      - Beat count matches the duration math (roughly one beat per 4-6 seconds)
+      - "Footage feasibility is assessed per beat: can Pexels/Pixabay plausibly answer it with VIDEO"
+      - Typographic-beat count is declared and is at most 2
+    success_criteria:
+      - Schema-valid brief artifact
+      - metadata.production_mode is "narrated" or "silent"
+      - metadata.format is "vertical" or "landscape"
+      - metadata.target_duration_seconds present
+      - metadata.typographic_beat_budget present and <= 2
+
+  - name: script
+    skill: pipelines/persian-footage/script-director
+    required_artifacts_in:
+      - brief
+    produces:
+      - script
+    tools_available:
+      - web_search
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - "Persian orthography: ZWNJ present in every compound («می‌کند», not «میکند» or «می کند»)"
+      - "Normalization: Farsi yeh (U+06CC) and keheh (U+06A9) only — no Arabic yeh/kaf"
+      - Every sentence is speakable aloud in one breath
+      - "Reading budget: no planned cue exceeds 21 visible chars/second"
+      - No sentence relies on a footage shot that was judged infeasible at idea stage
+      - "In narrated mode: the script is presented to the user as narration text and the stage STOPS for their audio"
+    success_criteria:
+      - Schema-valid script artifact
+      - Persian text-quality gate passes (lib.persian_text audit reports no violations)
+      - "In narrated mode: the narration text has been handed to the user"
+
+  - name: scene_plan
+    skill: pipelines/persian-footage/scene-director
+    required_artifacts_in:
+      - brief
+      - script
+    produces:
+      - scene_plan
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Every beat has 2-3 ENGLISH search queries (Pexels/Pixabay do not index Persian)
+      - Queries name concrete visual nouns, not the abstract idea they represent
+      - Every beat declares a camera move, or "none" deliberately
+      - No two adjacent beats share their primary visual subject
+      - Beats that no honest footage can serve are marked typographic, within the declared budget
+      - Sum of beat durations is within 10% of the target duration
+    success_criteria:
+      - Schema-valid scene_plan artifact
+      - metadata.beats[] present, each with queries[] and camera
+      - Count of typographic beats <= brief.metadata.typographic_beat_budget
+
+  - name: assets
+    skill: pipelines/persian-footage/asset-director
+    required_artifacts_in:
+      - scene_plan
+    produces:
+      - asset_manifest
+    required_tools:
+      - direct_clip_search
+    optional_tools:
+      - mlx_whisper_transcriber
+      - transcriber
+      - pixabay_music
+      - video_trimmer
+    tools_available:
+      - direct_clip_search
+      - mlx_whisper_transcriber
+      - transcriber
+      - pixabay_music
+      - video_trimmer
+      - audio_probe
+    preferred_tools:
+      # Word timings on Apple Silicon are fast enough to use large-v3, which is
+      # the smallest model that places Persian word boundaries reliably.
+      - mlx_whisper_transcriber
+    fallback_tools:
+      - transcriber
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - "EVERY asset is a VIDEO. A still image in the manifest is a CRITICAL violation — this pipeline forbids photo footage outright."
+      - Every clip is at least as long as the beat it fills
+      - Provenance (provider, original_url, license, attribution) present on every asset
+      - No clip_id fills two beats
+      - Clip orientation matches the chosen format
+      - "In narrated mode: word-level timings exist and cover the narration duration"
+    success_criteria:
+      - Schema-valid asset_manifest artifact
+      - Every non-typographic beat has exactly one video asset
+      - Zero assets with kind "image"
+      - "In narrated mode: metadata.word_timings present"
+
+  - name: edit
+    skill: pipelines/persian-footage/edit-director
+    required_artifacts_in:
+      - scene_plan
+      - asset_manifest
+    produces:
+      - edit_decisions
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - "render_runtime is 'remotion' and composition_mode is 'templated' — the Persian composition IS the template"
+      - "renderer_family is 'persian-footage'"
+      - Cues are built through lib.persian_cues (never hand-timed) so reading-speed limits are enforced
+      - lib.persian_cues.audit_cues reports no violations
+      - Every cue's text passes the Persian orthography gate
+      - Highlight phrases are at most one per cue and cover under half its words
+      - Watermark text is present
+    success_criteria:
+      - Schema-valid edit_decisions artifact
+      - edit_decisions.persian.cues[] present and audit-clean
+      - Timeline duration within 10% of brief.metadata.target_duration_seconds
+
+  - name: compose
+    skill: pipelines/persian-footage/compose-director
+    required_artifacts_in:
+      - edit_decisions
+      - asset_manifest
+      - brief
+    produces:
+      - render_report
+    required_tools:
+      - persian_compose
+    optional_tools:
+      - audio_mixer
+      - video_probe
+    tools_available:
+      - persian_compose
+      - audio_mixer
+      - audio_probe
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - "render_runtime MUST remain 'remotion'. The Persian composition depends on Estedad loading through FontFace and on canvas text measurement; neither exists on the ffmpeg path. A silent swap to ffmpeg or hyperframes is a CRITICAL governance violation — raise a structured blocker instead."
+      - Output dimensions match the chosen format exactly
+      - "Frames are MEASURED with lib.persian_verify, not eyeballed: verify_frames for ink, line count, panel envelope, centring, and contrast. Hand-rolled brightness or contrast detectors do not work over footage — the compose-director records six that were tried and defeated."
+      - "RTL reading order is confirmed with check_reading_order on a single-line cue whose highlight sits on its first or last word. Reversed text is invisible to every geometric check."
+      - "The watermark is located with find_watermark against a no-watermark reference render, and its expected position comes from WATERMARK_TOP_FRACTION rather than a literal — the quiet position differs per format."
+      - Music ducking is measured from the decoded audio, not inferred from the presence of a stream
+      - Attribution for every clip is recorded in the render report
+      - Output duration matches the planned duration within 1 second
+    success_criteria:
+      - Schema-valid render_report artifact
+      - Output file exists and passes ffprobe validation
+      - "render_report.persian_text_verified = true, set only after verify_frames(...)['passed'] and a reading-order check — persian_compose returns it false because it renders, it does not look"
+      - render_report.verification_notes carries measured numbers rather than adjectives
+      - render_report.attributions[] covers every clip used

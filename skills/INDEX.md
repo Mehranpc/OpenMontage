@@ -280,6 +280,30 @@ Stage director skills teach the agent HOW to execute each pipeline stage. Each s
 | Compose Director | `pipelines/localization-dub/compose-director.md` | `compose` | Per-locale rendering, subtitle-fit checks, output labeling |
 | Publish Director | `pipelines/localization-dub/publish-director.md` | `publish` | Locale packaging, metadata precision, QA-note retention |
 
+### Persian Footage Pipeline (`pipelines/persian-footage/`) — v1.0
+
+Persian (Farsi / RTL) video over real stock footage. Route here whenever the on-screen
+language is Persian — the other pipelines have no Persian font, no RTL handling in their
+caption components, and wrap text with CSS, which breaks Persian lines at grammatically
+wrong points. **Video footage only; still images are rejected by a gate.**
+
+| Skill | File | Stage | Key Capabilities |
+|-------|------|-------|-----------------|
+| **Executive Producer** | `pipelines/persian-footage/executive-producer.md` | `all` | **6-stage orchestration, readability/beauty non-negotiables, video-only rule, Remotion runtime lock** |
+| Idea Director | `pipelines/persian-footage/idea-director.md` | `idea` | Mode + format choice, beat math, per-beat footage feasibility, typographic budget |
+| Script Director | `pipelines/persian-footage/script-director.md` | `script` | ZWNJ/letter/digit orthography gate, reading budget, narration handoff |
+| Scene Director | `pipelines/persian-footage/scene-director.md` | `scene_plan` | English query translation of visual intent, camera-move vocabulary, subject variety |
+| Asset Director | `pipelines/persian-footage/asset-director.md` | `assets` | Video-only acquisition, orientation filtering, word-level timings, transcript/script reconciliation |
+| Edit Director | `pipelines/persian-footage/edit-director.md` | `edit` | Cue construction via `lib.persian_cues`, shot tiling, highlight restraint |
+| Compose Director | `pipelines/persian-footage/compose-director.md` | `compose` | `persian_compose` render, measured frame verification (contrast/RTL/watermark), audio ducking, attribution |
+
+Supporting modules: `lib/persian_text.py` (orthography, break rules), `lib/persian_cues.py`
+(cue construction + audit), `lib/persian_assets.py` (video-only gate),
+`lib/persian_verify.py` (pixel measurement of rendered frames — subtitle band, contrast,
+RTL order, watermark by ablation diff), `remotion-composer/src/persian/` (Estedad loading,
+canvas measurement, DP line breaker, motion grammar, glass subtitles, watermark),
+`tools/video/persian_compose.py`, `tools/analysis/mlx_whisper_transcriber.py`.
+
 ## Meta Skills
 
 Cross-cutting skills that apply to all pipelines:

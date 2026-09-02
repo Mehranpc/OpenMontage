@@ -251,14 +251,24 @@ If the folder has tracks, the proposal and asset stages should present them as o
 | `clip-factory` | Many clips from one long source | beta |
 | `podcast-repurpose` | Podcast highlights and derivatives | beta |
 | `cinematic` | Trailer, teaser, and mood-led edits | production |
+| `documentary-montage` | Archival and stock montage, retrieval-led tone poems | beta |
 | `animation` | Motion-graphics and animation-first videos | production |
 | `character-animation` | Local rigged cartoon characters and reusable character acting | beta |
 | `hybrid` | Source footage plus support visuals | production |
 | `avatar-spokesperson` | Presenter-led avatar or lip-sync videos | production |
 | `localization-dub` | Subtitle, dub, and translated variants | beta |
+| `persian-footage` | Persian (Farsi/RTL) video over real stock footage | beta |
 | `framework-smoke` | Test: minimal 2-stage smoke test | test |
 
 > **Beta pipelines** have not been fully audited. They work, but expect rough edges. Mention this when the user selects one.
+
+> **Persian on-screen text routes to `persian-footage`, always.** Not because the other
+> pipelines are worse, but because they have no Persian font, no RTL handling in their
+> caption components, and wrap lines with CSS — which breaks Persian at grammatically
+> wrong points (after a preposition, before «را»). The output is legible but wrong, in a
+> way that reads as carelessness to any Persian speaker. `persian-footage` measures every
+> line against Estedad and breaks it with a Persian-aware algorithm. It renders video
+> footage only; still images are rejected by a gate.
 
 ## Mandatory Preflight
 
@@ -692,6 +702,7 @@ The `.agents/skills/` directory is large. When you're not coming in through a to
 **When in doubt, read the category's meta routing file first:**
 - Picking an animation runtime? → `skills/meta/animation-runtime-selector.md` routes between Remotion primitives, GSAP plugins, framer-motion, Lottie, Manim, D3.
 - Picking a screen-recording mode (real capture vs synthetic terminal)? → `pipeline_defs/screen-demo.yaml` + `skills/pipelines/screen-demo/idea-director.md`.
+- On-screen text in Persian? → `pipeline_defs/persian-footage.yaml` + `skills/pipelines/persian-footage/executive-producer.md`. Do not adapt another pipeline; none of them handle RTL.
 
 ## Quick Lookup
 

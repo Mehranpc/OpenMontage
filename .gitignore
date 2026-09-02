@@ -49,8 +49,14 @@ gcp-*.json
 service-account*.json
 service_account*.json
 
-# Stray media downloads (test/scratch clips left in repo root)
+# Stray media downloads (test/scratch clips left in repo root).
+#
+# Both tools default their output_path to a bare filename, so a call without an
+# explicit path writes into whatever the cwd happens to be — the repo root, in practice.
+# See tools/video/pexels_video.py and tools/graphics/pexels_image.py.
 pexels_video_*.mp4
+pexels_*.jpg
+pexels_*.mp4
 
 # Scratch/debug scripts
 scratch/
@@ -87,6 +93,12 @@ remotion-composer/projects/
 remotion-composer/public/*
 # But keep demo props (shipped with the project for zero-key demos)
 !remotion-composer/public/demo-props/
+# Vendored Persian typeface (SIL OFL 1.1). Must be committed: the Persian
+# composition measures text against these exact files, so a missing font is
+# not a soft degradation — layout would be computed against a fallback and
+# every line width would be wrong. See public/fonts/estedad/README.md.
+!remotion-composer/public/fonts/
+!remotion-composer/public/fonts/estedad/
 # Ignore test/scratch compositions in demo-props (keep only curated demos)
 remotion-composer/public/demo-props/test-*
 remotion-composer/public/demo-props/talking-head-*
