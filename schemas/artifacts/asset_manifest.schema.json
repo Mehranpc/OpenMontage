@@ -50,12 +50,126 @@
               "review_notes": { "type": "string" }
             },
             "additionalProperties": false
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["video", "image", "audio"],
+            "description": "Media class as the acquiring tool reported it, kept alongside `type` because `type` also carries editorial role (narration, music, and sfx are all audio). The persian-footage pipeline gates on this: an asset with kind 'image' is rejected outright."
+          },
+          "beat_id": {
+            "type": "string",
+            "description": "Beat this asset fills, for beat-structured pipelines. Distinct from scene_id, which groups beats."
+          },
+          "public_path": {
+            "type": "string",
+            "description": "Optional path relative to remotion-composer/public/, for pipelines that pre-stage their media. persian-footage does not: persian_compose copies each shot's source into public/persian/<run-id>/ at render time and deletes it afterwards, so it reads `path` and never this field. Recording it is harmless; relying on it is not."
+          },
+          "width": { "type": "integer", "minimum": 1 },
+          "height": { "type": "integer", "minimum": 1 },
+          "source_in_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "description": "In-point inside the source clip. Stock footage frequently opens on a fade or the wrong framing, so 0 is a default rather than a decision."
+          },
+          "attribution": {
+            "type": "string",
+            "description": "Human-readable credit line. Both Pexels and Pixabay require it, and persian_compose refuses to render a shot without one."
+          },
+          "shows_subject": {
+            "type": "boolean",
+            "description": "Whether the video's declared visual subject is legible in this clip — not a blurred shape in the background. persian-footage holds an anchor quota against this field (first beat, last beat, and at least 40% of footage beats), which is what stops a video about coffee from becoming a video about a medical check-up one defensible query at a time."
+          },
+          "selection_reason": {
+            "type": "string",
+            "description": "One line naming what is IN FRAME, in the project's language. 'best match' is not a reason: a manifest recording twelve chosen clips and nothing about what any showed makes 'waist measurement' and 'coffee cup' look identical at the checkpoint."
           }
         },
         "additionalProperties": false
       }
     },
     "total_cost_usd": { "type": "number", "minimum": 0 },
+    "format": {
+      "type": "string",
+      "enum": ["vertical", "landscape", "square"],
+      "description": "Frame orientation this manifest was acquired for, carried from the brief so the edit stage cannot silently mix orientations."
+    },
+    "word_timings": {
+      "type": "array",
+      "description": "Word-level narration timings from transcription, as the transcriber emitted them (snake_case). persian-footage turns these into a sidecar .srt; nothing on screen is locked to a word, so sub-tenth-second drift is cosmetic. Distinct from edit_decisions.persian.audio.wordTimings (camelCase), which is the same word list restated at the compose boundary where persian_compose reads it — the manifest records what transcription produced, the edit decisions carry what compose consumes.",
+      "items": {
+        "type": "object",
+        "required": ["word", "start", "end"],
+        "properties": {
+          "word": { "type": "string" },
+          "start": { "type": "number", "minimum": 0 },
+          "end": { "type": "number", "minimum": 0 },
+          "probability": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "music": {
+      "type": "object",
+      "description": "Acquired music bed, when one exists. Absent is legitimate: no music provider is guaranteed to be configured. Same record shape as edit_decisions.persian.musicTrack (lib.persian_music.MusicTrack / build_music_track) — the shape the music gate requires — so a bed the manifest records is a bed compose can stage and audit without restating.",
+      "required": ["path", "source", "license", "contentIdRisk"],
+      "properties": {
+        "path": { "type": "string", "description": "Real location on disk; the field persian_compose reads and stages." },
+        "source": { "type": "string", "description": "Tool the file came from: pixabay_music, freesound_music, or user-provided." },
+        "license": {
+          "type": "object",
+          "description": "The licence record, so the claim is checkable by a human rather than trusted from a string.",
+          "required": ["name", "url", "downloadedAt"],
+          "properties": {
+            "name": { "type": "string", "description": "The licence name as published at the source, verbatim (e.g. Pixabay Content License)." },
+            "url": { "type": "string", "description": "The licence page the claim was read from." },
+            "downloadedAt": { "type": "string", "description": "ISO date the file was downloaded; licences change." }
+          },
+          "additionalProperties": false
+        },
+        "attribution": { "type": "string", "description": "Attribution line, where the licence or the source asks for one." },
+        "contentIdRisk": {
+          "type": "object",
+          "description": "The honest Content-ID judgement, with its reason, so a later reader can disagree with evidence.",
+          "required": ["level"],
+          "properties": {
+            "level": { "type": "string", "enum": ["low", "unknown", "high"], "description": "low must cite a recognised licence; high is refused; unknown passes only with a recorded acknowledgement." },
+            "reason": { "type": "string", "description": "The judgement's evidence." }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "musicTrack": {
+      "type": "object",
+      "description": "Alias for the same music record under the name the edit stage and the asset-director use (edit_decisions.persian.musicTrack). Accepted here so a manifest written in the edit stage's vocabulary validates; must not appear alongside `music` describing a different file.",
+      "required": ["path", "source", "license", "contentIdRisk"],
+      "properties": {
+        "path": { "type": "string" },
+        "source": { "type": "string" },
+        "license": {
+          "type": "object",
+          "required": ["name", "url", "downloadedAt"],
+          "properties": {
+            "name": { "type": "string" },
+            "url": { "type": "string" },
+            "downloadedAt": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "attribution": { "type": "string" },
+        "contentIdRisk": {
+          "type": "object",
+          "required": ["level"],
+          "properties": {
+            "level": { "type": "string", "enum": ["low", "unknown", "high"] },
+            "reason": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "metadata": { "type": "object" }
   },
   "additionalProperties": false

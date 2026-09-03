@@ -136,10 +136,10 @@ def test_watermark_positions_are_not_hard_coded(
 ) -> None:
     """Positions must come from `WATERMARK_TOP_FRACTION`, not literals.
 
-    The quiet position is derived from the subtitle band and differs per format —
-    46% vertical against 62% landscape. A literal is correct in whichever format the
-    author last rendered and silently wrong in the other, which is exactly how the
-    landscape watermark came to overlap every subtitle.
+    The quiet position is derived from the moment zone plus a clearance margin, and the
+    resting position differs per format — 11% vertical against 8% landscape. A literal is
+    correct in whichever format the author last rendered and silently wrong in the other,
+    which is exactly how the landscape watermark came to overlap the text.
     """
     if "find_watermark" not in source:
         pytest.skip("no find_watermark use in this block")

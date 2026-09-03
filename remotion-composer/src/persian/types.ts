@@ -10,46 +10,167 @@
  * Times are in **seconds** at this boundary (what a transcript and an SRT speak),
  * and converted to frames exactly once, inside the components. Mixing units
  * across the boundary is the most common source of off-by-one-frame drift.
+ *
+ * ## The shape this replaced, and why the old one is gone rather than optional
+ *
+ * A moment used to be four independent slots: `kicker` above, `text` in the
+ * middle, `unit` beside it, `label` below. Each slot had its own size and its own
+ * colour, and the arrangement was chosen by the moment's `kind`. What reached the
+ * screen for a study of 2264 people was a 260px accent numeral, the word «نفر»
+ * floating at its baseline several hundred pixels to the left, and «دانشگاه
+ * اولو، فنلاند» on a third line — three sizes, three left edges, and no sentence.
+ * Nothing on screen said a *study* was being described, because no slot was for
+ * saying it.
+ *
+ * The replacement is one field: `segments`, an ordered list. **The array order is
+ * the paint order, top to bottom, and it is the reading order of one Persian
+ * phrase.** So
+ *
+ *     [{ role: "lead", text: "مطالعهٔ دانشگاه اولوی فنلاند روی" },
+ *      { role: "hero", text: "۲۲۶۴ نفر" }]
+ *
+ * paints «مطالعهٔ دانشگاه اولوی فنلاند روی» and, beneath it, «۲۲۶۴ نفر». The
+ * grammar is stated by the author in the order Persian requires it, and the layout
+ * obeys rather than inventing relationships. There is no sorting, no
+ * role-priority table, and no "labels always go below" rule to fight: if the
+ * phrase needs the quantity first and the qualifier after, the author writes them
+ * in that order and that is what appears.
+ *
+ * The old slots are deleted rather than deprecated. Keeping them would keep the
+ * arrangement they imply available, and a slot that exists gets filled — that is
+ * how the floating «نفر» happened in the first place.
  */
 
 import type { CameraMove } from "./motion";
 import type { PersianFormat } from "./tokens";
+import { compareKey, splitWords } from "./text";
 
-/** One word with its spoken window, from whisper word-level timestamps. */
-export interface PersianWord {
+/**
+ * What a moment is, editorially.
+ *
+ * This no longer decides the arrangement — `segments` does. It records what the
+ * author judged the moment to *be*, which is what the audits reason about: a
+ * figure's hero should be a quantity and not a sentence, a term's hero should be
+ * a name that the phrase around it glosses, and a set that is nothing but
+ * statements means the script's numbers and terms are not getting the frame.
+ *
+ * Kept as a declared field rather than inferred from the text because inference
+ * would be wrong exactly where it matters: «۲۰۲۴» is a figure in one moment and a
+ * date inside a source line in another, and only the author knows which.
+ *
+ * `hook` is the opening moment's kind, and it is declared for the same reason —
+ * inferred "being the hook" silently cost the claim+qualifier style every
+ * hook-scoped token. The predecessor inferred hook-ness from the flat display
+ * shape (a `hero` carrying `accentWords` with no non-`source` sibling), so a hook
+ * expressed as a claim plus a qualifier — a `hero` plus a `tail`, with no
+ * `accentWords` anywhere — matched nothing and rendered at the ordinary size and
+ * weight, an ordinary-looking first frame. A hook that must look like its
+ * content to be recognised is not declared at all. The style inside a hook —
+ * claim+qualifier or flat display — is derived from structure by
+ * `isClaimQualifierHook` / `isFlatDisplayBlock` in `layout.ts`; the kind only
+ * says this moment gets the hook's tokens.
+ */
+export type PersianMomentKind = "figure" | "term" | "statement" | "hook";
+
+/**
+ * The role a segment plays inside the phrase.
+ *
+ * Roles carry *emphasis and size*, never position — position is the array index.
+ *
+ * - `lead` — the part of the phrase that sets up the emphasis. Primary ink, at
+ *   `LEAD_RATIO` of the hero size. Usually first, because Persian usually states
+ *   the frame before the fact («مطالعهٔ … روی», «میانگین سنی شرکت‌کنندگان»).
+ * - `hero` — the emphasised span. Accent colour, the largest type in the moment.
+ *   Exactly one per moment: zero is a caption, two is no emphasis at all.
+ * - `tail` — the part of the phrase that completes it *after* the emphasis. Same
+ *   treatment as `lead`, except inside a claim+qualifier hook, where it takes the
+ *   hook's size and weight — see `tailPxForMoment` / `weightForRole` in
+ *   `layout.ts`. Exists because Persian word order sometimes puts the
+ *   verb or the qualifier last («… را سه برابر می‌کند»), and forcing that into a
+ *   `lead` would put it above the thing it follows.
+ * - `source` — attribution. Smallest type, secondary ink, and it is not part of
+ *   the phrase: it is a citation appended to it.
+ */
+export type PersianSegmentRole = "lead" | "hero" | "tail" | "source";
+
+/** One line-group of a moment's phrase. */
+export interface PersianSegment {
+  readonly role: PersianSegmentRole;
+  /** The Persian (or mixed) text of this segment. Painted exactly as given. */
   readonly text: string;
-  readonly startSeconds: number;
-  readonly endSeconds: number;
+  /**
+   * Inline accent words for the flat-hook treatment.
+   *
+   * Empty everywhere except a flat-hook moment: there the whole segment paints
+   * at one size in primary ink and only these words carry the accent colour —
+   * the emphasis expressed in colour rather than size. Matched by canonical
+   * form, so trailing punctuation never defeats the match. A new segment-level
+   * key, unrelated to the retired moment-level `highlightWords`, which stays
+   * refused. The pipeline restricts this to moment-1 alone; the renderer paints
+   * whatever it is given, because position in the timeline is not the
+   * component's to know.
+   */
+  readonly accentWords?: readonly string[];
+  /**
+   * Seconds after the moment's own start at which this segment arrives.
+   *
+   * Omitted or 0 means it arrives with the moment. A positive value builds the
+   * moment in place: earlier segments stay on screen, this one joins them. That
+   * is the mechanism for the case where two consecutive facts belong to one
+   * thought and should accumulate rather than replace each other — a build is one
+   * moment with two reveals, not two moments, which is why it is not subject to
+   * the inter-moment gap floor.
+   *
+   * The reveal must leave enough time to read what it adds; `lib/persian_moments.py`
+   * charges every step separately and refuses a build that outruns its own moment.
+   */
+  readonly revealAfterSeconds?: number;
 }
 
 /**
- * One subtitle cue.
+ * One typographic moment.
  *
- * `words` is optional: with it, karaoke emphasis tracks the voice; without it,
- * the cue animates in as a block with staggered word entrances. Both paths are
- * first-class — a video with no narration has no word timings and must still
- * look deliberate.
+ * `segments` is the whole content. There is no other text field, and there is no
+ * field whose presence changes how another is painted.
  */
-export interface PersianCue {
+export interface PersianMoment {
   readonly id: string;
-  readonly text: string;
+  readonly kind: PersianMomentKind;
+  /** Timeline position, seconds. */
   readonly startSeconds: number;
   readonly endSeconds: number;
-  readonly words?: readonly PersianWord[];
+  /** The phrase, in reading order, top to bottom. */
+  readonly segments: readonly PersianSegment[];
   /**
-   * Phrases to emphasise, matched against `text` by normalized comparison.
-   * Multi-word phrases are treated as one unbreakable unit by the line breaker,
-   * so an emphasis never straddles a line break.
+   * The narration words this moment is bound to.
+   *
+   * Recorded for provenance and for the sync audit, which checks that the moment
+   * actually starts near where those words are spoken. It paints nothing.
+   *
+   * It exists because the shipped render drifted by up to 3.4 seconds against its
+   * own narration: the timings had been rescaled from a *previous* video by the
+   * duration ratio, which preserves the shape of the old edit and preserves
+   * nothing about the new speech. A moment that names its anchor cannot be
+   * rescaled into place — the audit re-derives its start from the transcript and
+   * fails if the two disagree.
    */
-  readonly highlightPhrases?: readonly string[];
+  readonly anchorText?: string;
+  /**
+   * Fitted total ink+gap height in px at nominal width (`FittedMoment.heightPx`
+   * in `layout.ts`). Attached by `persian_compose` when the node-canvas bridge
+   * is available, so the verifier can scope ink measurement to the scrim
+   * plateau instead of the whole zone envelope. Paints nothing; absent when the
+   * bridge did not run.
+   */
+  readonly stackHeightPx?: number;
 }
 
 /**
  * One footage segment.
  *
- * `sourceUrl` is a `staticFile()`-relative path, not an absolute URL: the render
- * must not depend on network availability, and a remote fetch mid-render
- * produces intermittent black frames that only appear under concurrency.
+ * `source` is a `staticFile()`-relative path, not an absolute URL: the render
+ * must not depend on network availability, and a remote fetch mid-render produces
+ * intermittent black frames that only appear under concurrency.
  */
 export interface PersianShot {
   readonly id: string;
@@ -70,11 +191,12 @@ export interface PersianShot {
 }
 
 /**
- * A cue with no footage behind it.
+ * A stretch of timeline with no footage behind it.
  *
  * Exists because some concepts have no honest stock clip, and a wrong clip is
- * worse than none. Capped upstream (the asset director enforces the cap) so this
- * cannot quietly become the whole video.
+ * worse than none — the coffee video that filled its hormone beats with
+ * laboratory and blood-test footage is what a wrong clip costs. Capped upstream
+ * so this cannot quietly become the whole video.
  */
 export interface PersianTypographicBeat {
   readonly id: string;
@@ -93,6 +215,14 @@ export interface PersianAudio {
   readonly musicBaseVolume?: number;
   /** Music level while narration speaks. */
   readonly musicDuckVolume?: number;
+  /**
+   * Seconds of fade at the head and tail of the music bed.
+   *
+   * A bed that starts at full level on frame 0 and stops dead on the last frame
+   * sounds like a mistake even when everything else is right, and it is the first
+   * thing a viewer notices. Defaulted rather than optional-and-usually-absent.
+   */
+  readonly musicFadeSeconds?: number;
 }
 
 export interface PersianWatermark {
@@ -108,19 +238,16 @@ export interface PersianWatermark {
  * Declared as a `type` alias rather than an `interface` deliberately: Remotion's
  * `CalculateMetadataFunction<T>` constrains `T` to `Record<string, unknown>`, and
  * TypeScript grants an implicit index signature to object-literal type aliases
- * but not to interfaces. The existing compositions in this repo (`TitledVideoProps`
- * and friends) use the same form for the same reason.
+ * but not to interfaces. The existing compositions in this repo
+ * (`TitledVideoProps` and friends) use the same form for the same reason.
  */
 export type PersianVideoProps = {
   readonly format: PersianFormat;
   readonly shots: readonly PersianShot[];
-  readonly cues: readonly PersianCue[];
+  readonly moments: readonly PersianMoment[];
   readonly typographicBeats?: readonly PersianTypographicBeat[];
   readonly audio?: PersianAudio;
   readonly watermark?: PersianWatermark;
-  /** Opening hook line. Absent means no hook beat. */
-  readonly hookText?: string;
-  readonly hookDurationSeconds?: number;
   /** Total duration. Authoritative — `calculateMetadata` uses it directly. */
   readonly durationSeconds: number;
 };
@@ -135,4 +262,181 @@ export const DEFAULT_AUDIO_LEVELS = {
   musicFlatVolume: 0.5,
   musicBaseVolume: 0.6,
   musicDuckVolume: 0.36,
+  musicFadeSeconds: 1.5,
 } as const;
+
+/** Retired fields. Their presence in props is a hard error, not a warning. */
+export const RETIRED_MOMENT_KEYS = [
+  "text",
+  "label",
+  "kicker",
+  "unit",
+  "highlight",
+  "highlightWords",
+] as const;
+
+/**
+ * Group a moment's segments into reveal steps, in authored order.
+ *
+ * A step is everything that arrives at the same time. A moment with no
+ * `revealAfterSeconds` anywhere is one step; a built moment is two or three.
+ *
+ * `source` is excluded: it is a citation appended to the phrase rather than part
+ * of it, so it neither forms a step nor needs an emphasis of its own.
+ */
+export function momentRevealSteps(
+  moment: PersianMoment,
+): { readonly atSeconds: number; readonly segments: readonly PersianSegment[] }[] {
+  const steps: { atSeconds: number; segments: PersianSegment[] }[] = [];
+  for (const segment of moment.segments) {
+    if (segment.role === "source") continue;
+    const at = segment.revealAfterSeconds ?? 0;
+    const existing = steps.find((step) => step.atSeconds === at);
+    if (existing) existing.segments.push(segment);
+    else steps.push({ atSeconds: at, segments: [segment] });
+  }
+  steps.sort((a, b) => a.atSeconds - b.atSeconds);
+  return steps;
+}
+
+/**
+ * Reject a malformed moment at render time, loudly.
+ *
+ * Remotion shallow-merges `--props` over `defaultProps`, so a moment that is
+ * malformed in a way TypeScript cannot see at the boundary still reaches the
+ * component. Every check below is one that produced a wrong-looking render that
+ * nonetheless completed successfully.
+ */
+export function assertMomentIsWellFormed(moment: PersianMoment): void {
+  const where = `Moment ${moment.id ?? "(no id)"}`;
+
+  if (!Array.isArray(moment.segments) || moment.segments.length === 0) {
+    throw new Error(
+      `${where}: no segments. A moment is one Persian phrase carried by an ` +
+        `ordered segment list; an empty list paints an empty scrim over the footage ` +
+        `and the render still succeeds, which is why this throws.`,
+    );
+  }
+
+  for (const key of RETIRED_MOMENT_KEYS) {
+    if (key in (moment as unknown as Record<string, unknown>)) {
+      throw new Error(
+        `${where}: carries the retired key '${key}'. Slot-per-role moments ` +
+          `(kicker above, hero, unit beside, label below) are gone: they produced ` +
+          `three type sizes on three different left edges with no sentence anywhere. ` +
+          `Express the phrase as ordered segments instead — the array order is the ` +
+          `top-to-bottom reading order.`,
+      );
+    }
+  }
+
+  const heroes = moment.segments.filter((segment) => segment.role === "hero");
+  if (heroes.length === 0) {
+    throw new Error(
+      `${where}: has no 'hero' segment. Nothing emphasised is a caption, not a ` +
+        `moment — the whole phrase would paint at one size in one colour.`,
+    );
+  }
+
+  // One hero *per reveal step*, not one per moment. A built moment is two or three
+  // phrases arriving in turn, and each needs its own emphasis; what must never
+  // happen is two heroes appearing together, because then neither is the emphasis.
+  for (const step of momentRevealSteps(moment)) {
+    const stepHeroes = step.segments.filter((segment) => segment.role === "hero");
+    if (stepHeroes.length !== 1) {
+      throw new Error(
+        `${where}: the segments arriving at +${step.atSeconds}s contain ` +
+          `${stepHeroes.length} 'hero' segments; exactly one is required. Zero means ` +
+          `that step emphasises nothing; two means the emphasis competes with itself ` +
+          `and reads as neither.`,
+      );
+    }
+  }
+
+  const sources = moment.segments.filter((segment) => segment.role === "source");
+  if (sources.length > 1) {
+    throw new Error(
+      `${where}: has ${sources.length} 'source' segments; at most one is allowed.`,
+    );
+  }
+  if (sources.length === 1 && moment.segments[moment.segments.length - 1].role !== "source") {
+    throw new Error(
+      `${where}: a 'source' segment must be last. It is a citation appended to ` +
+        `the phrase, not a part of it, so anywhere else it interrupts the sentence.`,
+    );
+  }
+
+  for (const [index, segment] of moment.segments.entries()) {
+    if (typeof segment.text !== "string" || segment.text.trim() === "") {
+      throw new Error(
+        `${where}: segment ${index} (${segment.role}) has no text. An empty ` +
+          `segment reserves vertical space and paints nothing.`,
+      );
+    }
+    const reveal = segment.revealAfterSeconds ?? 0;
+    if (!Number.isFinite(reveal) || reveal < 0) {
+      throw new Error(
+        `${where}: segment ${index} has revealAfterSeconds=${segment.revealAfterSeconds}; ` +
+          `it must be a non-negative number of seconds after the moment's own start.`,
+      );
+    }
+    // Flat-hook accent words: the renderer's half of the two-enforcer rule (the
+    // pipeline audits the same in `lib/persian_moments.py`, seconds before any
+    // clip is staged). Checked here because Remotion shallow-merges `--props`
+    // over `defaultProps`, so a malformed accent list still reaches the paint.
+    const accents = segment.accentWords ?? [];
+    if (accents.length > 0 && segment.role !== "hero") {
+      throw new Error(
+        `${where}: segment ${index} carries accentWords on a ${segment.role} ` +
+          `segment. Inline accent lives on the hero — the emphasis expressed in ` +
+          `colour rather than size.`,
+      );
+    }
+    if (accents.length > 3) {
+      throw new Error(
+        `${where}: segment ${index} lists ${accents.length} accent words; at ` +
+          `most 3 are allowed. Several orange words are no emphasis at all.`,
+      );
+    }
+    if (accents.length > 0) {
+      const textWords = new Set(
+        splitWords(segment.text)
+          .filter((word) => word !== "\n")
+          .map(compareKey),
+      );
+      for (const word of accents) {
+        if (!textWords.has(compareKey(word))) {
+          throw new Error(
+            `${where}: segment ${index} accents ${JSON.stringify(word)}, which ` +
+              `is not in its own text. An accent word that never paints is an ` +
+              `emphasis nobody sees.`,
+          );
+        }
+      }
+    }
+  }
+
+  if (!Number.isFinite(moment.startSeconds) || !Number.isFinite(moment.endSeconds)) {
+    throw new Error(
+      `${where}: startSeconds/endSeconds must both be finite numbers, got ` +
+        `${moment.startSeconds}/${moment.endSeconds}.`,
+    );
+  }
+  if (moment.endSeconds <= moment.startSeconds) {
+    throw new Error(
+      `${where}: endSeconds (${moment.endSeconds}) must be after startSeconds ` +
+        `(${moment.startSeconds}).`,
+    );
+  }
+
+  const span = moment.endSeconds - moment.startSeconds;
+  for (const [index, segment] of moment.segments.entries()) {
+    const reveal = segment.revealAfterSeconds ?? 0;
+    if (reveal >= span) {
+      throw new Error(
+        `${where}: segment ${index} reveals at +${reveal}s but the moment is only ` +
+          `${span.toFixed(2)}s long, so it would never appear.`,
+      );
+    }
+  }
+}

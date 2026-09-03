@@ -29,8 +29,9 @@ so text from a source document must be corrected, not trusted.
 ### Letters
 
 Farsi yeh **ی** (U+06CC) and keheh **ک** (U+06A9) only. Never Arabic yeh ي (U+064A)
-or Arabic kaf ك (U+0643). They look nearly identical and break every string
-comparison, so highlight matching silently fails on them.
+or Arabic kaf ك (U+0643). They look nearly identical, and the renderer paints exactly
+the bytes it is given — so an Arabic letter means the text on the frame is not the text
+that was measured, fitted, and approved, while every check reports success.
 
 `lib.persian_text.normalize` folds them. Run it on everything, including text you
 wrote yourself — an Arabic letter can arrive from a keyboard layout without you
@@ -57,14 +58,39 @@ more than screen text:
 - Numbers spelled as they are spoken.
 - No sentence longer than about 15 words.
 
-Then the same text becomes subtitles, which adds the reading budget: **21 visible
-characters per second**. A sentence of 60 visible characters needs at least 3
-seconds of narration. If your script has more text than the target duration allows,
-cut the script — do not let the cue timing be squeezed. A cue the eye cannot finish
-is the single most damaging readability failure.
+The text is **not** going on screen sentence by sentence. It becomes narration, and a
+sidecar `.srt` built from its word timings. What appears on the frame is 7–9
+selected moments the edit director chooses — a figure, a term, a claim, or the
+opening hook — so writing to a subtitle budget is writing to a constraint that no longer applies.
+
+The opening line carries one extra obligation: it must contain a claim or figure the
+hook can paraphrase honestly, because the hook may restate but never invent — the
+honesty rule lives in the hook section of
+`skills/pipelines/persian-footage/edit-director.md`, which is its single source.
+
+That does not make length free. The narration still has to fit the duration, at roughly
+**14–16 visible characters per second** of natural Persian speech. A 60-second video
+carries something like 850–950 visible characters. Past that the narrator has to rush,
+and a rushed delivery is audible in a way no gate catches.
 
 Count with `lib.persian_text.visible_length`, not `len()`: ZWNJ and combining marks
 cost nothing to read and must not be charged.
+
+### Write the moments into the script's *content*, not its formatting
+
+The edit director can only set in type what the script actually says. Two habits make
+that possible:
+
+- **State figures precisely and once.** «۲۲۶۴ نفر» in one sentence gives a figure
+  moment its hero and its unit. «حدود دو هزار نفر» gives it nothing to set.
+- **Introduce a term before leaning on it.** If the script says «SHBG» it should say
+  what SHBG is, in the same breath — that sentence is what becomes the term moment's
+  gloss, and a term moment without a gloss is refused.
+
+Three or four figures and one or two named terms in 60 seconds is plenty. A script with
+none of either yields a video with nothing specific to put on screen, and the edit
+director will be reduced to setting sentences — which is the caption track this pipeline
+exists not to produce.
 
 ## Line-break awareness while writing
 
@@ -91,9 +117,13 @@ The user is going to read this aloud.
 
 ## In `silent` mode
 
-No handoff. Cue timings will be derived from reading speed at the edit stage. Write
-slightly less text than `narrated` mode would carry: with no voice setting the pace,
-subtitles need more time on screen to feel unhurried.
+No handoff. There is no narration and no sidecar `.srt`; the moments and the music carry
+the video alone.
+
+Write **much** less text. In narrated mode the script is spoken and the on-screen type is
+a selection from it; in silent mode the only text a viewer ever gets is the moments
+themselves. Seven to nine short moments is the whole script — a page of prose has
+nowhere to go.
 
 ## Verification before checkpoint
 
@@ -128,7 +158,9 @@ because the same source will keep producing it.
 ## Success criteria
 
 - Every line passes `normalize(line) == line`.
-- Total visible characters fit the duration at ≤21 chars/second.
+- Total visible characters fit the duration at 14–16 chars/second of speech.
 - No sentence exceeds ~15 words.
 - Every sentence has at least one legal break point.
+- The script contains at least three precise figures or named terms the edit stage can
+  set in type.
 - In `narrated` mode: the text has been handed over and the stage has stopped.

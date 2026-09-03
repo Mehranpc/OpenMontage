@@ -25,9 +25,9 @@ import { Easing, interpolate, spring } from "remotion";
 
 /** Named spring weights. Heavier subject ⇒ more mass, less stiffness. */
 export const SPRING_WEIGHTS = {
-  /** Hook lines, hero typographic beats. Slow, deliberate arrival. */
+  /** Figures and terms — the hero of a moment. Slow, deliberate arrival. */
   hero: { damping: 18, stiffness: 110, mass: 1.4 },
-  /** Subtitle words, most body text. The default. */
+  /** Statement words, labels, most body text. The default. */
   standard: { damping: 16, stiffness: 130, mass: 1 },
   /** Small labels, watermark. Quick, unobtrusive. */
   light: { damping: 20, stiffness: 220, mass: 0.7 },
@@ -321,7 +321,7 @@ export function cameraMove(
 
 /** Stagger between successive items, in frames. */
 export const STAGGER = {
-  /** Words inside one subtitle line. */
+  /** Words inside one line of a statement. */
   word: 2,
   /** Items in a list. */
   item: 4,
@@ -333,9 +333,10 @@ export const STAGGER = {
 export const MAX_STAGGER_FRAMES = 10;
 
 /**
- * Stagger delay for item `index`, clamped so a long line stays in sync with its
- * own cue timing. Without the clamp, a ten-word line would still be arriving
- * twenty frames after the cue began — by which point the audio has moved on.
+ * Stagger delay for item `index`, clamped so a long line finishes arriving well
+ * inside its own moment. Without the clamp a ten-word statement would still be
+ * assembling twenty frames in, which on a two-second moment is a sixth of its
+ * screen time spent incomplete.
  */
 export function staggerDelay(index: number, step: number = STAGGER.word): number {
   return Math.min(index * step, MAX_STAGGER_FRAMES);

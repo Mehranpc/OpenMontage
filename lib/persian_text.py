@@ -131,12 +131,16 @@ def visible_length(text: str) -> int:
 
 
 def compare_key(word: str) -> str:
-    """Canonical form for comparing two words (highlight matching, de-dup).
+    """Canonical form for comparing two words.
 
     Normalized, invisible controls dropped, sentence punctuation dropped,
     lowercased for any embedded Latin. Grammatical marks survive, so «واکنشِ»
     and «واکنش» remain distinguishable — they are different words to the
     line-breaker even though a reader sees almost the same thing.
+
+    Used by the line breaker to recognize light verbs and enclitics, which is why
+    punctuation goes but the ezafe stays: «کرد» after «واکنش» is a compound verb,
+    «کرد.» ends a sentence, and «واکنشِ» is neither.
     """
     return _PUNCT_RE.sub("", measurable_text(word)).strip().lower()
 

@@ -1,18 +1,20 @@
 /**
- * Four-phase animated watermark.
+ * Five-phase animated watermark.
  *
- * The lockup is «طریقت تسلیم | @Pathway_of_Surrender». It announces itself once,
- * near the centre, then migrates to a corner and stays out of the way — so a
- * viewer who watches the whole piece sees the brand clearly without it competing
- * with the subtitles for the rest of the runtime.
+ * The lockup is «طریقت تسلیم | @Pathway_of_Surrender». It stays hidden for the
+ * opening, then announces itself once near the centre, migrates to a corner and
+ * stays out of the way — so a viewer who watches the whole piece sees the brand
+ * clearly without it competing with the opening typography.
  *
- * ## The four phases
+ * ## The five phases
  *
  * All phase boundaries derive from `durationInFrames`, so the same component
  * behaves correctly on a 20-second clip and a 10-minute one without tuning.
  *
- *   1. **Quiet** (0 → 20% of duration): low opacity, centred horizontally and resting
- *      just above the subtitle band. Present but not asserting.
+ *   0. **Hidden** (0 → `INTRO_HIDDEN_FRAMES`): nothing paints. The opening
+ *      moment is the hook and owns the first impression alone.
+ *   1. **Quiet** (fade-in → 20% of duration): low opacity, centred horizontally
+ *      and resting just above the moment zone. Present but not asserting.
  *   2. **Bloom** (60 frames): opacity to full, a slight scale up, and a golden
  *      glow ramps in. This is the beat that registers the brand.
  *   3. **Decay** (60 frames): everything returns to the quiet level.
@@ -33,10 +35,11 @@
  * `@` by surrounding context, which puts the separator on the wrong side of the
  * Latin handle. Explicit spans remove the ambiguity.
  *
- * **The quiet position is derived, not chosen.** It must clear the subtitle band, and
- * that band is in a different place in each format — 52% of the height in vertical,
- * 68% in landscape. A single hard-coded percentage put the mark on top of every
- * landscape subtitle's first line while looking correct in vertical.
+ * **The quiet position is derived, not chosen.** It must clear the rows the
+ * typographic layer can occupy, and those rows sit in a different place in each
+ * format. When this was one hard-coded percentage it put the mark on top of every
+ * landscape line while looking correct in vertical — the format that had been
+ * rendered. See `computeMomentZone` for the current derivation.
  */
 
 import React from "react";
@@ -65,6 +68,16 @@ const DECAY_FRAMES = 60;
 const QUIET_OPACITY = 0.6;
 const BLOOM_SCALE = 1.15;
 
+/**
+ * Opening blackout for the watermark, in frames at the composition fps.
+ *
+ * 45 frames is 1.5s at 30fps: the opening moment owns the first impression
+ * alone and the mark fades in after it has landed. The fade itself is
+ * `INTRO_FADE_FRAMES` so the appearance never pops.
+ */
+const INTRO_HIDDEN_FRAMES = 45;
+const INTRO_FADE_FRAMES = 15;
+
 export const PersianWatermarkMark: React.FC<PersianWatermarkProps> = ({
   format,
   watermark = DEFAULT_WATERMARK,
@@ -73,23 +86,41 @@ export const PersianWatermarkMark: React.FC<PersianWatermarkProps> = ({
   const { durationInFrames } = useVideoConfig();
   const typography = TYPOGRAPHY[format];
 
+  // Phase 0: hidden opening. Returning null paints nothing at all, which is
+  // what "no watermark at the start" means — opacity 0 would still leave the
+  // element in the tree for the whole opening.
+  if (frame < INTRO_HIDDEN_FRAMES) return null;
+
+  const introFadeEnd = INTRO_HIDDEN_FRAMES + INTRO_FADE_FRAMES;
   const quietEnd = Math.floor(durationInFrames * 0.2);
   const bloomEnd = quietEnd + BLOOM_FRAMES;
   const decayEnd = bloomEnd + DECAY_FRAMES;
 
-  // On a clip too short to contain all four phases, the ranges below would not
+  // On a clip too short to contain all phases, the ranges below would not
   // be strictly increasing and `interpolate` throws. Collapsing to the quiet
   // state is the honest fallback: there is no room for a bloom.
   const hasRoomForPhases = durationInFrames > decayEnd + 30;
+  const hasRoomForIntroFade = quietEnd > introFadeEnd;
 
-  const opacity = hasRoomForPhases
-    ? interpolate(
+  const opacity = (() => {
+    if (hasRoomForPhases && hasRoomForIntroFade) {
+      return interpolate(
         frame,
-        [0, quietEnd, bloomEnd, decayEnd],
-        [QUIET_OPACITY, QUIET_OPACITY, 1, QUIET_OPACITY],
+        [INTRO_HIDDEN_FRAMES, introFadeEnd, quietEnd, bloomEnd, decayEnd],
+        [0, QUIET_OPACITY, QUIET_OPACITY, 1, QUIET_OPACITY],
         { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
-      )
-    : QUIET_OPACITY;
+      );
+    }
+    if (hasRoomForIntroFade) {
+      return interpolate(
+        frame,
+        [INTRO_HIDDEN_FRAMES, introFadeEnd],
+        [0, QUIET_OPACITY],
+        { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+      );
+    }
+    return QUIET_OPACITY;
+  })();
 
   const scale = hasRoomForPhases
     ? interpolate(
@@ -121,8 +152,8 @@ export const PersianWatermarkMark: React.FC<PersianWatermarkProps> = ({
       })
     : 1;
 
-  // Both positions come from the tokens, which derive the quiet one from the subtitle
-  // band. See `computeWatermarkQuietTopPct` for why it cannot be a constant.
+  // Both positions come from the tokens, which derive the quiet one from the moment
+  // zone. See `computeWatermarkQuietTopPct` for why it cannot be a constant.
   const restingTopPct = WATERMARK_RESTING_TOP_PCT[format];
   const quietTopPct = computeWatermarkQuietTopPct(format);
 
@@ -155,11 +186,11 @@ export const PersianWatermarkMark: React.FC<PersianWatermarkProps> = ({
         fontFamily: ESTEDAD_FAMILY,
         fontWeight: 500,
         fontSize: typography.watermarkFontSizePx,
-        color: PERSIAN_PALETTE.text,
+        color: PERSIAN_PALETTE.ink,
         textShadow: shadows.join(", "),
         whiteSpace: "nowrap",
         pointerEvents: "none",
-        // Above footage and subtitles, below nothing — the mark is never covered.
+        // Above footage and moments, below nothing — the mark is never covered.
         zIndex: 5,
       }}
     >

@@ -8,13 +8,18 @@ it is inherited. The tool originally wrote `typographicBeats` only when the edit
 decisions contained beats — an ordinary and reasonable-looking conditional — and the
 composition defaulted to a demo fixture that had two beats spanning 0-18s. Every real
 render inherited them, the typographic plate painted its opaque background over the
-footage, and the render reported success. Eight cues were verified as correctly
-rendered text before anyone noticed the footage underneath was not there.
+footage, and the render reported success. Eight text blocks were verified as correctly
+rendered before anyone noticed the footage underneath was not there.
 
-So the property under test is not "the props are correct". It is **every optional key
-that can paint is present**, whether or not it has content. A conditional that omits
+So the first property under test is not "the props are correct". It is **every optional
+key that can paint is present**, whether or not it has content. A conditional that omits
 such a key is the bug, and it is invisible in the props themselves: they are valid, they
 are minimal, and they are wrong.
+
+The second property is that retired keys are refused. `cues` and `hookText` both used to
+paint; both are gone. Accepting either silently would let an edit stage that was never
+updated produce a render whose text layer is simply absent — the props would look fine
+and the video would have no type in it.
 """
 
 from __future__ import annotations
@@ -28,7 +33,11 @@ from tools.video.persian_compose import PersianCompose
 
 #: Keys that paint something and therefore must never be inheritable. A key here that
 #: the tool omits gets whatever the composition's `defaultProps` says.
-PAINTING_KEYS = ("shots", "cues", "typographicBeats", "hookText")
+PAINTING_KEYS = ("shots", "moments", "typographicBeats")
+
+#: Keys from the retired caption/hook design. Present in edit decisions means the edit
+#: stage was not updated, which must fail loudly rather than render without text.
+RETIRED_KEYS = ("cues", "hookText")
 
 
 @pytest.fixture
@@ -45,23 +54,38 @@ def staging(tmp_path: Path) -> Path:
 
 
 def _persian(clip: Path, **overrides: object) -> dict:
-    """Minimal valid edit decisions: one attributed shot, one cue."""
+    """Minimal valid edit decisions: one attributed shot, one moment.
+
+    Duration is 12s rather than the moment's own 3s because `audit_moments` measures
+    text coverage against the runtime, and a 3-second video that is 3 seconds of text is
+    100% covered — a legitimate failure that would make every test here fail for a
+    reason none of them is about.
+    """
     base: dict = {
         "format": "vertical",
-        "durationSeconds": 5.0,
+        "durationSeconds": 12.0,
         "shots": [
             {
                 "id": "s1",
                 "source": str(clip),
                 "startSeconds": 0.0,
-                "endSeconds": 5.0,
+                "endSeconds": 12.0,
                 "sourceInSeconds": 0.0,
                 "camera": "none",
                 "attribution": "Video by Someone on Pexels",
             }
         ],
-        "cues": [
-            {"id": "cue-1", "startSeconds": 0.5, "endSeconds": 3.0, "text": "سلام دنیا"}
+        "moments": [
+            {
+                "id": "moment-1",
+                "kind": "statement",
+                "startSeconds": 0.4,
+                "endSeconds": 4.4,
+                "segments": [
+                    {"role": "lead", "text": "پیام این ویدیو:"},
+                    {"role": "hero", "text": "سلام دنیا"},
+                ],
+            }
         ],
     }
     base.update(overrides)
@@ -100,14 +124,6 @@ class TestNoKeyIsInheritable:
         props, _ = _build(_persian(clip), staging)
         assert props["typographicBeats"] == []
 
-    def test_absent_hook_becomes_an_empty_string_with_zero_duration(
-        self, clip: Path, staging: Path
-    ) -> None:
-        """A hook is full-width text over the footage — the same failure shape."""
-        props, _ = _build(_persian(clip), staging)
-        assert props["hookText"] == ""
-        assert props["hookDurationSeconds"] == 0.0
-
     def test_present_typographic_beats_are_passed_through(
         self, clip: Path, staging: Path
     ) -> None:
@@ -116,14 +132,167 @@ class TestNoKeyIsInheritable:
         props, _ = _build(_persian(clip, typographicBeats=beats), staging)
         assert props["typographicBeats"] == beats
 
-    def test_present_hook_is_passed_through_with_its_duration(
+    def test_no_retired_key_reaches_the_props(
         self, clip: Path, staging: Path
     ) -> None:
-        props, _ = _build(
-            _persian(clip, hookText="این یک قلاب است", hookDurationSeconds=3.5), staging
-        )
-        assert props["hookText"] == "این یک قلاب است"
-        assert props["hookDurationSeconds"] == 3.5
+        """The retired keys must not be forwarded even under another name."""
+        props, _ = _build(_persian(clip), staging)
+        for key in RETIRED_KEYS:
+            assert key not in props
+
+
+class TestRetiredKeysAreRefused:
+    """A retired key means the caller is a stage that was never updated.
+
+    Refused rather than ignored, because ignoring it produces exactly the outcome the
+    caller was trying to avoid: `cues` present and dropped is a video whose entire text
+    layer silently vanished, and the render succeeds.
+    """
+
+    def test_cues_are_refused(self, clip: Path, staging: Path) -> None:
+        cues = [{"id": "cue-1", "startSeconds": 0.0, "endSeconds": 2.0, "text": "سلام"}]
+        with pytest.raises(ValueError, match="cues"):
+            _build(_persian(clip, cues=cues), staging)
+
+    def test_the_cue_refusal_names_the_replacement(
+        self, clip: Path, staging: Path
+    ) -> None:
+        """An error that does not say what to do instead gets worked around."""
+        cues = [{"id": "cue-1", "startSeconds": 0.0, "endSeconds": 2.0, "text": "سلام"}]
+        with pytest.raises(ValueError, match=r"\.srt"):
+            _build(_persian(clip, cues=cues), staging)
+
+    def test_hook_text_is_refused(self, clip: Path, staging: Path) -> None:
+        with pytest.raises(ValueError, match="hookText"):
+            _build(_persian(clip, hookText="این یک قلاب است"), staging)
+
+    def test_an_empty_retired_key_is_tolerated(
+        self, clip: Path, staging: Path
+    ) -> None:
+        """`cues: []` from a stage that emits the key unconditionally is harmless.
+
+        Refusing it would fail a caller that is doing nothing wrong: an empty list paints
+        nothing, so there is no fault to report.
+        """
+        props, _ = _build(_persian(clip, cues=[], hookText=""), staging)
+        assert props["moments"]
+
+
+class TestMomentAudit:
+    """Pacing is enforced here, before any clip is staged.
+
+    The composition asserts the same rules, but it does so when the browser mounts the
+    tree — minutes into a render. Same fault, two orders of magnitude difference in what
+    it costs to find.
+    """
+
+    def test_an_empty_moment_list_is_refused(
+        self, clip: Path, staging: Path
+    ) -> None:
+        with pytest.raises(ValueError, match="moments is empty"):
+            _build(_persian(clip, moments=[]), staging)
+
+    def test_moments_packed_below_the_gap_floor_are_refused(
+        self, clip: Path, staging: Path
+    ) -> None:
+        """Two moments 0.2s apart are a caption track, whatever they are called."""
+        moments = [
+            {
+                "kind": "statement",
+                "startSeconds": 1.0,
+                "endSeconds": 3.0,
+                "segments": [
+                    {"role": "hero", "text": "جملهٔ اول"},
+                ],
+            },
+            {
+                "kind": "statement",
+                "startSeconds": 3.2,
+                "endSeconds": 5.2,
+                "segments": [
+                    {"role": "hero", "text": "جملهٔ دوم"},
+                ],
+            },
+        ]
+        with pytest.raises(ValueError, match="empty frame"):
+            _build(_persian(clip, moments=moments), staging)
+
+    def test_wall_to_wall_text_is_refused(self, clip: Path, staging: Path) -> None:
+        """Coverage is the rule a well-behaved caption track cannot satisfy."""
+        moments = [
+            {
+                "kind": "statement",
+                "startSeconds": index * 4.0,
+                "endSeconds": index * 4.0 + 3.0,
+                "segments": [{"role": "hero", "text": f"جملهٔ شمارهٔ {index}"}],
+            }
+            for index in range(3)
+        ]
+        with pytest.raises(ValueError, match="caption track"):
+            _build(_persian(clip, moments=moments), staging)
+
+    def test_a_figure_without_support_is_refused(
+        self, clip: Path, staging: Path
+    ) -> None:
+        """A bare numeral reads as decoration rather than information.
+
+        The slot model called this "a figure without a label"; the segment model
+        says it more honestly — the phrase around the hero is missing, so nothing
+        on screen says what the number counts. That is the frame rejected as
+        «معلوم نیست در مورد چیه».
+        """
+        moments = [
+            {
+                "kind": "figure",
+                "startSeconds": 1.0,
+                "endSeconds": 4.0,
+                "segments": [{"role": "hero", "text": "۲۲۶۴"}],
+            }
+        ]
+        with pytest.raises(ValueError, match="lead or tail"):
+            _build(_persian(clip, moments=moments), staging)
+
+    def test_a_well_formed_moment_survives_with_persian_digits(
+        self, clip: Path, staging: Path
+    ) -> None:
+        """The audit must not defeat the feature it guards."""
+        moments = [
+            {
+                "kind": "figure",
+                "startSeconds": 0.4,
+                "endSeconds": 5.0,
+                "segments": [
+                    {"role": "lead", "text": "مطالعهٔ اولو روی"},
+                    {"role": "hero", "text": "2264 نفر"},
+                ],
+            }
+        ]
+        props, _ = _build(_persian(clip, moments=moments), staging)
+        assert props["moments"][0]["segments"][1]["text"] == "۲۲۶۴ نفر"
+
+    def test_moments_are_sorted_by_start_time(
+        self, clip: Path, staging: Path
+    ) -> None:
+        """Every pacing rule is about adjacency, which needs timeline order."""
+        moments = [
+            {
+                "kind": "statement",
+                "startSeconds": 6.0,
+                "endSeconds": 9.0,
+                "segments": [{"role": "hero", "text": "دومی"}],
+            },
+            {
+                "kind": "statement",
+                "startSeconds": 0.4,
+                "endSeconds": 3.0,
+                "segments": [{"role": "hero", "text": "اولی"}],
+            },
+        ]
+        persian = _persian(clip, moments=moments)
+        persian["durationSeconds"] = 20.0
+        persian["shots"][0]["endSeconds"] = 20.0
+        props, _ = _build(persian, staging)
+        assert [m["segments"][0]["text"] for m in props["moments"]] == ["اولی", "دومی"]
 
 
 class TestShotStaging:
@@ -231,12 +400,71 @@ class TestAudioProps:
     def test_narration_is_staged_like_footage(
         self, clip: Path, staging: Path, tmp_path: Path
     ) -> None:
+        """Narration is staged — and in narrated mode the music gate now engages.
+
+        A narration with no bed used to sail through compose and ship as silence
+        under the voice's pauses; the gate now refuses it unless the silence is
+        recorded as deliberate. The recorded-reason path is the one exercised
+        here, so the staging behaviour under test stays the staging behaviour.
+        """
         narration = tmp_path / "vo.wav"
         narration.write_bytes(b"\x00" * 32)
         props, _ = _build(
-            _persian(clip, audio={"narration": str(narration)}), staging
+            _persian(
+                clip,
+                audio={"narration": str(narration)},
+                omitMusicReason="test fixture: narration staging only",
+            ),
+            staging,
         )
         assert props["audio"]["narration"].startswith("persian/run-test/")
+
+    def test_narration_without_a_bed_is_refused(
+        self, clip: Path, staging: Path, tmp_path: Path
+    ) -> None:
+        """The shipped defect, now refused: silence under the voice was the default.
+
+        Delivering with no bed and then asking «می‌خوای موزیک هم اضافه کنم؟» was
+        called a catastrophe by the user, verbatim. The gate makes the silence
+        impossible unless someone writes down why.
+        """
+        narration = tmp_path / "vo.wav"
+        narration.write_bytes(b"\x00" * 32)
+        with pytest.raises(ValueError, match="music bed"):
+            _build(_persian(clip, audio={"narration": str(narration)}), staging)
+
+    def test_a_music_record_is_staged_and_default_levels_added(
+        self, clip: Path, staging: Path, tmp_path: Path
+    ) -> None:
+        """The record path carries provenance and gets its default fade.
+
+        The fade is stated here rather than inherited from the renderer, because a
+        default that lives in two places drifts apart in exactly one of them.
+        """
+        narration = tmp_path / "vo.wav"
+        bed = tmp_path / "bed.mp3"
+        narration.write_bytes(b"\x00" * 32)
+        bed.write_bytes(b"\x00" * 32)
+        persian = _persian(
+            clip,
+            audio={"narration": str(narration)},
+            musicTrack={
+                "path": str(bed),
+                "source": "pixabay_music",
+                "license": {
+                    "name": "Pixabay Content License",
+                    "url": "https://pixabay.com/music/",
+                    "downloadedAt": "2026-09-02",
+                },
+                "contentIdRisk": {
+                    "level": "low",
+                    "reason": "Pixabay Content License permits monetized social use.",
+                },
+            },
+        )
+        props, _ = _build(persian, staging)
+        assert props["audio"]["music"].startswith("persian/run-test/")
+        assert props["audio"]["musicFadeSeconds"] == 1.5
 
     def test_music_levels_pass_through_as_floats(
         self, clip: Path, staging: Path

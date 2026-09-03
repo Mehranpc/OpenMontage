@@ -11,6 +11,15 @@ openai, boto3), `httpx`, and raw `urllib`. Everything bottoms out in
 
 Loopback is still allowed — local servers, ffmpeg RPC, and Backlot fixtures need it.
 
+**A configured HTTP proxy defeats a loopback allowance**, so the guard also disables
+proxies for the session. On a machine with a system or environment proxy (macOS network
+settings, a local VPN client, mitmproxy), `requests` and `urllib` connect to
+`127.0.0.1:<proxy port>` and send the real host in the request line. Every outbound call
+then looks like loopback to a socket-level guard, and provider APIs are reachable from
+inside the suite — measured on this machine: a request to a real provider endpoint
+returned HTTP 401 from the provider, meaning it arrived. `NO_PROXY=*` makes the transport
+resolve and connect to the real host, which is what the guard inspects.
+
 To write a test that genuinely hits a live API:
 
     @pytest.mark.live_api
@@ -36,6 +45,21 @@ import pytest
 _ALLOW_ENV_FLAG = "OPENMONTAGE_ALLOW_NETWORK"
 
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0", ""}
+
+#: Proxy variables `requests`, `urllib`, and `httpx` read. All are neutralized for the
+#: session so the transport connects to the real host rather than to a local proxy.
+#: `urllib.request.getproxies()` also consults macOS system settings, and `no_proxy`
+#: overrides those too.
+_PROXY_ENV_VARS = (
+    "HTTP_PROXY",
+    "http_proxy",
+    "HTTPS_PROXY",
+    "https_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+    "FTP_PROXY",
+    "ftp_proxy",
+)
 
 _real_connect = socket.socket.connect
 _real_connect_ex = socket.socket.connect_ex
@@ -100,6 +124,19 @@ def _block_network():
             raise _blocked(address)
         return _real_create_connection(address, *args, **kwargs)
 
+    # Disable proxies before patching the socket layer. Through a proxy every outbound
+    # call connects to 127.0.0.1 and carries the real host in the request line, so it
+    # reads as loopback and the guard waves it through — the wall is still standing and
+    # the traffic goes around it.
+    saved_proxy_env = {name: os.environ.get(name) for name in _PROXY_ENV_VARS}
+    saved_no_proxy = {name: os.environ.get(name) for name in ("NO_PROXY", "no_proxy")}
+    for name in _PROXY_ENV_VARS:
+        os.environ.pop(name, None)
+    # Both cases: `requests` reads lowercase via `urllib.request.getproxies_environment`,
+    # while some SDKs check the uppercase form directly.
+    os.environ["NO_PROXY"] = "*"
+    os.environ["no_proxy"] = "*"
+
     socket.socket.connect = guarded_connect
     socket.socket.connect_ex = guarded_connect_ex
     socket.create_connection = guarded_create_connection
@@ -109,6 +146,11 @@ def _block_network():
         socket.socket.connect = _real_connect
         socket.socket.connect_ex = _real_connect_ex
         socket.create_connection = _real_create_connection
+        for name, value in {**saved_proxy_env, **saved_no_proxy}.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 def pytest_configure(config):

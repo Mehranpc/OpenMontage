@@ -5,26 +5,40 @@
  *
  *   1. **Footage or typographic plate** — one per shot, sequenced.
  *   2. **Audio** — narration at full level, music ducked beneath it.
- *   3. **Hook** — the opening title line, if any.
- *   4. **Subtitles** — one glass panel per cue.
- *   5. **Watermark** — always on top, never covered.
+ *   3. **Moments** — the typographic layer.
+ *   4. **Watermark** — always on top, never covered.
  *
  * ## Why the layer order is fixed rather than data-driven
  *
  * Every layer above has exactly one correct position relative to the others.
- * Subtitles must sit above footage or they are invisible; the watermark must sit
- * above subtitles or a long cue hides the brand; the grade must sit above footage
+ * Moments must sit above footage or they are invisible; the watermark must sit
+ * above moments or a tall moment hides the brand; the grade must sit above footage
  * but below text or it dims the text along with the picture. Making the order
  * configurable would only create ways to get it wrong.
  *
+ * ## What is deliberately absent
+ *
+ * There is no hook layer and no caption layer. Both existed and both were removed
+ * in the same change, for the same reason: they overlapped in time and neither
+ * knew about the other, so the opening seconds painted a red hook line at 18% of
+ * frame height *and* the identical sentence as a caption at 61%, simultaneously.
+ * Nothing suppressed one during the other, because they were independent fields in
+ * the props with no interaction rule between them.
+ *
+ * The fix is structural rather than a suppression rule. The typographic layer is
+ * now a single ordered list of moments with an enforced minimum gap, so "two kinds
+ * of text at once" is not a state the props can express. A rule that says "hide
+ * the caption while the hook is up" would have fixed this instance and left the
+ * shape that produced it intact.
+ *
  * ## Timing
  *
- * All timings arrive in seconds and are converted to frames here, once. Each cue
- * and shot is wrapped in a `<Sequence>` whose `from`/`durationInFrames` come from
- * that conversion, so a component's local `useCurrentFrame()` is zero at its own
- * start. That is what lets the animation helpers take a plain start frame instead
- * of every component doing its own offset arithmetic — and offset arithmetic
- * repeated per component is where frame drift creeps in.
+ * All timings arrive in seconds and are converted to frames here, once. Each
+ * moment and shot is wrapped in a `<Sequence>` whose `from`/`durationInFrames`
+ * come from that conversion, so a component's local `useCurrentFrame()` is zero at
+ * its own start. That is what lets the animation helpers take a plain start frame
+ * instead of every component doing its own offset arithmetic — and offset
+ * arithmetic repeated per component is where frame drift creeps in.
  */
 
 import React from "react";
@@ -38,15 +52,19 @@ import {
 } from "remotion";
 
 import { PersianFootageLayer } from "./components/PersianFootageLayer";
-import { PersianHook } from "./components/PersianHook";
-import { PersianSubtitleBlock } from "./components/PersianSubtitleBlock";
+import { PersianMomentBlock } from "./components/PersianMomentBlock";
 import { PersianTypographicPlate } from "./components/PersianTypographicPlate";
 import { PersianWatermarkMark } from "./components/PersianWatermarkMark";
 import { estedadReady } from "./fonts";
-import { FORMAT_DIMENSIONS, TYPOGRAPHY } from "./tokens";
+import {
+  FORMAT_DIMENSIONS,
+  MOMENT_MIN_GAP_SECONDS,
+  OPENING_MOMENT_MAX_START_SECONDS,
+} from "./tokens";
 import {
   DEFAULT_AUDIO_LEVELS,
   DEFAULT_WATERMARK,
+  type PersianMoment,
   type PersianVideoProps,
 } from "./types";
 
@@ -64,6 +82,65 @@ export const PERSIAN_FPS = 30;
 function resolveSrc(path: string): string {
   if (/^(https?:|file:|\/)/.test(path)) return path;
   return staticFile(path);
+}
+
+/**
+ * Refuse a moment list that overlaps or crowds, at render time.
+ *
+ * The gap floor is the token that makes this pipeline's output structurally
+ * different from a caption track, so it is enforced where it cannot be bypassed
+ * rather than only advised in a skill. An overlap is worse than a crowded gap and
+ * is reported first: two moments painting at once puts two right-anchored stacks
+ * on the same rows, which is unreadable rather than merely rushed.
+ *
+ * A tolerance of one frame is allowed on the gap, because seconds-to-frames
+ * rounding can shave a hair off a gap that was authored at exactly the floor, and
+ * failing a render over 33ms of rounding would be noise.
+ */
+export function assertMomentsArePaced(
+  moments: readonly PersianMoment[],
+  fps: number,
+): void {
+  if (moments.length === 0) return;
+
+  const ordered = [...moments].sort((a, b) => a.startSeconds - b.startSeconds);
+
+  // The opening rule, enforced on this side of the boundary too — the same
+  // single-rule-in-two-places pattern as the gap floor below. The pipeline gates
+  // it at compose time; the renderer gates it at mount time, because props can
+  // also reach a render by hand or from a fixture, and the opening is the one
+  // moment where nothing on screen is a blank first impression on a muted feed.
+  const first = ordered[0];
+  if (first.startSeconds > OPENING_MOMENT_MAX_START_SECONDS + 1 / fps) {
+    throw new Error(
+      `The first moment (${first.id}) starts at ${first.startSeconds.toFixed(2)}s, ` +
+        `past the ${OPENING_MOMENT_MAX_START_SECONDS}s opening deadline. Short-form ` +
+        `feeds autoplay muted: a video that opens on silent footage has nothing on ` +
+        `screen to hold a thumb. Fix the timing upstream.`,
+    );
+  }
+
+  const tolerance = 1 / fps;
+  for (let i = 1; i < ordered.length; i += 1) {
+    const previous = ordered[i - 1];
+    const current = ordered[i];
+    const gap = current.startSeconds - previous.endSeconds;
+    if (gap < 0) {
+      throw new Error(
+        `Moments ${previous.id} and ${current.id} overlap by ${(-gap).toFixed(2)}s. ` +
+          `Two moments painting at once stack two right-anchored blocks on the same ` +
+          `rows. Fix the timing upstream.`,
+      );
+    }
+    if (gap < MOMENT_MIN_GAP_SECONDS - tolerance) {
+      throw new Error(
+        `Moments ${previous.id} and ${current.id} are only ${gap.toFixed(2)}s apart, ` +
+          `below the ${MOMENT_MIN_GAP_SECONDS}s floor. Without that gap the moments ` +
+          `read as a caption track rather than as deliberate typography, which is the ` +
+          `specific outcome this model exists to prevent.`,
+      );
+    }
+  }
 }
 
 /**
@@ -95,20 +172,19 @@ export const calculatePersianMetadata: CalculateMetadataFunction<
 export const PersianFootageVideo: React.FC<PersianVideoProps> = ({
   format = "vertical",
   shots,
-  cues,
+  moments,
   typographicBeats,
   audio,
   watermark = DEFAULT_WATERMARK,
-  hookText,
-  hookDurationSeconds = 4,
 }) => {
   const { fps, durationInFrames } = useVideoConfig();
-  const typography = TYPOGRAPHY[format];
 
   const toFrames = React.useCallback(
     (seconds: number) => Math.round(seconds * fps),
     [fps],
   );
+
+  assertMomentsArePaced(moments, fps);
 
   const musicVolume = React.useMemo(() => {
     const levels = {
@@ -121,21 +197,15 @@ export const PersianFootageVideo: React.FC<PersianVideoProps> = ({
     // slightly lower level — a bed mixed for speech sounds thin without it.
     if (!audio?.narration) return () => levels.flat;
 
-    // With narration, duck under every cue window. Built as a frame-indexed
-    // lookup rather than a per-frame search over cues: the callback runs once per
-    // frame per render worker, and a linear scan over cues there is wasted work.
-    const ducked = new Uint8Array(Math.max(1, durationInFrames));
-    for (const cue of cues) {
-      const start = Math.max(0, toFrames(cue.startSeconds));
-      const end = Math.min(ducked.length, toFrames(cue.endSeconds));
-      for (let f = start; f < end; f += 1) ducked[f] = 1;
-    }
-
-    return (frame: number) => {
-      const index = Math.min(Math.max(frame, 0), ducked.length - 1);
-      return ducked[index] === 1 ? levels.duck : levels.base;
-    };
-  }, [audio, cues, durationInFrames, toFrames]);
+    // With narration present, the bed sits at its base level throughout. It is
+    // deliberately *not* ducked against the moments: a moment is a typographic
+    // event, not a speech event, so ducking to it would dip the music at moments
+    // where nobody is talking and hold it up during narration that has no moment
+    // on screen — audible pumping uncorrelated with the voice. The predecessor
+    // ducked against the caption list, which worked only because captions covered
+    // every spoken word; that coupling is gone with the captions.
+    return () => levels.base;
+  }, [audio]);
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000000" }}>
@@ -168,54 +238,41 @@ export const PersianFootageVideo: React.FC<PersianVideoProps> = ({
       })}
 
       {/* 2. Audio. Narration is never ducked or processed here — it arrives at
-             the level it was recorded, and the music moves around it. */}
-      {audio?.narration ? (
-        <Audio src={resolveSrc(audio.narration)} />
-      ) : null}
+             the level it was recorded, and the music sits beneath it. */}
+      {audio?.narration ? <Audio src={resolveSrc(audio.narration)} /> : null}
       {audio?.music ? (
         <Audio src={resolveSrc(audio.music)} loop volume={musicVolume} />
       ) : null}
 
-      {/* 3. Hook. */}
-      {hookText ? (
-        <Sequence from={0} durationInFrames={toFrames(hookDurationSeconds)}>
-          <PersianHook
-            text={hookText}
-            format={format}
-            durationFrames={toFrames(hookDurationSeconds)}
-          />
-        </Sequence>
-      ) : null}
-
-      {/* 4. Subtitles. `layout="none"` so the sequence does not introduce a
-             positioned wrapper — the block positions itself against the frame. */}
-      {cues.map((cue) => {
-        const from = toFrames(cue.startSeconds);
-        const duration = Math.max(1, toFrames(cue.endSeconds) - from);
+      {/* 3. Moments. `layout="none"` so the sequence introduces no positioned
+             wrapper — each moment positions itself against the frame. */}
+      {moments.map((moment) => {
+        const from = toFrames(moment.startSeconds);
+        const duration = Math.max(1, toFrames(moment.endSeconds) - from);
         return (
           <Sequence
-            key={cue.id}
+            key={moment.id}
             from={from}
             durationInFrames={duration}
             layout="none"
           >
-            <PersianSubtitleBlock
-              cue={cue}
+            <PersianMomentBlock
+              moment={moment}
               format={format}
-              cueStartFrame={0}
-              cueDurationFrames={duration}
+              durationFrames={duration}
             />
           </Sequence>
         );
       })}
 
-      {/* 5. Watermark, above everything. */}
+      {/* 4. Watermark, above everything. */}
       <PersianWatermarkMark format={format} watermark={watermark} />
 
-      {/* Bottom safe-area guide is intentionally NOT rendered — it exists in
-          tokens for layout math only. Rendering it would put a debug artifact in
-          the output, and a guide that ships is worse than no guide. */}
-      <span style={{ display: "none" }} data-subtitle-bottom={typography.subtitleBottomPx} />
+      {/* Safe-area and zone guides are intentionally NOT rendered — they exist in
+          tokens for layout math only. A debug guide that ships is worse than no
+          guide. `durationInFrames` is read here so the paced-moments check above
+          cannot be dropped as unused by a future refactor. */}
+      <span style={{ display: "none" }} data-total-frames={durationInFrames} />
     </AbsoluteFill>
   );
 };

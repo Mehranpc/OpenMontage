@@ -35,18 +35,48 @@ with little free disk that difference matters, and it wastes minutes per beat.
 ```python
 result = registry.get("direct_clip_search").execute({
     "queries": [
-        {"query": "city street night traffic overhead", "slot_id": "beat-1", "kind": "video"},
-        {"query": "neon signs rain night close up",     "slot_id": "beat-1", "kind": "video"},
+        {"query": "close up pouring coffee into cup morning", "slot_id": "beat-1", "kind": "video"},
+        {"query": "steam rising from coffee cup kitchen",     "slot_id": "beat-1", "kind": "video"},
     ],
-    "filters": {"orientation": "portrait", "min_duration": 6},
+    "filters": {
+        "orientation": "portrait",
+        "min_duration": 6,
+        # Resolution floor *and* ceiling in one number — see below.
+        "min_width": 1080,
+    },
     "output_dir": str(project_dir / "assets" / "clips"),
-    "per_query": 3,
+    "clips_per_query": 2,
 })
 ```
+
+The parameter is `clips_per_query`. `per_query` is not a key this tool accepts, and
+because the schema ignores unknown keys it silently falls back to the default of 3 —
+which is how a 12-beat run became 36 downloads instead of 24.
 
 `orientation` is `"portrait"` for vertical, `"landscape"` for landscape. Add
 `min_duration` at or above the longest beat, so clips too short to fill a beat never
 get downloaded in the first place.
+
+### Resolution: `min_width` is also the ceiling
+
+`_pick_video_rendition` in `tools/video/stock_sources/pexels.py` takes the **largest**
+rendition at or below 1920px *wide*. For a portrait clip "width" is the short edge, so
+the cap does nothing: a vertical clip arrives at 1440×2560 or 1440×2732, which is 22–52
+MB per clip for a 1080×1920 render that then downscales it.
+
+Setting `min_width: 1080` fixes both ends at once, because the picker sorts descending
+and takes the first candidate within `[min_width, 1920]`:
+
+- clips whose best rendition is below 1080 wide are rejected outright, and
+- among the rest the 1080 rendition is still the largest that fits, so nothing above it
+  is fetched.
+
+On the 12-beat run this is the difference between roughly 300 MB and roughly 80 MB.
+
+Do not try to fix this inside `direct_clip_search` or the Pexels adapter. Both are
+shared with `documentary-montage`, which renders landscape and wants the 1920-wide
+rendition; changing the default there would silently degrade a pipeline this one has
+nothing to do with.
 
 **Pexels honours `orientation`; Pixabay does not.** Its API has no orientation
 parameter, so `pixabay_video` results arrive unfiltered and are usually landscape.
@@ -60,8 +90,9 @@ ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p
 Fan out all beats' queries in one call rather than per beat — the tool parallelizes
 internally, and per-beat calls serialize the network waits.
 
-Download 2–3 candidates per query. The extra cost is small and having a second
-option when the first is wrong saves a re-run of the whole stage.
+Download 2 candidates per query, so 2 queries per beat gives 4 candidates to choose
+from. That is enough to have an alternative when the first is wrong and few enough that
+a 12-beat vertical run stays inside a few hundred megabytes.
 
 ## Selection
 
@@ -78,17 +109,33 @@ ffmpeg -y -ss 1 -i clip.mp4 -frames:v 1 -vf scale=320:-1 thumb.jpg
 Then judge, in priority order:
 
 1. **Does it mean the beat?** A clip that is beautiful and wrong is wrong.
-2. **Is it long enough?** Source duration ≥ beat duration. A clip that has to loop
+2. **Does it hold the subject the scene plan declared?** For a beat with
+   `shows_subject: true`, the subject has to be legible — a blurred shape in the
+   background does not count. This is the check that catches a clip which matched its
+   query and still moved the video off its topic.
+3. **Is it long enough?** Source duration ≥ beat duration. A clip that has to loop
    inside one beat reads as a glitch.
-3. **Does the orientation match?** Portrait for vertical, landscape for landscape.
+4. **Does the orientation match?** Portrait for vertical, landscape for landscape.
    A landscape clip cropped to vertical loses its subject to the crop.
-4. **Is there room for text?** The subtitle panel occupies the lower third. A clip
-   whose subject sits exactly there will be covered by it.
-5. **Is the motion compatible?** Fast internal motion plus a camera move is queasy.
+5. **Is there room for text?** Moments occupy a band across the vertical middle —
+   roughly 30%–58% of frame height in vertical, 30%–70% in landscape, anchored to the
+   right. A clip whose subject sits exactly there competes with the type, even through
+   the scrim. Prefer a subject low or left in frame for a beat that carries a moment.
+6. **Is the motion compatible?** Fast internal motion plus a camera move is queasy.
    If the clip moves a lot, revisit the beat's camera and set `none`.
 
 Reject freely. Rejecting a clip costs one more search; shipping a wrong clip costs
 the video's credibility.
+
+### Record why, not just what
+
+Write a one-line `selection_reason` per asset into the manifest, naming what is in
+frame. «قهوه در فنجان روی میز کار» is a reason; "best match" is not.
+
+This is the artifact a reviewer reads to see whether the footage is about the video's
+subject, and it is what made the coffee run's failure visible only after rendering: the
+manifest recorded twelve chosen clips and nothing about what any of them showed, so
+"waist measurement" and "coffee cup" looked identical at the checkpoint.
 
 ## Word timings (`narrated` mode)
 
@@ -105,9 +152,12 @@ misfires, and a transcript in the Arabic script looks plausible while being wron
 every letter that matters.
 
 Falls back to `transcriber` when MLX is unavailable — with `model_size: "large-v3"`
-if the machine can carry it. A smaller model's Persian word boundaries drift, and
-karaoke emphasis on drifted timings is worse than no karaoke: it lands on the wrong
-word, which the viewer reads as a bug.
+if the machine can carry it. A smaller model's Persian word boundaries drift.
+
+Timings feed the sidecar `.srt` rather than any on-screen text, so drift of a tenth of
+a second is now cosmetic instead of a visible bug. Accuracy is still worth having —
+subtitles that lag the voice are irritating — but it is no longer a reason to block the
+stage.
 
 ### Reconciling transcript against script
 
@@ -124,10 +174,48 @@ improvised a whole sentence has changed the video, and that is the user's decisi
 ## Music
 
 `pixabay_music` is the only available provider. Instrumental, no vocals — vocals
-compete with narration and with subtitles simultaneously.
+compete with the narration.
 
 Get a track at least as long as the video; the composition loops it, and a short
-loop becomes obvious.
+loop becomes obvious. The bed is **not optional** when narration is present: the
+gate refuses a narrated project with no music record (`lib/persian_music.py`).
+Record provenance fully so a downstream licence or Content-ID question can be
+answered without re-discovery.
+
+The record is a **`musicTrack`** object (``lib.persian_music.MusicTrack`` /
+``build_music_track``) and it is the **single statement** of the music choice:
+
+```json
+{
+  "path": "projects/<project>/assets/music/bed.mp3",
+  "source": "pixabay_music",
+  "license": { "name": "Pixabay Content License", "url": "https://pixabay.com/service/license-summary/", "downloadedAt": "2026-09-03" },
+  "attribution": "Calm Ambient — leberch",
+  "contentIdRisk": { "level": "low", "reason": "Pixabay Content Licence permits commercial use; third-party claims remain theoretically possible and are recorded, not excluded" }
+}
+```
+
+Rules:
+
+- **One record, one place:** state the bed as ``edit_decisions.persian.musicTrack``.
+  ``persian_compose`` stages ``musicTrack.path`` and builds ``audio.music`` itself;
+  stating both ``musicTrack`` and ``persian.audio.music`` is a hard refusal — the
+  tool cannot tell which file the licence covers (this exact refusal tripped on the
+  real project when both were set). See the compose-director music-refusal paragraphs
+  for the single-statement rule and the licence-honesty wording.
+- **Required for narrated mode:** ``audit_music`` refuses ``narrated=True`` with
+  no track unless deliberate silence is recorded as ``omitMusicReason``.
+  ``unknown`` risk needs explicit ``acknowledgeUnknownMusicRisk``; ``high`` risk is
+  refused outright. Pixabay Content Licence is Instagram-safe; ``contentIdRisk``
+  must use honest "low, recorded" wording — never "guaranteed zero". ``musicFadeSeconds``
+  defaults to 1.5s; volumes are flat 0.5 / base 0.6 / duck 0.36.
+- **Manifest vs edit decisions:** the asset manifest records the *selected* audio
+  clip that was staged; the **edit decisions** carry the word timings and the
+  music record. Word timings travel as ``persian.audio.wordTimings`` (the 149-word
+  list in the real project, from the transcriber output), not as a top-level
+  ``word_timings`` key. The manifest's music entry should show the full
+  ``musicTrack`` shape above when the project is narrated; a bare
+  ``{path, attribution}`` is stale.
 
 ## Manifest contract
 
@@ -138,8 +226,7 @@ loop becomes obvious.
     {
       "beat_id": "beat-1",
       "kind": "video",
-      "path": "assets/clips/pexels_1234567.mp4",
-      "public_path": "clips/pexels_1234567.mp4",
+      "path": "projects/<project>/assets/video/selected/beat-1_pexels_1234567.mp4",
       "duration_seconds": 12.4,
       "width": 1080,
       "height": 1920,
@@ -147,20 +234,28 @@ loop becomes obvious.
       "provider": "pexels",
       "original_url": "https://www.pexels.com/video/1234567/",
       "license": "Pexels License",
-      "attribution": "Video by Jane Doe on Pexels"
+      "attribution": "Video by Jane Doe on Pexels",
+      "shows_subject": true,
+      "selection_reason": "فنجان قهوه روی میز، بخار در نور صبح"
     }
   ],
-  "word_timings": [
-    { "word": "شهر", "start": 0.0, "end": 0.42, "probability": 0.98 }
-  ],
-  "music": { "path": "assets/music/track.mp3", "attribution": "…", "duration_seconds": 95.0 }
+  "musicTrack": {
+    "path": "projects/<project>/assets/music/bed.mp3",
+    "source": "pixabay_music",
+    "license": { "name": "Pixabay Content License", "url": "https://pixabay.com/service/license-summary/", "downloadedAt": "2026-09-03" },
+    "attribution": "Calm Ambient — leberch",
+    "contentIdRisk": { "level": "low", "reason": "Pixabay Content Licence permits commercial use; third-party claims remain theoretically possible and are recorded, not excluded" }
+  }
 }
 ```
 
-`public_path` matters: the composition resolves clip paths through Remotion's
-`staticFile()`, so every clip must end up under `remotion-composer/public/`. Copy or
-symlink it there and record the path relative to `public/`. A clip left outside
-`public/` renders as a black beat with no error.
+Record `path` as the real location on disk — that is the field `persian_compose` reads.
+It copies each shot's source into `public/persian/<run-id>/` at render time and deletes
+the directory afterwards, so **do not pre-stage clips under `public/` and do not treat
+`public_path` as required.** It was required once, and nothing consumed it: the coffee run
+recorded `clips/pexels_*.mp4` for all twelve assets, nothing was ever written to
+`public/clips/`, and the video rendered correctly. What actually produces a black beat is a
+`path` that does not resolve, and `audit_asset_manifest` now checks exactly that.
 
 ## Verification before checkpoint
 
@@ -179,4 +274,10 @@ Also confirm by hand:
 - `ffprobe` agrees with the recorded duration and dimensions on every clip — the
   APIs' metadata is occasionally wrong, and a clip shorter than its beat renders
   black at the tail.
+- **The anchor quota survived selection.** The first and last footage beats have
+  `shows_subject: true`, and at least 40% of footage beats do. The scene plan asked for
+  this; selection is where it gets lost, because the beat whose subject clip was
+  unusable is exactly the beat where a generic one is tempting.
+- Every clip is at most 1920px on its long edge. A 2732px clip means `min_width` was
+  omitted, and the run just downloaded several times more data than it needed.
 - In `narrated` mode: word timings cover the narration duration end to end.

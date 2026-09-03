@@ -15,8 +15,15 @@
  * Stock footage arrives with whatever contrast and saturation its author chose,
  * so a montage of unrelated clips looks like a montage of unrelated clips. A
  * consistent grade plus a vignette pulls them toward one look, and — more
- * practically — darkening the frame is what makes white subtitles readable over
- * a clip that happens to be shot on snow or a white wall.
+ * practically — settling the frame's overall level is what keeps a clip shot on
+ * snow or a white wall from reading as a hole in the video.
+ *
+ * The grade does *not* carry text legibility. That is the moment scrim's job, and
+ * splitting the responsibility was deliberate: a grade heavy enough to guarantee
+ * contrast for text is heavy enough to be visible as a grade on every frame,
+ * including the ones with no text on them — which, in this pipeline, is most of
+ * them. So the grade is light and always on, and the scrim is heavy and only
+ * present under a moment.
  *
  * The grade is entirely static. A grade that animates draws attention to itself,
  * and a per-frame-varying vignette reads as flicker.
@@ -36,10 +43,11 @@ export interface PersianFootageLayerProps {
 }
 
 /**
- * Vignette strength. Strong enough to seat the subtitle panel, weak enough that
- * it is not perceived as a vignette — past about 0.35 it reads as a effect.
+ * Vignette strength. Enough to draw the eye inward, weak enough not to be
+ * perceived as a vignette — past about 0.35 it reads as an effect. Lower than it
+ * once was, because it is no longer doing double duty as text legibility.
  */
-const VIGNETTE_ALPHA = 0.3;
+const VIGNETTE_ALPHA = 0.22;
 /** Radius at which the vignette starts, as a percentage of the frame. */
 const VIGNETTE_CLEAR_STOP = 58;
 
@@ -92,11 +100,13 @@ export const PersianFootageLayer: React.FC<PersianFootageLayerProps> = ({
       />
       <AbsoluteFill
         style={{
-          // A gradient rather than a flat fill: heavier at the bottom, where the
-          // subtitle panel sits, and near-transparent at the top so the footage
-          // keeps its own contrast where nothing overlays it.
+          // Near-symmetrical, unlike its predecessor: that one was heavily
+          // bottom-weighted because a caption panel lived down there, and with the
+          // captions gone the same gradient just darkened the bottom third of
+          // every shot for no reason. A slight bias remains at both edges, which
+          // reads as exposure falloff rather than as an overlay.
           background:
-            "linear-gradient(to bottom, rgba(11,11,12,0.10) 0%, rgba(11,11,12,0.04) 45%, rgba(11,11,12,0.34) 100%)",
+            "linear-gradient(to bottom, rgba(11,11,12,0.14) 0%, rgba(11,11,12,0.03) 42%, rgba(11,11,12,0.18) 100%)",
           pointerEvents: "none",
         }}
       />

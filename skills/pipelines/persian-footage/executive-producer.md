@@ -20,18 +20,44 @@ available and are the better fit there.
 
 ## What this pipeline produces
 
-Real stock footage under Persian text, with:
+Real stock footage carrying **designed typographic moments** — not a subtitled video.
 
 - **Estedad** at real vendored weights (500/700/900) — never a synthesized bold.
-- **Glass subtitle panels** that establish their own contrast, so readability does
-  not depend on how bright the clip behind them happens to be.
-- **Karaoke emphasis** locked to narration word timings when narration exists.
+- **7–9 moments in a 60-second video**, each a figure, a term, a claim, or a hook —
+  the opening moment declares `kind: "hook"` and is the video's opening. The default
+  hook style is claim+qualifier; a flat one-size style exists for an unsplittable
+  single clause but currently cannot pass the silhouette gate. The selection rule,
+  the style definitions, and every sizing value live in the hook section of
+  `skills/pipelines/persian-footage/edit-director.md` and in
+  `remotion-composer/src/persian/tokens.ts` — read them there, not here. Empty frame
+  sits between moments. The narration carries the sentences; the type carries
+  what the ear cannot hold.
+- **One shared right edge.** Every line of every moment anchors to the same column,
+  which is what makes seven to nine separate moments read as one designed video.
+- **A gradient scrim**, not a panel, guaranteeing 5.6:1 contrast against any footage
+  whatsoever — so no clip is ever too bright for the text.
+- **A sidecar `.srt`** built from the narration's word timings. Real, toggleable,
+  indexable subtitles instead of burned-in text.
 - **A four-phase brand watermark** that announces itself once, then retreats.
 - **Motion** from a defined grammar: four spring weights, arrival/exit verbs, and
   a living-hold that never transforms settled glyphs.
 
 Vertical 1080×1920 by default. Landscape 1920×1080 for long-form YouTube; the same
 components serve both, with type scales set per format rather than scaled from one.
+
+### What it deliberately does not produce
+
+A running transcript on screen. That was the first version and it was wrong: with a
+caption under every sentence the viewer reads instead of watching, the footage becomes
+wallpaper behind a text box, and the result is a reels-video with different clips. The
+moment model exists to make the difference structural rather than a matter of taste —
+`audit_moments` refuses a set whose text covers more than the ceiling in
+`lib/persian_moments.py` (`MAX_TEXT_COVERAGE`), and
+`persian_compose` refuses a `cues` key outright.
+
+Karaoke emphasis went with it. It needed word-for-word on-screen text to highlight, and
+there is none. Accessibility is better served by the sidecar `.srt` than it ever was by
+burned-in words.
 
 ## The two non-negotiables
 
@@ -48,8 +74,15 @@ Persian has failure modes Latin does not, and each one has a specific defence:
 | Arabic ي / ك | Letters that look right but break matching | `lib.persian_text.normalize` |
 | Western digits | «2024» inside Persian text | `to_persian_digits` |
 | Wrong line break | Line ends on «به», starts on «را» | DP breaker with grammatical constraints |
-| Overflow / shrink | Text past the panel, or mysteriously small | Canvas measurement + fit ladder |
-| Too fast | Cue gone before it is read | 21 visible chars/second ceiling |
+| Overflow / shrink | Text past its column, or mysteriously small | Canvas measurement + fit ladder |
+| Too fast | Moment gone before it is read | Reading floor in `tokens.ts` (`MOMENT_READ_CPS` vs the sidecar's rate) |
+| Unglossed acronym | «SHBG» alone on screen | `figure`/`term` moments require a lead or tail saying what it counts or names |
+
+The reading rate for a moment is far below the sidecar subtitle's rate — the values
+live in `tokens.ts` (`MOMENT_READ_CPS`) and `lib/persian_srt.py` (`MAX_CPS`) — and
+the gap is the point: a moment is read in a glance *while the footage plays*, against
+motion, with no second chance. A subtitle transcribes words the viewer is already
+hearing.
 
 ### 2. Beauty (زیبایی)
 
@@ -64,6 +97,12 @@ Beauty here is not decoration; it is the absence of specific ugliness:
   clip. Beats with no honest footage become typographic — at most two per video.
 - **No stock-montage look.** A consistent static grade pulls unrelated clips
   toward one look.
+- **No footage that lost the subject.** The video's subject appears in the first beat,
+  the last beat, and at least 40% of footage beats. Without that quota a video about
+  coffee becomes a video about a medical check-up, one defensible query at a time —
+  which is exactly what happened before the rule existed.
+- **No wall of text.** Empty frame between moments is part of the design, not a gap in
+  it. Roughly half the runtime carries no type at all.
 
 ## Stages
 
@@ -73,7 +112,7 @@ Beauty here is not decoration; it is the absence of specific ugliness:
 | `script` | `script-director.md` | script — Persian text, gate-passed |
 | `scene_plan` | `scene-director.md` | scene_plan — beats with English queries |
 | `assets` | `asset-director.md` | asset_manifest — video clips + word timings |
-| `edit` | `edit-director.md` | edit_decisions — cues, shots, watermark |
+| `edit` | `edit-director.md` | edit_decisions — moments, shots, watermark |
 | `compose` | `compose-director.md` | render_report — the MP4 |
 
 Read the stage director skill before working in that stage. Not optional: each one
@@ -87,7 +126,10 @@ so it must not be inferred later.
 ### `narrated` (default)
 
 The user supplies Persian narration audio. Word timings come from transcribing that
-audio, so karaoke emphasis lands on the syllable actually spoken.
+audio and produce the sidecar `.srt`.
+
+Timing accuracy matters less than it once did: nothing on screen is locked to a word, so
+a tenth of a second of drift is cosmetic rather than a visible bug.
 
 The script stage **stops and hands the narration text to the user**. This is a real
 handoff, not a checkpoint to click through — the pipeline cannot continue until the
@@ -95,8 +137,11 @@ audio comes back. Say so plainly and wait.
 
 ### `silent`
 
-No narration. Cue timings derive from reading speed; music carries the pace. Choose
-this when the user wants a result without recording, or before narration exists.
+No narration. Moment timings come from the beat structure; music carries the pace.
+Choose this when the user wants a result without recording, or before narration exists.
+
+There is no sidecar `.srt` in this mode, and that is correct rather than a gap: there is
+no speech to subtitle.
 
 There is a third case the pipeline does not pretend to handle: **synthesized**
 narration. No TTS provider is configured in this installation (all ten report
@@ -147,18 +192,26 @@ Beyond the standard review in `skills/meta/reviewer.md`:
 
 1. **Run the orthography gate.** `lib.persian_text` on every rendered string. Report
    violations as data, not impressions.
-2. **Run the cue audit.** `lib.persian_cues.audit_cues` — reading speed, minimum
-   duration, overlap. An overlapping pair renders two glass panels on one frame.
-3. **Measure actual frames with `lib.persian_verify`.** `verify_frames` for ink, line
-   count, panel envelope, centring, and contrast; `check_reading_order` for RTL;
+2. **Run the moment audit.** `lib.persian_moments.audit_moments` — pacing, gaps,
+   coverage, per-kind limits. Read the `advisories` as well as the `problems`: the
+   advisories carry the judgements the audit deliberately declines to enforce.
+3. **Check the text coverage number.** Above 55% the audit fails it; anywhere near 55%
+   is worth questioning by eye. This is the single number that distinguishes a
+   typographic edit from a caption track, and it is invisible in the MP4.
+4. **Measure actual frames with `lib.persian_verify`.** `verify_frames` for ink, line
+   count, the text column, zone occupancy, and contrast; `anchor_report` for drift
+   across the whole render; `check_moment_arrangement` for RTL on a figure or term;
    `find_watermark` with a no-watermark reference render. A schema-valid
    `render_report` proves none of this, and neither does a hand-rolled brightness
-   threshold — the compose-director records six measured approaches that footage
-   defeats.
-4. **Count typographic beats.** Over the declared budget means footage sourcing
+   threshold — the compose-director records nine measured approaches that footage or
+   the codec defeats.
+5. **Check the subject quota.** First beat, last beat, and ≥40% of footage beats show
+   the video's declared subject. Read the manifest's `selection_reason` lines: if they
+   say "best match" rather than what is in frame, the quota was not actually checked.
+6. **Count typographic beats.** Over the declared budget means footage sourcing
    gave up too early.
-5. **Check attribution.** Both Pexels and Pixabay require it; a clip that cannot be
+7. **Check attribution.** Both Pexels and Pixabay require it; a clip that cannot be
    attributed should not have shipped.
-6. **Confirm `persian_text_verified` was earned.** It is `false` out of
-   `persian_compose` and may only be flipped after `verify_frames(...)["passed"]` and a
-   reading-order check. `verification_notes` should carry numbers, not adjectives.
+8. **Confirm `persian_text_verified` was earned.** It is `false` out of
+   `persian_compose` and may only be flipped after `verify_frames(...)["passed"]` and an
+   arrangement check. `verification_notes` should carry numbers, not adjectives.

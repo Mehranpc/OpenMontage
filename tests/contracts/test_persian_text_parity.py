@@ -213,9 +213,10 @@ process.stdout.write(JSON.stringify(out));
 def test_normalize_parity(ts_results: dict, index: int) -> None:
     """Letter folding and NFC composition agree.
 
-    Divergence here is the most damaging kind: the gate would fold «كي» to «کی» while
-    the renderer left it as-is, so a highlight phrase written by the gate would never
-    match the word the renderer painted.
+    Divergence here is the most damaging kind and also the most invisible: the gate
+    would fold «كي» to «کی» and the renderer would paint «كي», so the text on the frame
+    is not the text that was measured, fitted, and approved — while both sides report
+    success.
     """
     word = CORPUS_WORDS[index]
     assert ts_results["words"][index]["normalize"] == normalize(word), (
@@ -248,7 +249,11 @@ def test_visible_length_parity(ts_results: dict, index: int) -> None:
 
 @pytest.mark.parametrize("index", range(len(CORPUS_WORDS)))
 def test_compare_key_parity(ts_results: dict, index: int) -> None:
-    """Highlight matching agrees."""
+    """Light-verb and enclitic recognition agrees.
+
+    Feeds `break_class` on both sides, so a divergence moves a legal break — the gate
+    fits a line the renderer then breaks somewhere else.
+    """
     word = CORPUS_WORDS[index]
     assert ts_results["words"][index]["compareKey"] == compare_key(word)
 
@@ -298,21 +303,58 @@ def test_sentence_level_parity(ts_results: dict, index: int) -> None:
     assert result["toPersianDigits"] == to_persian_digits(text)
 
 
-def test_max_cps_constant_matches_renderer() -> None:
-    """`MAX_CPS` is the same number in Python and in the renderer's tokens.
+#: Pacing constants both sides enforce, as `(tokens.ts name, Python attribute)`.
+#:
+#: `lib/persian_moments.py` audits a moment set before a render exists; the composition
+#: asserts the same rules when it mounts. Two enforcers of one rule is deliberate — the
+#: cheap check catches it in seconds and the late one cannot be bypassed — but it only
+#: works while both hold the same number. Drift in either direction is silent: a looser
+#: renderer passes what the gate rejected, and a stricter one throws mid-render on a
+#: moment set the gate approved.
+MOMENT_PACING_CONSTANTS = (
+    ("MOMENT_READ_CPS", "READ_CPS"),
+    ("MOMENT_MIN_SECONDS", "MIN_SECONDS"),
+    ("MOMENT_MAX_SECONDS", "MAX_SECONDS"),
+    ("MOMENT_MIN_GAP_SECONDS", "MIN_GAP_SECONDS"),
+)
 
-    Both sides check reading speed. If the renderer's ceiling were higher than the
-    gate's, cues the gate rejected would render anyway; if lower, the renderer would
-    reject cues the gate approved — and it throws rather than degrading.
-    """
-    from lib.persian_cues import MAX_CPS
 
+@pytest.mark.parametrize(("token_name", "python_name"), MOMENT_PACING_CONSTANTS)
+def test_moment_pacing_constant_matches_renderer(
+    token_name: str, python_name: str
+) -> None:
+    """Each pacing constant is the same number in Python and in the renderer's tokens."""
+    from lib import persian_moments
+
+    expected = getattr(persian_moments, python_name)
     tokens = (COMPOSER_DIR / "src" / "persian" / "tokens.ts").read_text(encoding="utf-8")
+
     for line in tokens.splitlines():
-        if "MAX_CPS" in line and "=" in line:
+        if line.startswith(f"export const {token_name} ") or line.startswith(
+            f"export const {token_name}="
+        ):
             value = line.split("=", 1)[1].strip().rstrip(";").split("//")[0].strip()
-            assert float(value) == MAX_CPS, (
-                f"tokens.ts MAX_CPS={value} but lib.persian_cues.MAX_CPS={MAX_CPS}"
+            assert float(value) == float(expected), (
+                f"tokens.ts {token_name}={value} but "
+                f"lib.persian_moments.{python_name}={expected}"
             )
             return
-    pytest.fail("MAX_CPS not found in tokens.ts")
+    pytest.fail(f"{token_name} not found in tokens.ts")
+
+
+def test_the_srt_reading_ceiling_is_looser_than_the_moment_ceiling() -> None:
+    """The two text layers have different jobs, so they must not share a limit.
+
+    A moment is *designed* to be read at a glance while the footage carries the scene, so
+    it is paced at 11 chars/sec. A sidecar subtitle transcribes narration a viewer is
+    already hearing, and the narration's own delivery sets its rate — 21 chars/sec, which
+    is a readability ceiling rather than a design target.
+
+    Asserted as an inequality rather than two exact numbers because the relationship is
+    the actual invariant: if the SRT ceiling were tightened below the moment rate, honest
+    narration would start failing its own transcription.
+    """
+    from lib.persian_moments import READ_CPS
+    from lib.persian_srt import MAX_CPS
+
+    assert MAX_CPS > READ_CPS

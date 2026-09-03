@@ -1,4 +1,4 @@
-﻿# OpenMontage â€" Skill Index
+# OpenMontage â€" Skill Index
 
 > For the full agent onboarding guide, see [`AGENT_GUIDE.md`](../AGENT_GUIDE.md) in the project root.
 
@@ -290,18 +290,30 @@ wrong points. **Video footage only; still images are rejected by a gate.**
 | Skill | File | Stage | Key Capabilities |
 |-------|------|-------|-----------------|
 | **Executive Producer** | `pipelines/persian-footage/executive-producer.md` | `all` | **6-stage orchestration, readability/beauty non-negotiables, video-only rule, Remotion runtime lock** |
-| Idea Director | `pipelines/persian-footage/idea-director.md` | `idea` | Mode + format choice, beat math, per-beat footage feasibility, typographic budget |
-| Script Director | `pipelines/persian-footage/script-director.md` | `script` | ZWNJ/letter/digit orthography gate, reading budget, narration handoff |
-| Scene Director | `pipelines/persian-footage/scene-director.md` | `scene_plan` | English query translation of visual intent, camera-move vocabulary, subject variety |
-| Asset Director | `pipelines/persian-footage/asset-director.md` | `assets` | Video-only acquisition, orientation filtering, word-level timings, transcript/script reconciliation |
-| Edit Director | `pipelines/persian-footage/edit-director.md` | `edit` | Cue construction via `lib.persian_cues`, shot tiling, highlight restraint |
-| Compose Director | `pipelines/persian-footage/compose-director.md` | `compose` | `persian_compose` render, measured frame verification (contrast/RTL/watermark), audio ducking, attribution |
+| Idea Director | `pipelines/persian-footage/idea-director.md` | `idea` | Mode + format choice, visual subject, beat math, per-beat footage feasibility, typographic budget |
+| Script Director | `pipelines/persian-footage/script-director.md` | `script` | ZWNJ/letter/digit orthography gate, speech budget, figures + terms to set in type, narration handoff |
+| Scene Director | `pipelines/persian-footage/scene-director.md` | `scene_plan` | English query translation of visual intent, subject anchor quota, co-presence queries, camera-move vocabulary, shot-scale variety |
+| Asset Director | `pipelines/persian-footage/asset-director.md` | `assets` | Video-only acquisition, orientation + resolution filtering, subject verification, word-level timings |
+| Edit Director | `pipelines/persian-footage/edit-director.md` | `edit` | Selective moment authoring via `lib.persian_moments` (figure/term/statement/hook), shot tiling, pacing audit |
+| Compose Director | `pipelines/persian-footage/compose-director.md` | `compose` | `persian_compose` render, measured frame verification (anchor/contrast/arrangement/watermark), SRT sidecar, flat music bed (never ducked per moment), attribution |
 
-Supporting modules: `lib/persian_text.py` (orthography, break rules), `lib/persian_cues.py`
-(cue construction + audit), `lib/persian_assets.py` (video-only gate),
-`lib/persian_verify.py` (pixel measurement of rendered frames — subtitle band, contrast,
-RTL order, watermark by ablation diff), `remotion-composer/src/persian/` (Estedad loading,
-canvas measurement, DP line breaker, motion grammar, glass subtitles, watermark),
+**Text model: selective moments, not a caption track.** 7–9 designed moments in a
+60-second video, at most 55% text coverage, with enforced empty frame between them. The
+narration carries the sentences; a sidecar `.srt` carries accessibility. There is no
+on-screen transcript, no karaoke, and no separate opening hook layer — the first
+moment, declared `kind: "hook"` (default style claim+qualifier; see the hook section
+of `skills/pipelines/persian-footage/edit-director.md`), is the opening.
+
+Supporting modules: `lib/persian_text.py` (orthography, break rules),
+`lib/persian_moments.py` (moment construction + pacing audit), `lib/persian_srt.py`
+(sidecar subtitle cues + SRT rendering), `lib/persian_scenes.py` (subject anchor quota,
+co-presence, banned stock-medical vocabulary), `lib/persian_assets.py` (video-only gate),
+`lib/persian_sync.py` (anchor/sync audit — every moment's timing re-derived from the
+narration's word timings), `lib/persian_music.py` (music bed + licence/Content-ID gate),
+`lib/persian_verify.py` (pixel measurement of rendered frames — moment zone, right-edge
+anchor, scrim contrast, hero arrangement, watermark by ablation diff),
+`remotion-composer/src/persian/` (Estedad loading, canvas measurement, DP line breaker,
+motion grammar, moment blocks, gradient scrim, watermark),
 `tools/video/persian_compose.py`, `tools/analysis/mlx_whisper_transcriber.py`.
 
 ## Meta Skills

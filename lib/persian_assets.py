@@ -141,18 +141,46 @@ def audit_asset_manifest(
             if not entry.get(field):
                 problems.append(f"{label}: missing {field} — required by the stock licence")
 
-        if not entry.get("public_path"):
+        # The clip has to be findable, and "findable" means on disk at the recorded
+        # path. It deliberately does NOT mean `public_path`.
+        #
+        # This check used to require `public_path`, on the reasoning that Remotion
+        # resolves media through `staticFile()` so every clip must already sit under
+        # `remotion-composer/public/`. That was true of an earlier design and is false
+        # of this one: `persian_compose._stage()` copies each shot's `source` into
+        # `public/persian/<run-id>/` at render time and deletes the directory
+        # afterwards, and it reads `source`, never `public_path`. Nothing in the
+        # rendering path consumes the field.
+        #
+        # The evidence it was inert: the coffee run recorded `clips/pexels_*.mp4` for
+        # all twelve assets, nothing was ever written to `public/clips/`, and the video
+        # rendered correctly anyway. A required field that no consumer reads teaches the
+        # stage to satisfy a check instead of a need — and it crowds out the check that
+        # matters, since a `path` pointing at nothing is exactly the fault that produces
+        # the black beat this warning described.
+        paths = _entry_paths(entry)
+        declared = str(entry.get("path") or "").strip()
+        if not paths:
             problems.append(
-                f"{label}: no public_path. The composition resolves clips through "
-                "staticFile(), so a clip outside remotion-composer/public/ renders "
-                "as a black beat with no error."
+                f"{label}: no path. `persian_compose` stages each shot's source into "
+                "public/ at render time, so the manifest must say where the file is."
+            )
+        elif declared and not Path(declared).expanduser().exists():
+            # Only `path` is resolved, not every path-like field. `_entry_paths` collects
+            # all of them so the image gate cannot be evaded by renaming a key, but
+            # existence is a different question: `public_path` is relative to the
+            # composer's public dir and would fail this check by construction.
+            problems.append(
+                f"{label}: path {declared!r} does not exist. A missing file is the "
+                "black-beat fault: `persian_compose` refuses it with "
+                "FileNotFoundError, but only after the edit stage has been approved."
             )
 
     # One clip per beat, and no clip serving two beats.
     seen_paths: dict[str, str] = {}
     for index, entry in enumerate(assets):
         label = entry.get("beat_id") or f"asset[{index}]"
-        path = entry.get("public_path") or entry.get("path")
+        path = entry.get("path") or entry.get("public_path")
         if not path:
             continue
         if path in seen_paths:

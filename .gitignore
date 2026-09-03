@@ -103,6 +103,14 @@ remotion-composer/public/*
 remotion-composer/public/demo-props/test-*
 remotion-composer/public/demo-props/talking-head-*
 remotion-composer/public/demo-props/caption-burn-*
+# Remotion-local scratch (smoke-test frames/props, diagnostics, tmp renders,
+# and Studio props snapshots — machine-local or regenerable, never commit)
+remotion-composer/.tmp/
+remotion-composer/.diag/
+remotion-composer/.smoke-frames/
+remotion-composer/.smoke-props.json
+remotion-composer/.smoke-zwnj.json
+remotion-composer/.studio-props/
 
 venv/
 .venv/

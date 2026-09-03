@@ -8,12 +8,27 @@
  * produced those files, which makes the studio preview useless exactly when it is
  * most needed.
  *
- * The text exercises the cases that break Persian rendering, deliberately:
- *   - ZWNJ words («می‌کند», «نمی‌شود», «هم‌زمان») — the measure-vs-paint split.
+ * The moments exercise the cases that break Persian rendering, deliberately:
+ *   - ZWNJ words («می‌کند», «شرکت‌کنندگان», «هم‌گروهی») — the measure-vs-paint split.
  *   - A proclitic and an enclitic near a likely break point — the break rules.
- *   - An explicit ezafe («تجربهٔ») — the no-break-after-ezafe rule.
- *   - Mixed Persian, Latin, and digits in one cue — bidi isolation.
- *   - A cue long enough to need three lines — the fitter.
+ *   - An explicit ezafe («مطالعهٔ», «تجربهٔ») — the no-break-after-ezafe rule.
+ *   - Mixed Persian, Latin, and digits in one moment — bidi isolation.
+ *   - A lead long enough to need two lines — the fitter and the ladder.
+ *   - A one-word hero and a sentence-length hero — the two ends of the ladder.
+ *   - An authored build (`revealAfterSeconds`) — additive reveal inside one moment.
+ *
+ * It also demonstrates three rules that are easy to regress and invisible in a
+ * still frame:
+ *
+ * 1. **Segment order is reading order.** «مطالعهٔ دانشگاه اولوی فنلاند روی» is
+ *    written before «۲۲۶۴ نفر» because Persian states the frame before the fact,
+ *    and the component paints the array in order with no sorting of its own. Swap
+ *    the two entries and the render swaps them too — that is the contract.
+ * 2. **The first moment opens the video.** `moment-1` starts at 0.4s, inside
+ *    `OPENING_MOMENT_MAX_START_SECONDS`, because short-form feeds autoplay muted:
+ *    an opening on silent footage has nothing on screen to hold a thumb.
+ * 3. **Pacing.** 20 seconds carry four moments with real gaps between them, not a
+ *    continuous band of text.
  */
 
 import type { PersianVideoProps } from "./types";
@@ -21,46 +36,71 @@ import { DEFAULT_WATERMARK } from "./types";
 
 export const persianDemoFixture: PersianVideoProps = {
   format: "vertical",
-  durationSeconds: 18,
-  hookText: "این متن *فارسی* است",
-  hookDurationSeconds: 3.5,
+  durationSeconds: 20,
   shots: [],
   typographicBeats: [
-    { id: "beat-1", startSeconds: 0, endSeconds: 9 },
-    { id: "beat-2", startSeconds: 9, endSeconds: 18 },
+    { id: "beat-1", startSeconds: 0, endSeconds: 10 },
+    { id: "beat-2", startSeconds: 10, endSeconds: 20 },
   ],
   watermark: DEFAULT_WATERMARK,
-  cues: [
+  moments: [
     {
-      id: "cue-1",
-      startSeconds: 3.6,
-      endSeconds: 7.2,
-      text: "این جمله نشان می‌دهد که نیم‌فاصله درست رندر می‌شود",
-      highlightPhrases: ["نیم‌فاصله"],
+      // Opens the video: on screen by 0.4s, so a muted autoplay still says
+      // something. A figure whose lead names what the number counts — the case the
+      // slot model could not express, which is why it produced a bare «۲۲۶۴» over
+      // a university name with no sentence between them.
+      id: "moment-1",
+      kind: "figure",
+      startSeconds: 0.4,
+      endSeconds: 4.4,
+      anchorText: "مطالعه",
+      segments: [
+        { role: "lead", text: "مطالعهٔ دانشگاه اولوی فنلاند روی" },
+        { role: "hero", text: "۲۲۶۴ نفر" },
+      ],
     },
     {
-      id: "cue-2",
-      startSeconds: 7.4,
-      endSeconds: 11.5,
-      // Long enough to force the line breaker to balance three lines, and
-      // containing «به» and «را» where a greedy wrap would strand them.
-      text: "شکستن خطِ فارسی باید به گونه‌ای باشد که هیچ حرف اضافه‌ای را تنها در پایان خط رها نکند",
-      highlightPhrases: ["شکستن خط"],
+      // A build: the second fact joins the first rather than replacing it, so the
+      // two read as one thought. One moment, two reveals — not two moments, which
+      // is why the inter-moment gap floor does not apply between them.
+      id: "moment-2",
+      kind: "figure",
+      startSeconds: 5.4,
+      endSeconds: 11.2,
+      segments: [
+        { role: "lead", text: "میانگین سنی شرکت‌کنندگان:" },
+        { role: "hero", text: "۴۶ سال" },
+        { role: "lead", text: "با پیگیری", revealAfterSeconds: 2.6 },
+        { role: "hero", text: "۱۲ ساله", revealAfterSeconds: 2.6 },
+      ],
     },
     {
-      id: "cue-3",
-      startSeconds: 11.7,
-      endSeconds: 15,
-      // Mixed direction: Latin word plus Western digits inside Persian text.
-      text: "تجربهٔ ما با Remotion و ۳۰ فریم در ثانیه",
-      highlightPhrases: ["Remotion"],
+      // A term whose gloss follows the name, so the phrase needs a `tail` rather
+      // than a second `lead`: «SHBG» is the subject and the gloss completes it.
+      // Also the bidi case — a Latin acronym as the hero of an RTL phrase.
+      id: "moment-3",
+      kind: "term",
+      startSeconds: 12.2,
+      endSeconds: 16.0,
+      segments: [
+        { role: "hero", text: "SHBG" },
+        { role: "tail", text: "پروتئینی که هورمون‌های جنسی را حمل می‌کند" },
+        { role: "source", text: "دانشگاه اولو، ۲۰۲۴" },
+      ],
     },
     {
-      id: "cue-4",
-      startSeconds: 15.2,
-      endSeconds: 18,
-      text: "خوانایی و زیبایی هم‌زمان",
-      highlightPhrases: ["خوانایی", "زیبایی"],
+      // A statement: the emphasis is a span inside the sentence, not a separate
+      // object. Long enough to exercise the breaker, and it contains «به» and «را»
+      // where a greedy CSS wrap would strand them at a line end. Mixed direction
+      // too: a Latin word and Western digits inside Persian text.
+      id: "moment-4",
+      kind: "statement",
+      startSeconds: 17.0,
+      endSeconds: 20,
+      segments: [
+        { role: "lead", text: "تجربهٔ ما با Remotion و ۳۰ فریم در ثانیه:" },
+        { role: "hero", text: "خطِ فارسی را رها نکن" },
+      ],
     },
   ],
 };
@@ -89,7 +129,7 @@ export const persianEmptyFixture: PersianVideoProps = {
   format: "vertical",
   durationSeconds: 1,
   shots: [],
-  cues: [],
+  moments: [],
   typographicBeats: [],
   watermark: DEFAULT_WATERMARK,
 };

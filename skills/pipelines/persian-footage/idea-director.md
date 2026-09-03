@@ -2,7 +2,7 @@
 
 ## Your job
 
-Turn what the user asked for into a `brief` that fixes seven things. Everything
+Turn what the user asked for into a `brief` that fixes eight things. Everything
 downstream reads these and none of them may be decided later by inference.
 
 1. **production_mode** — `narrated` or `silent`
@@ -10,8 +10,9 @@ downstream reads these and none of them may be decided later by inference.
 3. **render_runtime** — `remotion` (see below; it is presented, not assumed)
 4. **target_duration_seconds**
 5. **The one idea**, as a single Persian sentence
-6. **The beat list**, with a footage-feasibility judgement per beat
-7. **typographic_beat_budget** — at most 2
+6. **The visual subject** — the thing the footage is *of*
+7. **The beat list**, with a footage-feasibility judgement per beat
+8. **typographic_beat_budget** — at most 2
 
 ## Read the source first
 
@@ -24,6 +25,11 @@ Extract, in order of usefulness: the one claim worth 60 seconds, the two or thre
 concrete facts supporting it, and anything visually depictable. That last one
 matters more here than in a generated pipeline: this video is made of real footage,
 so an idea with no visual correlate will fight the whole production.
+
+Note the **figures and named terms** as you read. A sample size, an effect size, a
+protein's acronym, a study's institution — these are what the typographic moments will
+be made of, and a source read without collecting them yields a video with nothing
+specific to set in type. Three or four is plenty for 60 seconds.
 
 ## Choosing production_mode
 
@@ -66,6 +72,29 @@ a capability-extension task, not something to improvise inside a production run.
 that text layer produces fallback-font layout: plausible-looking, wrong metrics,
 and unreadable Persian. Raise a structured blocker instead.
 
+## The visual subject
+
+Name the concrete thing the footage will be *of*, in one or two words, and put it in the
+brief as `visual_subject`.
+
+For «قهوه و هورمون» it is coffee. For a video about sleep it is a bed, a dark room, a
+person sleeping. It is never the abstraction — not "health", not "metabolism" — because
+the abstraction is what stock libraries answer with a doctor and a test tube.
+
+This exists because of a specific failure. A 66-second video about coffee shipped with
+footage of a waist measurement, a bicep, a bathroom scale, test tubes, a glucose monitor,
+a DNA render, and a blood-pressure cuff. Every query was a defensible translation of its
+own beat. Nothing in the brief said the video had to look like it was about coffee, so
+nothing was violated, and the result was a video about a medical check-up.
+
+The scene director turns this into an anchor quota — first beat, last beat, and at least
+40% of footage beats show the subject literally. Naming it here is what makes that
+checkable rather than aspirational.
+
+Ask yourself whether the subject can actually be filmed. "Coffee" can. "Hormonal
+regulation" cannot, and a brief that names it as the subject has deferred the problem to
+the stage least able to solve it.
+
 ## Choosing format
 
 Default `vertical` (1080×1920). Persian short-form content is consumed on phones,
@@ -88,6 +117,26 @@ and a single stock clip has to carry more than it can.
 | 3min+ | 30+ | Landscape territory. Consider acts. |
 
 State the beat count explicitly. The scene director will hold you to it.
+
+### Moments are counted separately from beats
+
+A beat is a *shot*. A moment is a piece of on-screen type. They are not the same thing
+and they do not correspond one-to-one:
+
+| Duration | Beats | Moments |
+|----------|-------|---------|
+| 30s | 6–7 | 4–5 |
+| 60s | 10–14 | 7–9 |
+| 90s | 16–20 | 11–14 |
+
+Roughly one moment every seven or eight seconds, with empty frame between them. Text covers
+at most 55% of the runtime — enforced by `audit_moments`, not advisory — because a video
+with type on every frame is a subtitled video, which is the thing this pipeline exists
+not to be.
+
+You do not author the moments here. You do need to believe there are 7–9 things worth
+setting in type, and if the source yielded no figures and no terms, that is worth saying
+now rather than discovering at the edit stage.
 
 ## Footage feasibility — do this per beat, now
 
@@ -125,7 +174,9 @@ is measured against: a beat that does not serve it does not belong.
   "render_runtime": "remotion",
   "target_duration_seconds": 60,
   "core_idea_fa": "توجه، کمیاب‌ترین چیزی است که داریم.",
+  "visual_subject": "coffee",
   "typographic_beat_budget": 2,
+  "moment_target": 8,
   "beats": [
     {
       "id": "beat-1",
@@ -144,7 +195,8 @@ is measured against: a beat that does not serve it does not belong.
 
 ## Before you checkpoint
 
-- Every one of the seven decisions is present and explicit.
+- Every one of the eight decisions is present and explicit.
+- `visual_subject` names something a camera can point at.
 - `render_runtime` was **presented** to the user, not assumed, and a
   `render_runtime_selection` decision is in the `decision_log` with both options.
 - Beat durations sum to within 10% of the target.
@@ -152,6 +204,16 @@ is measured against: a beat that does not serve it does not belong.
 - The core idea passes the orthography gate — run it through
   `lib.persian_text.normalize` and confirm nothing changes. If it does, your source
   text had Arabic letters or missing ZWNJ, and the whole script will inherit them.
+
+The brief schema is shared across pipelines and requires a `hook`. In this pipeline the
+hook is **editorial input that becomes on-screen type exactly once**: the brief's `hook`
+field shapes the script's first line, and the edit stage sets that line as the opening
+moment with its own declared `kind: "hook"` — never inferred from its shape. The retired
+thing was the separate hook *layer* (a second text layer with its own position that
+overlapped the caption track and was refused as `hookText`), not the idea of opening
+with type. For the two hook styles, the honesty rule, and the selection rule, read the
+hook section of `skills/pipelines/persian-footage/edit-director.md` — it is the single
+source; nothing here duplicates it.
 
 Then present the brief and stop for approval. The user is choosing the video's
 premise here; that is worth a real pause.

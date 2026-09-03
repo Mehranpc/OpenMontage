@@ -1,23 +1,38 @@
-"""Build Persian subtitle cues from word-level transcription output.
+"""Build a Persian subtitle sidecar (`.srt`) from word-level transcription output.
 
-Sits between a transcriber and the Persian Remotion composition. Its input is a
-flat list of timed words; its output is the `cues` array the composition consumes,
-with word timings preserved so karaoke emphasis tracks the voice.
+Sits between a transcriber and the compose stage. Its input is a flat list of timed
+words; its output is an SRT file that ships *beside* the MP4.
+
+## Why this is a sidecar and no longer burned into the frame
+
+This module used to feed the composition's `cues` array, so every spoken phrase was
+painted onto the video with a karaoke cursor tracking the voice. That was removed:
+wall-to-wall painted transcript is the visual signature of automated short-form
+captioning, and it left no empty frame for the footage or for the typographic
+moments that now carry the on-screen text.
+
+Removing it would have cost real accessibility, so the words did not disappear —
+they moved. As an SRT they are selectable, translatable, searchable, and rendered by
+the platform at the size the viewer chose, which is *better* for a viewer who needs
+them than baked pixels at a size chosen here. What is lost is the viewer who watches
+muted with no captions enabled, and that is the trade being made deliberately.
 
 ## The one decision this module makes
 
 Where to end each cue. Everything else is bookkeeping. A cue that is too long
-outruns the reader; one that is too short flickers; one that ends mid-clause reads
-as an error even when the timing is perfect. Three limits shape the grouping, and
-the reasoning for each is worth stating because they conflict:
+outruns the reader; one that is too short flickers; one that ends mid-clause reads as
+an error even when the timing is perfect. Three limits shape the grouping, and the
+reasoning for each is worth stating because they conflict:
 
 * **Clause boundaries.** Persian punctuation («،» «؛» «.» «؟») marks a place the
-  reader already expects to pause, so a cue ending there costs nothing. Splitting
-  a clause in half costs a lot even when both halves fit every other limit.
+  reader already expects to pause, so a cue ending there costs nothing. Splitting a
+  clause in half costs a lot even when both halves fit every other limit.
 
-* **Extent** (`MAX_CUE_SECONDS`, `MAX_CUE_VISIBLE_CHARS`). Past roughly six seconds
-  a single cue loses the reader's thread, and past 84 visible characters the glass
-  panel runs out of room and the renderer starts shrinking type.
+* **Extent** (`MAX_CUE_SECONDS`, `MAX_CUE_VISIBLE_CHARS`). Past roughly six seconds a
+  single cue loses the reader's thread. The character ceiling is now a *reading*
+  limit rather than a layout one: nothing here knows how wide the player will draw
+  the text, so 84 visible characters is the point past which a caption is a
+  paragraph regardless of how it is drawn.
 
 * **Minimum on-screen time** (`MIN_CUE_SECONDS`). Below roughly a second, a cue
   registers as a flash rather than text. Two short clauses are merged rather than
@@ -37,14 +52,15 @@ charged: «می‌روم» costs 5, not 6.
 
 ## What this module deliberately does *not* do
 
-It does not decide line breaks. Those depend on the pixel width of Estedad at the
-chosen size, which only the renderer can measure. Splitting the work here would
-mean guessing at widths and being wrong. See `remotion-composer/src/persian/layout.ts`.
+It does not decide line breaks, and it no longer emits per-word timings. Both existed
+to serve a renderer that measured Estedad on a canvas and moved a karaoke cursor; an
+SRT consumer does neither. Emitting them anyway would be dead data that a future
+reader would assume something depends on.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Iterable, Optional
 
 from lib.persian_text import (
@@ -53,29 +69,35 @@ from lib.persian_text import (
     visible_length,
 )
 
-#: Reading-speed ceiling in visible characters per second. Mirrors `MAX_CPS` in
-#: `remotion-composer/src/persian/tokens.ts`; a contract test pins them together.
+#: Reading-speed ceiling in visible characters per second.
+#:
+#: Unchanged at 21 even though the composition's own `MOMENT_READ_CPS` is 11, and the
+#: difference is the point: a caption is read *while listening*, so it may run at
+#: speaking pace, while a typographic moment is looked at and needs time for the
+#: composition to register before reading starts. Two different jobs, two rates.
 MAX_CPS = 21.0
 
 #: Below this, a cue reads as a flash rather than as text.
 MIN_CUE_SECONDS = 1.0
 
-#: Above this, even a fast reader loses the thread of a single cue.
+#: Past this, a single cue loses the reader's thread.
 MAX_CUE_SECONDS = 6.0
 
-#: Hard ceiling on visible characters per cue, independent of duration. A cue can
-#: satisfy MAX_CPS by simply being long, but past this the *panel* runs out of
-#: room and the renderer's fitter starts shrinking type.
+#: Visible characters past which a caption is a paragraph. A long cue can satisfy
+#: MAX_CPS by simply being long; this is the separate limit that stops it.
 MAX_CUE_VISIBLE_CHARS = 84
 
-#: Persian clause terminators, strongest first. A cue prefers to end on the
-#: strongest boundary available inside its budget.
+#: Ranked clause terminators. A cue prefers to end on the strongest boundary
+#: available inside its budget.
 _STRONG_TERMINATORS = (".", "؟", "!", "…")
 _WEAK_TERMINATORS = ("،", "؛", ":")
 
-#: Gap between consecutive cues, seconds. Small enough to be imperceptible, large
-#: enough that two adjacent cues never occupy the same frame — which would render
-#: two glass panels stacked on top of each other.
+#: Gap between consecutive cues, seconds.
+#:
+#: Kept, and kept tiny, for a different reason than it originally had: an overlap no
+#: longer stacks two panels in a frame, but SRT consumers disagree about what to do
+#: with overlapping cues — some show both, some drop one — so non-overlapping output
+#: is the only portable kind.
 CUE_GAP_SECONDS = 0.001
 
 
@@ -94,14 +116,12 @@ class TimedWord:
 
 @dataclass
 class PersianCue:
-    """One subtitle cue, ready for the composition's `cues` array."""
+    """One subtitle cue, ready to be written into an SRT file."""
 
     id: str
     text: str
     start_seconds: float
     end_seconds: float
-    words: list[dict[str, Any]] = field(default_factory=list)
-    highlight_phrases: list[str] = field(default_factory=list)
 
     @property
     def duration(self) -> float:
@@ -113,20 +133,6 @@ class PersianCue:
         if self.duration <= 0:
             return float("inf")
         return visible_length(self.text) / self.duration
-
-    def to_props(self) -> dict[str, Any]:
-        """The JSON shape `PersianCue` expects in the renderer."""
-        props: dict[str, Any] = {
-            "id": self.id,
-            "text": self.text,
-            "startSeconds": round(self.start_seconds, 3),
-            "endSeconds": round(self.end_seconds, 3),
-        }
-        if self.words:
-            props["words"] = self.words
-        if self.highlight_phrases:
-            props["highlightPhrases"] = self.highlight_phrases
-        return props
 
 
 def _terminator_rank(word: str) -> int:
@@ -143,9 +149,8 @@ def _fits(words: list[TimedWord], extra: TimedWord) -> bool:
     """Whether `extra` can join `words` without breaking an actionable limit.
 
     Only the two limits that **grouping can actually influence** are checked here:
-    total on-screen duration, and the character ceiling that would force the renderer
-    to shrink type. Both bind on the group's own extent, so breaking earlier genuinely
-    fixes them.
+    total on-screen duration, and the character ceiling. Both bind on the group's own
+    extent, so breaking earlier genuinely fixes them.
 
     Reading speed is deliberately *not* checked here, and that is worth explaining
     because it looks like an omission.
@@ -185,7 +190,7 @@ def build_cues(
             `word`/`text`, `start`, and `end`. Both key spellings are accepted so
             the caller does not have to know which provider ran.
         persian_digits: Convert ASCII and Arabic-Indic digits to Persian-Indic.
-            On by default: a Persian video showing Western digits looks unfinished,
+            On by default: a Persian caption showing Western digits looks unfinished,
             and the conversion is safe because only digit glyphs are substituted.
         id_prefix: Prefix for generated cue IDs.
 
@@ -196,7 +201,7 @@ def build_cues(
     Raises:
         ValueError: if a word entry lacks usable timing. Silently dropping it
             would shift every subsequent cue's timing by that word's duration,
-            producing subtitles that drift out of sync with no visible cause.
+            producing captions that drift out of sync with no visible cause.
     """
     parsed: list[TimedWord] = []
     for index, raw in enumerate(words):
@@ -226,9 +231,6 @@ def build_cues(
     for index, group in enumerate(groups):
         start = group[0].start
         end = group[-1].end
-        # Trim the tail so consecutive cues never share a frame. Without this two
-        # glass panels can be on screen simultaneously for one frame, which reads
-        # as a flicker.
         if index + 1 < len(groups):
             end = min(end, groups[index + 1][0].start - CUE_GAP_SECONDS)
         end = max(end, start + 0.05)
@@ -239,14 +241,6 @@ def build_cues(
                 text=" ".join(w.text for w in group),
                 start_seconds=start,
                 end_seconds=end,
-                words=[
-                    {
-                        "text": w.text,
-                        "startSeconds": round(w.start, 3),
-                        "endSeconds": round(w.end, 3),
-                    }
-                    for w in group
-                ],
             )
         )
 
@@ -375,7 +369,7 @@ def audit_cues(cues: list[PersianCue]) -> list[str]:
         if visible_length(cue.text) > MAX_CUE_VISIBLE_CHARS:
             problems.append(
                 f"{cue.id}: {visible_length(cue.text)} visible chars exceeds "
-                f"{MAX_CUE_VISIBLE_CHARS} — the renderer will shrink the type"
+                f"{MAX_CUE_VISIBLE_CHARS} — the caption is a paragraph"
             )
         if cue.duration < MIN_CUE_SECONDS:
             problems.append(
@@ -392,11 +386,55 @@ def audit_cues(cues: list[PersianCue]) -> list[str]:
         if later.start_seconds < earlier.end_seconds:
             problems.append(
                 f"{earlier.id} overlaps {later.id} "
-                f"({earlier.end_seconds:.3f}s > {later.start_seconds:.3f}s) — "
-                "two glass panels would render on the same frame"
+                f"({earlier.end_seconds:.3f}s > {later.start_seconds:.3f}s) — SRT "
+                "consumers disagree about overlapping cues, so the file is not portable"
             )
 
     return problems
+
+
+def _srt_timestamp(seconds: float) -> str:
+    """Format one time as `HH:MM:SS,mmm`.
+
+    Milliseconds are **truncated, not rounded**. Rounding up can push a cue's end
+    past the next cue's start when they are separated by `CUE_GAP_SECONDS`, which is
+    below one millisecond — reintroducing the overlap the gap exists to prevent, in
+    the output file only, where `audit_cues` can no longer see it.
+    """
+    if seconds < 0:
+        seconds = 0.0
+    total_ms = int(seconds * 1000)
+    hours, remainder = divmod(total_ms, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    secs, millis = divmod(remainder, 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
+
+def render_srt(cues: list[PersianCue]) -> str:
+    """Render cues as SRT text.
+
+    Two details are load-bearing for Persian and easy to get wrong:
+
+    **No RLM or RTL override is inserted.** The temptation is to prefix each line
+    with U+200F so players lay it out right-to-left. It is unnecessary — the Unicode
+    bidi algorithm derives paragraph direction from the first strong character, which
+    in Persian text is Persian — and it is harmful, because some players render the
+    mark as a visible box and others include it in the text they hand to a translation
+    service.
+
+    **Cue numbering is 1-based and contiguous.** Several players stop parsing at the
+    first non-sequential index rather than reporting an error, so a gap silently
+    truncates the captions from that point on.
+
+    Line terminators are CRLF, which the SRT convention uses and which every player
+    accepts; LF-only files are mis-parsed by a few older ones.
+    """
+    blocks: list[str] = []
+    for number, cue in enumerate(cues, start=1):
+        start = _srt_timestamp(cue.start_seconds)
+        end = _srt_timestamp(cue.end_seconds)
+        blocks.append(f"{number}\r\n{start} --> {end}\r\n{cue.text}\r\n")
+    return "\r\n".join(blocks)
 
 
 __all__ = [
@@ -408,4 +446,5 @@ __all__ = [
     "PersianCue",
     "build_cues",
     "audit_cues",
+    "render_srt",
 ]
