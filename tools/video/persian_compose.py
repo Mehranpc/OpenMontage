@@ -47,6 +47,7 @@ two independent guards, because the failure they prevent is silent.
 from __future__ import annotations
 
 import json
+import logging
 import secrets
 import shutil
 import subprocess
@@ -59,6 +60,12 @@ from lib.persian_moments import (
     OPENING_MAX_START_SECONDS,
     audit_moments,
     build_moments,
+)
+from lib.persian_render_qa import (
+    DEAD_LUMA_FAIL,
+    DEAD_LUMA_WARN,
+    audit_render_luminance,
+    find_coverage_gaps,
 )
 from lib.persian_music import audit_music, audio_props_with_music, build_music_track
 from lib.persian_srt import audit_cues, build_cues, render_srt
@@ -277,6 +284,32 @@ class PersianCompose(BaseTool):
             shutil.rmtree(staging_dir, ignore_errors=True)
             return ToolResult(success=False, error=str(exc))
 
+        # Pre-render coverage gate. A derived plate narrower than its authored
+        # beat frees seconds holding neither footage nor plate — the
+        # composition background there is black — and finding that out after a
+        # ~200s render wastes the render. Checked here, after derivation and
+        # before anything is staged for the renderer.
+        gaps = find_coverage_gaps(
+            [
+                (float(span["startSeconds"]), float(span["endSeconds"]))
+                for span in [*props["shots"], *props["typographicBeats"]]
+            ],
+            float(props["durationSeconds"]),
+        )
+        if gaps:
+            shutil.rmtree(staging_dir, ignore_errors=True)
+            ranges = ", ".join(f"{start:.1f}-{end:.1f}s" for start, end in gaps)
+            return ToolResult(
+                success=False,
+                error=(
+                    "the timeline has an uncovered stretch with neither "
+                    "footage nor typographic plate, which renders as black: "
+                    + ranges
+                    + ". Restore a footage shot under each stretch or attach "
+                    "typography to it."
+                ),
+            )
+
         try:
             props_path.write_text(
                 json.dumps(props, ensure_ascii=False), encoding="utf-8"
@@ -336,6 +369,59 @@ class PersianCompose(BaseTool):
                     error=f"Render reported success but {output_path} does not exist.",
                 )
 
+            try:
+                qa = audit_render_luminance(
+                    output_path, beat_windows=props["typographicBeats"]
+                )
+            except RuntimeError as exc:
+                return ToolResult(
+                    success=False,
+                    data={"output_path": str(output_path)},
+                    artifacts=[str(output_path)],
+                    error=(
+                        "The render finished but its luminance could not be "
+                        f"measured, so delivery is refused rather than granted "
+                        f"blind: {exc} The file is left on disk for inspection."
+                    ),
+                )
+            if qa.warn_runs:
+                ranges = ", ".join(
+                    f"{run.start_seconds:.1f}-{run.end_seconds:.1f}s "
+                    f"(YAVG {run.mean_yavg:.1f})"
+                    for run in qa.warn_runs
+                )
+                logging.getLogger(__name__).warning(
+                    "Dark-but-legal stretch in %s (below YAVG %.0f, at or "
+                    "above %.0f): %s. Real footage with visible texture, "
+                    "not a failure — review it rather than re-rendering.",
+                    output_path,
+                    DEAD_LUMA_WARN,
+                    DEAD_LUMA_FAIL,
+                    ranges,
+                )
+            if not qa.passed:
+                ranges = ", ".join(
+                    f"{run.start_seconds:.1f}-{run.end_seconds:.1f}s "
+                    f"(YAVG {run.mean_yavg:.1f})"
+                    for run in qa.dead_runs
+                )
+                return ToolResult(
+                    success=False,
+                    data={
+                        "output_path": str(output_path),
+                        "luminance_qa": qa.to_dict(),
+                    },
+                    artifacts=[str(output_path)],
+                    error=(
+                        "The render contains a near-black dead stretch and "
+                        "cannot be delivered: "
+                        + ranges
+                        + ". The file is left on disk for inspection. Either "
+                        "restore footage under that stretch or attach "
+                        "typography to it, then re-render."
+                    ),
+                )
+
             subtitle_path, subtitle_advisories = self._write_subtitles(
                 persian, output_path
             )
@@ -365,6 +451,7 @@ class PersianCompose(BaseTool):
                     "subtitle_advisories": subtitle_advisories,
                     "attributions": attributions,
                     "persian_text_verified": False,  # Set by the reviewer, not here.
+                    "luminance_qa": qa.to_dict(),
                 },
                 artifacts=artifacts,
             )
@@ -471,6 +558,9 @@ class PersianCompose(BaseTool):
 
         duration_seconds = float(persian["durationSeconds"])
         moments = self._build_moments(persian, duration_seconds)
+        typographic_beats = self._derive_beat_windows(
+            persian.get("typographicBeats") or [], moments
+        )
 
         props: dict[str, Any] = {
             "format": str(persian.get("format") or "vertical"),
@@ -487,7 +577,9 @@ class PersianCompose(BaseTool):
             # `Root.tsx` now also defaults these to empty, so this is the second of
             # two independent guards. Both are cheap; the failure they prevent is
             # silent and costs a whole render to notice.
-            "typographicBeats": list(persian.get("typographicBeats") or []),
+            # The windows are derived from the moments' spans (see
+            # `_derive_beat_windows`); the authored numbers are never trusted.
+            "typographicBeats": typographic_beats,
         }
         if audio_props:
             props["audio"] = audio_props
@@ -576,6 +668,77 @@ class PersianCompose(BaseTool):
                 )
 
         return [moment.to_props() for moment in built]
+
+    @staticmethod
+    def _derive_beat_windows(
+        authored: list[dict[str, Any]], moments: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Derive each beat's plate windows from the typography inside it.
+
+        A beat carries only id/startSeconds/endSeconds — no moment reference —
+        so association is by time overlap: a beat owns exactly the moments its
+        authored window overlaps. Owned moments that touch or overlap merge
+        into one contiguous run; a gap between owned moments splits the beat
+        into one window per run, so no plate ever covers a stretch with no
+        typography on it. Moments keep their times (the sync gate owns them);
+        the plate moves. Entrance/exit offsets are not subtracted: text is
+        arriving or leaving during them, and a plate cut to an animation
+        curve would flash footage mid-transition.
+
+        A beat overlapping no moment is refused: an empty plate is near-black
+        by design. Time freed when a plate shrinks holds neither footage nor
+        beat; the pre-render coverage gate in `execute` refuses the run until
+        the edit stage restores footage there.
+        """
+        derived: list[dict[str, Any]] = []
+        for index, beat in enumerate(authored):
+            beat_id = str(beat.get("id") or f"beat-{index + 1}")
+            start = float(beat["startSeconds"])
+            end = float(beat["endSeconds"])
+            owned = sorted(
+                (
+                    moment
+                    for moment in moments
+                    if float(moment["startSeconds"]) < end
+                    and float(moment["endSeconds"]) > start
+                ),
+                key=lambda moment: float(moment["startSeconds"]),
+            )
+            if not owned:
+                raise ValueError(
+                    f"typographic beat {beat_id} ({start:.1f}-{end:.1f}s) "
+                    "overlaps no typographic moment. A plate with no typography "
+                    "is an empty near-black screen, so the render is refused "
+                    "rather than painting it. Either attach a moment to this "
+                    "stretch or restore a footage shot under it."
+                )
+            runs: list[list[dict[str, Any]]] = [[owned[0]]]
+            for moment in owned[1:]:
+                if float(moment["startSeconds"]) <= float(
+                    runs[-1][-1]["endSeconds"]
+                ):
+                    runs[-1].append(moment)
+                else:
+                    runs.append([moment])
+            for run_index, run in enumerate(runs):
+                # Split windows keep the authored id only when nothing split:
+                # the composition keys each beat Sequence by id, and two
+                # entries sharing one would collide there.
+                run_id = (
+                    beat_id if len(runs) == 1 else f"{beat_id}-{run_index + 1}"
+                )
+                derived.append(
+                    {
+                        "id": run_id,
+                        "startSeconds": min(
+                            float(moment["startSeconds"]) for moment in run
+                        ),
+                        "endSeconds": max(
+                            float(moment["endSeconds"]) for moment in run
+                        ),
+                    }
+                )
+        return derived
 
     @staticmethod
     def _write_subtitles(

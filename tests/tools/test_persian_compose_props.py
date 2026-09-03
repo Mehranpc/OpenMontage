@@ -124,13 +124,20 @@ class TestNoKeyIsInheritable:
         props, _ = _build(_persian(clip), staging)
         assert props["typographicBeats"] == []
 
-    def test_present_typographic_beats_are_passed_through(
+    def test_present_typographic_beats_are_derived_from_overlapping_moments(
         self, clip: Path, staging: Path
     ) -> None:
-        """The guard must not defeat the feature it guards."""
+        """The guard must not defeat the feature it guards.
+
+        The plate window follows the type, not the authored numbers: the
+        authored window (0-2s) only partly covers the moment (0.4-4.4s), so
+        the props carry the moment's span and no empty plate outruns the text.
+        """
         beats = [{"id": "b1", "startSeconds": 0.0, "endSeconds": 2.0}]
         props, _ = _build(_persian(clip, typographicBeats=beats), staging)
-        assert props["typographicBeats"] == beats
+        assert props["typographicBeats"] == [
+            {"id": "b1", "startSeconds": 0.4, "endSeconds": 4.4}
+        ]
 
     def test_no_retired_key_reaches_the_props(
         self, clip: Path, staging: Path

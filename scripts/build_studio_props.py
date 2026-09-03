@@ -123,7 +123,9 @@ def main() -> None:
         "durationSeconds": duration_seconds,
         "shots": shots,
         "moments": moments,
-        "typographicBeats": list(persian.get("typographicBeats") or []),
+        "typographicBeats": PersianCompose._derive_beat_windows(
+            persian.get("typographicBeats") or [], moments
+        ),
     }
     if audio_props:
         props["audio"] = audio_props
