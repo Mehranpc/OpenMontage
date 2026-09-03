@@ -53,8 +53,14 @@ def hook() -> dict:
     # Moment 3: an ordinary two-line hero, for the leading comparison.
     ordinary = moments[2]["segments"]
 
-    driver = COMPOSER_DIR / ".tmp" / "hook_driver.mjs"
-    bundle = COMPOSER_DIR / ".tmp" / "hook_driver.bundle.mjs"
+    # `.tmp/` is scratch: gitignored, and created by whichever run needs it
+    # first. Without this the fixture raised FileNotFoundError whenever test
+    # ordering put it before any compose-driven test, which is a flake that
+    # looks like a layout failure.
+    scratch = COMPOSER_DIR / ".tmp"
+    scratch.mkdir(parents=True, exist_ok=True)
+    driver = scratch / "hook_driver.mjs"
+    bundle = scratch / "hook_driver.bundle.mjs"
 
     driver.write_text(
         """
