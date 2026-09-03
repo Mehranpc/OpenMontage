@@ -153,7 +153,11 @@ Not answerable:
 
 A beat in the second group has two honest outcomes: **rephrase it** so it has a
 visual correlate, or **mark it typographic**. Marking it is allowed but budgeted —
-at most 2 per video, and record the budget in the brief.
+at most 2 per video, and record the budget in the brief. A typographic beat paints
+an opaque near-black void plate (`#0B0B0C`, measured luma ~17/255) that a viewer
+reads as a broken or missing clip, not as design — so it is a last resort, allowed
+only when no usable footage exists, and it must carry typography across its whole
+window (see the asset-director for the full rule `persian_compose` enforces).
 
 Do not resolve the tension by choosing a loosely-related clip. A clip that does not
 mean what the narration says actively damages the video; the viewer notices the

@@ -152,7 +152,9 @@ Vary at least one of:
 ## Typographic beats
 
 Only for beats the idea director marked infeasible, within the declared budget
-(at most 2). Mark them explicitly with `typographic: true` and no queries.
+(at most 2). Mark them explicitly with `typographic: true` and no queries. A
+typographic beat renders as a near-black void plate of last resort (see the
+asset-director for the full rule), never as a way to skip footage that exists.
 
 If you find yourself wanting a third, the problem is upstream: send the brief back
 rather than exceeding the budget. Three typographic beats in a 60-second video is

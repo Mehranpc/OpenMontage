@@ -193,10 +193,12 @@ export interface PersianShot {
 /**
  * A stretch of timeline with no footage behind it.
  *
- * Exists because some concepts have no honest stock clip, and a wrong clip is
- * worse than none — the coffee video that filled its hormone beats with
- * laboratory and blood-test footage is what a wrong clip costs. Capped upstream
- * so this cannot quietly become the whole video.
+ * Use only when no honest stock clip exists: never substitute a plate for
+ * footage that is available and usable. The plate paints opaque
+ * `voidBackground` (`#0B0B0C`, luma ~17/255), which reads as broken or
+ * missing footage rather than design, so every plate must carry typography
+ * across its whole window. Capped upstream so this cannot quietly become
+ * the whole video.
  */
 export interface PersianTypographicBeat {
   readonly id: string;

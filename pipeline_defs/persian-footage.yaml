@@ -265,6 +265,7 @@ stages:
       - Every moment's text passes the Persian orthography gate
       - "In narrated mode: audio.wordTimings is present so persian_compose writes the sidecar SRT"
       - Watermark text is present
+      - "Every typographic beat carries typography across its whole window: the plate window is derived from the type span, a beat with no type fails compose, and a beat second with no type on screen is dead screen, not coverage"
     success_criteria:
       - Schema-valid edit_decisions artifact
       - edit_decisions.persian.moments[] present and audit-clean
@@ -297,6 +298,7 @@ stages:
       - "render_runtime MUST remain 'remotion'. The Persian composition depends on Estedad loading through FontFace and on canvas text measurement; neither exists on the ffmpeg path. A silent swap to ffmpeg or hyperframes is a CRITICAL governance violation — raise a structured blocker instead."
       - Output dimensions match the chosen format exactly
       - "Frames are MEASURED with lib.persian_verify, not eyeballed: verify_frames for ink, per-line right-edge anchor offset, text column, zone occupancy, and contrast. Frames are sampled at each MOMENT's midpoint, not at fixed intervals — text covers at most 55% of the runtime by design, so a blindly chosen window probably contains no type. Hand-rolled brightness or contrast detectors do not work over footage; the compose-director records twelve approaches that footage or the codec defeated."
+      - "Post-render luminance gate: persian_compose refuses success when any contiguous run of >= 1.0s averages below YAVG 22, and warns on runs below 30 — a legitimately dark shot measures ~28 and stays legal. Coverage by an opaque plate is not evidence the screen is alive."
       - "GAPS ARE MEASURED WITH check_gap_is_empty, NOT verify_frames. A gap has no scrim by design, so ink_mask reads the footage — 31-99% 'ink' — and the moment instrument reported a confident scrim failure on a correctly empty frame. check_gap_is_empty uses accent colour separation, which needs nothing behind it. Sample the middle of EVERY gap, including the head and the tail."
       - "State the remaining pixel limit honestly: every moment now paints an accent hero, so check_gap_is_empty detects an overrun of any kind into a gap — statement gaps included. Intra-word glyph order is the one thing still not verified in pixels. Record it in verification_notes."
       - "THE ANCHOR CHECK IS THE IMPORTANT ONE: every line of every moment shares one right edge, and a line short of it means a flex row centred instead of anchoring. Centred text is still inside the width budget and still inside the zone, so a width-only check passes it. Offsets are reported PER LINE — a block maximum is satisfied by one correct line beside several that drifted."
@@ -319,3 +321,4 @@ stages:
       - render_report.moment_count and render_report.text_coverage are recorded
       - "In narrated mode: render_report.subtitle_path points at an existing SRT"
       - render_report.attributions[] covers every clip used
+      - "Post-render luminance gate holds: no contiguous run of >= 1.0s averages below YAVG 22; runs below 30 are warnings, not failures"

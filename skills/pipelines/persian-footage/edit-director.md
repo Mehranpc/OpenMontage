@@ -530,6 +530,14 @@ covered = sum(s["endSeconds"] - s["startSeconds"] for s in shots)
 covered += sum(b["endSeconds"] - b["startSeconds"] for b in typographic_beats)
 assert abs(covered - duration_seconds) < 0.5, f"{covered=} vs {duration_seconds=}"
 
+# Footage-XOR-beat coverage is NOT evidence the screen is alive: a beat second
+# counts as alive only while typography occupies it. `persian_compose` derives
+# each plate window from the on-screen span of its typography, fails the run on
+# a beat with none assigned, and refuses success when any contiguous run of
+# >= 1.0s averages below YAVG 22 (runs below 30 pass with a warning — a
+# legitimately dark shot measures ~28 and stays legal). Predict that gate here;
+# do not be surprised by it.
+
 # Orthography survived the copy into edit_decisions — every segment, not one field.
 for moment in moments:
     for segment in moment.segments:

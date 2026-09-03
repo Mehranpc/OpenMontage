@@ -94,7 +94,9 @@ Beauty here is not decoration; it is the absence of specific ugliness:
   sub-pixel transform on Persian's thin horizontal joins produces visible edge
   buzz.
 - **No mismatched footage.** A clip that contradicts the narration is worse than no
-  clip. Beats with no honest footage become typographic — at most two per video.
+  clip. Beats with no honest footage become typographic — at most two per video —
+  but a typographic beat is a near-black void plate of last resort, never a
+  substitute for footage that exists, and it must carry typography throughout.
 - **No stock-montage look.** A consistent static grade pulls unrelated clips
   toward one look.
 - **No footage that lost the subject.** The video's subject appears in the first beat,

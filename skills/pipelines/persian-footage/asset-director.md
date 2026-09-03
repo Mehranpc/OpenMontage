@@ -23,7 +23,17 @@ Concretely:
   most tempted to accept it.
 - Do not call `pexels_image`, `pixabay_image`, or any `image_generation` tool.
 - If no video exists for a beat, the beat becomes typographic (within budget) or the
-  query changes. Never substitute a photo.
+  query changes. Never substitute a photo. A typographic beat renders as an opaque
+  void plate in `voidBackground` (`#0B0B0C`, measured luma ~17/255) — a viewer reads
+  that near-black screen as a broken or missing clip, not as art direction.
+- The plate is a LAST RESORT: never mark a beat typographic while any unused,
+  thematically usable downloaded candidate exists on disk for that scene. Check the
+  downloaded candidates first, and record in the checkpoint which candidates you
+  checked and why none of them can serve the beat.
+- Every typographic beat must carry typography across its whole window.
+  `persian_compose` derives the plate from the on-screen span of its typography and
+  fails the run on a beat with none assigned, so an empty plate second is a failed
+  run, not a covered one.
 
 ## Acquisition
 
