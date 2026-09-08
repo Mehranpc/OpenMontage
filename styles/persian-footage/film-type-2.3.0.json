@@ -1,0 +1,156 @@
+{
+  "profile": "film-type",
+  "profileVersion": "2.3.0",
+  "layoutVersion": 3,
+  "name": "Pathway Film Type",
+  "scope": "persian-footage",
+  "rollout": "opt-in",
+  "formats": {
+    "vertical": {
+      "safeArea": {
+        "top": 0.08,
+        "bottom": 0.2,
+        "side": 0.08
+      },
+      "columnFraction": 0.62,
+      "wideColumnFraction": 0.82
+    },
+    "landscape": {
+      "safeArea": {
+        "top": 0.08,
+        "bottom": 0.08,
+        "side": 0.08
+      },
+      "columnFraction": 0.4,
+      "wideColumnFraction": 0.7
+    }
+  },
+  "palette": {
+    "obsidian": "#191919",
+    "charcoal": "#2C2C2C",
+    "deepViolet": "#3A1772",
+    "electricBlue": "#1789FC",
+    "royalBlue": "#004FFF",
+    "signalRed": "#ED1C24",
+    "neonRed": "#FF2D00",
+    "electricYellow": "#FFEA00",
+    "amber": "#FFB800",
+    "neonGreen": "#39FF14",
+    "pureWhite": "#FFFFFF",
+    "boneWhite": "#F0EDE6"
+  },
+  "typography": {
+    "fontFamily": "Estedad",
+    "heroWeight": 700,
+    "supportWeight": 500,
+    "ink": "#FFFFFF",
+    "darkInk": "#191919",
+    "accent": "#1789FC",
+    "titleLadderPx": [
+      128,
+      116,
+      104,
+      92,
+      84
+    ],
+    "statementLadderPx": [
+      112,
+      104,
+      96,
+      88,
+      80,
+      72
+    ],
+    "figureLadderPx": [
+      248,
+      224,
+      200,
+      176,
+      152
+    ],
+    "titleTailRatio": 0.8,
+    "contextPx": 44,
+    "supportPx": 58,
+    "sourcePx": 44,
+    "quantityUnitPx": 64,
+    "persianLetterSpacing": 0,
+    "glow": false,
+    "decorativeRule": false,
+    "supportOpacity": 1,
+    "inlineEmphasis": "blue-underline-white-ink"
+  },
+  "layout": {
+    "inkPaddingPx": 12,
+    "lineGapPx": 18,
+    "phraseGapPx": 20,
+    "contextGapPx": 22,
+    "sourceGapPx": 30,
+    "quantityGapPx": 18,
+    "revealGroupGapPx": 34,
+    "maxStackFraction": 0.6,
+    "edgeInsetPx": 10,
+    "upperCentre": 0.32,
+    "middleCentre": 0.49,
+    "motionClearancePx": 18,
+    "collisionMarginPx": 12,
+    "autoRequiresReviewedAvoidRegions": true
+  },
+  "contrast": {
+    "darkField": "#191919",
+    "lightField": "#FFFFFF",
+    "strengths": {
+      "soft": 0.66,
+      "standard": 0.76,
+      "strong": 0.86
+    },
+    "defaultStrength": "standard",
+    "plateauStop": 0.68,
+    "plateauPaddingPx": 36,
+    "footageGrade": "none"
+  },
+  "motion": {
+    "enterSeconds": 0.56,
+    "exitSeconds": 0.22,
+    "travelPx": 18,
+    "lineDelaySeconds": 0.06,
+    "cutInSeconds": 0.12,
+    "scrimEnterSeconds": 0.18
+  },
+  "watermark": {
+    "layout": "two-line",
+    "persianFontPx": 30,
+    "latinFontPx": 24,
+    "latinFontFamily": "Arial",
+    "latinWeight": 400,
+    "lineGapPx": 6,
+    "paddingPx": 8,
+    "maxRelocations": 1,
+    "minDwellSeconds": 6,
+    "transitionSeconds": 0.25,
+    "preferNonTopPosition": true,
+    "fieldAlpha": 0.8,
+    "fieldPaddingPx": 22,
+    "safeAreas": {
+      "vertical": {
+        "top": 0.14,
+        "bottom": 0.25,
+        "left": 0.08,
+        "right": 0.14
+      },
+      "landscape": {
+        "top": 0.08,
+        "bottom": 0.08,
+        "left": 0.08,
+        "right": 0.08
+      }
+    },
+    "allowedZones": [
+      "mid-left",
+      "lower-left",
+      "mid-right",
+      "lower-right"
+    ],
+    "preferStablePosition": true,
+    "pairWithText": true
+  }
+}

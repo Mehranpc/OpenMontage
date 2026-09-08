@@ -266,6 +266,9 @@ class PersianMoment:
     # the scrim plateau (``height/2 + margin`` around the optical centre) from
     # the same geometry the renderer used. Mirrors ``FittedMoment.heightPx``.
     stack_height_px: float | None = None
+    stack_width_px: float | None = None
+    # Resolved once by the browser fitter; renderer and collision planner consume it.
+    layout_geometry: dict[str, float] | None = None
 
     @property
     def duration(self) -> float:
@@ -417,6 +420,10 @@ class PersianMoment:
             props["anchorText"] = self.anchor_text
         if self.stack_height_px is not None:
             props["stackHeightPx"] = round(float(self.stack_height_px), 2)
+        if getattr(self, "stack_width_px", None) is not None:
+            props["stackWidthPx"] = round(float(self.stack_width_px), 2)
+        if self.layout_geometry is not None:
+            props["layoutGeometry"] = dict(self.layout_geometry)
         return props
 
 
@@ -691,9 +698,10 @@ def is_claim_qualifier_hook(moment: PersianMoment) -> bool:
     ]
     if len(non_source) != 2:
         return False
-    if non_source[0].role != "hero" or non_source[1].role != "tail":
-        return False
-    return not any(segment.accent_words for segment in moment.segments)
+    # Claim+qualifier is deliberately distinct from an ordinary lead+hero stack.
+    # Only the authored hero-then-tail form receives hook-scoped sizing/tokens.
+    valid_order = (non_source[0].role, non_source[1].role) == ("hero", "tail")
+    return valid_order and not any(segment.accent_words for segment in moment.segments)
 
 
 def is_flat_display_hook(moment: PersianMoment) -> bool:
@@ -881,7 +889,7 @@ def _audit_one(moment: PersianMoment) -> list[str]:
 
 
 def audit_moments(
-    moments: list[PersianMoment], *, duration_seconds: float
+    moments: list[PersianMoment], *, duration_seconds: float, v2: bool = False
 ) -> MomentAudit:
     """Audit a moment set against every rule that can be checked without rendering.
 
@@ -910,13 +918,14 @@ def audit_moments(
     # The flat hook is the opening frame's treatment, not a second text model.
     # One video, one hook: any moment past the first carrying inline accent is a
     # second flat moment, which reads as indecision about what the model is.
-    for later in ordered[1:]:
-        if any(segment.accent_words for segment in later.segments):
-            audit.problems.append(
-                f"{later.id}: accentWords past the first moment. The flat-hook "
-                "treatment belongs to moment-1 alone; every other moment keeps "
-                "the sized lead/hero/tail model."
-            )
+    if not v2:
+        for later in ordered[1:]:
+            if any(segment.accent_words for segment in later.segments):
+                audit.problems.append(
+                    f"{later.id}: accentWords past the first moment. The flat-hook "
+                    "treatment belongs to moment-1 alone; every other moment keeps "
+                    "the sized lead/hero/tail model."
+                )
 
     # The hook kind is the opening moment's declaration, not a second text
     # model either: a hook past the first moment is a second opening, which

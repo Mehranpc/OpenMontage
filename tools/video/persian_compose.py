@@ -54,6 +54,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Optional
 
+from lib.persian_design import derive_lockup_size, prepare_v2, resolve_watermark_plan
+from lib.persian_film_type import prepare_film_type_props
 from lib.persian_moments import (
     HOOK_SILHOUETTE_MAX_RATIO,
     HOOK_SILHOUETTE_MIN_RATIO,
@@ -130,6 +132,10 @@ class PersianCompose(BaseTool):
                 ),
             },
             "output_path": {"type": "string", "description": "Destination MP4 path"},
+            "keep_staged_assets": {
+                "type": "boolean", "default": False,
+                "description": "Keep copied media after this render for Studio/DOM review. Explicit disk-use opt-in; originals are never removed.",
+            },
             "scale": {
                 "type": "number",
                 "description": (
@@ -276,7 +282,10 @@ class PersianCompose(BaseTool):
 
         run_id = secrets.token_hex(4)
         staging_dir = composer / "public" / _STAGING_ROOT / run_id
-        props_path = output_path.parent / f".persian_props_{run_id}.json"
+        # Permanent provenance: these exact bytes are handed to Remotion and are
+        # intentionally retained beside the final MP4 for reproducibility.
+        props_path = output_path.with_suffix(output_path.suffix + ".props.json")
+        props_sha_path = output_path.with_suffix(output_path.suffix + ".props.sha256")
 
         try:
             props, attributions = self._build_props(persian, staging_dir, run_id)
@@ -310,10 +319,12 @@ class PersianCompose(BaseTool):
                 ),
             )
 
+        retain_staged_assets = False
         try:
-            props_path.write_text(
-                json.dumps(props, ensure_ascii=False), encoding="utf-8"
-            )
+            props_bytes = json.dumps(props, ensure_ascii=False).encode("utf-8")
+            props_path.write_bytes(props_bytes)
+            import hashlib
+            props_sha_path.write_text(hashlib.sha256(props_bytes).hexdigest() + "  " + props_path.name + "\n", encoding="ascii")
 
             cmd = [
                 "npx",
@@ -434,6 +445,7 @@ class PersianCompose(BaseTool):
             if subtitle_path:
                 artifacts.append(subtitle_path)
 
+            retain_staged_assets = inputs.get("keep_staged_assets") is True
             return ToolResult(
                 success=True,
                 data={
@@ -452,6 +464,7 @@ class PersianCompose(BaseTool):
                     "attributions": attributions,
                     "persian_text_verified": False,  # Set by the reviewer, not here.
                     "luminance_qa": qa.to_dict(),
+                    **({"staged_assets_retained": True, "staged_assets_directory": str(staging_dir)} if inputs.get("keep_staged_assets") is True else {}),
                 },
                 artifacts=artifacts,
             )
@@ -459,8 +472,11 @@ class PersianCompose(BaseTool):
             # Staged clips are copies; the originals stay in the project. Removing
             # them keeps public/ from accumulating gigabytes across renders, which
             # matters on a nearly-full disk.
-            shutil.rmtree(staging_dir, ignore_errors=True)
-            props_path.unlink(missing_ok=True)
+            if not retain_staged_assets:
+                shutil.rmtree(staging_dir, ignore_errors=True)
+            # Explicit retention makes new review props reopenable after rendering.
+            # Props and digest are permanent render provenance artifacts.
+            pass
 
     def _build_props(
         self,
@@ -478,6 +494,8 @@ class PersianCompose(BaseTool):
         """
         staging_dir.mkdir(parents=True, exist_ok=True)
         attributions: list[str] = []
+        design_snapshot = prepare_v2(persian)
+        film_type = design_snapshot is not None and design_snapshot["profile"] == "film-type"
 
         shots: list[dict[str, Any]] = []
         for index, shot in enumerate(persian.get("shots") or []):
@@ -503,6 +521,7 @@ class PersianCompose(BaseTool):
                     "sourceInSeconds": float(shot.get("sourceInSeconds") or 0.0),
                     "camera": str(shot.get("camera") or "none"),
                     "attribution": attribution,
+                    **({"avoidRegions": shot["avoidRegions"]} if shot.get("avoidRegions") or (film_type and "avoidRegions" in shot) else {}),
                 }
             )
 
@@ -557,7 +576,25 @@ class PersianCompose(BaseTool):
             )
 
         duration_seconds = float(persian["durationSeconds"])
-        moments = self._build_moments(persian, duration_seconds)
+        moments = (self._build_moments(persian, duration_seconds, v2=True, measure_layout=False) if film_type
+                   else self._build_moments(persian, duration_seconds, v2=design_snapshot is not None))
+        # The browser bridge returns the exact lockup geometry used by the V2 planner.
+        # Query it independently of moment fitting so an empty moment list cannot
+        # accidentally erase the required watermark measurement.
+        lockup_measurement = None
+        if design_snapshot is not None and not film_type and not __import__("os").environ.get("PERSIAN_SKIP_OPTIONAL_BRIDGE"):
+            lockup_measurement = _maybe_attach_stack_heights(
+                [], str(persian.get("format") or "vertical"),
+                enforce_silhouette=False, watermark=persian.get("watermark") or {},
+            )
+        if design_snapshot is not None:
+            authored_by_id = {str(m.get("id")): m for m in persian.get("moments", [])}
+            for moment in moments:
+                authored = authored_by_id.get(str(moment.get("id")), {})
+                if authored.get("purpose") is not None:
+                    moment["purpose"] = authored["purpose"]
+                if authored.get("presentation") is not None:
+                    moment["presentation"] = authored["presentation"]
         typographic_beats = self._derive_beat_windows(
             persian.get("typographicBeats") or [], moments
         )
@@ -581,16 +618,80 @@ class PersianCompose(BaseTool):
             # `_derive_beat_windows`); the authored numbers are never trusted.
             "typographicBeats": typographic_beats,
         }
+        if design_snapshot is not None:
+            props["design"] = design_snapshot
         if audio_props:
             props["audio"] = audio_props
         if persian.get("watermark"):
             props["watermark"] = persian["watermark"]
+        if film_type:
+            # Real Chromium font measurement, one shared Film Type layout for
+            # rendering and collision planning. Optional Legacy bridge flags do
+            # not disable this mandatory prepass.
+            return prepare_film_type_props(props, _composer_dir()), attributions
+        if design_snapshot is not None:
+            # Resolve after fitted stack geometry is attached, so collision checks
+            # receive real text bounds rather than an empty placeholder.
+            # Collision geometry is the measured fitted stack, in normalized frame
+            # coordinates. There is no honest envelope fallback: unavailable geometry
+            # is explicitly left unchecked by the planner.
+            text_rects = []
+            measured = True
+            frame_w, frame_h = (1080, 1920) if props["format"] == "vertical" else (1920, 1080)
+            for moment in moments:
+                fitted_w, fitted_h = moment.get("stackWidthPx"), moment.get("stackHeightPx")
+                if not fitted_w or not fitted_h:
+                    measured = False
+                    continue
+                presentation = moment.get("presentation") or {}
+                placement = presentation.get("placement", "auto")
+                if placement == "auto":
+                    placement = "lower-right" if presentation.get("treatment") == "inline-statement" else "center"
+                w, h = min(1.0, float(fitted_w) / frame_w), min(1.0, float(fitted_h) / frame_h)
+                safe_cfg = design_snapshot.get("resolved", {}).get("formats", {}).get(props["format"], {}).get("safeArea", {})
+                side = float(safe_cfg.get("side", .08)); safe_top = float(safe_cfg.get("top", .08)); safe_bottom = float(safe_cfg.get("bottom", .08))
+                x = 0.5 - w / 2 if placement == "center" else (side if placement.endswith("left") else 1 - side - w)
+                if placement.startswith("upper"):
+                    y = safe_top
+                elif placement.startswith("lower"):
+                    y = 1 - safe_bottom - h
+                else:
+                    y = 0.5 - h / 2
+                geometry = moment.get("layoutGeometry")
+                if geometry:
+                    x, y, w, h = (float(geometry[k]) for k in ("x", "y", "w", "h"))
+                text_rects.append({"x": max(0, x), "y": max(0, y), "w": w, "h": h,
+                                   "startSeconds": float(moment.get("startSeconds", 0)),
+                                   "endSeconds": float(moment.get("endSeconds", duration_seconds))})
+            avoid_regions = [r for shot in shots for r in (shot.get("avoidRegions") or [])]
+            if lockup_measurement is None:
+                raise ValueError("V2 watermark requires loaded-font lockup measurement")
+            props["watermarkMeasurement"] = lockup_measurement
+            # Empty V2 typography still has a valid measured brand schedule; only an
+            # explicit no-watermark input should suppress the mark.
+            props["watermarkPlan"] = resolve_watermark_plan(
+                duration_seconds=duration_seconds, format=props["format"],
+                seed=design_snapshot["seed"], text_rects=text_rects,
+                safe_area=(design_snapshot.get("resolved", {}).get("formats", {}).get(props["format"], {}).get("safeArea") if isinstance(design_snapshot.get("resolved"), dict) else None),
+                avoid_regions=avoid_regions,
+                motion_policy=(design_snapshot.get("resolved", {}).get("watermark") if isinstance(design_snapshot.get("resolved"), dict) else None),
+                lockup_size=derive_lockup_size(
+                    persian_text=(props.get("watermark") or {}).get("persianText", "طریقت تسلیم"),
+                    latin_text=(props.get("watermark") or {}).get("latinText", "@Pathway_of_Surrender"),
+                    font_size_px=24 if props["format"] == "vertical" else 26,
+                    frame_width_px=frame_w, frame_height_px=frame_h,
+                    measured_width_px=float(lockup_measurement["widthPx"]),
+                    measured_height_px=float(lockup_measurement["heightPx"]),
+                ))
+            if not measured:
+                raise ValueError("V2 watermark plan requires measured text geometry; measurement unavailable")
+            props["watermarkPlanMeasured"] = measured
 
         return props, attributions
 
     @staticmethod
     def _build_moments(
-        persian: dict[str, Any], duration_seconds: float
+        persian: dict[str, Any], duration_seconds: float, *, v2: bool = False, measure_layout: bool = True
     ) -> list[dict[str, Any]]:
         """Normalize, audit, and return the typographic moments.
 
@@ -632,21 +733,33 @@ class PersianCompose(BaseTool):
                 raise ValueError(f"edit_decisions.persian.{retired} is set, but {reason}")
 
         authored = persian.get("moments")
-        if not authored:
+        # An explicitly empty V2 schedule is a valid footage-only decision. Legacy
+        # retains its historical refusal so missing/empty data cannot silently alter
+        # old output behavior.
+        if authored is None or (not authored and not v2):
             raise ValueError(
-                "edit_decisions.persian.moments is empty. A video with no typographic "
-                "moment is legitimate only as a purely visual piece; if that is the "
-                "intent, state `moments: []` explicitly so the choice is on the record "
-                "rather than looking like a stage that failed to run."
+                "edit_decisions.persian.moments is empty. Legacy requires an explicit "
+                "typographic moment; V2 may intentionally use `moments: []`."
             )
+        if not authored:
+            return []
 
         built = build_moments(authored)
+        # Carry authored presentation into fitted moments before browser measurement.
+        for built_moment, authored_moment in zip(built, authored):
+            setattr(built_moment, "presentation", authored_moment.get("presentation") or {})
+        # Carry the authored placement into the browser fitter so its single
+        # resolved geometry is identical for planner and renderer.
+        for built_moment, authored_moment in zip(built, authored):
+            setattr(built_moment, "presentation", authored_moment.get("presentation") or {})
         # Try to attach fitted stackHeightPx for verifier plateau scoping. This
         # requires canvas text measurement (Estedad + node-canvas). When available
         # (node-canvas installed) we compute the real stack via layout.ts;
         # otherwise the prop is omitted and the verifier falls back to zone.
-        _maybe_attach_stack_heights(built, str(persian.get("format") or "vertical"))
-        audit = audit_moments(built, duration_seconds=duration_seconds)
+        lockup_measurement = None
+        if v2 and measure_layout and not __import__("os").environ.get("PERSIAN_SKIP_OPTIONAL_BRIDGE"):
+            lockup_measurement = _maybe_attach_stack_heights(built, str(persian.get("format") or "vertical"), enforce_silhouette=v2, watermark=persian.get("watermark") or {})
+        audit = audit_moments(built, duration_seconds=duration_seconds, v2=v2)
         if not audit.passed:
             raise ValueError(
                 "the moment set breaks its pacing rules, so it is refused before "
@@ -829,7 +942,7 @@ class PersianCompose(BaseTool):
         return body
 
 
-def _maybe_attach_stack_heights(built: list[Any], fmt: str) -> None:
+def _maybe_attach_stack_heights(built: list[Any], fmt: str, *, enforce_silhouette: bool = True, watermark: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Attach `stackHeightPx` to each built moment when node-canvas is available.
 
     The fitted height comes from `layout.ts:fitMoment`, which needs canvas
@@ -906,6 +1019,7 @@ def _maybe_attach_stack_heights(built: list[Any], fmt: str) -> None:
             "id": m.id,
             "kind": m.kind,
             "segments": [_segment_payload(s) for s in m.segments],
+            "placement": ((getattr(m, "presentation", {}) or {}).get("placement") or ("lower-right" if (getattr(m, "presentation", {}) or {}).get("treatment") == "inline-statement" else "center")),
         }
         for m in built
     ]
@@ -926,13 +1040,16 @@ def _maybe_attach_stack_heights(built: list[Any], fmt: str) -> None:
             "globalThis.document.fonts = { add:()=>{}, load:()=>Promise.resolve([]), check:()=>true };\n"
             "const { estedadReady } = await import('../src/persian/fonts');\n"
             "await estedadReady;\n"
-            "const { fitMoment, silhouetteRatio } = await import('../src/persian/layout');\n"
+            "const { fitMoment, silhouetteRatio, resolveMomentGeometry, measureWatermarkLockup } = await import('../src/persian/layout');\n"
             f"const payload = {_json.dumps(payload, ensure_ascii=False)};\n"
+            f"const watermark = {_json.dumps(watermark or {}, ensure_ascii=False)};\n"
             f"const fmt = {fmt!r};\n"
             "const out = payload.map(p => { const f = fitMoment(p.segments, fmt, p.kind);"
-            " return { heightPx: f.heightPx,"
+            " return { heightPx: f.heightPx, widthPx: f.widthPx, geometry: resolveMomentGeometry(f, fmt, p.placement),"
+            " lines: f.segments.map(s => ({ role: s.role, widthPx: s.widthPx, heightPx: s.heightPx, paintedWidthPerLine: s.paintedWidthPerLine })),"
             " ratio: p.kind === 'hook' ? silhouetteRatio(f) : null }; });\n"
-            "process.stdout.write(JSON.stringify(out));\n"
+            "const lockup = measureWatermarkLockup(watermark.persianText || 'طریقت تسلیم', watermark.latinText || '@Pathway_of_Surrender', fmt === 'vertical' ? 24 : 26, fmt);\n"
+            "process.stdout.write(JSON.stringify({ moments: out, lockup }));\n"
         )
         driver.close()
         build = subprocess.run(
@@ -962,17 +1079,21 @@ def _maybe_attach_stack_heights(built: list[Any], fmt: str) -> None:
         )
         if result.returncode != 0:
             return
-        fitted = _json.loads(result.stdout.strip() or "[]")
+        bridge_result = _json.loads(result.stdout.strip() or "{}")
+        fitted = bridge_result.get("moments", [])
+        lockup = bridge_result.get("lockup")
         for moment, fit in zip(built, fitted):
             try:
-                # Attach as attribute; to_props will emit it
+                # Attach measured geometry; to_props will emit it for collision planning.
                 object.__setattr__(moment, "stack_height_px", float(fit["heightPx"]))
+                object.__setattr__(moment, "stack_width_px", float(fit.get("widthPx", 0)))
+                object.__setattr__(moment, "layout_geometry", fit.get("geometry"))
             except Exception:
                 pass
             ratio = fit.get("ratio")
             if ratio is None:
                 continue
-            if not (
+            if enforce_silhouette and not (
                 HOOK_SILHOUETTE_MIN_RATIO <= float(ratio) <= HOOK_SILHOUETTE_MAX_RATIO
             ):
                 raise ValueError(
@@ -987,10 +1108,11 @@ def _maybe_attach_stack_heights(built: list[Any], fmt: str) -> None:
                     "measures 0.647 against a 0.62 reference — re-split the "
                     "claim and the qualifier rather than resizing them."
                 )
+        return lockup
     except ValueError:
         raise
     except Exception:
-        return
+        return None
     finally:
         try:
             import os

@@ -1,5 +1,21 @@
 # Compose Director — Persian Footage Pipeline
 
+## Explicit Film Type routing (opt-in only)
+
+When—and only when—the user explicitly selects `persian.design =
+{"version":2,"profile":"film-type","seed":"project-specific"}`, read
+`skills/pipelines/persian-footage/film-type.md` before applying visual rules below.
+That guide owns this profile's white ink, compact whole-run typography, placement,
+conditional local contrast and two-line brand. Legacy orange/glow/rule, fixed-right
+anchor, silhouette, static grade, dimming and accent-colour pixel recipes below do
+not certify Film Type. Its prepared geometry requires actual painted-node/frame QA,
+not the Legacy accent detector. All source, science, selective-moment, reading,
+coverage, sync, narration/music, runtime, attribution and human gates still apply.
+Absent design remains Legacy; `quiet-editorial` stays on its existing path. This
+routing is not Stage B completion, humanVisualApproval, a default switch or C–E
+rollout. Do not rewrite approved narration or facts to fit; request an editorial
+revision when preparation refuses. See the guide for exact opt-in review steps.
+
 ## Your job
 
 Render the video, then **look at it**. A schema-valid `render_report` proves nothing

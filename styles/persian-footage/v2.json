@@ -1,0 +1,13 @@
+{
+  "profileVersion": "2.0.0",
+  "profile": "quiet-editorial",
+  "seed": "persian-v2-stage-b",
+  "formats": {
+    "vertical": {"safeArea": {"top": 0.08, "bottom": 0.2, "side": 0.08}},
+    "landscape": {"safeArea": {"top": 0.08, "bottom": 0.08, "side": 0.08}}
+  },
+  "palette": {"obsidian": "#191919", "charcoal": "#2C2C2C", "deepViolet": "#3A1772", "electricBlue": "#1789FC", "royalBlue": "#004FFF", "signalRed": "#ED1C24", "neonRed": "#FF2D00", "electricYellow": "#FFEA00", "amber": "#FFB800", "neonGreen": "#39FF14", "pureWhite": "#FFFFFF", "boneWhite": "#F0EDE6"},
+  "typography": {"fontFamily": "Estedad", "supportWeight": 500, "heroWeight": 700, "glow": false, "decorativeRule": false, "ink": "#F0EDE6", "accent": "#1789FC", "neutralHero": "#F0EDE6", "darkInk": "#191919", "contrastModes": {"dark": {"ink": "#F0EDE6"}, "light": {"ink": "#191919"}}},
+  "motion": {"editorial": "soft-reveal", "inlineStatement": "cut-in"},
+  "watermark": {"maxRelocations": 1, "transition": "relocate-fade", "preferNonTopPosition": true, "minDwellSeconds": 6}
+}
