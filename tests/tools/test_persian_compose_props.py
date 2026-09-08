@@ -62,6 +62,10 @@ def _persian(clip: Path, **overrides: object) -> dict:
     reason none of them is about.
     """
     base: dict = {
+        # Explicit Legacy opt-out: these tests pin design-independent gates
+        # (staging, audio, plate windows), so they run the historical path
+        # deliberately. New productions must carry a film-type design instead.
+        "design": {"version": 2, "profile": "legacy"},
         "format": "vertical",
         "durationSeconds": 12.0,
         "shots": [

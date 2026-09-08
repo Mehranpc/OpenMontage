@@ -33,21 +33,26 @@ layout, audio, provider or runtime design pass. Keep old projects/reviews intact
 
 ### Historical contract for the named earlier versions
 
-# Pathway Film Type — explicit opt-in, Persian footage only
+# Pathway Film Type 2.5 — the default path, Persian footage only
 
 This is a visual profile, not a new pipeline, runtime, narration mode or approval.
-Absent design still means Legacy. `quiet-editorial` remains byte-for-byte the old
-profile. Do not switch defaults, migrate projects in bulk, or call Stage B / C–E
+Film Type 2.5 is the default: every persian-footage run carries a film-type design
+unless explicitly directed elsewhere. `quiet-editorial` remains available as an
+explicit option. Absent design is refused by persian_compose; the old Legacy render
+is reachable only through the explicit hidden opt-out {"version":2,"profile":"legacy"}
+(emergencies only). Do not migrate old projects in bulk, or call Stage B / C–E
 complete. Human visual approval remains pending until real renders are reviewed.
 
-## Activate for one explicitly approved review
+## Activate (default for every new production)
 
 Use the existing Remotion `persian_compose` path and the existing canonical
 `persian.moments[].segments` contract. Choose:
 
 ```json
-{"version": 2, "profile": "film-type", "seed": "stable-project-specific-seed"}
+{"version": 2, "profile": "film-type", "seed": "<project-id>-film-type-01"}
 ```
+
+The seed is auto-derived from the project id (deterministic per project).
 
 Put this object in `persian.design` of the edit decisions. The producer resolves
 `styles/persian-footage/film-type.json` into a hashed snapshot. To freeze a project
@@ -211,5 +216,6 @@ as a containment pass. Await prepared metadata before mounting a raw Player.
 5. Run the existing Persian suites and TypeScript checks on the locked local
    dependencies. Sampled regressions and synthetic stress fixtures are bounded
    technical evidence, not a replacement for these real-video gates.
-6. Keep humanVisualApproval pending and keep Legacy, quiet-editorial, other
-   pipelines, defaults and C–E rollout unchanged until separately approved.
+6. Keep humanVisualApproval pending; keep quiet-editorial, other
+   pipelines and C–E rollout unchanged. Legacy is disabled by default (hidden
+   opt-out only) per the locked 2026-09-08 decision.

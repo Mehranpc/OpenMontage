@@ -51,6 +51,9 @@ def _moment(
 
 def _persian(clip: Path, moments: list[dict], beats: list[dict]) -> dict:
     return {
+        # Explicit Legacy opt-out (see test_persian_default_film_type.py):
+        # these tests pin design-independent plate-window gates.
+        "design": {"version": 2, "profile": "legacy"},
         "format": "vertical",
         "durationSeconds": 20.0,
         "shots": [

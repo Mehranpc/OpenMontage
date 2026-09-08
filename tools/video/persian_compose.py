@@ -94,6 +94,14 @@ _COMPOSITION_IDS = {
 #: Where staged clips live, relative to the composer's public dir.
 _STAGING_ROOT = "persian"
 
+#: Explicit Legacy opt-out profile for the hidden emergency escape hatch.
+#: Film Type 2.5 is the default (and only non-explicit) path for
+#: persian-footage; absent `persian.design` is refused outright. An edit that
+#: genuinely needs the old path states {"version": 2, "profile": "legacy"}
+#: (seed optional) and gets the historical Legacy render. Anything else without
+#: a versioned design fails loudly rather than silently rendering Legacy.
+_LEGACY_OPTOUT_PROFILE = "legacy"
+
 
 def _composer_dir() -> Path:
     return Path(__file__).resolve().parent.parent.parent / "remotion-composer"
@@ -494,7 +502,38 @@ class PersianCompose(BaseTool):
         """
         staging_dir.mkdir(parents=True, exist_ok=True)
         attributions: list[str] = []
-        design_snapshot = prepare_v2(persian)
+        # Film Type 2.5 is the default path for persian-footage: absent
+        # `persian.design` no longer means Legacy, it is refused. The Legacy
+        # render remains reachable only through the explicit hidden opt-out
+        # {"version": 2, "profile": "legacy"}. Explicit quiet-editorial is
+        # unchanged. lib/persian_design.py semantics are untouched — the
+        # refusal lives here, at the pipeline's compose boundary.
+        raw_design = persian.get("design")
+        legacy_optout = (
+            isinstance(raw_design, dict)
+            and raw_design.get("version") == 2
+            and raw_design.get("profile") == _LEGACY_OPTOUT_PROFILE
+        )
+        if raw_design is None or (
+            isinstance(raw_design, dict) and "version" not in raw_design
+        ):
+            shape = "absent" if raw_design is None else "unversioned"
+            raise ValueError(
+                f"edit_decisions.persian.design is {shape}, but Legacy is no "
+                "longer the default for persian-footage: every video renders "
+                "Film Type 2.5 unless explicitly directed elsewhere. Set "
+                "persian.design to {\"version\": 2, \"profile\": \"film-type\", "
+                "\"seed\": \"<project-id>-film-type-01\"} (seed auto-derived "
+                "from the project id), or to {\"version\": 2, \"profile\": "
+                "\"quiet-editorial\", \"seed\": \"...\"} to keep the explicit "
+                "V2 path. The old Legacy render is available only through the "
+                "explicit hidden opt-out {\"version\": 2, \"profile\": "
+                "\"legacy\"}."
+            )
+        if legacy_optout:
+            design_snapshot = None
+        else:
+            design_snapshot = prepare_v2(persian)
         film_type = design_snapshot is not None and design_snapshot["profile"] == "film-type"
 
         shots: list[dict[str, Any]] = []

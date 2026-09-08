@@ -33,6 +33,9 @@ def _moment(moment_id: str, start: float, end: float, hero: str = "نور") -> d
 
 def _persian(moments: list[dict], beats: list[dict]) -> dict:
     return {
+        # Explicit Legacy opt-out (see test_persian_default_film_type.py):
+        # the studio mirror pins the design-independent derivation rule.
+        "design": {"version": 2, "profile": "legacy"},
         "format": "vertical",
         "durationSeconds": 20.0,
         "shots": [

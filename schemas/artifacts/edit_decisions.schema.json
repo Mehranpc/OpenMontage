@@ -484,6 +484,25 @@
           "oneOf": [
             {
               "type": "object",
+              "description": "Hidden emergency opt-out for the historical Legacy render. Film Type 2.5 is the default path; persian_compose refuses absent design. New productions must carry film-type (or explicit quiet-editorial), never this.",
+              "required": [
+                "version",
+                "profile"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer",
+                  "const": 2
+                },
+                "profile": {
+                  "type": "string",
+                  "const": "legacy"
+                }
+              },
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
               "required": [
                 "version",
                 "profile",

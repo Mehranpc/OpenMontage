@@ -131,7 +131,15 @@ def resolve_watermark_plan(*, duration_seconds: float, format: str, seed: str, t
             for i, zone in enumerate(chosen)]
 
 def resolve_design(raw: Any) -> dict[str, Any] | None:
-    """Return a deterministic V2 snapshot; absent design means Legacy."""
+    """Return a deterministic V2 snapshot; absent design returns None.
+
+    NOTE: None here does NOT mean "render Legacy". Since 2026-09-08 the
+    persian-footage compose boundary (PersianCompose._build_props) refuses
+    absent/unversioned design outright — Film Type 2.5 is the default path and
+    Legacy needs the explicit {"version": 2, "profile": "legacy"} opt-out.
+    This library keeps its historical None return so other consumers
+    (quiet-editorial resolution, validation) are unaffected.
+    """
     if raw is None:
         return None
     if not isinstance(raw, dict):
