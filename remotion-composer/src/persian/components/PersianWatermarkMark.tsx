@@ -46,6 +46,7 @@ import React from "react";
 import { Easing, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
 
 import { ESTEDAD_FAMILY } from "../fonts";
+import { watermarkLayoutConfig } from "../layout";
 import {
   PERSIAN_PALETTE,
   TYPOGRAPHY,
@@ -58,6 +59,9 @@ import { DEFAULT_WATERMARK, type PersianWatermark } from "../types";
 export interface PersianWatermarkProps {
   readonly format: PersianFormat;
   readonly watermark?: PersianWatermark;
+  readonly plan?: readonly { zone: string; startSeconds: number; endSeconds: number; rect: { x: number; y: number; w: number; h: number }; transition: string }[];
+  readonly measurement?: { widthPx: number; heightPx: number; layout: "single-line" | "two-line"; measured: true };
+  readonly color?: string;
 }
 
 /** Base shadow, always present so the mark is legible over bright footage. */
@@ -81,10 +85,36 @@ const INTRO_FADE_FRAMES = 15;
 export const PersianWatermarkMark: React.FC<PersianWatermarkProps> = ({
   format,
   watermark = DEFAULT_WATERMARK,
+  plan,
+  measurement,
+  color,
 }) => {
   const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
+  const { durationInFrames, fps } = useVideoConfig();
   const typography = TYPOGRAPHY[format];
+
+  // An empty lockup paints nothing. Without this guard the separator span
+  // below renders a lone "|" that fades and migrates through all five phases —
+  // a thin vertical line drifting across the frame with no text attached.
+  if (!watermark.persianText && !watermark.latinText) return null;
+
+  // V2 owns the watermark lifecycle. An explicitly empty plan is a measured,
+  // intentional hide (never fall through to Legacy's five-phase animation).
+  if (plan !== undefined && plan.length === 0) return null;
+  if (plan && plan.length > 0) {
+    const current = plan.find((entry) => frame / fps >= entry.startSeconds && frame / fps < entry.endSeconds) ?? plan[plan.length - 1];
+    const previous = plan.findIndex((entry) => entry === current);
+    const local = Math.max(0, Math.min(1, (frame / fps - current.startSeconds) / Math.max(0.01, current.endSeconds - current.startSeconds)));
+    const transitionSeconds = 0.25;
+    const elapsedSeconds = Math.max(0, frame / fps - current.startSeconds);
+    const remainingSeconds = Math.max(0, current.endSeconds - frame / fps);
+    const fade = Math.min(1, elapsedSeconds / transitionSeconds, remainingSeconds / transitionSeconds);
+    const x = current.rect.x * 100;
+    const y = current.rect.y * 100;
+    const twoLine = measurement?.layout === "two-line";
+    const config = watermarkLayoutConfig(format);
+    return <div data-persian-watermark="v2" data-persian-watermark-zone={current.zone} data-persian-watermark-measured={measurement?.measured ? "true" : "false"} style={{position: "absolute", left: `${x}%`, top: `${y}%`, opacity: fade, display: "flex", flexDirection: twoLine ? "column" : "row", alignItems: "flex-start", direction: config.direction, gap: config.gapPx, fontFamily: ESTEDAD_FAMILY, fontWeight: config.weight, fontSize: config.fontSizePx, lineHeight: config.lineHeight, padding: config.paddingPx, color: color ?? PERSIAN_PALETTE.ink, textShadow: BASE_TEXT_SHADOW, whiteSpace: "nowrap", pointerEvents: "none", zIndex: 5}}><span dir="rtl">{watermark.persianText}</span>{twoLine ? null : <span aria-hidden="true" style={{opacity: 0.6}}>|</span>}<span dir="ltr">{watermark.latinText}</span></div>;
+  }
 
   // Phase 0: hidden opening. Returning null paints nothing at all, which is
   // what "no watermark at the start" means — opacity 0 would still leave the

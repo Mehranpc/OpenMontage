@@ -1,833 +1,1106 @@
 {
- "$schema": "https://json-schema.org/draft/2020-12/schema",
- "$id": "openmontage/artifacts/edit_decisions",
- "title": "Edit Decisions",
- "description": "Editorial decisions produced by the Edit Agent.",
- "type": "object",
- "required": [
-  "version",
-  "cuts",
-  "render_runtime"
- ],
- "properties": {
-  "version": {
-   "type": "string",
-   "const": "1.0"
-  },
-  "cuts": {
-   "type": "array",
-   "items": {
-    "type": "object",
-    "required": [
-     "id",
-     "source",
-     "in_seconds",
-     "out_seconds"
-    ],
-    "properties": {
-     "id": {
-      "type": "string"
-     },
-     "source": {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/artifacts/edit_decisions",
+  "title": "Edit Decisions",
+  "description": "Editorial decisions produced by the Edit Agent.",
+  "type": "object",
+  "required": [
+    "version",
+    "cuts",
+    "render_runtime"
+  ],
+  "properties": {
+    "version": {
       "type": "string",
-      "description": "Source file path or asset-manifest ID"
-     },
-     "in_seconds": {
-      "type": "number",
-      "minimum": 0
-     },
-     "out_seconds": {
-      "type": "number",
-      "minimum": 0
-     },
-     "speed": {
-      "type": "number",
-      "minimum": 0.1,
-      "default": 1.0
-     },
-     "layer": {
-      "type": "string",
-      "enum": [
-       "primary",
-       "overlay",
-       "background"
-      ],
-      "default": "primary"
-     },
-     "transform": {
-      "type": "object",
-      "properties": {
-       "scale": {
-        "type": "number",
-        "minimum": 0,
-        "default": 1.0
-       },
-       "position": {
-        "type": "string",
-        "default": "center"
-       },
-       "animation": {
-        "type": "string",
-        "description": "Motion applied to still images (e.g. ken-burns-slow-zoom, pan-left, static)"
-       },
-       "crop": {
-        "type": "object",
-        "properties": {
-         "x": {
-          "type": "number"
-         },
-         "y": {
-          "type": "number"
-         },
-         "width": {
-          "type": "number"
-         },
-         "height": {
-          "type": "number"
-         }
-        }
-       }
-      },
-      "additionalProperties": false
-     },
-     "transition_in": {
-      "type": "string",
-      "description": "Transition type entering this cut (e.g. fade, dissolve, cut, wipe)"
-     },
-     "transition_out": {
-      "type": "string",
-      "description": "Transition type leaving this cut"
-     },
-     "transition_duration": {
-      "type": "number",
-      "minimum": 0,
-      "description": "Duration of transition in seconds"
-     },
-     "backgroundColor": {
-      "type": "string",
-      "description": "Backing color used behind this cut by composition runtimes"
-     },
-     "reason": {
-      "type": "string"
-     }
+      "const": "1.0"
     },
-    "additionalProperties": false
-   }
-  },
-  "overlays": {
-   "type": "array",
-   "items": {
-    "type": "object",
-    "required": [
-     "asset_id",
-     "start_seconds",
-     "end_seconds",
-     "position"
-    ],
-    "properties": {
-     "asset_id": {
-      "type": "string"
-     },
-     "start_seconds": {
-      "type": "number",
-      "minimum": 0
-     },
-     "end_seconds": {
-      "type": "number",
-      "minimum": 0
-     },
-     "position": {
-      "type": "object",
-      "properties": {
-       "x": {
-        "type": "number"
-       },
-       "y": {
-        "type": "number"
-       },
-       "width": {
-        "type": "number"
-       },
-       "height": {
-        "type": "number"
-       }
-      },
-      "required": [
-       "x",
-       "y"
-      ]
-     },
-     "animation": {
-      "type": "string"
-     },
-     "opacity": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 1
-     }
-    },
-    "additionalProperties": false
-   }
-  },
-  "audio": {
-   "type": "object",
-   "description": "Audio configuration for narration, music, and SFX.",
-   "properties": {
-    "narration": {
-     "type": "object",
-     "properties": {
-      "segments": {
-       "type": "array",
-       "items": {
+    "cuts": {
+      "type": "array",
+      "items": {
         "type": "object",
         "required": [
-         "asset_id",
-         "start_seconds"
+          "id",
+          "source",
+          "in_seconds",
+          "out_seconds"
         ],
         "properties": {
-         "asset_id": {
-          "type": "string"
-         },
-         "start_seconds": {
-          "type": "number",
-          "minimum": 0
-         },
-         "end_seconds": {
-          "type": "number",
-          "minimum": 0
-         }
+          "id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "description": "Source file path or asset-manifest ID"
+          },
+          "in_seconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "out_seconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "speed": {
+            "type": "number",
+            "minimum": 0.1,
+            "default": 1.0
+          },
+          "layer": {
+            "type": "string",
+            "enum": [
+              "primary",
+              "overlay",
+              "background"
+            ],
+            "default": "primary"
+          },
+          "transform": {
+            "type": "object",
+            "properties": {
+              "scale": {
+                "type": "number",
+                "minimum": 0,
+                "default": 1.0
+              },
+              "position": {
+                "type": "string",
+                "default": "center"
+              },
+              "animation": {
+                "type": "string",
+                "description": "Motion applied to still images (e.g. ken-burns-slow-zoom, pan-left, static)"
+              },
+              "crop": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  },
+                  "width": {
+                    "type": "number"
+                  },
+                  "height": {
+                    "type": "number"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "transition_in": {
+            "type": "string",
+            "description": "Transition type entering this cut (e.g. fade, dissolve, cut, wipe)"
+          },
+          "transition_out": {
+            "type": "string",
+            "description": "Transition type leaving this cut"
+          },
+          "transition_duration": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Duration of transition in seconds"
+          },
+          "backgroundColor": {
+            "type": "string",
+            "description": "Backing color used behind this cut by composition runtimes"
+          },
+          "reason": {
+            "type": "string"
+          }
         },
         "additionalProperties": false
-       }
       }
-     }
     },
-    "music": {
-     "type": "object",
-     "properties": {
-      "asset_id": {
-       "type": "string"
-      },
-      "volume": {
-       "type": "number",
-       "minimum": 0,
-       "maximum": 1
-      },
-      "fade_in_seconds": {
-       "type": "number",
-       "minimum": 0
-      },
-      "fade_out_seconds": {
-       "type": "number",
-       "minimum": 0
-      },
-      "ducking": {
-       "oneOf": [
-        {
-         "type": "boolean"
-        },
-        {
-         "type": "object",
-         "properties": {
-          "enabled": {
-           "type": "boolean",
-           "default": true
-          },
-          "threshold_db": {
-           "type": "number"
-          },
-          "reduction_db": {
-           "type": "number"
-          },
-          "attack_ms": {
-           "type": "number",
-           "minimum": 0
-          },
-          "release_ms": {
-           "type": "number",
-           "minimum": 0
-          }
-         },
-         "additionalProperties": false
-        }
-       ]
-      }
-     }
-    },
-    "sfx": {
-     "type": "array",
-     "items": {
-      "type": "object",
-      "properties": {
-       "asset_id": {
-        "type": "string"
-       },
-       "start_seconds": {
-        "type": "number",
-        "minimum": 0
-       },
-       "volume": {
-        "type": "number",
-        "minimum": 0,
-        "maximum": 1,
-        "default": 1.0
-       }
-      },
-      "additionalProperties": false
-     }
-    }
-   },
-   "additionalProperties": false
-  },
-  "subtitles": {
-   "type": "object",
-   "properties": {
-    "enabled": {
-     "type": "boolean"
-    },
-    "style": {
-     "type": "string",
-     "description": "Display style: sentence, word-by-word, karaoke"
-    },
-    "source": {
-     "type": "string",
-     "description": "Path to subtitle file or asset ID"
-    },
-    "font": {
-     "type": "string"
-    },
-    "font_size": {
-     "type": "integer"
-    },
-    "color": {
-     "type": "string",
-     "description": "Primary text color (hex or ASS format)"
-    },
-    "outline_color": {
-     "type": "string"
-    },
-    "background": {
-     "type": "string",
-     "description": "Background color with optional alpha (e.g. #00000088)"
-    },
-    "position": {
-     "type": "string",
-     "enum": [
-      "top-center",
-      "bottom-center",
-      "center"
-     ]
-    },
-    "max_words_per_line": {
-     "type": "integer",
-     "minimum": 1
-    }
-   },
-   "additionalProperties": false
-  },
-  "music": {
-   "type": "object",
-   "description": "Legacy top-level music config. Prefer audio.music for new pipelines.",
-   "properties": {
-    "asset_id": {
-     "type": "string"
-    },
-    "volume": {
-     "type": "number",
-     "minimum": 0,
-     "maximum": 1
-    },
-    "ducking": {
-     "type": "boolean",
-     "default": true
-    },
-    "fade_in_seconds": {
-     "type": "number",
-     "minimum": 0
-    },
-    "fade_out_seconds": {
-     "type": "number",
-     "minimum": 0
-    }
-   }
-  },
-  "transitions": {
-   "type": "array",
-   "description": "Global transition list. Per-cut transitions in cuts[].transition_in/out are preferred.",
-   "items": {
-    "type": "object",
-    "properties": {
-     "type": {
-      "type": "string"
-     },
-     "at_seconds": {
-      "type": "number"
-     },
-     "duration_seconds": {
-      "type": "number",
-      "minimum": 0
-     }
-    },
-    "required": [
-     "type",
-     "at_seconds",
-     "duration_seconds"
-    ]
-   }
-  },
-  "renderer_family": {
-   "type": "string",
-   "enum": [
-    "explainer-data",
-    "explainer-teacher",
-    "cinematic-trailer",
-    "documentary-montage",
-    "product-reveal",
-    "screen-demo",
-    "presenter",
-    "animation-first",
-    "persian-footage"
-   ],
-   "description": "Locked at proposal stage — creative grammar for this deliverable. Preserved from proposal_packet; edit MUST NOT change without a logged decision."
-  },
-  "render_runtime": {
-   "type": "string",
-   "enum": [
-    "remotion",
-    "hyperframes",
-    "ffmpeg"
-   ],
-   "description": "Locked at proposal stage — technical runtime that realizes renderer_family. Edit MUST carry this forward unchanged unless a logged render_runtime_selection decision overrides it."
-  },
-  "composition_mode": {
-   "type": "string",
-   "enum": [
-    "templated",
-    "atelier"
-   ],
-   "description": "Locked at proposal — HOW the composition is built. Edit MUST carry forward unchanged. 'atelier' routes video_compose to _render_via_atelier (no cut-schema, no stock registry); requires `bespoke` block below."
-  },
-  "bespoke": {
-   "type": "object",
-   "description": "Required when composition_mode='atelier'. Contract for the hand-authored, project-local Remotion render. See tools/video/video_compose.py → _render_via_atelier docstring.",
-   "required": [
-    "entry",
-    "composition_id",
-    "art_direction"
-   ],
-   "properties": {
-    "entry": {
-     "type": "string",
-     "description": "Path to the project-local Remotion entry .tsx (typically projects/<slug>/index.tsx). If outside remotion-composer/, auto-staged via directory junction/symlink at render time."
-    },
-    "composition_id": {
-     "type": "string",
-     "description": "id registered in that entry's Root"
-    },
-    "art_direction": {
-     "type": "string",
-     "description": "Short commitment to a fresh visual language (or a path to art-direction.md). REQUIRED — enforced by _run_atelier_checks."
-    },
-    "props_path": {
-     "type": "string",
-     "description": "Absolute path to a props JSON (Remotion --props)"
-    },
-    "public_dir": {
-     "type": "string",
-     "description": "Per-project public dir (avoids copying the bloated shared remotion-composer/public/)"
-    },
-    "scale": {
-     "type": "number",
-     "minimum": 0.1,
-     "maximum": 1.0
-    },
-    "crf": {
-     "type": "integer",
-     "minimum": 0,
-     "maximum": 51
-    },
-    "concurrency": {
-     "type": "integer",
-     "minimum": 1
-    }
-   }
-  },
-  "slideshow_risk_score": {
-   "type": "object",
-   "description": "Slideshow risk assessment from lib/slideshow_risk.py",
-   "properties": {
-    "average": {
-     "type": "number"
-    },
-    "verdict": {
-     "type": "string",
-     "enum": [
-      "strong",
-      "acceptable",
-      "revise",
-      "fail"
-     ]
-    }
-   }
-  },
-  "persian": {
-   "type": "object",
-   "description": "Props for the persian-footage composition, consumed by tools/video/persian_compose.py and mirrored by remotion-composer/src/persian/types.ts. Present only when renderer_family='persian-footage', which carries an empty top-level `cuts` array because its timeline lives in `persian.shots` — the Persian composition IS the template and has no cut list. Times are seconds at this boundary and converted to frames exactly once, inside the components.",
-   "required": [
-    "format",
-    "durationSeconds",
-    "shots",
-    "moments"
-   ],
-   "properties": {
-    "format": {
-     "type": "string",
-     "enum": [
-      "vertical",
-      "landscape"
-     ]
-    },
-    "durationSeconds": {
-     "type": "number",
-     "exclusiveMinimum": 0,
-     "description": "Authoritative total duration. calculateMetadata uses it directly rather than deriving it from the shot list."
-    },
-    "shots": {
-     "type": "array",
-     "minItems": 1,
-     "description": "Footage segments, in timeline order and contiguous. A gap renders as black; an overlap renders as whichever Sequence is later in the array, which is not a decision to leave to array order.",
-     "items": {
-      "type": "object",
-      "required": [
-       "id",
-       "source",
-       "startSeconds",
-       "endSeconds",
-       "attribution"
-      ],
-      "properties": {
-       "id": {
-        "type": "string"
-       },
-       "source": {
-        "type": "string",
-        "description": "Clip path; staged under remotion-composer/public/ at render time and resolved through staticFile()."
-       },
-       "startSeconds": {
-        "type": "number",
-        "minimum": 0
-       },
-       "endSeconds": {
-        "type": "number",
-        "exclusiveMinimum": 0
-       },
-       "sourceInSeconds": {
-        "type": "number",
-        "minimum": 0,
-        "default": 0
-       },
-       "camera": {
-        "type": "string",
-        "enum": [
-         "push-in",
-         "pull-out",
-         "pan-left",
-         "pan-right",
-         "none"
-        ],
-        "default": "none",
-        "description": "Camera move from motion.ts. 'none' is a deliberate choice for footage that already carries motion — two motions fight and produce a queasy compound move."
-       },
-       "attribution": {
-        "type": "string",
-        "minLength": 1,
-        "description": "Required by both stock licences; persian_compose refuses to render a shot without one."
-       }
-      },
-      "additionalProperties": false
-     }
-    },
-    "moments": {
-     "type": "array",
-     "minItems": 1,
-     "description": "Selective typographic moments — NOT a caption track. 7-9 in a 60-second video, at most 55% text coverage, with at least 0.9s of empty frame between them and the first moment on screen within 0.6s of the start (feeds autoplay muted); lib/persian_moments.py audits all of these. Each moment is ONE grammatical Persian phrase with one emphasised span, carried by an ordered `segments` array whose order is the reading order, top to bottom. The retired slot shape (text/label/kicker/unit) is deliberately absent rather than optional: it produced three type sizes on three different left edges with no sentence anywhere, and supporting both would mean supporting two incompatible ideas of what the typographic layer is.",
-     "items": {
-      "type": "object",
-      "required": [
-       "id",
-       "kind",
-       "startSeconds",
-       "endSeconds",
-       "segments"
-      ],
-      "properties": {
-       "id": {
-        "type": "string"
-       },
-       "kind": {
-        "type": "string",
-        "enum": [
-         "figure",
-         "term",
-         "statement",
-         "hook"
-        ],
-        "description": "Editorial classification. figure = a quantity. term = a name or acronym the phrase glosses. statement = a claim. hook = the opening moment, declared never inferred; its style (claim+qualifier or flat display) derives from the segments. It no longer decides arrangement — the segments order does — it records what the author judged the moment to be, which the audits reason about."
-       },
-       "startSeconds": {
-        "type": "number",
-        "minimum": 0
-       },
-       "endSeconds": {
-        "type": "number",
-        "exclusiveMinimum": 0
-       },
-       "segments": {
-        "type": "array",
-        "minItems": 1,
-        "description": "The phrase, in reading order. The array order is the paint order, top to bottom, and the component adds no reordering of its own — «مطالعهٔ دانشگاه اولوی فنلاند روی» above «۲۲۶۴ نفر» is expressed by writing it that way. Exactly one hero per reveal step; at most one source, always last. No cap on the count: lib/persian_moments.py limits structure (one hero per step, at most one source) and length (per-role character ceilings), never the segment count, so a multi-step build the pipeline accepts must also pass this schema. A single-segment moment is a flat display hook (one hero carrying accentWords) and nothing else.",
-        "items": {
-         "type": "object",
-         "required": [
-          "role",
-          "text"
-         ],
-         "properties": {
-          "role": {
-           "type": "string",
-           "enum": [
-            "lead",
-            "hero",
-            "tail",
-            "source"
-           ],
-           "description": "lead = sets up the emphasis. hero = THE emphasis: accent colour, largest type, exactly one per reveal step. tail = completes the phrase after the hero. source = a citation appended to the phrase, never a part of it."
-          },
-          "text": {
-           "type": "string",
-           "minLength": 1,
-           "description": "Painted exactly as given; normalized by the pipeline before render."
-          },
-          "accentWords": {
-           "type": "array",
-           "minItems": 1,
-           "maxItems": 3,
-           "items": {
-            "type": "string",
-            "minLength": 1
-           },
-           "description": "Inline accent words for the flat-hook treatment: the whole segment paints at one size in primary ink and only these words carry the accent. At most 3; each must occur in the segment's own text. Restricted to the opening moment."
-          },
-          "revealAfterSeconds": {
-           "type": "number",
-           "minimum": 0,
-           "description": "Seconds after the moment's own start at which this segment joins the phrase. Earlier segments stay on screen and dim. That is how two consecutive facts that belong to one thought accumulate instead of replacing each other — one moment, two reveals, not two moments."
-          }
-         },
-         "additionalProperties": false
-        }
-       },
-       "anchorText": {
-        "type": "string",
-        "description": "The narration words this moment is bound to, as spoken ('دانشمندهای دانشگاه اولو', not the on-screen '۲۲۶۴'). persian_compose re-derives the moment's start from these words and refuses a timing that drifts — the check that makes rescaling timings from another video impossible."
-       },
-       "stackHeightPx": {
-        "type": "number",
-        "exclusiveMinimum": 0,
-        "description": "Fitted total ink+gap height in px at nominal width (FittedMoment.heightPx in remotion-composer/src/persian/layout.ts, produced by fitMoment against the vendored Estedad). Attached by persian_compose._maybe_attach_stack_heights when node-canvas is available, so the verifier can scope ink measurement to the scrim plateau (stackHeightPx/2 + margin around the optical centre) instead of the whole zone envelope. Omitted when the bridge is unavailable — the verifier then falls back to zone-scoped measurement."
-       }
-      },
-      "additionalProperties": false
-     }
-    },
-    "typographicBeats": {
-     "type": "array",
-     "description": "Stretches of timeline with no footage behind them, for concepts no honest clip serves. Capped upstream at 2 so this cannot quietly become the whole video.",
-     "items": {
-      "type": "object",
-      "required": [
-       "id",
-       "startSeconds",
-       "endSeconds"
-      ],
-      "properties": {
-       "id": {
-        "type": "string"
-       },
-       "startSeconds": {
-        "type": "number",
-        "minimum": 0
-       },
-       "endSeconds": {
-        "type": "number",
-        "exclusiveMinimum": 0
-       }
-      },
-      "additionalProperties": false
-     }
-    },
-    "audio": {
-     "type": "object",
-     "properties": {
-      "narration": {
-       "type": "string"
-      },
-      "music": {
-       "type": "string"
-      },
-      "musicFlatVolume": {
-       "type": "number",
-       "minimum": 0,
-       "maximum": 1,
-       "description": "Music level when narration is absent."
-      },
-      "musicBaseVolume": {
-       "type": "number",
-       "minimum": 0,
-       "maximum": 1,
-       "description": "Music level when narration exists but is not speaking."
-      },
-      "musicDuckVolume": {
-       "type": "number",
-       "minimum": 0,
-       "maximum": 1,
-       "description": "Music level while narration speaks."
-      },
-      "wordTimings": {
-       "type": "array",
-       "description": "Narration word timings. persian_compose turns these into a sidecar .srt beside the MP4 — real, toggleable, indexable subtitles rather than burned-in pixels. Omitted in silent mode, where there is no speech to subtitle.",
-       "items": {
+    "overlays": {
+      "type": "array",
+      "items": {
         "type": "object",
         "required": [
-         "word",
-         "start",
-         "end"
+          "asset_id",
+          "start_seconds",
+          "end_seconds",
+          "position"
         ],
         "properties": {
-         "word": {
+          "asset_id": {
+            "type": "string"
+          },
+          "start_seconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "end_seconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "position": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "width": {
+                "type": "number"
+              },
+              "height": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ]
+          },
+          "animation": {
+            "type": "string"
+          },
+          "opacity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "audio": {
+      "type": "object",
+      "description": "Audio configuration for narration, music, and SFX.",
+      "properties": {
+        "narration": {
+          "type": "object",
+          "properties": {
+            "segments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "asset_id",
+                  "start_seconds"
+                ],
+                "properties": {
+                  "asset_id": {
+                    "type": "string"
+                  },
+                  "start_seconds": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "end_seconds": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "music": {
+          "type": "object",
+          "properties": {
+            "asset_id": {
+              "type": "string"
+            },
+            "volume": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "fade_in_seconds": {
+              "type": "number",
+              "minimum": 0
+            },
+            "fade_out_seconds": {
+              "type": "number",
+              "minimum": 0
+            },
+            "ducking": {
+              "oneOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": true
+                    },
+                    "threshold_db": {
+                      "type": "number"
+                    },
+                    "reduction_db": {
+                      "type": "number"
+                    },
+                    "attack_ms": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "release_ms": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            }
+          }
+        },
+        "sfx": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "asset_id": {
+                "type": "string"
+              },
+              "start_seconds": {
+                "type": "number",
+                "minimum": 0
+              },
+              "volume": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "default": 1.0
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "subtitles": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "style": {
+          "type": "string",
+          "description": "Display style: sentence, word-by-word, karaoke"
+        },
+        "source": {
+          "type": "string",
+          "description": "Path to subtitle file or asset ID"
+        },
+        "font": {
           "type": "string"
-         },
-         "start": {
-          "type": "number",
-          "minimum": 0
-         },
-         "end": {
-          "type": "number",
-          "minimum": 0
-         },
-         "probability": {
+        },
+        "font_size": {
+          "type": "integer"
+        },
+        "color": {
+          "type": "string",
+          "description": "Primary text color (hex or ASS format)"
+        },
+        "outline_color": {
+          "type": "string"
+        },
+        "background": {
+          "type": "string",
+          "description": "Background color with optional alpha (e.g. #00000088)"
+        },
+        "position": {
+          "type": "string",
+          "enum": [
+            "top-center",
+            "bottom-center",
+            "center"
+          ]
+        },
+        "max_words_per_line": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "music": {
+      "type": "object",
+      "description": "Legacy top-level music config. Prefer audio.music for new pipelines.",
+      "properties": {
+        "asset_id": {
+          "type": "string"
+        },
+        "volume": {
           "type": "number",
           "minimum": 0,
           "maximum": 1
-         }
         },
-        "additionalProperties": false
-       }
-      },
-      "musicFadeSeconds": {
-       "type": "number",
-       "minimum": 0,
-       "description": "Head and tail fade for the music bed, seconds. Defaults to 1.5 when a record-carrying bed is staged."
-      }
-     },
-     "additionalProperties": false
-    },
-    "watermark": {
-     "type": "object",
-     "required": [
-      "persianText",
-      "latinText"
-     ],
-     "properties": {
-      "persianText": {
-       "type": "string",
-       "description": "Persian side of the lockup, rendered in an explicit RTL span."
-      },
-      "latinText": {
-       "type": "string",
-       "description": "Latin side, rendered in an explicit LTR span."
-      }
-     },
-     "additionalProperties": false
-    },
-    "musicTrack": {
-     "type": "object",
-     "required": [
-      "path",
-      "source",
-      "license",
-      "contentIdRisk"
-     ],
-     "description": "The music bed, with its provenance on record. Required in narrated mode: a narrated deliverable with no bed is an unfinished edit, and asking the client afterwards is the edit's own job arriving late. Use `omitMusicReason` to record a deliberate silence instead.",
-     "properties": {
-      "path": {
-       "type": "string"
-      },
-      "source": {
-       "type": "string",
-       "description": "Tool the file came from: pixabay_music, freesound_music, or user-provided."
-      },
-      "license": {
-       "type": "object",
-       "required": [
-        "name",
-        "url",
-        "downloadedAt"
-       ],
-       "properties": {
-        "name": {
-         "type": "string"
+        "ducking": {
+          "type": "boolean",
+          "default": true
         },
-        "url": {
-         "type": "string",
-         "description": "The licence page, so the claim is checkable by a human."
+        "fade_in_seconds": {
+          "type": "number",
+          "minimum": 0
         },
-        "downloadedAt": {
-         "type": "string",
-         "description": "ISO date; licences change."
+        "fade_out_seconds": {
+          "type": "number",
+          "minimum": 0
         }
-       }
-      },
-      "attribution": {
-       "type": "string"
-      },
-      "contentIdRisk": {
-       "type": "object",
-       "required": [
-        "level"
-       ],
-       "properties": {
-        "level": {
-         "type": "string",
-         "enum": [
-          "low",
-          "unknown",
-          "high"
-         ]
-        },
-        "reason": {
-         "type": "string",
-         "description": "The judgement's evidence, so a later reader can disagree informed."
-        }
-       }
       }
-     },
-     "additionalProperties": false
     },
-    "omitMusicReason": {
-     "type": "string",
-     "description": "Recorded reason a narrated project ships without a bed. Present → advisory; absent → fault."
+    "transitions": {
+      "type": "array",
+      "description": "Global transition list. Per-cut transitions in cuts[].transition_in/out are preferred.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "at_seconds": {
+            "type": "number"
+          },
+          "duration_seconds": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "type",
+          "at_seconds",
+          "duration_seconds"
+        ]
+      }
     },
-    "acknowledgeUnknownMusicRisk": {
-     "type": "boolean",
-     "description": "Required to ship a bed whose Content-ID risk is unknown: the acknowledgement is recorded, not assumed."
+    "renderer_family": {
+      "type": "string",
+      "enum": [
+        "explainer-data",
+        "explainer-teacher",
+        "cinematic-trailer",
+        "documentary-montage",
+        "product-reveal",
+        "screen-demo",
+        "presenter",
+        "animation-first",
+        "persian-footage"
+      ],
+      "description": "Locked at proposal stage — creative grammar for this deliverable. Preserved from proposal_packet; edit MUST NOT change without a logged decision."
+    },
+    "render_runtime": {
+      "type": "string",
+      "enum": [
+        "remotion",
+        "hyperframes",
+        "ffmpeg"
+      ],
+      "description": "Locked at proposal stage — technical runtime that realizes renderer_family. Edit MUST carry this forward unchanged unless a logged render_runtime_selection decision overrides it."
+    },
+    "composition_mode": {
+      "type": "string",
+      "enum": [
+        "templated",
+        "atelier"
+      ],
+      "description": "Locked at proposal — HOW the composition is built. Edit MUST carry forward unchanged. 'atelier' routes video_compose to _render_via_atelier (no cut-schema, no stock registry); requires `bespoke` block below."
+    },
+    "bespoke": {
+      "type": "object",
+      "description": "Required when composition_mode='atelier'. Contract for the hand-authored, project-local Remotion render. See tools/video/video_compose.py → _render_via_atelier docstring.",
+      "required": [
+        "entry",
+        "composition_id",
+        "art_direction"
+      ],
+      "properties": {
+        "entry": {
+          "type": "string",
+          "description": "Path to the project-local Remotion entry .tsx (typically projects/<slug>/index.tsx). If outside remotion-composer/, auto-staged via directory junction/symlink at render time."
+        },
+        "composition_id": {
+          "type": "string",
+          "description": "id registered in that entry's Root"
+        },
+        "art_direction": {
+          "type": "string",
+          "description": "Short commitment to a fresh visual language (or a path to art-direction.md). REQUIRED — enforced by _run_atelier_checks."
+        },
+        "props_path": {
+          "type": "string",
+          "description": "Absolute path to a props JSON (Remotion --props)"
+        },
+        "public_dir": {
+          "type": "string",
+          "description": "Per-project public dir (avoids copying the bloated shared remotion-composer/public/)"
+        },
+        "scale": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 1.0
+        },
+        "crf": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 51
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "slideshow_risk_score": {
+      "type": "object",
+      "description": "Slideshow risk assessment from lib/slideshow_risk.py",
+      "properties": {
+        "average": {
+          "type": "number"
+        },
+        "verdict": {
+          "type": "string",
+          "enum": [
+            "strong",
+            "acceptable",
+            "revise",
+            "fail"
+          ]
+        }
+      }
+    },
+    "persian": {
+      "type": "object",
+      "description": "Props for the persian-footage composition, consumed by tools/video/persian_compose.py and mirrored by remotion-composer/src/persian/types.ts. Present only when renderer_family='persian-footage', which carries an empty top-level `cuts` array because its timeline lives in `persian.shots` — the Persian composition IS the template and has no cut list. Times are seconds at this boundary and converted to frames exactly once, inside the components.",
+      "required": [
+        "format",
+        "durationSeconds",
+        "shots",
+        "moments"
+      ],
+      "properties": {
+        "design": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "version",
+                "profile",
+                "seed"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer",
+                  "const": 2
+                },
+                "profile": {
+                  "type": "string",
+                  "const": "quiet-editorial"
+                },
+                "seed": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "version",
+                "profile",
+                "seed"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer",
+                  "const": 2
+                },
+                "profile": {
+                  "type": "string",
+                  "const": "film-type"
+                },
+                "seed": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "profileVersion": {
+                  "enum": ["2.1.0", "2.2.0", "2.3.0", "2.4.0", "2.5.0"]
+                },
+                "contentHash": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "resolved": {
+                  "type": "object"
+                }
+              },
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "if": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "resolved"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "profileVersion"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "contentHash"
+                        ]
+                      }
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "resolved",
+                      "profileVersion",
+                      "contentHash"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "vertical",
+            "landscape"
+          ]
+        },
+        "durationSeconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Authoritative total duration. calculateMetadata uses it directly rather than deriving it from the shot list."
+        },
+        "shots": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Footage segments, in timeline order and contiguous. A gap renders as black; an overlap renders as whichever Sequence is later in the array, which is not a decision to leave to array order.",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "source",
+              "startSeconds",
+              "endSeconds",
+              "attribution"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string",
+                "description": "Clip path; staged under remotion-composer/public/ at render time and resolved through staticFile()."
+              },
+              "startSeconds": {
+                "type": "number",
+                "minimum": 0
+              },
+              "endSeconds": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "sourceInSeconds": {
+                "type": "number",
+                "minimum": 0,
+                "default": 0
+              },
+              "camera": {
+                "type": "string",
+                "enum": [
+                  "push-in",
+                  "pull-out",
+                  "pan-left",
+                  "pan-right",
+                  "none"
+                ],
+                "default": "none",
+                "description": "Camera move from motion.ts. 'none' is a deliberate choice for footage that already carries motion — two motions fight and produce a queasy compound move."
+              },
+              "attribution": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Required by both stock licences; persian_compose refuses to render a shot without one."
+              },
+              "avoidRegions": {
+                "type": "array",
+                "description": "Normalized regions to avoid during the shot; each region may be valid for the whole shot or a bounded interval.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "x",
+                    "y",
+                    "w",
+                    "h"
+                  ],
+                  "properties": {
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "w": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "maximum": 1
+                    },
+                    "h": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "maximum": 1
+                    },
+                    "startSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "endSeconds": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "moments": {
+          "type": "array",
+          "description": "Selective typographic moments — NOT a caption track. 7-9 in a 60-second video, at most 55% text coverage, with at least 0.9s of empty frame between them and the first moment on screen within 0.6s of the start (feeds autoplay muted); lib/persian_moments.py audits all of these. Each moment is ONE grammatical Persian phrase with one emphasised span, carried by an ordered `segments` array whose order is the reading order, top to bottom. The retired slot shape (text/label/kicker/unit) is deliberately absent rather than optional: it produced three type sizes on three different left edges with no sentence anywhere, and supporting both would mean supporting two incompatible ideas of what the typographic layer is.",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "startSeconds",
+              "endSeconds",
+              "segments"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "figure",
+                  "term",
+                  "statement",
+                  "hook"
+                ],
+                "description": "Editorial classification. figure = a quantity. term = a name or acronym the phrase glosses. statement = a claim. hook = the opening moment, declared never inferred; its style (claim+qualifier or flat display) derives from the segments. It no longer decides arrangement — the segments order does — it records what the author judged the moment to be, which the audits reason about."
+              },
+              "startSeconds": {
+                "type": "number",
+                "minimum": 0
+              },
+              "endSeconds": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "segments": {
+                "type": "array",
+                "minItems": 1,
+                "description": "The phrase, in reading order. The array order is the paint order, top to bottom, and the component adds no reordering of its own — «مطالعهٔ دانشگاه اولوی فنلاند روی» above «۲۲۶۴ نفر» is expressed by writing it that way. Exactly one hero per reveal step; at most one source, always last. No cap on the count: lib/persian_moments.py limits structure (one hero per step, at most one source) and length (per-role character ceilings), never the segment count, so a multi-step build the pipeline accepts must also pass this schema. A single-segment moment is a flat display hook (one hero carrying accentWords) and nothing else.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "role",
+                    "text"
+                  ],
+                  "properties": {
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "lead",
+                        "hero",
+                        "tail",
+                        "source"
+                      ],
+                      "description": "lead = sets up the emphasis. hero = THE emphasis: accent colour, largest type, exactly one per reveal step. tail = completes the phrase after the hero. source = a citation appended to the phrase, never a part of it."
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "Painted exactly as given; normalized by the pipeline before render."
+                    },
+                    "accentWords": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 3,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "description": "Inline accent words for the flat-hook treatment: the whole segment paints at one size in primary ink and only these words carry the accent. At most 3; each must occur in the segment's own text. Restricted to the opening moment."
+                    },
+                    "revealAfterSeconds": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "Seconds after the moment's own start at which this segment joins the phrase. Earlier segments stay on screen and dim. That is how two consecutive facts that belong to one thought accumulate instead of replacing each other — one moment, two reveals, not two moments."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "purpose": {
+                "type": "string"
+              },
+              "presentation": {
+                "type": "object",
+                "properties": {
+                  "treatment": {
+                    "type": "string",
+                    "enum": [
+                      "editorial",
+                      "inline-statement"
+                    ]
+                  },
+                  "placement": {
+                    "type": "string",
+                    "enum": [
+                      "upper-left",
+                      "upper-right",
+                      "mid-left",
+                      "mid-right",
+                      "lower-left",
+                      "lower-right",
+                      "center",
+                      "auto"
+                    ]
+                  },
+                  "motion": {
+                    "type": "string",
+                    "enum": [
+                      "soft-reveal",
+                      "cut-in"
+                    ]
+                  },
+                  "emphasis": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "inline"
+                    ]
+                  },
+                  "contrastMode": {
+                    "type": "string",
+                    "enum": [
+                      "dark",
+                      "light"
+                    ]
+                  },
+                  "contrastStrength": {
+                    "type": "string",
+                    "enum": [
+                      "soft",
+                      "standard",
+                      "strong"
+                    ],
+                    "description": "Film Type only: stable local contrast strength for the full moment. This is an authored decision, not automatic footage analysis."
+                  }
+                },
+                "additionalProperties": false
+              },
+              "anchorText": {
+                "type": "string",
+                "description": "The narration words this moment is bound to, as spoken ('دانشمندهای دانشگاه اولو', not the on-screen '۲۲۶۴'). persian_compose re-derives the moment's start from these words and refuses a timing that drifts — the check that makes rescaling timings from another video impossible."
+              },
+              "stackHeightPx": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Fitted total ink+gap height in px at nominal width (FittedMoment.heightPx in remotion-composer/src/persian/layout.ts, produced by fitMoment against the vendored Estedad). Attached by persian_compose._maybe_attach_stack_heights when node-canvas is available, so the verifier can scope ink measurement to the scrim plateau (stackHeightPx/2 + margin around the optical centre) instead of the whole zone envelope. Omitted when the bridge is unavailable — the verifier then falls back to zone-scoped measurement."
+              },
+              "layoutGeometry": {
+                "type": "object",
+                "required": [
+                  "x",
+                  "y",
+                  "w",
+                  "h"
+                ],
+                "properties": {
+                  "x": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "y": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "w": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1
+                  },
+                  "h": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "typographicBeats": {
+          "type": "array",
+          "description": "Stretches of timeline with no footage behind them, for concepts no honest clip serves. Capped upstream at 2 so this cannot quietly become the whole video.",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "startSeconds",
+              "endSeconds"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "startSeconds": {
+                "type": "number",
+                "minimum": 0
+              },
+              "endSeconds": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "audio": {
+          "type": "object",
+          "properties": {
+            "narration": {
+              "type": "string"
+            },
+            "music": {
+              "type": "string"
+            },
+            "musicFlatVolume": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Music level when narration is absent."
+            },
+            "musicBaseVolume": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Music level when narration exists but is not speaking."
+            },
+            "musicDuckVolume": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Music level while narration speaks."
+            },
+            "wordTimings": {
+              "type": "array",
+              "description": "Narration word timings. persian_compose turns these into a sidecar .srt beside the MP4 — real, toggleable, indexable subtitles rather than burned-in pixels. Omitted in silent mode, where there is no speech to subtitle.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "word",
+                  "start",
+                  "end"
+                ],
+                "properties": {
+                  "word": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "end": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "probability": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "musicFadeSeconds": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Head and tail fade for the music bed, seconds. Defaults to 1.5 when a record-carrying bed is staged."
+            }
+          },
+          "additionalProperties": false
+        },
+        "watermark": {
+          "type": "object",
+          "required": [
+            "persianText",
+            "latinText"
+          ],
+          "properties": {
+            "persianText": {
+              "type": "string",
+              "description": "Persian side of the lockup, rendered in an explicit RTL span."
+            },
+            "latinText": {
+              "type": "string",
+              "description": "Latin side, rendered in an explicit LTR span."
+            }
+          },
+          "additionalProperties": false
+        },
+        "musicTrack": {
+          "type": "object",
+          "required": [
+            "path",
+            "source",
+            "license",
+            "contentIdRisk"
+          ],
+          "description": "The music bed, with its provenance on record. Required in narrated mode: a narrated deliverable with no bed is an unfinished edit, and asking the client afterwards is the edit's own job arriving late. Use `omitMusicReason` to record a deliberate silence instead.",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string",
+              "description": "Tool the file came from: pixabay_music, freesound_music, or user-provided."
+            },
+            "license": {
+              "type": "object",
+              "required": [
+                "name",
+                "url",
+                "downloadedAt"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string",
+                  "description": "The licence page, so the claim is checkable by a human."
+                },
+                "downloadedAt": {
+                  "type": "string",
+                  "description": "ISO date; licences change."
+                }
+              }
+            },
+            "attribution": {
+              "type": "string"
+            },
+            "contentIdRisk": {
+              "type": "object",
+              "required": [
+                "level"
+              ],
+              "properties": {
+                "level": {
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "unknown",
+                    "high"
+                  ]
+                },
+                "reason": {
+                  "type": "string",
+                  "description": "The judgement's evidence, so a later reader can disagree informed."
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "omitMusicReason": {
+          "type": "string",
+          "description": "Recorded reason a narrated project ships without a bed. Present → advisory; absent → fault."
+        },
+        "acknowledgeUnknownMusicRisk": {
+          "type": "boolean",
+          "description": "Required to ship a bed whose Content-ID risk is unknown: the acknowledgement is recorded, not assumed."
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "moments"
+            ],
+            "properties": {
+              "moments": {
+                "contains": {
+                  "type": "object",
+                  "required": [
+                    "presentation"
+                  ],
+                  "properties": {
+                    "presentation": {
+                      "type": "object",
+                      "required": [
+                        "contrastStrength"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "design"
+            ],
+            "properties": {
+              "design": {
+                "type": "object",
+                "required": [
+                  "version",
+                  "profile"
+                ],
+                "properties": {
+                  "version": {
+                    "const": 2
+                  },
+                  "profile": {
+                    "const": "film-type"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "metadata": {
+      "type": "object"
     }
-   },
-   "additionalProperties": false
   },
-  "metadata": {
-   "type": "object"
-  }
- },
- "additionalProperties": false
+  "additionalProperties": false
 }

@@ -41,6 +41,7 @@
  * how the floating «نفر» happened in the first place.
  */
 
+import type { FilmTypeLayout } from "./filmType/layout";
 import type { CameraMove } from "./motion";
 import type { PersianFormat } from "./tokens";
 import { compareKey, splitWords } from "./text";
@@ -133,6 +134,21 @@ export interface PersianSegment {
  * `segments` is the whole content. There is no other text field, and there is no
  * field whose presence changes how another is painted.
  */
+export type PersianV2Treatment = "editorial" | "inline-statement";
+export type PersianV2Placement = "upper-left" | "upper-right" | "mid-left" | "mid-right" | "lower-left" | "lower-right" | "center" | "auto";
+export type PersianV2Motion = "soft-reveal" | "cut-in";
+export type PersianV2Emphasis = "none" | "inline";
+export type PersianV2ContrastMode = "dark" | "light";
+export type PersianPresentation = {
+  readonly treatment?: PersianV2Treatment;
+  readonly placement?: PersianV2Placement;
+  readonly motion?: PersianV2Motion;
+  readonly emphasis?: PersianV2Emphasis;
+  readonly contrastMode?: PersianV2ContrastMode;
+  /** Film Type only; stable for the entire moment, not frame-adaptive. */
+  readonly contrastStrength?: "soft" | "standard" | "strong";
+};
+
 export interface PersianMoment {
   readonly id: string;
   readonly kind: PersianMomentKind;
@@ -141,6 +157,8 @@ export interface PersianMoment {
   readonly endSeconds: number;
   /** The phrase, in reading order, top to bottom. */
   readonly segments: readonly PersianSegment[];
+  readonly purpose?: string;
+  readonly presentation?: PersianPresentation;
   /**
    * The narration words this moment is bound to.
    *
@@ -163,6 +181,8 @@ export interface PersianMoment {
    * bridge did not run.
    */
   readonly stackHeightPx?: number;
+  /** Browser-fitted placement geometry, normalized to the nominal composition. */
+  readonly layoutGeometry?: { x: number; y: number; w: number; h: number };
 }
 
 /**
@@ -182,6 +202,8 @@ export interface PersianShot {
   /** In-point within the source clip, seconds. */
   readonly sourceInSeconds: number;
   readonly camera: CameraMove;
+  /** Reviewed screen-space envelopes, including crop/camera motion. Times are absolute timeline seconds. */
+  readonly avoidRegions?: readonly { x: number; y: number; w: number; h: number; startSeconds?: number; endSeconds?: number }[];
   /**
    * Attribution string for the credits beat. Required by both Pexels' and
    * Pixabay's licence terms, so it is not optional in the type — a shot that
@@ -243,13 +265,28 @@ export interface PersianWatermark {
  * but not to interfaces. The existing compositions in this repo
  * (`TitledVideoProps` and friends) use the same form for the same reason.
  */
+export type PersianDesignSnapshot = {
+  readonly version: 2;
+  readonly profile: string;
+  readonly seed: string;
+  readonly profileVersion: string;
+  readonly contentHash: string;
+  readonly resolved: Record<string, unknown>;
+};
+
 export type PersianVideoProps = {
   readonly format: PersianFormat;
+  readonly design?: PersianDesignSnapshot;
+  /** Browser-measured, frozen Film Type layout; produced before render, not authored by hand. */
+  readonly filmType?: FilmTypeLayout;
   readonly shots: readonly PersianShot[];
   readonly moments: readonly PersianMoment[];
   readonly typographicBeats?: readonly PersianTypographicBeat[];
   readonly audio?: PersianAudio;
   readonly watermark?: PersianWatermark;
+  readonly watermarkPlan?: readonly { zone: string; startSeconds: number; endSeconds: number; rect: { x: number; y: number; w: number; h: number }; transition: string; reason?: string; }[];
+  readonly watermarkPlanMeasured?: boolean;
+  readonly watermarkMeasurement?: { widthPx: number; heightPx: number; layout: "single-line" | "two-line"; measured: true };
   /** Total duration. Authoritative — `calculateMetadata` uses it directly. */
   readonly durationSeconds: number;
 };

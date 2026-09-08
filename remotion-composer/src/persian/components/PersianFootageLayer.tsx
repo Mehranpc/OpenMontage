@@ -40,6 +40,8 @@ export interface PersianFootageLayerProps {
   /** Resolved absolute or `staticFile()` URL for the clip. */
   readonly src: string;
   readonly durationFrames: number;
+  /** Opt-in Film Type owns local contrast fields; Legacy keeps its exact grade. */
+  readonly showGrade?: boolean;
 }
 
 /**
@@ -55,6 +57,7 @@ export const PersianFootageLayer: React.FC<PersianFootageLayerProps> = ({
   shot,
   src,
   durationFrames,
+  showGrade = true,
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -90,6 +93,7 @@ export const PersianFootageLayer: React.FC<PersianFootageLayerProps> = ({
         />
       </AbsoluteFill>
 
+      {showGrade ? <>
       {/* Static grade. Two stacked layers: a radial vignette to seat the text,
           and a flat tonal wash to pull disparate clips toward one look. */}
       <AbsoluteFill
@@ -110,6 +114,7 @@ export const PersianFootageLayer: React.FC<PersianFootageLayerProps> = ({
           pointerEvents: "none",
         }}
       />
+      </> : null}
     </AbsoluteFill>
   );
 };

@@ -65,7 +65,7 @@
  * while a shrink distorts one segment against its siblings.
  */
 
-import { measureInk, measureWords, type InkBox } from "./measure";
+import { measureInk, measurePersian, measureWords, type InkBox } from "./measure";
 import type { EstedadWeight } from "./fonts";
 import { breakClass, splitWords, visibleLength } from "./text";
 import {
@@ -84,13 +84,16 @@ import {
   SHORT_HERO_FILL_FRACTION,
   SHORT_HERO_MAX_CHARS,
   STACK_GAP_RATIO,
+  SAFE_AREA,
   TYPOGRAPHY,
   computeLeadPx,
+  computeMomentCentreFraction,
   computeLineBudgetPx,
   computeMaxStackPx,
   computeShortHeroMaxPx,
   computeSourcePx,
   computeStackGapPx,
+  FORMAT_DIMENSIONS,
   type PersianFormat,
 } from "./tokens";
 import type {
@@ -513,7 +516,10 @@ export function isClaimQualifierHook(segments: readonly PersianSegment[]): boole
   const nonSource = segments.filter((segment) => segment.role !== "source");
   if (nonSource.length !== 2) return false;
   const [first, second] = nonSource;
-  if (first.role !== "hero" || second.role !== "tail") return false;
+  // A lead+hero is an ordinary phrase, not a claim+qualifier hook.
+  // Hook-scoped sizing only applies to the explicit hero-then-tail structure.
+  const validOrder = first.role === "hero" && second.role === "tail";
+  if (!validOrder) return false;
   return segments.every((segment) => (segment.accentWords ?? []).length === 0);
 }
 
@@ -600,6 +606,63 @@ export function weightForRole(
  * `tools/video/persian_compose.py` gates on the same number the fitter
  * produces, rather than re-deriving it.
  */
+/** Measured bilingual watermark geometry, including the painted separator and breathing margin. */
+export interface LockupMeasurement {
+  readonly widthPx: number;
+  readonly heightPx: number;
+  readonly layout: "single-line" | "two-line";
+  readonly measured: true;
+}
+
+/** One lockup contract consumed by both the planner bridge and React paint. */
+export function watermarkLayoutConfig(format: PersianFormat, fontSizePx = TYPOGRAPHY[format].watermarkFontSizePx) {
+  return {
+    fontSizePx,
+    weight: 500 as const,
+    lineHeight: 1.665,
+    gapPx: Math.round(fontSizePx * TYPOGRAPHY[format].wordGapRatio),
+    paddingPx: Math.max(4, Math.ceil(fontSizePx * 0.12)),
+    direction: "rtl" as const,
+  };
+}
+
+/** Measure the complete lockup box, including the padding and inter-span gaps painted by React. */
+export function measureWatermarkLockup(
+  persianText: string,
+  latinText: string,
+  fontSizePx: number,
+  format: PersianFormat,
+): LockupMeasurement {
+  const config = watermarkLayoutConfig(format, fontSizePx);
+  const separator = measurePersian("|", fontSizePx, config.weight);
+  const persian = measurePersian(persianText, fontSizePx, config.weight);
+  const latin = measurePersian(latinText, fontSizePx, config.weight);
+  const singleWidth = persian + separator + latin + config.gapPx * 2;
+  const lineHeight = Math.ceil(fontSizePx * config.lineHeight);
+  const available = FORMAT_DIMENSIONS[format].width * 0.84;
+  if (singleWidth + config.paddingPx * 2 <= available) {
+    return { widthPx: Math.ceil(singleWidth + config.paddingPx * 2), heightPx: lineHeight + config.paddingPx * 2, layout: "single-line", measured: true };
+  }
+  const twoLineWidth = Math.max(persian, latin);
+  return { widthPx: Math.ceil(twoLineWidth + config.paddingPx * 2), heightPx: lineHeight * 2 + config.gapPx + config.paddingPx * 2, layout: "two-line", measured: true };
+}
+
+export function resolveMomentGeometry(
+  fitted: FittedMoment,
+  format: PersianFormat,
+  placement: string = "auto",
+  safeArea: { top: number; bottom: number; side: number } = SAFE_AREA[format],
+): { x: number; y: number; w: number; h: number } {
+  const safe = safeArea;
+  const w = fitted.widthPx / (format === "vertical" ? 1080 : 1920);
+  const h = fitted.heightPx / (format === "vertical" ? 1920 : 1080);
+  const resolved = placement === "auto" ? "center" : placement;
+  const x = resolved === "center" ? 0.5 - w / 2 : resolved.endsWith("left") ? safe.side : 1 - safe.side - w;
+  const centre = computeMomentCentreFraction(format);
+  const y = resolved.startsWith("upper") ? safe.top : resolved.startsWith("lower") ? 1 - safe.bottom - h : centre - h / 2;
+  return { x: Math.max(0, x), y: Math.max(0, y), w: Math.min(1, w), h: Math.min(1, h) };
+}
+
 export function silhouetteRatio(fitted: FittedMoment): number {
   const widths: number[] = [];
   for (const segment of fitted.segments) {

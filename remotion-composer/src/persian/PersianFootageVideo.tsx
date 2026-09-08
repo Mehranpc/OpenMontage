@@ -53,6 +53,9 @@ import {
 
 import { PersianFootageLayer } from "./components/PersianFootageLayer";
 import { PersianMomentBlock } from "./components/PersianMomentBlock";
+import { PersianV2MomentBlock } from "./v2/PersianV2MomentBlock";
+import { isFilmType, prepareFilmTypeProps } from "./filmType/layout";
+import { PersianFilmTypeMoment, PersianFilmTypeWatermark } from "./filmType/components";
 import { PersianTypographicPlate } from "./components/PersianTypographicPlate";
 import { PersianWatermarkMark } from "./components/PersianWatermarkMark";
 import { estedadReady } from "./fonts";
@@ -166,6 +169,7 @@ export const calculatePersianMetadata: CalculateMetadataFunction<
     fps: PERSIAN_FPS,
     width: dimensions.width,
     height: dimensions.height,
+    ...(isFilmType(props.design) ? { props: await prepareFilmTypeProps(props) } : {}),
   };
 };
 
@@ -176,8 +180,17 @@ export const PersianFootageVideo: React.FC<PersianVideoProps> = ({
   typographicBeats,
   audio,
   watermark = DEFAULT_WATERMARK,
+  design,
+  watermarkPlan,
+  watermarkMeasurement,
+  filmType,
 }) => {
+  const v2WatermarkColor = design?.version === 2
+    ? ((design.resolved as any)?.typography?.ink ?? "#F0EDE6")
+    : undefined;
   const { fps, durationInFrames } = useVideoConfig();
+  const filmTypeEnabled = isFilmType(design);
+  if (filmTypeEnabled && !filmType) throw new Error("Film Type needs its measured props; run persian_compose or calculatePersianMetadata before mounting the component.");
 
   const toFrames = React.useCallback(
     (seconds: number) => Math.round(seconds * fps),
@@ -220,6 +233,7 @@ export const PersianFootageVideo: React.FC<PersianVideoProps> = ({
               shot={shot}
               src={resolveSrc(shot.source)}
               durationFrames={duration}
+              showGrade={!filmTypeEnabled}
             />
           </Sequence>
         );
@@ -256,17 +270,23 @@ export const PersianFootageVideo: React.FC<PersianVideoProps> = ({
             durationInFrames={duration}
             layout="none"
           >
-            <PersianMomentBlock
-              moment={moment}
-              format={format}
-              durationFrames={duration}
-            />
+            {design ? (
+              design.version === 2 ? (
+                filmTypeEnabled ? (
+                  <PersianFilmTypeMoment moment={moment} layout={filmType!.moments[moment.id]} format={format} durationFrames={duration} design={design} />
+                ) : <PersianV2MomentBlock moment={moment} format={format} durationFrames={duration} design={design} />
+              ) : (() => { throw new Error(`Unsupported Persian design snapshot version: ${String(design.version)}`); })()
+            ) : (
+              <PersianMomentBlock moment={moment} format={format} durationFrames={duration} />
+            )}
           </Sequence>
         );
       })}
 
       {/* 4. Watermark, above everything. */}
-      <PersianWatermarkMark format={format} watermark={watermark} />
+      {filmTypeEnabled ? (
+        <PersianFilmTypeWatermark format={format} design={design!} lockup={filmType!.lockup} plan={watermarkPlan} />
+      ) : <PersianWatermarkMark format={format} watermark={watermark} plan={design?.version === 2 ? watermarkPlan : undefined} measurement={design?.version === 2 ? watermarkMeasurement : undefined} color={v2WatermarkColor} />}
 
       {/* Safe-area and zone guides are intentionally NOT rendered — they exist in
           tokens for layout math only. A debug guide that ships is worse than no
