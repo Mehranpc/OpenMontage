@@ -1,47 +1,25 @@
-## Film Type 2.11 current default
+## Film Type is the active visual profile
 
-Read `docs/persian-film-type-2.11-patch.md` before the historical guidance below.
-Approved diffuse shadow now defaults to strong for every new moment. Vertical
-text and watermark use a conservative Reels safe area (14% top, 35% bottom,
-8% left, 16% right), not a generic 9:16 margin. Reprepare all geometry; never move
-measured rows manually. Review every moment with scripts/review_reels_safe_area.py
-and the actual Instagram UI. Preserve face/action regions simultaneously; refusal
-requires an editorial solution, not weaker margins. Existing complete pins stay
-unchanged. 2.7 QA limitations still apply; safe-area success is not full approval.
+Film Type 2.11.0 / layout 11 is the default for every persian-footage run.
+**This file does not restate the profile's rules.** Read
+`skills/pipelines/persian-footage/film-type.md` for the active contract, and
+`docs/persian-film-type-2.11-patch.md` for what the current version changed.
+Guidance for older pins lives in
+`skills/pipelines/persian-footage/film-type-history.md` — archive only.
 
-## Film Type 2.7 migration override
+Absent design is REFUSED by persian_compose. `quiet-editorial` remains an
+explicit option. Legacy is reachable only through the hidden opt-out
+`{"version":2,"profile":"legacy"}`, for emergencies, never for new work.
 
-For the 2.7 migration history, read `docs/persian-film-type-2.7-patch.md`
-BEFORE the historical guidance below. That guide owns diffuse shadow, region
-interpretation, diagnostic probes and version-aware QA. Pass resolved props to
-verify_frames; never apply Legacy scrim-ceiling/anchor/orange-gap rules to Film
-Type. Missing synchronized diagnostic evidence is not_checked, NOT a pass and
-NOT evidence that the shadow failed. Do not set persian_text_verified from these
-sampled checks. Review bright-background watermark separately. Keep old complete
-pins unchanged; migrate only by fresh resolution and prepass.
-
-# Executive Producer — Persian Footage Pipeline
+Do not carry a safe-area value, field strength, contrast floor, anchor
+tolerance or watermark position into this file. When those numbers live in two
+places they drift, and an agent then applies Legacy geometry to Film Type.
 
 ## Film Type 2.6 — historical default path
 
-At the time, every persian-footage run rendered Film Type 2.6 unless explicitly directed
-elsewhere. Set `persian.design =
-{"version":2,"profile":"film-type","seed":"<project-id>-film-type-01"}` (seed
-auto-derived from the project id), then read
-`skills/pipelines/persian-footage/film-type.md` before applying visual rules below.
-That guide owns this profile's white ink, compact whole-run typography, placement,
-conditional local contrast and two-line brand. Legacy orange/glow/rule, fixed-right
-anchor, silhouette, static grade, dimming and accent-colour pixel recipes below do
-not certify Film Type. Its prepared geometry requires actual painted-node/frame QA,
-not the Legacy accent detector. All source, science, selective-moment, reading,
-coverage, sync, narration/music, runtime, attribution and human gates still apply.
-Absent design is REFUSED by persian_compose — no video renders Legacy by accident;
-`quiet-editorial` stays available as an explicit option. The old Legacy render
-remains reachable only through the explicit hidden opt-out
-`{"version":2,"profile":"legacy"}` (emergencies only, never for new productions).
-This routing is not Stage B completion, humanVisualApproval or C–E rollout. Do not
-rewrite approved narration or facts to fit; request an editorial revision when
-preparation refuses. See the guide for exact review steps.
+See `skills/pipelines/persian-footage/film-type-history.md` for the archived
+historical guidance. That archive is the source for understanding older pins;
+this file does not repeat those rules.
 
 ## When To Use
 
@@ -75,18 +53,35 @@ Real stock footage carrying **designed typographic moments** — not a subtitled
   `remotion-composer/src/persian/tokens.ts` — read them there, not here. Empty frame
   sits between moments. The narration carries the sentences; the type carries
   what the ear cannot hold.
-- **One shared right edge.** Every line of every moment anchors to the same column,
-  which is what makes seven to nine separate moments read as one designed video.
-- **A gradient scrim**, not a panel, guaranteeing 5.6:1 contrast against any footage
-  whatsoever — so no clip is ever too bright for the text.
+- **Per-moment placement.** Placement is authored/reviewed per moment. The shared
+  right column and anchor `993.6px` belong to the Legacy renderer and its verifier,
+  not Film Type.
+- **A local diffuse field**, supporting the active text group. Film Type frame QA uses
+  a `4.5:1` contrast floor in `lib/persian_film_verify.py`. Legacy's
+  `SCRIM.peakAlpha` `0.72` and `5.6:1` floor live in `tokens.ts` and
+  `lib/persian_verify.py` and must not be applied to Film Type.
 - **A sidecar `.srt`** built from the narration's word timings. Real, toggleable,
   indexable subtitles instead of burned-in text.
-- **A four-phase brand watermark** that announces itself once, then retreats.
+- **A moving brand watermark** planned by `planMovingBrand`.
+  `WATERMARK_TOP_FRACTION` is a Legacy model, not the Film Type watermark model.
 - **Motion** from a defined grammar: four spring weights, arrival/exit verbs, and
   a living-hold that never transforms settled glyphs.
 
 Vertical 1080×1920 by default. Landscape 1920×1080 for long-form YouTube; the same
 components serve both, with type scales set per format rather than scaled from one.
+
+## Legacy renderer geometry — NOT Film Type
+
+These values verify the Legacy renderer. Applying any of them to a Film Type
+render is a bug, not a stricter check.
+
+- **Legacy scrim peak:** `SCRIM.peakAlpha = 0.72` — `remotion-composer/src/persian/components/PersianMomentBlock.tsx:166`; the Legacy verifier also documents it at `lib/persian_verify.py:44`.
+- **Legacy contrast floor:** `5.6:1` — `lib/persian_verify.py:193` (`SCRIM_GUARANTEED_CONTRAST`); the Film Type verifier uses `4.5:1` at `lib/persian_film_verify.py:72–74`.
+- **Legacy moment zone / plateau:** `MOMENT_ZONE_FRACTION` — `lib/persian_verify.py:118`; `SCRIM_PLATEAU_MARGIN_PX = 28` — `remotion-composer/src/persian/tokens.ts:714` and `lib/persian_verify.py:270`; Legacy optical centre is derived as `44%` vertical / `50%` landscape by `remotion-composer/src/persian/tokens.ts:698–700`.
+- **Legacy stack-height contradiction:** `maxStackFraction = 0.58` — `remotion-composer/src/persian/tokens.ts:568`; Film Type profile `maxStackFraction = 0.6` — `styles/persian-footage/film-type.json:92`.
+- **Legacy anchor/ink tolerances:** `ANCHOR_TOLERANCE_PX = 32` — `lib/persian_verify.py:152`; `INK_OVERSHOOT_PX = 8` and `INK_OVERSHOOT_EM = 0.065` — `lib/persian_verify.py:252–253`.
+- **Legacy watermark positions:** `WATERMARK_TOP_FRACTION` — `lib/persian_verify.py:167`; exact positions are vertical `17.0419%` quiet / `11%` resting and landscape `17.8211%` quiet / `8%` resting, as used by the Legacy verifier and its documented contract.
+- **Legacy zone ink ceiling and falloff:** `ZONE_INK_CEILING = 0.35` (35%) — `lib/persian_verify.py:209`; `falloffFraction = 0.28` — `remotion-composer/src/persian/tokens.ts:186`, yielding the documented `302px` vertical falloff in `skills/pipelines/persian-footage/compose-director.md:333–334`.
 
 ### What it deliberately does not produce
 
@@ -243,13 +238,14 @@ Beyond the standard review in `skills/meta/reviewer.md`:
 3. **Check the text coverage number.** Above 55% the audit fails it; anywhere near 55%
    is worth questioning by eye. This is the single number that distinguishes a
    typographic edit from a caption track, and it is invisible in the MP4.
-4. **Measure actual frames with `lib.persian_verify`.** `verify_frames` for ink, line
-   count, the text column, zone occupancy, and contrast; `anchor_report` for drift
-   across the whole render; `check_moment_arrangement` for RTL on a figure or term;
-   `find_watermark` with a no-watermark reference render. A schema-valid
-   `render_report` proves none of this, and neither does a hand-rolled brightness
-   threshold — the compose-director records nine measured approaches that footage or
-   the codec defeats.
+4. **Use the verifier for the resolved profile.** Film Type renders use
+   `lib.persian_film_verify.py`; its `verify_film_frames` checks synchronized
+   sampled-frame contrast/composite evidence and does not apply Legacy plateau,
+   anchor, or scrim assumptions. Legacy renders use `lib/persian_verify.py`, whose
+   `verify_frames`, `anchor_report`, `check_moment_arrangement`, and `find_watermark`
+   implement the Legacy geometry checks. A schema-valid `render_report` proves none
+   of this, and neither does a hand-rolled brightness threshold — the
+   compose-director records nine measured approaches that footage or the codec defeats.
 5. **Check the subject quota.** First beat, last beat, and ≥40% of footage beats show
    the video's declared subject. Read the manifest's `selection_reason` lines: if they
    say "best match" rather than what is in frame, the quota was not actually checked.
