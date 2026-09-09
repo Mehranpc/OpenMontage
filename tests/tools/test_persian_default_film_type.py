@@ -135,8 +135,27 @@ class TestHiddenLegacyOptOut:
 
 class TestExplicitPathsUnchanged:
     def test_quiet_editorial_still_resolves(
-        self, clip: Path, staging: Path
+        self, clip: Path, staging: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # This is a routing unit test, so provide the loaded-font bridge result
+        # explicitly instead of depending on an optional native canvas package.
+        measurement = {"widthPx": 216.0, "heightPx": 54.0}
+
+        def measured_bridge(built, *args, **kwargs):
+            for moment in built:
+                object.__setattr__(moment, "stack_height_px", 180.0)
+                object.__setattr__(moment, "stack_width_px", 420.0)
+                object.__setattr__(
+                    moment,
+                    "layout_geometry",
+                    {"x": 0.30, "y": 0.40, "w": 0.39, "h": 0.10},
+                )
+            return measurement
+
+        monkeypatch.setattr(
+            "tools.video.persian_compose._maybe_attach_stack_heights",
+            measured_bridge,
+        )
         props, _ = _build(
             _persian(
                 clip,
@@ -149,6 +168,8 @@ class TestExplicitPathsUnchanged:
             staging,
         )
         assert props["design"]["profile"] == "quiet-editorial"
+        assert props["watermarkMeasurement"] == measurement
+        assert props["watermarkPlan"]
 
 
 class TestDesignSchemaShapes:
