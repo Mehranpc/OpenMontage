@@ -38,6 +38,11 @@ not a weaker version of the Film Type one — in most cases Film Type has no
 equivalent at all, and applying the Legacy recipe produces geometry the Film Type
 verifier never asked for.
 
+The converse trap is just as expensive: a gate documented in a Legacy-heavy chapter
+is not Legacy by association. Classify by **who executes it**, not by who imports it
+or which section it was written in. Several gates in this file run on every render
+with no profile branch at all, and each of those now says so beside itself.
+
 # Edit Director — Persian Footage Pipeline
 
 ## Your job
@@ -91,6 +96,17 @@ cannot be translated, and cannot be read by anything but a human eye.
 Pass `audio.wordTimings` and the file appears beside the MP4. You do not build cues
 by hand and you do not put them in the props; `persian_compose` refuses a `cues` key
 outright.
+
+Both halves of this are **profile-independent**. `_write_subtitles`
+(`tools/video/persian_compose.py:896`, called from `:444`) contains no `v2` /
+`profile` / `film` / `legacy` branch, and neither does `lib/persian_srt.py`; the
+`cues` / `hookText` refusal in `_build_moments` (`:754–772`) sits *before* that
+function's only `v2` branch (`:799`). So the sidecar is written, and the retired
+block-level keys are refused, on Film Type exactly as on Legacy — there is no
+separate Film Type subtitle path to look for. Test coverage: cue construction is
+covered by `TestCueConstruction` in `tests/lib/test_persian_gates.py:93+`, but
+`_write_subtitles` itself and the compose-level `cues` refusal have **no test** —
+treat both as unguarded when editing that code.
 
 ## The moment model: one phrase, one emphasis
 
@@ -391,10 +407,18 @@ Both lines share the weight class, arrive in two
 beats — claim, then qualifier — and read as a step rather than a block: the
 silhouette gate in `persian_compose` refuses a hook whose lines are nearly equal
 in width, and `tokens.ts` documents the band it enforces. That gate is
-**Legacy-only** — `HOOK_SILHOUETTE_*` in `tokens.ts:478–481`, checked in
-`tools/video/persian_compose.py:992+`; `filmType/layout.ts` does not import it and
-has no equivalent check. The step shape is still the better hook, but on Film Type
-it is your judgement rather than a refusal.
+**Legacy-only**, and the reason is execution rather than imports: the band constants
+are `HOOK_SILHOUETTE_*` in `tokens.ts:478–481`, the measurement helper is
+`remotion-composer/src/persian/layout.ts:666`, and the enforcement is at
+`tools/video/persian_compose.py:1135`, inside `_maybe_attach_stack_heights`
+(defined `:984`). That bridge is only crossed when `v2 and measure_layout`
+(`:799`), and the Film Type path calls it with `measure_layout=False`
+(`:618–619`) — so on the active profile the gate is skipped entirely, not merely
+unimported. `filmType/` contains no reference to `silhouette` at all and has no
+equivalent check. The step shape is still the better hook, but on Film Type
+it is your judgement rather than a refusal. Test coverage: only the band constants
+are tested (`tests/lib/test_persian_gates.py:2256`,
+`test_the_silhouette_band_is_a_band`); the enforcement path itself has **no test**.
 
 The flat one-size style remains for a single-clause sentence where any split is
 arbitrary — such as the previously rejected «می‌دونی قهوه با هورمون‌هات
@@ -571,6 +595,14 @@ frames before a cut does not, because it is gone before it is read.
 that refusal is deliberate: the composition depends on `FontFace` and canvas
 measurement, neither of which exists on the other paths.
 
+That refusal is **profile-independent**. It is enforced inside `execute()` at
+`tools/video/persian_compose.py:258`, which runs *before* design resolution splits
+the profiles at `:511–537`, and the condition mentions no `v2` / `profile` /
+`film-type` / `design` — so Film Type, `quiet-editorial` and the Legacy opt-out all
+meet it identically. Test coverage: only the positive path is exercised
+(`render_runtime: remotion` in the lifecycle test,
+`tests/lib/test_persian_film_type.py:229`); the refusal branch has **no test**.
+
 `wordTimings` drives two things now — the sidecar `.srt` **and** the sync audit /
 `retime_moments`. In narrated mode it is required, not optional. Omit it only in
 silent mode, where there is no voice to anchor to and no subtitle file to write.
@@ -580,6 +612,11 @@ Every moment carries its declared `kind` (`figure`, `term`, `statement`, `hook`)
 takes `kind` as a required parameter — a hand-authored props file with a moment
 lacking `kind` is a type error, not a silent default: without it a claim+qualifier
 hook fits as an ordinary moment and loses every hook-scoped token.
+
+That requirement is **profile-independent** as well: `layout.ts:933` declares
+`kind: PersianMomentKind` with no default, the Python side requires it at
+`lib/persian_moments.py:531`, and Film Type reads it to pick a ladder
+(`filmType/layout.ts:174` and `:297`). A missing `kind` is refused on both paths.
 
 ## Hand-editing the on-screen text and re-rendering
 
@@ -645,6 +682,14 @@ assert abs(covered - duration_seconds) < 0.5, f"{covered=} vs {duration_seconds=
 # >= 1.0s averages below YAVG 22 (runs below 30 pass with a warning — a
 # legitimately dark shot measures ~28 and stays legal). Predict that gate here;
 # do not be surprised by it.
+#
+# This gate is profile-independent. `audit_render_luminance`
+# (`lib/persian_render_qa.py:280`; constants `DEAD_LUMA_FAIL` at `:40` and
+# `DEAD_LUMA_WARN` at `:44`) contains no profile branch, and
+# `persian_compose` calls it after every render (`:392`), refusing delivery at
+# `:421` and warning at `:406`. So it runs on Film Type too: do NOT record it
+# as `not_checked` alongside the Legacy-only frame checks. Its coverage lives
+# in `tests/lib/test_persian_render_qa.py`, not in the gates or verify suites.
 
 # Orthography survived the copy into edit_decisions — every segment, not one field.
 for moment in moments:
