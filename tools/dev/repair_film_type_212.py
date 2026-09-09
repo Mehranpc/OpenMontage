@@ -41,4 +41,13 @@ replace_once(
     'if (!names?.length || names.some(z => !(z in rects) || (repair && p.profileVersion !== "2.8.0" && p.profileVersion !== "2.9.0" && p.profileVersion !== "2.10.0" && p.profileVersion !== "2.11.0" && p.profileVersion !== "2.12.0" && z.startsWith("upper")))) {',
 )
 
+# The materializer updates the heading and routing table, but the introductory
+# current-default claim is a separate paragraph guarded by the drift test.
+film_skill = ROOT / "skills" / "pipelines" / "persian-footage" / "film-type.md"
+replace_once(
+    film_skill,
+    "**One current default.** Every unpinned `persian-footage` run resolves to\n`2.11.0` / `layoutVersion 11`. If any other document, comment, or memory tells\nyou a different version is current, it is stale and this file wins.",
+    "**One current default.** Every unpinned `persian-footage` run resolves to\n`2.12.0` / `layoutVersion 12`. If any other document, comment, or memory tells\nyou a different version is current, it is stale and this file wins.",
+)
+
 print("Applied Film Type 2.12 post-materialization safety repairs.")
