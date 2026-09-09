@@ -41,8 +41,10 @@ trap rollback ERR INT TERM
 PY="$ROOT/.venv/bin/python"
 
 # The migration asserts every source anchor and the immutable 2.11 canonical hash
-# before writing. It computes the 2.12 canonical hash from the resulting JSON.
+# before writing. The follow-up repairs version guards that only exist after the
+# generated 2.12 source is materialized.
 "$PY" tools/dev/apply_film_type_212.py
+"$PY" tools/dev/repair_film_type_212.py
 
 # Validate the complete implementation before committing anything.
 "$PY" -m pytest tests/lib/ -q
@@ -56,6 +58,7 @@ OPENMONTAGE_BROWSER_TESTS=1 "$PY" -m unittest tests.lib.test_persian_ranked_brow
 # Temporary execution files must not survive the verified source commit.
 rm -f \
   tools/dev/apply_film_type_212.py \
+  tools/dev/repair_film_type_212.py \
   tools/dev/finish_film_type_212.sh \
   .github/workflows/apply-film-type-212.yml
 
