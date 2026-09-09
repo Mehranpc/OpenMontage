@@ -46,24 +46,35 @@ timing, wrapping, or watermark policy.
 
 Because `radiusScale` now multiplies a single row's width instead of the whole
 block, the effective field is much smaller than the ratio alone suggests; the
-`minRadiusPx` floor keeps very short rows from getting a hard-edged blob.
+`minRadiusPx` floor keeps very short rows from getting a hard-edged blob, and
+the painted radius is still clamped to half the frame.
 
 ## Behaviour inherited from 2.9 (unchanged)
 
 - Typography and the brand are kept inside the **platform safe area only**.
-  Subject-region enforcement stays **off**; `subjectSafety` remains
-  `not_checked` and every prepared render still emits that warning.
+  Subject-region enforcement stays **off**; every moment reports
+  `subjectSafety: "not-checked"` and each prepared render still emits that
+  warning. Nothing is ever silently reported as reviewed.
 - The field is bounded by the frame, so it can never be wider or taller than the
   video.
 - Reels safe area: top 14%, bottom 35%, left 8%, right 16%.
 
-## Test contract note
+## Test contract notes
 
-`tests/lib/test_persian_reels_safe_area.py` used to freeze the default field to
-the 2.7 values. That is no longer the contract: it now asserts the ink colours,
-typography and safe-area geometry are frozen, and that the field is **no darker
-and no larger** than the 2.7 baseline, still diffuse, still ungraded. If a
-future patch makes the field bigger or darker, that test fails on purpose.
+- `tests/lib/test_persian_reels_safe_area.py` used to freeze the default field to
+  the 2.7 values. That is no longer the contract: it now asserts the ink colours,
+  typography and safe-area geometry are frozen, and that the field is **no darker
+  and no larger** than the 2.7 baseline, still diffuse, still ungraded. If a
+  future patch makes the field bigger or darker, that test fails on purpose.
+- The opt-in browser suite had two contracts that only 2.8 can satisfy (refusing
+  missing reviews and fully obstructed frames). They now run against an explicit
+  `2.8.0` pin, so the documented rollback path stays tested, while the default
+  profile asserts the opt-out it actually has: regions ignored, safe area
+  enforced, `subjectSafety: "not-checked"`.
+- The same suite's fixture omitted `typographicBeats`, which the composition then
+  defaulted, tripping the prepass guard. The guard is deliberately strict and was
+  left alone; the fixture now sends the complete props shape and a new test pins
+  that incomplete props fail loudly instead of being silently completed.
 
 ## Verify
 
