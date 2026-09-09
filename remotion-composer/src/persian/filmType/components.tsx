@@ -5,7 +5,7 @@ import { AbsoluteFill, Easing, useCurrentFrame, useVideoConfig } from "remotion"
 import { compareKey } from "../text";
 import { FORMAT_DIMENSIONS, type PersianFormat } from "../tokens";
 import type { PersianMoment, PersianDesignSnapshot, PersianVideoProps } from "../types";
-import { filmProfile, filmRowDelay, isFilmTypePolish, type FilmRow, type FilmMomentLayout, type FilmLockup, type Rect } from "./layout";
+import { filmProfile, filmRowDelay, isFilmTypePolish, type FilmRow, type FilmMomentLayout, type FilmLockup, type FilmProfile, type Rect } from "./layout";
 
 import { gentleLife, featherLayers, compactPath } from "./motion24";
 
@@ -17,6 +17,19 @@ export function filmLife(seconds: number, span: number, delay: number, enter: nu
   const arrive = ease(clamp01((seconds - delay) / inTime));
   const leave = clamp01((span - seconds) / outTime);
   return { arrive, leave, opacity: arrive * leave };
+}
+
+/** 2.10 separates letter edges at the glyph: a close shadow for the edge and a
+ * wide halo for busy footage. No stroke, no card, no backdrop blur, no grade. */
+export function glyphShadowFilter(p: FilmProfile): string | undefined {
+  if (p.profileVersion !== "2.10.0") return undefined;
+  const s = p.contrast.glyphShadow;
+  if (!s) throw new Error("Film Type 2.10 requires explicit glyph shadow tokens.");
+  const match = /^#([0-9a-fA-F]{6})$/.exec(s.color);
+  if (!match) throw new Error("Film Type glyph shadow color must be a six-digit hex value.");
+  const channel = (at: number) => parseInt(match[1].slice(at, at + 2), 16);
+  const rgba = (alpha: number) => `rgba(${channel(0)},${channel(2)},${channel(4)},${alpha})`;
+  return `drop-shadow(0 ${s.nearOffsetPx}px ${s.nearBlurPx}px ${rgba(s.nearAlpha)}) drop-shadow(0 0 ${s.haloBlurPx}px ${rgba(s.haloAlpha)})`;
 }
 
 /** An ellipse with a real flat-opacity core enclosing ALL four text corners.
@@ -58,17 +71,26 @@ const CompactFilmField: React.FC<{rect:Rect;format:PersianFormat;design:PersianD
  </svg>;
 };
 
-/** 2.9 bounds the field by the frame: the painted shadow is never wider or
- * taller than the video, so it stays a local soft shadow around the ink that
- * fades gently to nothing instead of a frame-sized pale wash. */
-const DiffuseField: React.FC<{layout:FilmMomentLayout;format:PersianFormat;design:PersianDesignSnapshot;opacity:number;travel:number}>=({layout,format,design,opacity,travel})=>{
- const id=useId(),p=filmProfile(design),d=FORMAT_DIMENSIONS[format];
- const {rx,ry}=diffuseRadii(layout.widthPx,layout.heightPx,p.contrast.diffuseField!,p.profileVersion === "2.9.0"?{width:d.width,height:d.height}:undefined);
- const cx=(layout.rect.x+layout.rect.w/2)*d.width,cy=(layout.rect.y+layout.rect.h/2)*d.height+travel;
+/** 2.9 bounds the field by the frame, so the shadow never grows wider or taller
+ * than the video. 2.10 goes further: one small soft field per measured row, so a
+ * short line no longer drags a block-sized wash across the footage. */
+const DiffuseField: React.FC<{layout:FilmMomentLayout;format:PersianFormat;design:PersianDesignSnapshot;opacity:number;travel:number;anchor:number;align:"left"|"right"|"center"}>=({layout,format,design,opacity,travel,anchor,align})=>{
+ const id=useId(),p=filmProfile(design),d=FORMAT_DIMENSIONS[format],cfg=p.contrast.diffuseField!;
  const dark=layout.contrastMode==="dark",peak=layout.fieldPeakAlpha??p.contrast.strengths[layout.strength];
- return <svg width={d.width} height={d.height} style={{position:"absolute",inset:0,opacity,zIndex:1,mixBlendMode:dark?"multiply":undefined,pointerEvents:"none"}} data-film-field-shape="diffuse">
+ const bounded=p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" ? {width:d.width,height:d.height} : undefined;
+ const left=layout.rect.x*d.width, top=layout.rect.y*d.height;
+ const fields=cfg.perRow
+  ? layout.rows.map(row=>{
+     const pad=cfg.rowPaddingPx??0, inkHeight=row.abovePx+row.belowPx;
+     const {rx,ry}=diffuseRadii(row.widthPx+2*pad,inkHeight+2*pad,cfg,bounded);
+     const rowRight=align==="center"?anchor+row.widthPx/2:align==="left"?anchor+row.widthPx:anchor;
+     return {rx,ry,cx:left+rowRight-row.widthPx/2,cy:top+row.baselinePx-row.abovePx+inkHeight/2+travel};
+    })
+  : [{...diffuseRadii(layout.widthPx,layout.heightPx,cfg,bounded),
+      cx:(layout.rect.x+layout.rect.w/2)*d.width,cy:(layout.rect.y+layout.rect.h/2)*d.height+travel}];
+ return <svg width={d.width} height={d.height} style={{position:"absolute",inset:0,opacity,zIndex:1,mixBlendMode:dark?"multiply":undefined,pointerEvents:"none"}} data-film-field-shape="diffuse" data-film-field-scope={cfg.perRow?"row":"block"}>
  <defs><radialGradient id={id}>{diffuseStops.map(s=><stop key={s.offset} offset={s.offset} stopColor={dark?p.contrast.darkField:p.contrast.lightField} stopOpacity={s.alpha*peak}/>)}</radialGradient></defs>
- <ellipse cx={cx} cy={cy} rx={rx} ry={ry} fill={`url(#${id})`}/></svg>;
+ {fields.map((f,i)=><ellipse key={i} cx={f.cx} cy={f.cy} rx={f.rx} ry={f.ry} fill={`url(#${id})`}/>)}</svg>;
 };
 
 const Run: React.FC<{row: FilmRow; x: number; color: string; accent: string; emphasis: boolean; align?: "left" | "right" | "center"}> = ({row,x,color,accent,emphasis,align="right"}) => {
@@ -94,7 +116,8 @@ export const PersianFilmTypeMoment: React.FC<{
   if (!layout || layout.id !== moment.id) throw new Error(`Missing measured Film Type layout for ${moment.id}; run persian_compose.`);
   const span = durationFrames / fps, seconds = frame / fps;
   const firstReveal = Math.min(...layout.rows.map(row => row.revealAfterSeconds));
-  const modern=p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0"))),lifeAt=modern?gentleLife:filmLife;
+  const modern=p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0"))),lifeAt=modern?gentleLife:filmLife;
+  const diffuse=p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0";
   const fieldEnter=modern?(moment.presentation?.motion === "cut-in"?p.motion.cutInSeconds:p.motion.enterSeconds):p.motion.scrimEnterSeconds;
   const fieldLife = lifeAt(seconds,span,firstReveal,fieldEnter,p.motion.exitSeconds);
   const dark = layout.contrastMode === "dark";
@@ -103,13 +126,13 @@ export const PersianFilmTypeMoment: React.FC<{
   const align = layout.placement === "center" ? "center" : polished ? "right" : layout.placement.endsWith("left") ? "left" : "right";
   const anchor = align === "center" ? layout.widthPx/2 : align === "left" ? p.layout.inkPaddingPx : layout.widthPx-p.layout.inkPaddingPx;
   return <AbsoluteFill data-film-type-moment={moment.id} data-film-type-placement={layout.placement} style={{pointerEvents:"none"}}>
-    {(p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0") ? <DiffuseField layout={layout} format={format} design={design} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)}/> : modern ? <CompactFilmField featherPx={layout.fieldFeatherPx} rect={layout.rect} format={format} design={design} color={dark?p.contrast.darkField:p.contrast.lightField}
+    {diffuse ? <DiffuseField layout={layout} format={format} design={design} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)} anchor={anchor} align={align}/> : modern ? <CompactFilmField featherPx={layout.fieldFeatherPx} rect={layout.rect} format={format} design={design} color={dark?p.contrast.darkField:p.contrast.lightField}
       alpha={p.contrast.strengths[layout.strength]} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)}/> : <FilmContrastField rect={layout.rect} format={format} color={dark?p.contrast.darkField:p.contrast.lightField}
       alpha={p.contrast.strengths[layout.strength]} plateau={p.contrast.plateauStop}
       paddingPx={p.contrast.plateauPaddingPx + p.motion.travelPx} opacity={fieldLife.opacity} kind="text"/>}
     <svg data-film-type-text={moment.id} width={layout.widthPx} height={layout.heightPx}
       viewBox={`0 0 ${layout.widthPx} ${layout.heightPx}`}
-      style={{position:"absolute",left:layout.rect.x*dims.width,top:layout.rect.y*dims.height,overflow:"visible",zIndex:2}}>
+      style={{position:"absolute",left:layout.rect.x*dims.width,top:layout.rect.y*dims.height,overflow:"visible",zIndex:2,filter:glyphShadowFilter(p)}}>
       {layout.rows.map((row,index) => {
         // A quantity and its unit share the same authored segment and entrance.
         // Later authored reveal times are never pulled forward or silently lost.
@@ -137,7 +160,7 @@ export const PersianFilmTypeWatermark: React.FC<{
   // lockups during relocation. Exit to zero, then enter the next safe slot.
   const entry=plan.find(slot=>seconds>=slot.startSeconds&&seconds<slot.endSeconds);
   if(!entry) return null;
-  const opacity=p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0"))) ? gentleLife(seconds-entry.startSeconds,entry.endSeconds-entry.startSeconds,0,p.watermark.transitionSeconds,p.watermark.transitionSeconds).opacity
+  const opacity=p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0"))) ? gentleLife(seconds-entry.startSeconds,entry.endSeconds-entry.startSeconds,0,p.watermark.transitionSeconds,p.watermark.transitionSeconds).opacity
     : Math.min(1,(seconds-entry.startSeconds)/p.watermark.transitionSeconds,(entry.endSeconds-seconds)/p.watermark.transitionSeconds);
   const align = entry.zone.endsWith("left") ? "left" : "right";
   const anchor = align === "left" ? p.watermark.paddingPx : lockup.widthPx-p.watermark.paddingPx;
@@ -146,7 +169,7 @@ export const PersianFilmTypeWatermark: React.FC<{
       plateau={p.contrast.plateauStop} paddingPx={p.watermark.fieldPaddingPx} opacity={opacity} kind="brand"/>}
     <svg data-film-type-watermark="lockup" width={lockup.widthPx} height={lockup.heightPx}
       viewBox={`0 0 ${lockup.widthPx} ${lockup.heightPx}`}
-      style={{position:"absolute",left:entry.rect.x*dims.width,top:entry.rect.y*dims.height,overflow:"visible",opacity,zIndex:3}}>
+      style={{position:"absolute",left:entry.rect.x*dims.width,top:entry.rect.y*dims.height,overflow:"visible",opacity,zIndex:3,filter:glyphShadowFilter(p)}}>
       {lockup.rows.map((row,index)=><Run key={index} row={row} x={anchor} align={align} color={p.typography.ink} accent={p.typography.accent} emphasis={false}/>)}
     </svg>
   </AbsoluteFill>;
