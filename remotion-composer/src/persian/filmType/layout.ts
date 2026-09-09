@@ -85,6 +85,7 @@ export function filmProfile(design: PersianDesignSnapshot): FilmProfile {
   if(typeof design.seed!=="string"||!design.seed.trim()) throw new Error("Film Type requires a non-empty deterministic seed.");
   if (p.typography.fontFamily !== ESTEDAD_FAMILY) throw new Error("Film Type requires the vendored Estedad family.");
   if ((p.profileVersion === "2.10.0" || p.profileVersion === "2.11.0") && !p.contrast.glyphShadow) throw new Error("Film Type 2.10 requires explicit glyph shadow tokens.");
+  if (p.profileVersion === "2.11.0" && !p.watermark.glyphShadow) throw new Error("Film Type 2.11 requires explicit watermark glyph shadow tokens.");
   return p;
 }
 
@@ -418,7 +419,12 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
   const repair=p.profileVersion === "2.3.0" || p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || p.profileVersion === "2.11.0")));
   // 2.9/2.10 plan the brand against real TEXT rectangles and the watermark safe
   // area only. Supplied subject regions never block or hide the brand.
-  const subjectAvoid = (p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || p.profileVersion === "2.11.0") ? [] : avoid;
+  // 2.11 additionally vetoes brand slots that overlap a REVIEWED region, per
+  // dwell: a region can refuse a (zone, interval) pair but never the render --
+  // when no clear slot fits the text, the existing "No safe moving watermark
+  // schedule" error fails loudly instead of parking the brand on a face.
+  // Older pins plan exactly as before.
+  const subjectAvoid = (p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0") ? [] : avoid;
   const w=lockup.widthPx/dims.width,h=lockup.heightPx/dims.height;
   const padPx = safePadPx(p);
   const left=safe.left+(l.edgeInsetPx+padPx)/dims.width,right=1-safe.right-(l.edgeInsetPx+padPx)/dims.width-w;
@@ -449,6 +455,21 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
     const rank=(zone:string)=>(zone.endsWith(preferred)?0:2)+(zone.startsWith("mid")?0:1);
     order.sort((a,b)=>rank(a)-rank(b));
   }
+  // 2.11 consumes REVIEWED subject regions as watermark-slot preference, not
+  // refusal: zones that spend film time inside a region sink to the end of the
+  // candidate order, so the planner only uses one when no clear slot fits the
+  // text. Regions can never veto the last slot, so the frozen 2.9+ contract
+  // (a full-frame review still renders) holds. Older pins plan exactly as before.
+  const regionAvoid = p.profileVersion === "2.11.0" ? avoid : [];
+  const regionBlockedSeconds = (zone: string): number => {
+    const box = expand(rects[zone],l.collisionMarginPx/dims.width,l.collisionMarginPx/dims.height);
+    let total = 0;
+    for (const region of regionAvoid) {
+      if (intersects(box,region)) total += region.endSeconds - region.startSeconds;
+    }
+    return total;
+  };
+  if (regionAvoid.length) order.sort((a,b)=>regionBlockedSeconds(a)-regionBlockedSeconds(b));
   const textRects: TimedRect[]=props.moments.map(m=>({...layouts[m.id].rect,h:layouts[m.id].rect.h+l.motionClearancePx/dims.height,startSeconds:m.startSeconds,endSeconds:m.endSeconds}));
   const obstacles=[...textRects,...subjectAvoid];
   const blockers:string[]=[];
@@ -533,7 +554,7 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
   if(unreviewedMoments.length) warnings.push(`explicit placement without reviewed avoid regions; subject collision is not-checked. (moments: ${unreviewedMoments.join(", ")})`);
   if((profile.profileVersion === "2.8.0" || profile.profileVersion === "2.9.0" || profile.profileVersion === "2.10.0" || profile.profileVersion === "2.11.0") && props.format === "vertical") warnings.push("Reels conservative safe area applied: top 14%, bottom 35%, left 8%, right 16%. Preview actual Instagram UI; expanded captions/comments are not guaranteed. Do not relax subject regions to fit.");
   if(profile.profileVersion === "2.9.0" || profile.profileVersion === "2.10.0" || profile.profileVersion === "2.11.0") warnings.push(`Film Type ${profile.profileVersion}: subject-region enforcement is OFF by default. Text and brand are kept inside the platform safe area only; overlap with people or objects in the footage is NOT evaluated and subjectSafety stays not-checked. Pin profileVersion 2.8.0 to restore reviewed-region enforcement.`);
-  if(profile.profileVersion === "2.10.0" || profile.profileVersion === "2.11.0") warnings.push("Film Type 2.10: legibility comes from a small per-row field plus a two-layer glyph shadow. This is a readability aid, not a measured contrast guarantee; review bright footage yourself. Pin profileVersion 2.9.0 to restore the previous single-block field.");
+  if(profile.profileVersion === "2.10.0" || profile.profileVersion === "2.11.0") warnings.push("Film Type 2.10+: legibility comes from a small per-row field plus a two-layer glyph shadow. This is a readability aid, not a measured contrast guarantee; review bright footage yourself. Pin profileVersion 2.9.0 to restore the previous single-block field.");
   const lockup=measureLockup(props,profile);
   const filmType: FilmTypeLayout={version:profile.layoutVersion,inputHash,moments:layouts,lockup,warnings};
   const watermarkPlan=planWatermark(props,profile,layouts,lockup,avoid);

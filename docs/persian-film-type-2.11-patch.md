@@ -124,6 +124,49 @@ If moment 3 or 4 reads worse after the move down, the only permitted lever is
 `watermark.glyphShadow.haloAlpha` from `0.26` toward `0.30`. Enlarging the
 field or pushing `strong` above `0.40` is forbidden.
 
+## Follow-up: reviewed regions steer the brand (2.11-only)
+
+After the first 2.11 render, two face collisions were reviewed by eye against
+the stills (no detection of any kind — hand-drawn boxes on this project only):
+
+- shot-1 (0–4.38s): face box `{x 0.27, y 0.28, w 0.39, h 0.21}`;
+- shot-7 (37.4–47s): face box `{x 0.05, y 0.10, w 0.90, h 0.20}`.
+
+Two corrections to the first report came out of this:
+
+1. **m1's `y = 0.22156` is NOT on the ceiling.** m1 is authored
+   `upper-right`, so its path is `clamp(upperCentre − h/2, …) =
+   clamp(0.32 − 0.09844) = 0.22156`, strictly inside `[0.15563, 0.42812]`.
+   `middleCentre` never enters an explicitly upper-placed block; only the
+   clamp bounds (which the new padding tightened) apply.
+2. **2.11 text ignores regions by frozen design** (`enforceSubject === false`,
+   "never use regions to reject, dim or move approved text"). Supplying the
+   shot-1 box provably leaves m1's rect bit-identical, and no authored
+   placement clears that wide block from that central face — so the m1
+   overlap is reported, not silently fixed. A regression test pins both
+   halves: 2.8 moves text out of a region, 2.11 does not.
+
+What DID change (2.11 only, no token touched):
+
+- `planWatermark` consumes reviewed regions twice: region-heavy zones sink
+  in the candidate order (preference), and `clear()` vetoes a (zone,
+  interval) pair that overlaps a region (refusal). When nothing clear fits
+  the text, the existing "No safe moving watermark schedule" error fails
+  loudly — the brand is never parked on a face, hidden, or shrunk.
+- 2.9/2.10 pins plan exactly as before (their `subjectAvoid` stays `[]`,
+  and the full-frame-region contract still renders: an empty lockup plans
+  nothing, so the veto never fires).
+- The shared legibility warning is now version-neutral
+  (`Film Type 2.10+ legibility…`).
+- 2.11 validates `watermark.glyphShadow` at prepare time (fail-loud); the
+  paint path no longer falls back to the text shadow silently. Older pins
+  are unaffected.
+
+Production result on this project: the 34.02–47s brand slot moved
+`upper-right → upper-right 34.02–37.4 + mid-right 37.4–47`, clearing the
+shot-7 face box; the 5–19.4s slot moved `mid-left → lower-left`. Zero
+planned slots overlap a reviewed region. m1's text is unchanged (see above).
+
 ## Rollback
 
 Pin the previous profile explicitly in the project design block:

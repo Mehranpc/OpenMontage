@@ -98,6 +98,41 @@ class RankedBrowserContracts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'review'):self.prepare(p)
         p=self.props(design=self.pinned_28());p['shots'][0]['avoidRegions']=[{'x':0,'y':0,'w':1,'h':1}]
         with self.assertRaisesRegex(ValueError,'no readable'):self.prepare(p)
+    @staticmethod
+    def _overlaps(a,b):
+        return a['x']<b['x']+b['w'] and a['x']+a['w']>b['x'] and a['y']<b['y']+b['h'] and a['y']+a['h']>b['y']
+    def test_28_pin_moves_text_out_of_a_reviewed_region(self):
+        # Where the contract provides enforcement (2.8), a reviewed region moves
+        # approved text: the lower-right default no longer fits, so the moment
+        # lands upper-right with a rect clear of the region.
+        region={'x':0.55,'y':0.45,'w':0.45,'h':0.55}
+        p=self.props(design=self.pinned_28());p['shots'][0]['avoidRegions']=[region]
+        layout=self.prepare(p)['filmType']['moments']['m']
+        self.assertEqual(layout['subjectSafety'],'checked-against-supplied-regions')
+        self.assertFalse(self._overlaps(layout['rect'],region))
+    def test_211_text_ignores_regions_by_design(self):
+        # 2.11 deliberately never moves approved text for a region: the same
+        # region that relocates 2.8 text must leave the 2.11 rect bit-identical,
+        # with the opt-out still reported as not-checked.
+        region={'x':0.55,'y':0.45,'w':0.45,'h':0.55}
+        plain=self.prepare(self.props())['filmType']['moments']['m']['rect']
+        p=self.props();p['shots'][0]['avoidRegions']=[region]
+        layout=self.prepare(p)['filmType']['moments']['m']
+        self.assertEqual(layout['subjectSafety'],'not-checked')
+        self.assertEqual(layout['rect'],plain)
+    def test_211_watermark_prefers_slots_clear_of_reviewed_regions(self):
+        # 2.11 consumes reviewed regions as watermark-slot preference: with the
+        # text upper-right and the upper band covered for the whole film, every
+        # planned slot must avoid the region (and a plan must still exist).
+        region={'x':0,'y':0.10,'w':1,'h':0.15}
+        p=self.props();p['watermark']={'persianText':'برند','latinText':'Brand'}
+        p['moments'][0]['presentation']['placement']='upper-right'
+        p['shots'][0]['avoidRegions']=[region]
+        plan=self.prepare(p)['watermarkPlan']
+        self.assertTrue(plan)
+        for slot in plan:
+            with self.subTest(slot=slot['zone']):
+                self.assertFalse(self._overlaps(slot['rect'],region))
     def test_stale_layout_refused(self):
         p=self.prepare(self.props());p['filmType']['inputHash']='stale'
         with self.assertRaisesRegex(ValueError,'stale'):self.prepare(p)

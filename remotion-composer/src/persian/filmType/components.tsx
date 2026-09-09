@@ -182,7 +182,7 @@ export const PersianFilmTypeWatermark: React.FC<{
       plateau={p.contrast.plateauStop} paddingPx={p.watermark.fieldPaddingPx} opacity={opacity} kind="brand"/>}
     <svg data-film-type-watermark="lockup" width={lockup.widthPx} height={lockup.heightPx}
       viewBox={`0 0 ${lockup.widthPx} ${lockup.heightPx}`}
-      style={{position:"absolute",left:entry.rect.x*dims.width,top:entry.rect.y*dims.height,overflow:"visible",opacity,zIndex:3,filter:watermarkGlyphShadowFilter(p) ?? glyphShadowFilter(p)}}>
+      style={{position:"absolute",left:entry.rect.x*dims.width,top:entry.rect.y*dims.height,overflow:"visible",opacity,zIndex:3,filter:p.profileVersion === "2.11.0" ? watermarkGlyphShadowFilter(p) : glyphShadowFilter(p)}}>
       {lockup.rows.map((row,index)=><Run key={index} row={row} x={anchor} align={align} color={p.typography.ink} accent={p.typography.accent} emphasis={false}/>)}
     </svg>
   </AbsoluteFill>;
