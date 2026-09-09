@@ -1,6 +1,7 @@
 name: Apply Film Type 2.12 safety patch
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
