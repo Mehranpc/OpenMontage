@@ -58,9 +58,12 @@ const CompactFilmField: React.FC<{rect:Rect;format:PersianFormat;design:PersianD
  </svg>;
 };
 
+/** 2.9 bounds the field by the frame: the painted shadow is never wider or
+ * taller than the video, so it stays a local soft shadow around the ink that
+ * fades gently to nothing instead of a frame-sized pale wash. */
 const DiffuseField: React.FC<{layout:FilmMomentLayout;format:PersianFormat;design:PersianDesignSnapshot;opacity:number;travel:number}>=({layout,format,design,opacity,travel})=>{
  const id=useId(),p=filmProfile(design),d=FORMAT_DIMENSIONS[format];
- const {rx,ry}=diffuseRadii(layout.widthPx,layout.heightPx,p.contrast.diffuseField!);
+ const {rx,ry}=diffuseRadii(layout.widthPx,layout.heightPx,p.contrast.diffuseField!,p.profileVersion === "2.9.0"?{width:d.width,height:d.height}:undefined);
  const cx=(layout.rect.x+layout.rect.w/2)*d.width,cy=(layout.rect.y+layout.rect.h/2)*d.height+travel;
  const dark=layout.contrastMode==="dark",peak=layout.fieldPeakAlpha??p.contrast.strengths[layout.strength];
  return <svg width={d.width} height={d.height} style={{position:"absolute",inset:0,opacity,zIndex:1,mixBlendMode:dark?"multiply":undefined,pointerEvents:"none"}} data-film-field-shape="diffuse">
@@ -91,7 +94,7 @@ export const PersianFilmTypeMoment: React.FC<{
   if (!layout || layout.id !== moment.id) throw new Error(`Missing measured Film Type layout for ${moment.id}; run persian_compose.`);
   const span = durationFrames / fps, seconds = frame / fps;
   const firstReveal = Math.min(...layout.rows.map(row => row.revealAfterSeconds));
-  const modern=p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0"))),lifeAt=modern?gentleLife:filmLife;
+  const modern=p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0"))),lifeAt=modern?gentleLife:filmLife;
   const fieldEnter=modern?(moment.presentation?.motion === "cut-in"?p.motion.cutInSeconds:p.motion.enterSeconds):p.motion.scrimEnterSeconds;
   const fieldLife = lifeAt(seconds,span,firstReveal,fieldEnter,p.motion.exitSeconds);
   const dark = layout.contrastMode === "dark";
@@ -100,7 +103,7 @@ export const PersianFilmTypeMoment: React.FC<{
   const align = layout.placement === "center" ? "center" : polished ? "right" : layout.placement.endsWith("left") ? "left" : "right";
   const anchor = align === "center" ? layout.widthPx/2 : align === "left" ? p.layout.inkPaddingPx : layout.widthPx-p.layout.inkPaddingPx;
   return <AbsoluteFill data-film-type-moment={moment.id} data-film-type-placement={layout.placement} style={{pointerEvents:"none"}}>
-    {(p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0") ? <DiffuseField layout={layout} format={format} design={design} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)}/> : modern ? <CompactFilmField featherPx={layout.fieldFeatherPx} rect={layout.rect} format={format} design={design} color={dark?p.contrast.darkField:p.contrast.lightField}
+    {(p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0") ? <DiffuseField layout={layout} format={format} design={design} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)}/> : modern ? <CompactFilmField featherPx={layout.fieldFeatherPx} rect={layout.rect} format={format} design={design} color={dark?p.contrast.darkField:p.contrast.lightField}
       alpha={p.contrast.strengths[layout.strength]} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)}/> : <FilmContrastField rect={layout.rect} format={format} color={dark?p.contrast.darkField:p.contrast.lightField}
       alpha={p.contrast.strengths[layout.strength]} plateau={p.contrast.plateauStop}
       paddingPx={p.contrast.plateauPaddingPx + p.motion.travelPx} opacity={fieldLife.opacity} kind="text"/>}
@@ -134,7 +137,7 @@ export const PersianFilmTypeWatermark: React.FC<{
   // lockups during relocation. Exit to zero, then enter the next safe slot.
   const entry=plan.find(slot=>seconds>=slot.startSeconds&&seconds<slot.endSeconds);
   if(!entry) return null;
-  const opacity=p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0"))) ? gentleLife(seconds-entry.startSeconds,entry.endSeconds-entry.startSeconds,0,p.watermark.transitionSeconds,p.watermark.transitionSeconds).opacity
+  const opacity=p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0"))) ? gentleLife(seconds-entry.startSeconds,entry.endSeconds-entry.startSeconds,0,p.watermark.transitionSeconds,p.watermark.transitionSeconds).opacity
     : Math.min(1,(seconds-entry.startSeconds)/p.watermark.transitionSeconds,(entry.endSeconds-seconds)/p.watermark.transitionSeconds);
   const align = entry.zone.endsWith("left") ? "left" : "right";
   const anchor = align === "left" ? p.watermark.paddingPx : lockup.widthPx-p.watermark.paddingPx;
