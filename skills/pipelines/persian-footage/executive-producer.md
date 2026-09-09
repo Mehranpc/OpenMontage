@@ -30,6 +30,8 @@ See `skills/pipelines/persian-footage/film-type-history.md` for the archived
 historical guidance. That archive is the source for understanding older pins;
 this file does not repeat those rules.
 
+# Executive Producer — Persian Footage Pipeline
+
 ## When To Use
 
 The user wants a Persian (Farsi) video. Signals: the request itself is written in

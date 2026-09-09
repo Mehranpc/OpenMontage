@@ -26,6 +26,13 @@ See `skills/pipelines/persian-footage/film-type-history.md` for the archived
 historical guidance. That archive is the source for understanding older pins;
 this file does not repeat those rules.
 
+The Legacy orange/glow/rule, fixed-right anchor, silhouette, static grade, dimming
+and accent-colour pixel recipes in the **The four roles**, **Sizes are derived, not
+chosen**, and anchor/spine sections below describe the Legacy path and do not certify
+Film Type. Film Type prepared geometry requires actual painted-node/frame QA, not the
+Legacy accent detector; Film Type sizes are read from
+`styles/persian-footage/film-type.json`.
+
 # Edit Director — Persian Footage Pipeline
 
 ## Your job
@@ -255,8 +262,9 @@ across the middle of the frame. Not centred, not per-moment.
 
 That is a design decision made in `tokens.ts` and it is not yours to vary: a shared
 spine is what makes a handful of separate moments read as one designed video rather
-than a stack of text overlays. `lib/persian_verify.py` checks it per line and fails a
-render whose type drifted off the anchor.
+than a stack of text overlays. **Legacy-only:** `lib/persian_verify.py` checks it per
+line and fails a render whose type drifted off the anchor. The Film Type verifier does
+not perform this per-line right-edge check (`lib/persian_film_verify.py:37–94`).
 
 Contrast is profile-specific. The `5.6:1` floor is Legacy (`lib/persian_verify.py:193`);
 the Film Type verifier uses a `4.5:1` floor (`lib/persian_film_verify.py:69–74`).
