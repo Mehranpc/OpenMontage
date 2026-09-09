@@ -1,47 +1,32 @@
-## Film Type 2.11 current default
+## Film Type is the active visual profile
 
-Read `docs/persian-film-type-2.11-patch.md` before the historical guidance below.
-Approved diffuse shadow now defaults to strong for every new moment. Vertical
-text and watermark use a conservative Reels safe area (14% top, 35% bottom,
-8% left, 16% right), not a generic 9:16 margin. Reprepare all geometry; never move
-measured rows manually. Review every moment with scripts/review_reels_safe_area.py
-and the actual Instagram UI. Preserve face/action regions simultaneously; refusal
-requires an editorial solution, not weaker margins. Existing complete pins stay
-unchanged. 2.7 QA limitations still apply; safe-area success is not full approval.
+Film Type 2.11.0 / layout 11 is the default for every persian-footage run.
+**This file does not restate the profile's rules.** Read
+`skills/pipelines/persian-footage/film-type.md` for the active contract, and
+`docs/persian-film-type-2.11-patch.md` for what the current version changed.
+Guidance for older pins lives in
+`skills/pipelines/persian-footage/film-type-history.md` — archive only.
 
-## Film Type 2.7 migration override
+Activate the active profile with
+`persian.design = {"version":2,"profile":"film-type","seed":"<project-id>-film-type-01"}`;
+the seed is derived from the project id.
+All source, science, selective-moment, reading, coverage, sync, narration/music,
+runtime, attribution and human gates still apply.
+This routing is not Stage B completion, humanVisualApproval or C–E rollout.
+Do not rewrite approved narration or facts to fit; request an editorial revision
+when preparation refuses.
 
-For the 2.7 migration history, read `docs/persian-film-type-2.7-patch.md`
-BEFORE the historical guidance below. That guide owns diffuse shadow, region
-interpretation, diagnostic probes and version-aware QA. Pass resolved props to
-verify_frames; never apply Legacy scrim-ceiling/anchor/orange-gap rules to Film
-Type. Missing synchronized diagnostic evidence is not_checked, NOT a pass and
-NOT evidence that the shadow failed. Do not set persian_text_verified from these
-sampled checks. Review bright-background watermark separately. Keep old complete
-pins unchanged; migrate only by fresh resolution and prepass.
-
-# Edit Director — Persian Footage Pipeline
+Absent design is REFUSED by persian_compose. `quiet-editorial` remains an
+explicit option. Legacy is reachable only through the hidden opt-out
+`{"version":2,"profile":"legacy"}`, for emergencies, never for new work.
 
 ## Film Type 2.6 — historical default path
 
-At the time, every persian-footage run rendered Film Type 2.6 unless explicitly directed
-elsewhere. Set `persian.design =
-{"version":2,"profile":"film-type","seed":"<project-id>-film-type-01"}` (seed
-auto-derived from the project id), then read
-`skills/pipelines/persian-footage/film-type.md` before applying visual rules below.
-That guide owns this profile's white ink, compact whole-run typography, placement,
-conditional local contrast and two-line brand. Legacy orange/glow/rule, fixed-right
-anchor, silhouette, static grade, dimming and accent-colour pixel recipes below do
-not certify Film Type. Its prepared geometry requires actual painted-node/frame QA,
-not the Legacy accent detector. All source, science, selective-moment, reading,
-coverage, sync, narration/music, runtime, attribution and human gates still apply.
-Absent design is REFUSED by persian_compose — no video renders Legacy by accident;
-`quiet-editorial` stays available as an explicit option. The old Legacy render
-remains reachable only through the explicit hidden opt-out
-`{"version":2,"profile":"legacy"}` (emergencies only, never for new productions).
-This routing is not Stage B completion, humanVisualApproval or C–E rollout. Do not
-rewrite approved narration or facts to fit; request an editorial revision when
-preparation refuses. See the guide for exact review steps.
+See `skills/pipelines/persian-footage/film-type-history.md` for the archived
+historical guidance. That archive is the source for understanding older pins;
+this file does not repeat those rules.
+
+# Edit Director — Persian Footage Pipeline
 
 ## Your job
 
@@ -225,8 +210,11 @@ Consequences worth planning around:
 ### Builds: accumulate, don't replace
 
 A moment can reveal in steps. Give a later segment `revealAfterSeconds` and it
-**joins** the phrase at that time: earlier segments stay on screen and dim to 0.55
-opacity, the new one arrives at full strength.
+**joins** the phrase at that time: the accumulation mechanism differs by profile.
+Legacy dims the previous stage to a fixed 0.55 opacity (`lib/persian_verify.py:803–809`).
+Film Type computes each row's opacity as `arrive × leave` in
+`remotion-composer/src/persian/filmType/motion24.ts:8–10`, so it has no fixed opacity
+value. In both profiles, the previous stage is not removed.
 
 ```json
 {
@@ -270,9 +258,9 @@ spine is what makes a handful of separate moments read as one designed video rat
 than a stack of text overlays. `lib/persian_verify.py` checks it per line and fails a
 render whose type drifted off the anchor.
 
-Contrast comes from a gradient scrim behind the band — no panel, no box. It
-guarantees 5.6:1 against any footage whatsoever, so you never need to reject a clip
-for being too bright, or lighten text to compensate.
+Contrast is profile-specific. The `5.6:1` floor is Legacy (`lib/persian_verify.py:193`);
+the Film Type verifier uses a `4.5:1` floor (`lib/persian_film_verify.py:69–74`).
+Do not treat the Legacy floor as a general rule for Film Type.
 
 The **vertical rhythm** — the size of the gap between one block and the next — is the
 compose stage's concern (measured ink, not line boxes; the 133px hole in the old
@@ -358,8 +346,10 @@ ceiling still hold.
 
 Practically: put the strongest claim or figure the script opens with into
 `moment-1`, anchored to the first phrase of the narration, starting at 0.2–0.6s.
-The entrance animation takes ~0.45s; a moment that starts after 0.6s has already
-missed the decision window.
+The reading model's fixation is **0.45s** (`MOMENT_FIXATION_SECONDS`,
+`remotion-composer/src/persian/tokens.ts:862`). Film Type's actual entrance is
+**0.56s** (`styles/persian-footage/film-type.json:139`), with a **0.48s** cut-in
+at line 143. Do not describe 0.45s as the Film Type entrance.
 
 ## Anchoring: timings come from the voice
 
