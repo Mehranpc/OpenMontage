@@ -1,0 +1,78 @@
+name: Verify Persian final-candidate protocol
+
+on:
+  push:
+    branches:
+      - feat/persian-final-candidate-review
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: verify-persian-final-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/persian-final-candidate-review
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Run repository validation and report to PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          {
+            make install-dev
+            make lint
+            make test
+          } > /tmp/verify.log 2>&1
+          rc=$?
+          set -e
+          tail -n 160 /tmp/verify.log
+          RC="$rc" python - <<'PY'
+          import json, os
+          from pathlib import Path
+          rc = int(os.environ["RC"])
+          lines = Path("/tmp/verify.log").read_text(errors="replace").splitlines()[-120:]
+          status = "passed" if rc == 0 else "failed"
+          body = "## Persian final-candidate verification\n\n"
+          body += f"Repository validation **{status}** (exit `{rc}`).\n\n"
+          body += "Commands: `make install-dev`, `make lint`, `make test`.\n\n"
+          body += "<details><summary>Log tail</summary>\n\n```text\n"
+          body += "\n".join(lines)
+          body += "\n```\n</details>"
+          Path("/tmp/comment.json").write_text(json.dumps({"body": body}))
+          PY
+          gh api --method POST "repos/${{ github.repository }}/issues/6/comments" --input /tmp/comment.json
+          exit "$rc"
+
+      - name: Remove temporary verification workflow
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/verify-persian-final-candidate.yml
+          git commit -m "chore: remove Persian protocol verification workflow"
+          git push origin HEAD:feat/persian-final-candidate-review
