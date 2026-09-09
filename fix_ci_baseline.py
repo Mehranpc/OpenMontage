@@ -181,9 +181,21 @@ replace_once(
         # This is a routing unit test, so provide the loaded-font bridge result
         # explicitly instead of depending on an optional native canvas package.
         measurement = {\"widthPx\": 216.0, \"heightPx\": 54.0}
+
+        def measured_bridge(built, *args, **kwargs):
+            for moment in built:
+                object.__setattr__(moment, \"stack_height_px\", 180.0)
+                object.__setattr__(moment, \"stack_width_px\", 420.0)
+                object.__setattr__(
+                    moment,
+                    \"layout_geometry\",
+                    {\"x\": 0.30, \"y\": 0.40, \"w\": 0.39, \"h\": 0.10},
+                )
+            return measurement
+
         monkeypatch.setattr(
             \"tools.video.persian_compose._maybe_attach_stack_heights\",
-            lambda *args, **kwargs: measurement,
+            measured_bridge,
         )
         props, _ = _build(
             _persian(
