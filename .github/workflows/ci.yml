@@ -33,11 +33,22 @@ jobs:
             requirements.txt
             requirements-dev.txt
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: remotion-composer/package-lock.json
+
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: make install-dev
+
+      - name: Install Remotion dependencies
+        working-directory: remotion-composer
+        run: npm ci
 
       - name: Run lint smoke checks
         run: make lint

@@ -522,15 +522,22 @@ class TestPacingTokenParity:
         """
         from lib.persian_moments import build_moments, is_claim_qualifier_hook
 
-        import json as _json
-
-        edit_path = REPO_ROOT / "projects" / "coffee-hormones-fa" / "artifacts" / "edit_decisions.json"
-        edit = _json.loads(edit_path.read_text(encoding="utf-8"))
-        first = edit["persian"]["moments"][0]
-        assert first["kind"] == "hook"
-        assert first["id"] == "moment-1"
+        # Keep the structural contract in source control. `projects/` is a
+        # generated, gitignored workspace and can never be a CI fixture.
+        first = {
+            "id": "moment-1",
+            "kind": "hook",
+            "startSeconds": 0.4,
+            "endSeconds": 4.4,
+            "segments": [
+                {"role": "hero", "text": "هر اضطرابی نشانهٔ خطر نیست"},
+                {"role": "tail", "text": "گاهی بدن فقط آماده می‌شود"},
+            ],
+        }
 
         built = build_moments([first])
+        assert built[0].id == "moment-1"
+        assert built[0].kind == "hook"
         assert is_claim_qualifier_hook(built[0]) is True
         # Fitted sizes for the approved hook: hero 93, lead 36 (=computeLeadPx),
         # tail 68 (=round(93 × 0.73)). The gap derives from the tail.
