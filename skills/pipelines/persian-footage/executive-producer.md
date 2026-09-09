@@ -24,7 +24,7 @@ Do not carry a safe-area value, field strength, contrast floor, anchor
 tolerance or watermark position into this file. When those numbers live in two
 places they drift, and an agent then applies Legacy geometry to Film Type.
 
-## Film Type 2.6 — historical default path
+## Archived guidance for older pins
 
 See `skills/pipelines/persian-footage/film-type-history.md` for the archived
 historical guidance. That archive is the source for understanding older pins;
@@ -106,7 +106,7 @@ render is a bug, not a stricter check.
 - **Legacy stack-height contradiction:** `maxStackFraction = 0.58` — `remotion-composer/src/persian/tokens.ts:568`; Film Type profile `maxStackFraction = 0.6` — `styles/persian-footage/film-type.json:92`.
 - **Legacy anchor/ink tolerances:** `ANCHOR_TOLERANCE_PX = 32` — `lib/persian_verify.py:152`; `INK_OVERSHOOT_PX = 8` and `INK_OVERSHOOT_EM = 0.065` — `lib/persian_verify.py:252–253`.
 - **Legacy watermark positions:** `WATERMARK_TOP_FRACTION` — `lib/persian_verify.py:167`; exact positions are vertical `17.0419%` quiet / `11%` resting and landscape `17.8211%` quiet / `8%` resting, as used by the Legacy verifier and its documented contract.
-- **Legacy zone ink ceiling and falloff:** `ZONE_INK_CEILING = 0.35` (35%) — `lib/persian_verify.py:209`; `falloffFraction = 0.28` — `remotion-composer/src/persian/tokens.ts:186`, yielding the documented `302px` vertical falloff in `skills/pipelines/persian-footage/compose-director.md:333–334`.
+- **Legacy zone ink ceiling and falloff:** `ZONE_INK_CEILING = 0.35` (35%) — `lib/persian_verify.py:209`; `falloffFraction = 0.28` — `remotion-composer/src/persian/tokens.ts:186`, yielding the documented vertical falloff of `302px` recorded in the plateau-geometry discussion of `skills/pipelines/persian-footage/compose-director.md`.
 
 ## The two non-negotiables
 
@@ -264,6 +264,12 @@ Beyond the standard review in `skills/meta/reviewer.md`:
    gave up too early.
 7. **Check attribution.** Both Pexels and Pixabay require it; a clip that cannot be
    attributed should not have shipped.
-8. **Confirm `persian_text_verified` was earned.** It is `false` out of
-   `persian_compose` and may only be flipped after `verify_frames(...)["passed"]` and an
-   arrangement check. `verification_notes` should carry numbers, not adjectives.
+8. **Confirm `persian_text_verified` was earned, against the resolved profile's own
+   evidence.** It is `false` out of `persian_compose` and may never be flipped by a
+   tool. On Legacy it takes `verify_frames(...)["passed"]` plus an arrangement check.
+   On Film Type those are the wrong instruments — `check_moment_arrangement` locates
+   the hero by the Legacy accent colour and Film Type sets every role in white ink —
+   so it takes `verify_film_frames` passing against the resolved props plus an actual
+   painted-node or frame review of every moment, with reading order, gap emptiness and
+   stack rhythm recorded as `not_checked`. `verification_notes` should carry numbers,
+   not adjectives, and should name what was not verified as well as what passed.
