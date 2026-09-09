@@ -5,8 +5,8 @@ on:
     branches:
       - fix/restore-green-ci-baseline
     paths:
+      - fix_ci_baseline.py
       - .github/workflows/verify-ci-baseline-fix.yml
-      - materialize-trigger.txt
 
 permissions:
   contents: write
@@ -27,13 +27,20 @@ jobs:
       - name: Apply already-verified repair
         run: python3 fix_ci_baseline.py
 
-      - name: Validate and commit permanent files
+      - name: Validate permanent diff
         run: |
           python3 -m py_compile \
             tests/contracts/test_persian_geometry_parity.py \
             tests/tools/test_hyperframes_compose.py \
             tests/tools/test_persian_default_film_type.py
           git diff --check
+
+      - name: Materialize permanent files
+        id: materialize
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
           git add \
             .github/workflows/ci.yml \
             tests/contracts/test_persian_geometry_parity.py \
@@ -41,11 +48,39 @@ jobs:
             tests/tools/test_persian_default_film_type.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "fix: restore a green full-suite CI baseline"
-          git push origin HEAD:fix/restore-green-ci-baseline
+          git commit -m "fix: restore a green full-suite CI baseline" > /tmp/materialize.log 2>&1
+          commit_status=$?
+          push_status=99
+          if [ "$commit_status" -eq 0 ]; then
+            git push origin HEAD:fix/restore-green-ci-baseline >> /tmp/materialize.log 2>&1
+            push_status=$?
+          fi
+          {
+            echo "commit_status=$commit_status"
+            echo "push_status=$push_status"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
 
-      - name: Record materialization
-        if: success()
+      - name: Record materialization result
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh issue comment 7 --repo "$GITHUB_REPOSITORY" --body "Verified repair materialized at commit $(git rev-parse HEAD). Temporary bootstrap files will now be removed from the branch."
+          COMMIT_STATUS: ${{ steps.materialize.outputs.commit_status }}
+          PUSH_STATUS: ${{ steps.materialize.outputs.push_status }}
+        run: |
+          {
+            echo "## Baseline repair materialization"
+            echo
+            echo "- commit exit: \`$COMMIT_STATUS\`"
+            echo "- push exit: \`$PUSH_STATUS\`"
+            echo
+            echo '```text'
+            tail -c 6000 /tmp/materialize.log
+            echo
+            echo '```'
+          } > /tmp/materialize-comment.md
+          gh issue comment 7 --repo "$GITHUB_REPOSITORY" --body-file /tmp/materialize-comment.md
+
+      - name: Fail if materialization failed
+        if: steps.materialize.outputs.commit_status != '0' || steps.materialize.outputs.push_status != '0'
+        run: exit 1

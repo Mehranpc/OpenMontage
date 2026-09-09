@@ -215,3 +215,5 @@ replace_once(
 )
 
 print("patched CI baseline fixtures and runtime assumptions")
+
+# Trigger materialization after the exact patch passed the full verification matrix.
