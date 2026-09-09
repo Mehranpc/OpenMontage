@@ -87,7 +87,7 @@ class RankedBrowserContracts(unittest.TestCase):
             with self.subTest(case=label):
                 p=self.props();mutate(p)
                 layout=self.prepare(p)['filmType']['moments']['m']
-                self.assertEqual(layout['subjectSafety'],'not_checked')
+                self.assertEqual(layout['subjectSafety'],'not-checked')
                 rect=layout['rect']
                 self.assertGreaterEqual(rect['x'],.08)
                 self.assertGreaterEqual(rect['y'],.14)
