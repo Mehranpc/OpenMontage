@@ -74,87 +74,47 @@ replace_once(
 """,
 )
 
-replace_once(
-    "tests/tools/test_hyperframes_compose.py",
-    """from tools.video.video_compose import VideoCompose
+tools_conftest = Path("tests/tools/conftest.py")
+if tools_conftest.exists():
+    raise RuntimeError(f"{tools_conftest}: expected file to be absent")
+tools_conftest.write_text(
+    '''"""Deterministic host-runtime fixtures for tool unit tests."""
+
+from __future__ import annotations
+
+import pytest
+
+_HYPERFRAMES_RUNTIME_POLICY_TESTS = {
+    "test_runtime_check_fails_when_npm_package_unresolvable",
+    "test_runtime_check_succeeds_when_npm_resolves",
+    "test_runtime_check_fails_when_published_cli_crashes",
+}
 
 
-# ------------------------------------------------------------------
-# Tool contract
-""",
-    """from tools.video.video_compose import VideoCompose
+@pytest.fixture(autouse=True)
+def _isolate_hyperframes_runtime_policy(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keep policy unit tests independent of the CI host's Node install."""
+    if (
+        not request.node.nodeid.startswith("tests/tools/test_hyperframes_compose.py::")
+        or request.node.name not in _HYPERFRAMES_RUNTIME_POLICY_TESTS
+    ):
+        return
 
+    from tools.video.hyperframes_compose import HyperFramesCompose
 
-def _force_runtime_floor(monkeypatch: pytest.MonkeyPatch) -> None:
-    \"\"\"Make runtime-policy tests independent of the CI host's Node install.\"\"\"
     monkeypatch.setattr(
         HyperFramesCompose,
-        \"_node_major_version\",
+        "_node_major_version",
         classmethod(lambda cls: cls._NODE_FLOOR_MAJOR),
     )
     monkeypatch.setattr(
-        \"tools.video.hyperframes_compose.shutil.which\",
-        lambda command: f\"/mock/bin/{command}\",
+        "tools.video.hyperframes_compose.shutil.which",
+        lambda command: f"/mock/bin/{command}",
     )
-
-
-# ------------------------------------------------------------------
-# Tool contract
-""",
-)
-
-replace_once(
-    "tests/tools/test_hyperframes_compose.py",
-    """    # Clear process cache and force _resolve_npm_package to return a 404.
-    monkeypatch.setattr(
-""",
-    """    _force_runtime_floor(monkeypatch)
-    # Clear process cache and force _resolve_npm_package to return a 404.
-    monkeypatch.setattr(
-""",
-)
-
-replace_once(
-    "tests/tools/test_hyperframes_compose.py",
-    """def test_runtime_check_succeeds_when_npm_resolves(monkeypatch):
-    monkeypatch.setattr(
-""",
-    """def test_runtime_check_succeeds_when_npm_resolves(monkeypatch):
-    _force_runtime_floor(monkeypatch)
-    monkeypatch.setattr(
-""",
-)
-
-replace_once(
-    "tests/tools/test_hyperframes_compose.py",
-    """    # Local binaries must still pass for this to go green.
-    if rc[\"node_major\"] is None or not rc[\"ffmpeg_available\"] or not rc[\"npx_available\"]:
-        pytest.skip(\"Local runtime floor not met on this machine\")
-    assert rc[\"runtime_available\"] is True
-""",
-    """    assert rc[\"runtime_available\"] is True
-""",
-)
-
-replace_once(
-    "tests/tools/test_hyperframes_compose.py",
-    """def test_runtime_check_fails_when_published_cli_crashes(monkeypatch):
-    monkeypatch.setattr(
-""",
-    """def test_runtime_check_fails_when_published_cli_crashes(monkeypatch):
-    _force_runtime_floor(monkeypatch)
-    monkeypatch.setattr(
-""",
-)
-
-replace_once(
-    "tests/tools/test_hyperframes_compose.py",
-    """    if rc[\"node_major\"] is None or not rc[\"ffmpeg_available\"] or not rc[\"npx_available\"]:
-        pytest.skip(\"Local runtime floor not met on this machine\")
-    assert rc[\"runtime_available\"] is False
-""",
-    """    assert rc[\"runtime_available\"] is False
-""",
+''',
+    encoding="utf-8",
 )
 
 replace_once(
