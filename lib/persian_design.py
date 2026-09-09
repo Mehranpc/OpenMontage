@@ -11,7 +11,8 @@ SUPPORTED_FILM_TYPE_26_HASH = "1f763aed6dbfa2b61cdc6ce30558f6bc6e5ab318fb88e0125
 SUPPORTED_FILM_TYPE_27_HASH = "b069a090061c1011d456cc5c63ff6989382f9044fdd38abb7c12db359710cea5"
 SUPPORTED_FILM_TYPE_28_HASH = "acfa082438f473f34f595a3a9132e03e26fda7dac0522f9c7ca00267272ac468"
 SUPPORTED_FILM_TYPE_29_HASH = "320a67a296d30cf1337b6c121cdd9367dfdc4e28fad1ba6af4f666e1e07551bf"
-SUPPORTED_FILM_TYPE_HASH = "60ff5e80524aaa3877e8bd94e2bdd8c957c9f367947066ced034cbfb8be678e0"
+SUPPORTED_FILM_TYPE_210_HASH = "60ff5e80524aaa3877e8bd94e2bdd8c957c9f367947066ced034cbfb8be678e0"
+SUPPORTED_FILM_TYPE_HASH = "ee04b0e576891828d754b2dc8bc7139178174251e3755dea4797dd480df4f687"
 SUPPORTED_FILM_TYPE_MOTION_HASH = "06a6cc6297df4146f9a8fa82af6617cec1e07ff420c72d134fbf878217dca543"
 SUPPORTED_FILM_TYPE_REPAIR_HASH = "3ee76f211682537b5b1ac457063a76cd81f1c84dd7fa916fddeef299ff3eecab"
 SUPPORTED_FILM_TYPE_POLISH_HASH = "6d71bee9de74a627f393544bbcf9caf37b7349c422397b016f1f10597a1c43c2"
@@ -135,6 +136,18 @@ def resolve_watermark_plan(*, duration_seconds: float, format: str, seed: str, t
              "reason": "seeded safe candidate; non-top preferred" if zone != "upper-left" else "seeded fallback candidate"}
             for i, zone in enumerate(chosen)]
 
+def canonical_numbers(value):
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("Film Type profile contains a non-finite number")
+        return int(value) if value.is_integer() else value
+    if isinstance(value, list):
+        return [canonical_numbers(v) for v in value]
+    if isinstance(value, dict):
+        return {k: canonical_numbers(v) for k, v in value.items()}
+    return value
+
+
 def resolve_design(raw: Any) -> dict[str, Any] | None:
     """Return a deterministic V2 snapshot; absent design returns None.
 
@@ -175,23 +188,14 @@ def resolve_design(raw: Any) -> dict[str, Any] | None:
             "2.7.0": (7, SUPPORTED_FILM_TYPE_27_HASH),
             "2.8.0": (8, SUPPORTED_FILM_TYPE_28_HASH),
             "2.9.0": (9, SUPPORTED_FILM_TYPE_29_HASH),
-            "2.10.0": (10, SUPPORTED_FILM_TYPE_HASH),
+            "2.10.0": (10, SUPPORTED_FILM_TYPE_210_HASH),
+            "2.11.0": (11, SUPPORTED_FILM_TYPE_HASH),
         }
         expected = supported.get(profile.get("profileVersion"))
         if expected is None or type(profile.get("layoutVersion")) is not int or profile["layoutVersion"] != expected[0]:
             raise ValueError("Unsupported Film Type profile snapshot")
         # New profile snapshots hash canonical JSON so they can be validated and
         # reused without reopening a mutable registry file on each render.
-        def canonical_numbers(value):
-            if isinstance(value, float):
-                if not math.isfinite(value):
-                    raise ValueError("Film Type profile contains a non-finite number")
-                return int(value) if value.is_integer() else value
-            if isinstance(value, list):
-                return [canonical_numbers(v) for v in value]
-            if isinstance(value, dict):
-                return {k: canonical_numbers(v) for k, v in value.items()}
-            return value
         profile = canonical_numbers(profile)
         encoded = json.dumps(profile, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
         digest = hashlib.sha256(encoded).hexdigest()
