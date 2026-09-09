@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/film-type-2.12-safety
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
