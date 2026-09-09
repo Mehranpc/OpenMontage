@@ -1,7 +1,7 @@
 {
   "profile": "film-type",
-  "profileVersion": "2.8.0",
-  "layoutVersion": 8,
+  "profileVersion": "2.9.0",
+  "layoutVersion": 9,
   "name": "Pathway Film Type",
   "scope": "persian-footage",
   "rollout": "opt-in",
@@ -95,7 +95,7 @@
     "middleCentre": 0.49,
     "motionClearancePx": 18,
     "collisionMarginPx": 12,
-    "autoRequiresReviewedAvoidRegions": true,
+    "autoRequiresReviewedAvoidRegions": false,
     "aestheticPolicy": "ranked-v1"
   },
   "contrast": {
