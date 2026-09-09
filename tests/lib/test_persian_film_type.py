@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from lib.persian_design import resolve_design, prepare_v2, SUPPORTED_FILM_TYPE_27_HASH, SUPPORTED_FILM_TYPE_26_HASH, SUPPORTED_FILM_TYPE_25_HASH, SUPPORTED_FILM_TYPE_HASH, SUPPORTED_FILM_TYPE_MOTION_HASH, SUPPORTED_FILM_TYPE_LEGACY_HASH, SUPPORTED_FILM_TYPE_POLISH_HASH, SUPPORTED_FILM_TYPE_REPAIR_HASH
+from lib.persian_design import resolve_design, prepare_v2, SUPPORTED_FILM_TYPE_28_HASH, SUPPORTED_FILM_TYPE_27_HASH, SUPPORTED_FILM_TYPE_26_HASH, SUPPORTED_FILM_TYPE_25_HASH, SUPPORTED_FILM_TYPE_HASH, SUPPORTED_FILM_TYPE_MOTION_HASH, SUPPORTED_FILM_TYPE_LEGACY_HASH, SUPPORTED_FILM_TYPE_POLISH_HASH, SUPPORTED_FILM_TYPE_REPAIR_HASH
 from lib.persian_film_type import prepare_film_type_props
 from tools.video.persian_compose import PersianCompose
 
@@ -77,7 +77,7 @@ class FilmTypeContracts(unittest.TestCase):
         composer=self.root/'composer';(composer/'scripts').mkdir(parents=True,exist_ok=True)
         (composer/'scripts/prepare-persian-film-type.mjs').write_text('// fake subprocess entry for boundary tests only')
         props={'format':'vertical','durationSeconds':12,'design':design or resolve_design(self.raw),
-               'shots':[],'audio':{'narration':'narration.wav','music':'music.wav'},'moments':[{'id':'m','kind':'statement','startSeconds':.2,'endSeconds':3.2,'segments':[{'role':'hero','text':'یک مکث'}]}],
+               'shots':[],'audio':{'narration':'narration.wav','music':'music.wav'},'moments':[{'id':'m','kind':'statement','startSeconds':.2,'endSeconds':3.2,'segments':[{'role':'hero','text':'یک مکس'}]}],
                'watermark':{'persianText':'برند','latinText':'Brand'},'typographicBeats':[],'futureProvenance':{'keep':True}}
         original=copy.deepcopy(props)
         def fake_run(args,**kwargs):
@@ -96,14 +96,15 @@ class FilmTypeContracts(unittest.TestCase):
                                         ('2.5.0','film-type-2.5.0.json',SUPPORTED_FILM_TYPE_25_HASH),
                                         ('2.6.0','film-type-2.6.0.json',SUPPORTED_FILM_TYPE_26_HASH),
                                         ('2.7.0','film-type-2.7.0.json',SUPPORTED_FILM_TYPE_27_HASH),
-                                        ('2.8.0','film-type.json',SUPPORTED_FILM_TYPE_HASH)]:
+                                        ('2.8.0','film-type-2.8.0.json',SUPPORTED_FILM_TYPE_28_HASH),
+                                        ('2.9.0','film-type.json',SUPPORTED_FILM_TYPE_HASH)]:
             with self.subTest(version=version):
                 profile=json.loads((ROOT/'styles/persian-footage'/filename).read_text())
                 pin={**self.raw,'profileVersion':version,'contentHash':digest,'resolved':profile}
                 self.assertEqual(resolve_design(pin),pin)
                 self.assertEqual(self._bridge(design=pin)['filmType']['version'],profile['layoutVersion'])
     def test_bridge_refuses_wrong_layout_version(self):
-        for wrong in [1,2,3,4,5,6,7,True,False,'8',9,None]:
+        for wrong in [1,2,3,4,5,6,7,8,True,False,'9',10,None]:
             with self.subTest(wrong=wrong),self.assertRaisesRegex(ValueError,'provenance'):
                 self._bridge(lambda p:p['filmType'].update(version=wrong))
     def test_repair_tokens_restore_scale_and_real_watermark_policy(self):
@@ -135,11 +136,30 @@ class FilmTypeContracts(unittest.TestCase):
         self.assertLessEqual(new['contrast']['strengths']['standard'],.6)
     def test_ranked_tokens_are_registry_default(self):
         new=resolve_design(self.raw)['resolved']
-        self.assertEqual(new['profileVersion'],'2.8.0');self.assertEqual(new['layoutVersion'],8)
+        self.assertEqual(new['profileVersion'],'2.9.0');self.assertEqual(new['layoutVersion'],9)
         self.assertEqual(new['layout']['aestheticPolicy'],'ranked-v1')
         self.assertEqual(new['contrast']['darkField'],'#191919')
         self.assertEqual(new['contrast']['strengths'],{'soft':.24,'standard':.34,'strong':.44})
         self.assertEqual(new['watermark']['introDelaySeconds'],5)
+    def test_default_profile_does_not_require_reviewed_regions(self):
+        new=resolve_design(self.raw)['resolved']
+        self.assertFalse(new['layout']['autoRequiresReviewedAvoidRegions'])
+        # The only hard geometric contract stays: typography inside the Reels safe area.
+        self.assertEqual(new['formats']['vertical']['safeArea'],{'top':.14,'bottom':.35,'side':.08,'left':.08,'right':.16})
+        self.assertEqual(new['watermark']['safeAreas']['vertical'],{'top':.14,'bottom':.35,'left':.08,'right':.16})
+    def test_28_pin_keeps_region_review_requirement(self):
+        old=json.loads((ROOT/'styles/persian-footage/film-type-2.8.0.json').read_text())
+        pin={**self.raw,'profileVersion':'2.8.0','contentHash':SUPPORTED_FILM_TYPE_28_HASH,'resolved':old}
+        self.assertEqual(resolve_design(pin),pin)
+        self.assertTrue(old['layout']['autoRequiresReviewedAvoidRegions'])
+        self.assertEqual(old['layoutVersion'],8)
+    def test_29_only_changes_the_region_gate_tokens(self):
+        new=resolve_design(self.raw)['resolved']
+        old=json.loads((ROOT/'styles/persian-footage/film-type-2.8.0.json').read_text())
+        for key in ['typography','formats','palette','contrast','motion','watermark']:
+            self.assertEqual(new[key],old[key])
+        self.assertEqual({k:v for k,v in new['layout'].items() if k!='autoRequiresReviewedAvoidRegions'},
+                         {k:v for k,v in old['layout'].items() if k!='autoRequiresReviewedAvoidRegions'})
     def test_motion_pin_stays_supported(self):
         p=json.loads((ROOT/'styles/persian-footage/film-type-2.4.0.json').read_text())
         self.assertEqual(p['profileVersion'],'2.4.0');self.assertEqual(p['layoutVersion'],4)
