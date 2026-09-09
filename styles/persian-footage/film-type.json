@@ -1,7 +1,7 @@
 {
   "profile": "film-type",
-  "profileVersion": "2.9.0",
-  "layoutVersion": 9,
+  "profileVersion": "2.10.0",
+  "layoutVersion": 10,
   "name": "Pathway Film Type",
   "scope": "persian-footage",
   "rollout": "opt-in",
@@ -104,7 +104,7 @@
     "strengths": {
       "soft": 0.24,
       "standard": 0.34,
-      "strong": 0.44
+      "strong": 0.4
     },
     "defaultStrength": "strong",
     "plateauStop": 0.68,
@@ -119,9 +119,19 @@
       "featherCurve": 1.2
     },
     "diffuseField": {
-      "radiusScale": 1.15,
+      "radiusScale": 0.85,
       "minRadiusPx": 180,
-      "maxSubjectAlpha": 0.12
+      "maxSubjectAlpha": 0.12,
+      "perRow": true,
+      "rowPaddingPx": 26
+    },
+    "glyphShadow": {
+      "color": "#191919",
+      "nearOffsetPx": 2,
+      "nearBlurPx": 6,
+      "nearAlpha": 0.38,
+      "haloBlurPx": 22,
+      "haloAlpha": 0.22
     }
   },
   "motion": {
