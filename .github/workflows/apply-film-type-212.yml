@@ -1,0 +1,90 @@
+name: Apply Film Type 2.12 safety patch
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: apply-film-type-212-main
+  cancel-in-progress: false
+
+jobs:
+  apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: remotion-composer/package-lock.json
+
+      - name: Apply, test, and commit verified implementation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENMONTAGE_BROWSER_TESTS: '1'
+          REMOTION_BROWSER_EXECUTABLE: /usr/bin/google-chrome
+        run: |
+          set -uo pipefail
+          LOG=/tmp/film-type-212.log
+          : > "$LOG"
+
+          fail() {
+            status="$1"
+            {
+              echo 'The Film Type 2.12 materialization stopped without changing production source.'
+              echo
+              echo '<details><summary>Last 200 log lines</summary>'
+              echo
+              echo '```text'
+              tail -n 200 "$LOG"
+              echo '```'
+              echo '</details>'
+            } > /tmp/film-type-212-comment.md
+            gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file /tmp/film-type-212-comment.md || true
+            exit "$status"
+          }
+
+          run_step() {
+            label="$1"
+            shift
+            echo "===== $label =====" | tee -a "$LOG"
+            "$@" >> "$LOG" 2>&1
+            status=$?
+            tail -n 80 "$LOG"
+            if [ "$status" -ne 0 ]; then fail "$status"; fi
+          }
+
+          run_step 'Apply deterministic migration' python tools/dev/apply_film_type_212.py
+          run_step 'Install system dependencies' bash -lc 'sudo apt-get update && sudo apt-get install -y ffmpeg'
+          run_step 'Install Python dependencies' python -m pip install -r requirements-dev.txt
+          run_step 'Install locked composer dependencies' npm ci --prefix remotion-composer
+          run_step 'Run Python library suite' python -m pytest tests/lib/ -q
+          run_step 'Type-check composer' bash -lc 'cd remotion-composer && ./node_modules/.bin/tsc --noEmit'
+          run_step 'Run real browser regressions' python -m unittest tests.lib.test_persian_ranked_browser -q
+
+          rm -f tools/dev/apply_film_type_212.py .github/workflows/apply-film-type-212.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: enforce Film Type subject and brand separation'
+          git push origin HEAD:main
