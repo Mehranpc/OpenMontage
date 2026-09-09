@@ -52,16 +52,18 @@ jobs:
           fail() {
             status="$1"
             {
-              echo 'The Film Type 2.12 materialization stopped without changing production source.'
+              echo 'The Film Type 2.12 materialization stopped without pushing production source.'
               echo
               echo '<details><summary>Last 200 log lines</summary>'
               echo
               echo '```text'
-              tail -n 200 "$LOG"
+              tail -n 200 "$LOG" 2>/dev/null || true
               echo '```'
               echo '</details>'
             } > /tmp/film-type-212-comment.md
-            gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file /tmp/film-type-212-comment.md || true
+            gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file /tmp/film-type-212-comment.md || \
+              gh api --method POST "repos/$GITHUB_REPOSITORY/issues/1/comments" \
+                -f "body=$(cat /tmp/film-type-212-comment.md)" || true
             exit "$status"
           }
 
@@ -76,6 +78,7 @@ jobs:
           }
 
           run_step 'Apply deterministic migration' python tools/dev/apply_film_type_212.py
+          run_step 'Repair post-migration version guards' python tools/dev/repair_film_type_212.py
           run_step 'Install system dependencies' bash -lc 'sudo apt-get update && sudo apt-get install -y ffmpeg'
           run_step 'Install Python dependencies' python -m pip install -r requirements-dev.txt
           run_step 'Install locked composer dependencies' npm ci --prefix remotion-composer
@@ -83,9 +86,21 @@ jobs:
           run_step 'Type-check composer' bash -lc 'cd remotion-composer && ./node_modules/.bin/tsc --noEmit'
           run_step 'Run real browser regressions' python -m unittest tests.lib.test_persian_ranked_browser -q
 
-          rm -f tools/dev/apply_film_type_212.py .github/workflows/apply-film-type-212.yml
+          run_step 'Remove temporary migration machinery' rm -f \
+            tools/dev/apply_film_type_212.py \
+            tools/dev/repair_film_type_212.py \
+            tools/dev/finish_film_type_212.sh
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m 'fix: enforce Film Type subject and brand separation'
-          git push origin HEAD:main
+          run_step 'Stage verified implementation' git add -A
+          run_step 'Commit verified implementation' git commit -m 'fix: enforce Film Type subject and brand separation'
+          run_step 'Push verified implementation' git push origin HEAD:main
+
+      - name: Upload Film Type 2.12 log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: film-type-212-run-${{ github.run_number }}
+          path: /tmp/film-type-212.log
+          if-no-files-found: ignore
+          retention-days: 7
