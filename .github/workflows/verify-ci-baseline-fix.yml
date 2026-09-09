@@ -6,6 +6,7 @@ on:
       - fix/restore-green-ci-baseline
     paths:
       - .github/workflows/verify-ci-baseline-fix.yml
+      - materialize-trigger.txt
 
 permissions:
   contents: write
@@ -48,5 +49,3 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh issue comment 7 --repo "$GITHUB_REPOSITORY" --body "Verified repair materialized at commit $(git rev-parse HEAD). Temporary bootstrap files will now be removed from the branch."
-
-# Triggered after full-suite verification.
