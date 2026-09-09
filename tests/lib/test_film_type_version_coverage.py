@@ -35,6 +35,11 @@ COMPONENTS_TSX = FILM_TYPE_DIR / "components.tsx"
 #: therefore not required to appear there.
 EXPLICIT_PAINT_FROM = (2, 4, 0)
 
+#: A 64-character lowercase hex digest, as written in the expectedHash map.
+#: Kept out of the f-string below so the {64} quantifier cannot be eaten as a
+#: replacement field -- inside an f-string it must be spelled 64.
+_SHA256_HEX = r"[0-9a-f]{64}"
+
 _VERSION_IN_FILENAME = re.compile(r"^film-type-(\d+\.\d+\.\d+)\.json$")
 _PROFILE_VERSION_UNION = re.compile(
     r"profileVersion:\s*((?:\"\d+\.\d+\.\d+\"\s*\|\s*)*\"\d+\.\d+\.\d+\")"
@@ -120,9 +125,21 @@ class FilmTypeVersionCoverage(unittest.TestCase):
             with self.subTest(version=version):
                 self.assertRegex(
                     self.layout,
-                    rf'"{re.escape(version)}"\s*:\s*"[0-9a-f]64"',
+                    rf'"{re.escape(version)}"\s*:\s*"{_SHA256_HEX}"',
                     f"layout.ts has no expectedHash entry for {version}",
                 )
+
+    def test_the_hash_pattern_is_a_quantifier_not_a_literal(self) -> None:
+        """Guard the f-string trap that made the assertion above vacuous.
+
+        Written as an rf-string, a bare ``{64}`` is a replacement field and
+        renders as the text ``64``, so the pattern matched a single hex
+        character followed by "64" -- and nothing else. The assertion then
+        failed for every version even though every entry was present.
+        """
+        digest = "a" * 64
+        self.assertRegex(f'"{digest}"', f'"{_SHA256_HEX}"')
+        self.assertNotRegex('"a64"', f'"{_SHA256_HEX}"')
 
     def test_components_paint_every_explicitly_painted_version(self) -> None:
         """The exact omission that made 2.9 fall through to the old painter."""
