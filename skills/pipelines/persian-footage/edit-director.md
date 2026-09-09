@@ -33,6 +33,11 @@ Film Type. Film Type prepared geometry requires actual painted-node/frame QA, no
 Legacy accent detector; Film Type sizes are read from
 `styles/persian-footage/film-type.json`.
 
+Read the profile labels in those sections literally. A mechanism marked Legacy is
+not a weaker version of the Film Type one — in most cases Film Type has no
+equivalent at all, and applying the Legacy recipe produces geometry the Film Type
+verifier never asked for.
+
 # Edit Director — Persian Footage Pipeline
 
 ## Your job
@@ -64,6 +69,10 @@ So the rule is **selective, not continuous**:
 - **At least 0.9s of empty frame between moments.** Also enforced. Two moments a
   quarter-second apart are a caption track whatever they are called, and the gap is
   what makes the footage readable as footage.
+
+These three are profile-independent. `audit_moments` runs from
+`tools/video/persian_compose.py:801` before any render, Film Type included, and it
+has no profile branch.
 
 The old density target was 12–15 per minute. That target is now impossible, and this
 is worth internalising: a moment is a **phrase** with a reading floor of 2.4s plus
@@ -129,19 +138,34 @@ Every rule below exists because of that frame or one like it.
 
 ### The four roles
 
-| Role | What it is | Ink | Size |
+The roles themselves are editorial and profile-independent. The ink and size columns
+below are **Legacy**.
+
+| Role | What it is | Ink (Legacy) | Size (Legacy) |
 | --- | --- | --- | --- |
 | `lead` | the part of the phrase that sets up the emphasis | primary | `LEAD_RATIO` × hero (see `tokens.ts`) |
 | `hero` | **the** emphasis — the thing the frame exists for | accent | the ladder |
 | `tail` | the part that completes the phrase *after* the hero | primary | `LEAD_RATIO` × hero (see `tokens.ts`) |
 | `source` | a citation appended to the phrase | secondary | `SOURCE_RATIO` × lead (see `tokens.ts`) |
 
+Film Type sets every role in white ink and takes its own numbers from
+`styles/persian-footage/film-type.json`: the three ladders at lines 51–71
+(`figureLadderPx`, `titleLadderPx`, `statementLadderPx`) and `leadPx` / `sourcePx`
+at lines 74–76, applied in `remotion-composer/src/persian/filmType/layout.ts:191–193`
+and `:297–301`. `HERO_LADDER_PX`, `LEAD_RATIO` and `SOURCE_RATIO` in `tokens.ts` are
+consumed only by the Legacy `remotion-composer/src/persian/layout.ts`.
+
+What survives both profiles: four roles and no more, exactly one `hero` per reveal
+step, at most one `source` and it is last.
+
 - `lead` is where Persian usually starts: «مطالعهٔ … روی», «میانگین سنی
   شرکت‌کنندگان:». The user's complaint about the age frame — «حتی بدتره» — was that
   it showed a number with nothing saying what it counted. The fix is a lead that
   names it, not a label under it.
-- `hero` carries the accent colour and the largest type. The user loved the large
-  orange hero; keep it. **Exactly one hero per reveal step** — zero is a caption,
+- `hero` carries the largest type. In Legacy it also carries the accent colour, and
+  the user's approval of the large orange hero is a Legacy note: Film Type sets the
+  hero in white and lets size and the diffuse shadow do the emphasising, with no hue
+  change at all. **Exactly one hero per reveal step** — zero is a caption,
   two is an emphasis competing with itself.
 - `tail` exists because Persian sometimes finishes after the fact: «… را سه برابر
   می‌کند». Forcing that into a `lead` would place it above the thing it follows.
@@ -163,8 +187,9 @@ reason about variety (a video of nothing but statements is its numbers being set
 running text) and so a reviewer can see the edit's judgement. Choose it honestly; do
 not expect it to change anything about layout — with one exception: `hook` switches
 on the hook's scoped tokens (its ladder offset, its qualifier size and weight, its
-gap, its two-beat arrival, and the silhouette gate), because an opening frame that
-had to look like its content to be recognised would not be declared at all.
+gap, its two-beat arrival, and — on Legacy only — the silhouette gate), because an
+opening frame that had to look like its content to be recognised would not be
+declared at all. `kind` also selects which Film Type ladder applies.
 
 ### Character ceilings, per role
 
@@ -178,6 +203,10 @@ Ceilings are per segment, enforced by `audit_moments` — the values live in
 - A flat-hook hero (one hero carrying `accentWords`, a whole sentence at one size)
   ≤ the flat-hero ceiling — a longer sentence is a paragraph, not a hook.
 
+These ceilings apply to every profile. They are enforced in
+`lib/persian_moments.py:820–841`, outside any `v2` branch, and the audit runs before
+every render.
+
 These are generous enough for a full phrase and tight enough that the type ladder
 (see below) never has to shrink the emphasis into invisibility. A statement that
 needs more than the hero ceiling for its hero is two moments, or a poster line that has
@@ -190,12 +219,22 @@ two styles — claim+qualifier (a hero plus a tail, no `accentWords`) or flat di
 (a single hero carrying `accentWords`): the predicates are `is_claim_qualifier_hook`
 and `is_flat_display_hook` in `lib/persian_moments.py`, and a declared `hook` matching
 neither is refused rather than fitted as an ordinary moment. A hook carries no `source`
-— it is the opening frame, not the evidence. And `accentWords` and the hook kind appear
-on the opening moment only: either past the first moment is refused.
+— it is the opening frame, not the evidence. The `hook` kind belongs to the opening
+moment only.
+
+The companion restriction — `accentWords` past the first moment is refused — is
+**Legacy-only**. That gate sits under `if not v2:` in
+`lib/persian_moments.py:921–928`, and a Film Type render resolves to `v2=True`, so it
+never runs on the active path. Do not carry "one accent moment per video" into a
+Film Type edit as though the audit enforced it; if you want accent restraint beyond
+the hook, that is an editorial choice you are making, not a gate you are obeying.
 
 ### Sizes are derived, not chosen
 
-You do not set sizes and neither does the `kind`. The renderer walks `HERO_LADDER_PX`
+You do not set sizes, and neither does the `kind`. That much holds in both profiles.
+The mechanism in this section is **Legacy**.
+
+The Legacy renderer walks `HERO_LADDER_PX`
 from the top and takes the **largest rung at which the whole stack fits** its width
 budget and its height budget. The lead derives from the hero via `computeLeadPx`,
 the source from the lead, the gap from the lead — read the ratios and the clamps in
@@ -204,15 +243,25 @@ every number in this section. A short micro hero additionally receives the prese
 lift (`SHORT_HERO_*` in the same file): it walks up while the stack stays narrow, so
 «قهوه» carries its weight beside «۲۲۶۴ نفر» at the same emphasis.
 
-Consequences worth planning around:
+Film Type derives sizes the same way but from its own numbers: the three ladders in
+`styles/persian-footage/film-type.json:51–71`, walked in
+`remotion-composer/src/persian/filmType/layout.ts:297–301`, bounded by
+`maxStackFraction` in the same JSON. The presence lift has no Film Type equivalent —
+`filmType/layout.ts` never imports `SHORT_HERO_*`.
 
-- A short hero («۲۲۶۴ نفر») lands high on the ladder — huge, orange, dominant.
+Consequences worth planning around — these are behavioural and true of both:
+
+- A short hero («۲۲۶۴ نفر») lands high on the ladder — huge and dominant (orange in
+  Legacy, white in Film Type).
 - A long hero («چربی کمتر، عضلهٔ بیشتر») lands lower, with its lead at a
   *proportion* of it, so the two always read as one phrase with an emphasis rather
   than as a heading over a subheading.
 - The old 38px orange kicker under an 80px claim — «سایز خط اول و دوم تناسب نداره.
   خط نارنجی بیش از حد کوچیکه!» — cannot recur, because the ratio is now the
   constant and the absolute size is measured.
+
+So: plan for the behaviour, never for the constant. A moment written to hit a
+specific rung is written against one profile's table.
 
 ### Builds: accumulate, don't replace
 
@@ -257,14 +306,23 @@ moments; do not try to smuggle old fields through.
 
 ## Where the text goes, and why you do not choose
 
-Every moment is anchored to the **same right edge** and sits in the same vertical band
-across the middle of the frame. Not centred, not per-moment.
-
-That is a design decision made in `tokens.ts` and it is not yours to vary: a shared
+**Legacy:** every moment is anchored to the **same right edge** and sits in the same
+vertical band across the middle of the frame. Not centred, not per-moment. That is a
+design decision made in `tokens.ts` and it is not yours to vary: a shared
 spine is what makes a handful of separate moments read as one designed video rather
-than a stack of text overlays. **Legacy-only:** `lib/persian_verify.py` checks it per
+than a stack of text overlays. `lib/persian_verify.py` checks it per
 line and fails a render whose type drifted off the anchor. The Film Type verifier does
 not perform this per-line right-edge check (`lib/persian_film_verify.py:37–94`).
+
+**Film Type:** placement is decided per moment, not shared. `filmType/layout.ts:276`
+builds candidates at `:287–310` and scores them, using `upperCentre` 0.32 and
+`middleCentre` 0.56 from `styles/persian-footage/film-type.json:94–95`. There is no
+common right edge and no single band, so do not describe the layout to a reviewer as
+a spine.
+
+What holds in both: the position is computed, never authored for aesthetic reasons.
+Explicit placement without reviewed avoid regions is exactly what the 2.11 warning
+list flags, and it is not a shortcut around a moment that does not fit.
 
 Contrast is profile-specific. The `5.6:1` floor is Legacy (`lib/persian_verify.py:193`);
 the Film Type verifier uses a `4.5:1` floor (`lib/persian_film_verify.py:69–74`).
@@ -292,7 +350,8 @@ The reading model is charged **per reveal step**:
   skimmed, not read.
 - `MIN_SECONDS` is 2.4 and `MAX_SECONDS` is 9. Under 2.4 is a flash; over 9 and the
   frame stalls. Builds may legitimately use the upper range — they carry several
-  reads.
+  reads. Both bounds are enforced for every profile
+  (`lib/persian_moments.py:858–867`, no `v2` branch).
 
 `11 cps` is roughly half the 21 the sidecar subtitles allow, because a moment is
 read *while the footage plays*, in a glance, against motion.
@@ -324,23 +383,29 @@ video itself answers — and the test is always whether the video makes the clai
 loud the hook asks.
 
 A hook is declared with its own `kind: "hook"` — never inferred from its shape.
-The default style is claim + qualifier: the `hero` carries the claim in accent
-and the `tail` completes it in primary ink, set larger relative to the hero than
+The default style is claim + qualifier: the `hero` carries the claim and
+the `tail` completes it, set larger relative to the hero than
 an ordinary lead (the ratio lives in `tokens.ts`, scoped to hooks so ordinary
-moments keep their ceiling). Both lines share the weight class, arrive in two
+moments keep their ceiling; Legacy additionally sets the claim in accent ink).
+Both lines share the weight class, arrive in two
 beats — claim, then qualifier — and read as a step rather than a block: the
 silhouette gate in `persian_compose` refuses a hook whose lines are nearly equal
-in width, and `tokens.ts` documents the band it enforces.
+in width, and `tokens.ts` documents the band it enforces. That gate is
+**Legacy-only** — `HOOK_SILHOUETTE_*` in `tokens.ts:478–481`, checked in
+`tools/video/persian_compose.py:992+`; `filmType/layout.ts` does not import it and
+has no equivalent check. The step shape is still the better hook, but on Film Type
+it is your judgement rather than a refusal.
 
 The flat one-size style remains for a single-clause sentence where any split is
 arbitrary — such as the previously rejected «می‌دونی قهوه با هورمون‌هات
 چی‌کار می‌کنه؟», where no grammatical split exists: one hero-only segment at one
 size in primary ink with `accentWords` naming one or two keywords (`tokens.ts`
 documents the treatment; the sized lead/hero/tail model stays for every other
-moment). Note honestly that the flat style cannot currently pass the silhouette
-gate — its line breaker balances lines, and balanced lines are a rectangle by
-construction — so a flat hook renders but is refused at compose time until it
-gets a hook-specific break objective. A flat hook is typeset as a display block
+moment). Note honestly that the flat style cannot currently pass the Legacy
+silhouette gate — its line breaker balances lines, and balanced lines are a
+rectangle by construction — so on Legacy a flat hook renders but is refused at
+compose time until it gets a hook-specific break objective. A flat hook is typeset
+as a display block
 rather than as an emphasis span: it may run to more lines and breathes on looser
 leading than an emphasis span does, with the values living in `tokens.ts`.
 
@@ -469,8 +534,10 @@ Starting at 0 is a default, not a decision.
 ### Place moments against the footage, not against the script
 
 A moment lands on a shot. Prefer a shot whose subject is low or left in frame, or
-whose motion has settled — the scrim guarantees legibility, but a moment over a
-close-up face still competes with it for attention.
+whose motion has settled. Neither profile detects subjects, so the shadow or scrim
+helps legibility without knowing what is behind the text — a moment over a close-up
+face still competes with it for attention, and on Film Type 2.11 subject-region
+enforcement is off, which the run reports as a warning rather than a refusal.
 
 The strongest placement is a moment that *arrives with a cut*: the shot changes and
 the figure appears on the new frame. Placing one mid-shot works; placing one two
@@ -536,9 +603,9 @@ not render inputs, so changing them without re-running `persian_compose` changes
 nothing on screen. And expect the same refusals a fresh edit meets — retired keys,
 the reading-time ceiling, the per-role character caps (`MAX_*_CHARS` in
 `lib/persian_moments.py`), the sync-drift tolerance in `lib/persian_sync.py`, the
-silhouette band (`HOOK_SILHOUETTE_*` in `tokens.ts`), and the music record gate in
-`lib/persian_music.py`. The check names its constants; the values live in code, not
-here.
+silhouette band on Legacy (`HOOK_SILHOUETTE_*` in `tokens.ts`), and the music record
+gate in `lib/persian_music.py`. The check names its constants; the values live in
+code, not here.
 
 One trap no gate catches: a missing ZWNJ (U+200C) passes every audit and paints
 wrong, because all comparisons and counts strip it. If an edited compound looks
@@ -584,6 +651,11 @@ for moment in moments:
     for segment in moment.segments:
         assert normalize(segment.text) == segment.text
 ```
+
+Note that `audit_moments` takes a `v2` flag and `persian_compose` passes the one the
+resolved design implies. Calling it as above audits the Legacy rule set; that is the
+stricter reading and safe for planning, but do not report a pass from it as a Film
+Type pass.
 
 That last check is not paranoia. Text gets copied between four artifacts on its way
 here, and a single copy through a tool that normalizes differently reintroduces
