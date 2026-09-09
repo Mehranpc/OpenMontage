@@ -21,6 +21,11 @@
           "fps": { "type": "number" },
           "duration_seconds": { "type": "number", "minimum": 0 },
           "file_size_bytes": { "type": "integer" },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$",
+            "description": "Digest of the exact rendered bytes; Persian checkpoint writes recompute and verify it."
+          },
           "platform_target": { "type": "string" }
         },
         "additionalProperties": false
@@ -112,7 +117,7 @@
     },
     "persian_text_verified": {
       "type": "boolean",
-      "description": "False on an automatically produced Persian final candidate. It may become true only after the user approves that render; verification_notes still records the automated measurements and their limits."
+      "description": "False on an automatically produced Persian final candidate. It may become true only after the user approves that exact render and all automated text measurements pass; verification_notes records those measurements and their limits."
     },
     "verification_frames": {
       "type": "array",

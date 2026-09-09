@@ -38,13 +38,22 @@ def summarize(props: dict[str, Any], attributions: list[str]) -> dict[str, Any]:
     moments = []
     for moment in props.get("moments", []):
         geometry = moment.get("layoutGeometry") or {}
+        rect = geometry.get("rect")
+        if not isinstance(rect, dict):
+            flat = {
+                key: geometry[key]
+                for key in ("x", "y", "w", "h")
+                if isinstance(geometry.get(key), (int, float))
+            }
+            rect = flat or None
         moments.append({
             "id": moment.get("id"),
             "startSeconds": moment.get("startSeconds"),
             "endSeconds": moment.get("endSeconds"),
             "placement": geometry.get("placement"),
-            "rect": geometry.get("rect"),
+            "rect": rect,
             "subjectSafety": geometry.get("subjectSafety"),
+            "geometry": geometry or None,
         })
     return {
         "ok": True,

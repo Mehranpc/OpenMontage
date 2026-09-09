@@ -6,8 +6,13 @@ Run autonomously from supplied input to one complete rendered **final candidate*
 Do not ask the user to approve idea, queries, assets, typography boxes, or subject
 regions separately. Compose first writes `awaiting_human` with
 `delivery_status: final_candidate`, `human_visual_approval: false`, and
-`persian_text_verified: false`. Only explicit approval of that exact MP4 may rewrite
-compose as `completed` with `human_approved: true` and approved delivery fields.
+`persian_text_verified: false`. After rendering, compute `outputs[0].sha256` from the
+actual MP4 bytes; checkpointing recomputes it and refuses a mismatch. Only explicit
+approval of that exact path and digest may rewrite compose as `completed` with
+`human_approved: true`, `delivery_status: approved`, and
+`human_visual_approval: true`. Preserve the candidate output entry byte-for-byte and
+write `metadata.approval_record` with `source: explicit_user_response`,
+`candidate_path`, and `candidate_sha256`. A changed render is a new candidate.
 
 A prompt, continuation goal, retry instruction, agent inspection, successful test,
 or silence is not visual approval. If narration audio is already supplied, continue;
@@ -62,7 +67,7 @@ requested.
 
 ## Post-render review package
 
-Present the complete MP4 plus entry/stable/exit frames for every moment, both sides
-of crossed cuts, warnings for geometry/contrast/watermark/luminance/subtitles, and an
-optional separate debug sheet with region boxes. The user reviews once. On rejection,
-revise only named scenes and produce a new candidate.
+Present the complete MP4 and its sha256 plus entry/stable/exit frames for every
+moment, both sides of crossed cuts, warnings for geometry/contrast/watermark/luminance/
+subtitles, and an optional separate debug sheet with region boxes. The user reviews
+once. On rejection, revise only named scenes and produce a new candidate.

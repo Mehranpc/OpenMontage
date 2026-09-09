@@ -317,8 +317,8 @@ stages:
     success_criteria:
       - Schema-valid render_report artifact
       - Output file exists and passes ffprobe validation
-      - "Initial candidate: delivery_status is final_candidate, human_visual_approval is false, persian_text_verified is false, and compose is awaiting_human"
-      - "Only explicit approval of that MP4 completes compose with human_approved true; then delivery_status is approved and the two verification booleans may become true"
+      - "Initial candidate: delivery_status is final_candidate, human_visual_approval is false, persian_text_verified is false, outputs[0].sha256 matches the MP4 bytes, and compose is awaiting_human"
+      - "Only explicit approval of that exact path and sha256 completes compose with human_approved true; metadata.approval_record identifies the user response, delivery_status is approved, and the two verification booleans may become true"
       - "render_report.verification_notes carries measured numbers rather than adjectives: anchor offsets, contrast range, line counts, watermark rows — and names what was NOT verified (intra-word glyph order)"
       - render_report.moment_count and render_report.text_coverage are recorded
       - "In narrated mode: render_report.subtitle_path points at an existing SRT"
