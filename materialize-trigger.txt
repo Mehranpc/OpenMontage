@@ -1,1 +1,0 @@
-The full test matrix passed; materialize the exact verified patch.
