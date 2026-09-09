@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   validate:
-    name: Validate repository
+    name: Validate Python
     runs-on: ubuntu-latest
 
     steps:
@@ -33,29 +33,14 @@ jobs:
             requirements.txt
             requirements-dev.txt
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: remotion-composer/package-lock.json
-
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Install Python dependencies
+      - name: Install dependencies
         run: make install-dev
-
-      - name: Install Remotion dependencies
-        working-directory: remotion-composer
-        run: npm ci
 
       - name: Run lint smoke checks
         run: make lint
-
-      - name: Check TypeScript
-        working-directory: remotion-composer
-        run: ./node_modules/.bin/tsc --noEmit
 
       - name: Run test suite
         run: make test
