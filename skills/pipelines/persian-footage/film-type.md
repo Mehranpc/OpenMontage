@@ -1,283 +1,159 @@
-## Film Type 2.8 current default
+# Film Type — current default: 2.11.0 / layout 11
 
-Read `docs/persian-film-type-2.8-patch.md` before the historical guidance below.
-Approved diffuse shadow now defaults to strong for every new moment. Vertical
-text and watermark use a conservative Reels safe area (14% top, 35% bottom,
-8% left, 16% right), not a generic 9:16 margin. Reprepare all geometry; never move
-measured rows manually. Review every moment with scripts/review_reels_safe_area.py
-and the actual Instagram UI. Preserve face/action regions simultaneously; refusal
-requires an editorial solution, not weaker margins. Existing complete pins stay
-unchanged. 2.7 QA limitations still apply; safe-area success is not full approval.
+This is a visual profile for the Persian footage pipeline. It is not a new
+pipeline, runtime, narration mode, or approval.
 
-## Film Type 2.7 migration override
+**One current default.** Every unpinned `persian-footage` run resolves to
+`2.11.0` / `layoutVersion 11`. If any other document, comment, or memory tells
+you a different version is current, it is stale and this file wins.
 
-For the current unpinned default, read `docs/persian-film-type-2.7-patch.md`
-BEFORE the historical guidance below. That guide owns diffuse shadow, region
-interpretation, diagnostic probes and version-aware QA. Pass resolved props to
-verify_frames; never apply Legacy scrim-ceiling/anchor/orange-gap rules to Film
-Type. Missing synchronized diagnostic evidence is not_checked, NOT a pass and
-NOT evidence that the shadow failed. Do not set persian_text_verified from these
-sampled checks. Review bright-background watermark separately. Keep old complete
-pins unchanged; migrate only by fresh resolution and prepass.
+**Read before composing:**
 
-# Film Type 2.6 editorial quality gate
+| Purpose | File |
+| --- | --- |
+| What 2.11 changed and why | `docs/persian-film-type-2.11-patch.md` |
+| Archived 2.5–2.10 guidance (reproducing old pins only) | `skills/pipelines/persian-footage/film-type-history.md` |
+| How to audit a render's geometry | `docs/film-type-visual-regression.md` |
 
-The unpinned default now resolves to 2.6/layout 6. Archived 2.1–2.5 pins remain
-reproducible. Never relabel an old snapshot; resolve a fresh unpinned design and
-rerun preparation to migrate. Do not edit frozen rows or geometry by hand.
+`film-type-history.md` is an archive. It contains sentences such as "current
+default" and "the registry now resolves" that were true when written. Do not act
+on them.
 
-Before composing ANY moment (not only a hook):
-- Identify the semantic payoff and assign the authored hero to it. Read lead,
-  hero and tail in display order as a grammatical sentence. Do not let filler or
-  auxiliary words inherit display emphasis merely because they are in the middle.
-- Preserve approved text, facts and narration. A role change, shortened phrase or
-  two-beat alternative is an editorial decision before preparation, never a hidden
-  renderer rewrite. Confirm it against the approved message and voice timestamps.
-- For long copy, review the ranked result first. Prefer one or two hero rows.
-  If it still needs three, propose shorter display copy or separately authored
-  timed beats using existing moments/revealAfterSeconds. Preserve reading time,
-  empty gaps and coverage limits; never split at arbitrary character counts.
-- Review every overlapping shot across the full dwell, including camera movement
-  and cuts. Supply screen-space avoidRegions for faces, important action, products
-  and existing lettering. [] is a reviewed clear shot, NOT an automatic default.
-  Both explicit and auto placement now refuse absent shot reviews. If no position
-  clears both ink and the bounded shadow, change placement/shot or edit the copy.
-- Review filmType.warnings. editorial-review-required and semantic-review-required
-  require an actual editorial decision; contrast-review-required requires visual
-  inspection on each shot, not just a geometry pass. Do not declare visual approval
-  from successful preparation, test results, or an empty region list.
-- Inspect entry, stable frame, exit and each crossed cut. Require readable ink,
-  unobscured subject, coherent phrase breaks and a subordinate contrast field.
-  The system does not detect faces or measure footage contrast automatically.
+## Activate
 
-The ranker evaluates every supported size and three column widths, using the real
-loaded font. It penalizes excess hero rows, uneven line lengths, shrinking, height
-and footprint. Author-chosen positions remain binding. Impossible text is refused
-rather than clipped, truncated, reordered or shrunk below the existing floors.
-The opaque contrast core is preserved; its outer feather is capped and may shrink
-only if doing so avoids supplied subject regions. This is not a guarantee for
-arbitrary unreviewed footage or unlimited text.
-
----
-
-## Film Type 2.6 — soft shadow field and delayed brand
-
-Current opt-in registry: 2.5.0/layout 5. Preserve 2.1/2.2/2.3/2.4 pins verbatim.
-Fonts, wrapping, explicit placements, source content and approved edit times are
-unchanged. Do not edit frozen hashes/sidecars to migrate; create a NEW input.
-
-Arrival is frame-driven smoothstep with 18px travel for all text, including
-cut-in (0.48s); soft-reveal remains 0.56s. Field and first text arrive together.
-Reading/source gates and reveal delays remain authoritative; do not retime to
-force acceptance. Number and unit stay in one authored reveal group.
-
-The contrast field is a convex superellipse cloud with exact full-strength
-support around the measured block, 4px padding and finite 300px feather, without
-blur filters, a drawn card border, or footage grade. Soft/standard/strong are
-0.5/0.6/0.7 over `#191919` blended as multiply, so footage hue survives and the
-darkening dissolves outward like a soft shadow. Per-moment contrastStrength remains EXPLICIT direction, not an
-automatic raw-footage luminance analysis. Check small text before choosing soft.
-
-Brand planning uses shot/text/obstacle boundaries and a 6s fallback grid, min
-6s dwell, target 12s, at most five relocations, and both sides when safe. It may
-reuse a location. Fades remain inside safe dwells, with one lockup and no upper
-slot or travel through subjects. The brand never opens the video:
-`watermark.introDelaySeconds` (5) keeps the first seconds clean and the first
-slot starts at the delay boundary. For films >=12s, inability to relocate fails
-rather than silently producing a fixed/hidden mark. Short films may use one slot.
-Single-side-only plans warn. The search refuses >512 timeline boundaries.
-Movement is not copy protection. Empty avoidRegions is not independent visual
-or contrast approval. Recheck the actual moving footage and Reels UI on the Mac.
-
-First review three short native samples: title, figure and statement. Use RAW
-staged footage, not a second overlay on an already-composited MP4. No new font,
-layout, audio, provider or runtime design pass. Keep old projects/reviews intact.
-
-### Historical contract for the named earlier versions
-
-# Pathway Film Type 2.6 — the default path, Persian footage only
-
-This is a visual profile, not a new pipeline, runtime, narration mode or approval.
-Film Type 2.6 is the default: every persian-footage run carries a film-type design
-unless explicitly directed elsewhere. `quiet-editorial` remains available as an
-explicit option. Absent design is refused by persian_compose; the old Legacy render
-is reachable only through the explicit hidden opt-out {"version":2,"profile":"legacy"}
-(emergencies only). Do not migrate old projects in bulk, or call Stage B / C–E
-complete. Human visual approval remains pending until real renders are reviewed.
-
-## Activate (default for every new production)
-
-Use the existing Remotion `persian_compose` path and the existing canonical
-`persian.moments[].segments` contract. Choose:
+Use the existing `persian_compose` path and the canonical
+`persian.moments[].segments` contract. Put this in `persian.design`:
 
 ```json
 {"version": 2, "profile": "film-type", "seed": "<project-id>-film-type-01"}
 ```
 
-The seed is auto-derived from the project id (deterministic per project).
+The producer resolves `styles/persian-footage/film-type.json` into a hashed
+snapshot. An absent design is refused. Legacy is reachable only through the
+hidden opt-out `{"version":2,"profile":"legacy"}`, for emergencies.
 
-Put this object in `persian.design` of the edit decisions. The producer resolves
-`styles/persian-footage/film-type.json` into a hashed snapshot. To freeze a project
-across future profile-file edits, copy the ENTIRE resolved `design` object from
-the successful `.mp4.props.json` into `persian.design`, not the rest of the props.
-All three pin fields (`resolved`, `contentHash`, `profileVersion`) are required
-together. A changed snapshot/hash or unsupported version is refused. 2.5.0 keeps the 2.4.0 geometry, motion envelope, brand plan and timings, and
-repaints ONLY the text field: a soft natural shadow blended as multiply over
-footage, so the hue survives and the darkening dissolves outward gradually.
-Supported
-pairs are 2.1.0/layout 1, 2.2.0/layout 2, 2.3.0/layout 3, 2.4.0/layout 4, and
-2.5.0/layout 5, each with its exact
-canonical hash. The opt-in registry now resolves 2.5.0. Older pins keep their
-versioned behavior; 2.1.0 uses its original breaker rather than inheriting the
-accidentally shared 2.2.0 over-binding rule. Never edit a saved sidecar by hand.
+### Pinning
 
-Read this guide instead of applying the Legacy orange/glow/rule, fixed-right,
-legacy silhouette, or oversized hero/tiny label styling. Existing shared
-editorial, science, RTL, segment, coverage, music, sync, source and approval gates
-still apply. No decorative `kicker`, detached `unit`, or mandatory eyebrow field.
+To freeze a project against future profile-file edits, copy the ENTIRE resolved
+`design` object from a successful `.mp4.props.json` into `persian.design` — not
+the rest of the props. All three fields (`resolved`, `contentHash`,
+`profileVersion`) are required together. A changed snapshot, a wrong hash, or an
+unsupported version is refused.
 
-## Editorial language across topics
+Supported pairs are `2.1.0`/layout 1 through `2.11.0`/layout 11, each with its
+exact canonical hash. The 2.11 hash is
+`ee04b0e576891828d754b2dc8bc7139178174251e3755dea4797dd480df4f687`.
 
-Choose the application because of the information, not because of a topic ID:
+Older pins keep their own versioned behaviour. Never relabel a snapshot, edit a
+frozen hash or sidecar by hand, or migrate projects in bulk. Migration means
+resolving a fresh unpinned design and rerunning preparation.
 
-- **Image-led title:** a short `hook` hero plus a closely related tail when needed.
-  Example structure: `قهوه` / `و هورمون‌ها`. Related lines use a close size ratio and
-  ink-based spacing. Do not add a vague lead just to fill a third line.
-- **Quiet statement:** one compact hero; one useful support phrase only if needed.
-  Prefer `inline-statement` for a calmer, small stack. This is not a caption track.
-- **Pause / question:** a short thought with space around it. The shot carries
-  emotion; the typography does not shout or decorate every word.
-- **Quantity + context + source:** keep a complete number/unit phrase inside ONE
-  authored hero, e.g. `۴۱ فرد سالم`. Its internal display may use two tightly bound
-  rows. It never invents a `unit` field, detaches the unit to the side, reorders
-  words, deletes a source, or rewrites the claim. A bare numeral remains a numeral.
+## What 2.11 changed
 
-Do not mechanically alternate treatments to satisfy a quota. Allow footage-only
-intervals. No stock warning colors, unsupported causal claims, exaggerated hook
-promises, automatic paraphrases, or topic stereotypes. Do not change approved
-narration, facts, sources or music to fit a layout. Ask for an editorial revision
-when fitting fails instead of deleting words or shrinking below the floors.
+2.11 keeps 2.10's fonts, wrapping, field strengths (`soft 0.24` / `standard
+0.34` / `strong 0.40`), diffuse radii, motion envelope, and safe-area values.
+It changes four things:
 
-## Placement is reviewed geometry, NOT automatic face detection
+1. **`layout.middleCentre` 0.49 → 0.56.** Mid-placed blocks sit lower, away from
+   the centre of the frame where faces usually are. `upperCentre` (0.32) is
+   unchanged, so `upper-*` placements are unaffected.
+2. **`layout.safeAreaPaddingPx: 20`** — a new token, separate from `safeArea`.
+   It tightens the clamp bounds only; it does not change any safe-area value.
+3. **`watermark.glyphShadow`** gives the brand lockup its own near shadow plus
+   halo, so it stays legible on bright backgrounds. It is **required** in 2.11:
+   if it is missing, both preparation and paint fail loudly. There is no silent
+   fallback to the text glyph shadow.
+4. **Reviewed avoid regions now steer the brand.** The moving-watermark planner
+   deprioritises zones overlapping a reviewed region and vetoes overlapping
+   (zone, interval) pairs outright. If no safe slot remains, preparation fails
+   with "No safe moving watermark schedule" — it never hides or shrinks the mark.
 
-Supported placements remain `upper-left`, `upper-right`, `mid-left`, `mid-right`,
-`lower-left`, `lower-right`, `center`, `auto`. In 2.1.0 left columns align left.
-In 2.2.0/2.3.0 non-centered Persian text aligns right WITHIN its authored column;
-intentional center remains centered. Alignment does not move a block across the
-frame. For right-anchored text / left-brand composition, explicitly change the
-appropriate placements in a NEW review input, not by secretly mirroring them in
-the renderer. Other projects and intentionally left-placed blocks are not migrated.
-English brand text retains explicit LTR direction.
+## Subject safety: reviewed geometry, never detection
 
-2.3.0 restores a 128px hook ceiling and the close 0.8 tail ratio. Its contextual
-breaker permits complete display prefixes such as `قبل از` at the end of a line,
-without weakening ordinary clitic or number/unit protections. Valid authored
-breaks are preserved; it does not rewrite the sentence or insert forced breaks.
+There is no face, person, or subject detection anywhere in this system, and no
+classifier of any kind. Nothing may be added.
 
-For `auto`, each overlapping shot must have reviewed `avoidRegions`, in normalized
-screen coordinates AFTER cover crop, covering the subject/action across the entire
-camera move and dwell. A reviewed clear shot is explicitly `avoidRegions: []`.
-Missing metadata is not the same as reviewed-clear, and auto refuses to guess.
-Regions have `x,y,w,h`; optional start/end are ABSOLUTE timeline seconds within
-that shot. Omitted region times inherit the shot window; do not flatten them into
-full-video exclusions or annotate a source frame without accounting for crop.
+Supported placements: `upper-left`, `upper-right`, `mid-left`, `mid-right`,
+`lower-left`, `lower-right`, `center`, `auto`.
 
-An explicit placement can be used without those regions, but subject QA is then
-`not-checked` in the saved warnings. Supplied regions only prove clearance from
-those envelopes, not successful face detection or a human visual approval. Safe
-area and the motion envelope remain hard checks for every placement. Protect
-faces, hands, key objects, charts and text already embedded in a clip as needed.
+`avoidRegions` are normalized screen coordinates AFTER cover crop, covering the
+subject and action across the entire camera move and dwell. `x,y,w,h`; optional
+`start`/`end` are ABSOLUTE timeline seconds within that shot, and omitted times
+inherit the shot window. `avoidRegions: []` means a reviewed clear shot; missing
+metadata is not the same thing, and `auto` refuses to guess.
 
-## Contrast and motion
+**In 2.11, `enforceSubject` is OFF.** Consequences you must understand:
 
-Pure-white type, Estedad 700/500, no glow or mandatory decorative rule. Support
-and source text are opaque, not lower-opacity grey. Inline emphasis, if explicitly
-authored on the permitted hero, keeps white glyphs with a restrained blue underline.
+- Reviewed regions steer the **brand**. They do **not** move authored **text**.
+- `subjectSafety` is therefore always `not-checked` in the saved warnings, even
+  when you supplied regions. That warning is correct, not a bug. The system
+  refuses to claim it checked something it did not check.
+- A text block overlapping a subject is **reported, never silently corrected**.
 
-A local, feathered Obsidian field supports the WHOLE active text group, including
-small context/source lines. `contrastMode: light` deliberately uses dark glyphs
-with a soft white field; it does not merely turn the dark field off. Prefer the
-white-on-dark treatment unless the shot gives a considered reason to reverse it.
+### When text lands on a face
 
-Optional `presentation.contrastStrength`: `soft`, `standard` (default), `strong`.
-Choose once from the hardest part of the ENTIRE moment, not one representative
-frame. There is NO automatic video luminance analysis and no frame-by-frame
-pumping. Changing strength requires re-preparation, not editing a baked plan.
-The `soft` option is not an excuse to accept unreadable small text. Inspect bright,
-busy, moving and compressed phone-size output. If support darkens the subject too
-much, relocate/re-edit the shot or text; a numeric ratio alone is not visual QA.
+A wide block cannot be moved off a centre-framed face by placement. The safe
+area leaves no clear column. Do not chase it with placement, weaker margins, or
+a smaller size floor. Fix it editorially:
 
-Film Type removes the Legacy always-on vignette/wash only in this explicit profile.
-No main text = no main text field. Only 2.1.0 has independent brand support;
-2.2.0/2.3.0 paint text-only branding, without a replacement card or shadow.
-2.3.0 restores the original main-field plateau geometry (0.68, not 0.58), without
-retiming text or changing footage grading.
-Explicitly empty text AND empty brand = untouched footage
-apart from the existing camera transform and encoding. Every field sits below
-all text/brand ink; the brand's gradient must not darken another text block.
+1. shorten the display copy so the block is narrower and shorter,
+2. change or reframe the shot so the subject leaves the centre, or
+3. pin that project to `2.8.0`, where subject enforcement is active.
 
-`soft-reveal` uses a short eased entrance and gentle upward arrival; `cut-in` is a
-short opacity entrance without travel. Both are driven by Remotion frames, not
-CSS timers. Authored `revealAfterSeconds` is retained and never pulled forward or decoratively delayed. Each actual reveal window, including a late source, must cover its reading charge and entrance/exit; otherwise preparation refuses and requests an explicit re-edit.
-There are no letter-spinning, elastic scale, blur, looping or watermark bloom effects.
+## Safe area, contrast, and brand
 
-## Smaller, complete bilingual brand
+Vertical safe area is top 14%, bottom 35%, left 8%, right 16%, plus
+`edgeInsetPx 10`, `motionClearancePx 18`, and `safeAreaPaddingPx 20`. These are
+internal review bounds, not an official Instagram standard. Verify against the
+real Reels UI.
 
-At 1080×1920, 2.1.0 uses Persian 36px / Latin 28px. In 2.2.0/2.3.0 the sizes
-are Persian 30px Estedad 500 / Latin 24px Arial 400, with a 6px line gap.
-The full actual strings are measured in the browser. No clipping, ellipsis,
-substring removal or emergency unreadable shrinking. Long brands that cannot fit
-fail clearly. One relocation is the profile maximum, with at least six seconds
-per dwell when two slots fit; geometry may reduce the count after revalidation.
-A very short video has a single dwell. Only one lockup exists at any instant.
-A fade to zero precedes the next slot, with full-dwell text/subject clearance.
-2.3.0 first tries ONE position for the entire film, opposite the dominant authored
-text column. It relocates only when no constant slot clears the complete timeline.
-Upper slots are forbidden, not merely less preferred. The whole measured lockup
-uses vertical insets top 14%, bottom 25%, left 8%, right 14%, plus the edge inset;
-landscape uses symmetric 8% insets. These are internal review bounds, NOT a
-universal official Instagram standard. Verify the actual Reels UI later.
-Supplied obstacle clearance is not face detection or human approval; empty
-avoidRegions alone is not independent visual evidence.
-If no slot is safe, preparation fails instead of silently hiding the brand.
+Type is pure white, Estedad 700/500. Support and source text are opaque, not
+grey. The contrast field is a local diffuse cloud sitting below all ink;
+`presentation.contrastStrength` is explicit editorial direction, chosen once from
+the hardest part of the WHOLE moment. There is no luminance analysis and no
+frame-by-frame pumping. `soft` is not permission to accept unreadable text.
 
-## Rendering and reopening a fresh review
+The brand is bilingual, Persian 30px Estedad 500 / Latin 24px Arial 400, 6px
+gap, measured in the browser with the real strings. No clipping, ellipsis, or
+emergency shrinking; a brand that cannot fit fails. `introDelaySeconds 5` keeps
+the opening clean. Minimum dwell 6s, target 12s, at most 5 relocations, one
+lockup at a time, fade to zero between slots. Movement is not copy protection.
 
-The new prepass uses the already installed Remotion browser and the same shared
-layout code as the component. It does NOT need `node-canvas`, and
-`PERSIAN_SKIP_OPTIONAL_BRIDGE` cannot disable this mandatory measurement. The
-production renderer remains Remotion. No dependencies or lockfiles are changed.
+## Acceptance
 
-The exact prepared props, profile hash, normalized boxes, glyph baselines, source
-text, placement warnings and brand schedule are saved BEFORE render in the
-existing permanent `.mp4.props.json` plus digest. A later renderer remeasures and
-refuses a stale/different layout rather than silently changing that sidecar.
+Run all three, on the locked local dependencies:
 
-For a short review that will be reopened in Studio or an actual-component DOM
-harness, explicitly pass `keep_staged_assets: true` to `persian_compose`. This
-retains THIS render's copied media after successful completion and returns its staging
-folder. Failed renders clean their copied media, even with retention requested. It is off by default, uses disk space, never changes originals and does
-not resurrect media already deleted from old runs. Keep the exact props and
-copies until QA is finished. Afterwards remove only that identified staging
-folder, not a project, source collection, or the whole `public/persian` tree.
-Never point a review harness at cleaned-up aliases and mark the resulting error
-as a containment pass. Await prepared metadata before mounting a raw Player.
+1. `python -m pytest tests/lib/ -q`
+2. `tsc --noEmit`
+3. the browser suite
 
-## Required local acceptance before any broader rollout
+Then audit the render with `lib/persian_render_geometry.py` against the real
+`.mp4.props.json`, and review every moment's entry, stable frame, exit, and each
+crossed cut at phone size on bright, busy, and moving footage.
 
-1. Use at least three distinct real subjects and difficult shots, not endless
-   re-renders of the breathing example or renamed screenshots.
-2. Inspect native frames and moving phone-size cuts: title grouping, numeric/unit
-   grouping, source legibility, bright backgrounds, field/subject interaction,
-   RTL + Latin, each delayed reveal, and text-free intervals.
-3. Verify actual painted descendants/ink, not just a planned wrapper. Check the
-   complete brand, a deliberately long brand, before/during/after relocation,
-   full dwell clearance and safe-area containment at every motion extremum.
-4. Confirm source/narration/music unchanged. Do not interpret luminance QA as
-   text-contrast, mobile or scientific validation.
-5. Run the existing Persian suites and TypeScript checks on the locked local
-   dependencies. Sampled regressions and synthetic stress fixtures are bounded
-   technical evidence, not a replacement for these real-video gates.
-6. Keep humanVisualApproval pending; keep quiet-editorial, other
-   pipelines and C–E rollout unchanged. Legacy is disabled by default (hidden
-   opt-out only) per the locked 2026-09-08 decision.
+Review `filmType.warnings` individually. `editorial-review-required` and
+`semantic-review-required` need an actual editorial decision.
+`contrast-review-required` needs your eyes on each shot, not a geometry pass.
+
+**A green test run is not success. Only the user's eyes approve a render.**
+Never set `persian_text_verified` from sampled checks, and never report visual
+approval from successful preparation, passing tests, or an empty region list.
+
+## Prohibited
+
+Stroke or outline on text. A rectangular plate behind text. Backdrop blur. A
+full-frame grid or wash. Face, person, or subject detection. Any classifier. Any
+network dependency. Setting `persian_text_verified` automatically. Loosening the
+props guard. Changing any `safeArea` value. Editing a frozen sidecar or hash.
+Claiming visual approval.
+
+## Adding a version
+
+A registered version must appear everywhere it is handled: the profile snapshot,
+the hash map and version unions in `layout.ts`, the version lists in
+`components.tsx`, and the `expected_version` map in `lib/persian_film_type.py`.
+2.9 shipped missing from the `components.tsx` lists, fell through to the pre-2.4
+painter, and drew a wash outside the frame — while every token-level test stayed
+green. `tests/lib/test_film_type_version_coverage.py` now guards that gap. Write
+a versioned patch note under `docs/`, and update the table at the top of this
+file so exactly one version is ever described as current.
