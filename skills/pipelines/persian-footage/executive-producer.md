@@ -7,6 +7,15 @@ Film Type 2.11.0 / layout 11 is the default for every persian-footage run.
 Guidance for older pins lives in
 `skills/pipelines/persian-footage/film-type-history.md` — archive only.
 
+Activate the active profile with
+`persian.design = {"version":2,"profile":"film-type","seed":"<project-id>-film-type-01"}`;
+the seed is derived from the project id.
+All source, science, selective-moment, reading, coverage, sync, narration/music,
+runtime, attribution and human gates still apply.
+This routing is not Stage B completion, humanVisualApproval or C–E rollout.
+Do not rewrite approved narration or facts to fit; request an editorial revision
+when preparation refuses.
+
 Absent design is REFUSED by persian_compose. `quiet-editorial` remains an
 explicit option. Legacy is reachable only through the hidden opt-out
 `{"version":2,"profile":"legacy"}`, for emergencies, never for new work.
@@ -70,19 +79,6 @@ Real stock footage carrying **designed typographic moments** — not a subtitled
 Vertical 1080×1920 by default. Landscape 1920×1080 for long-form YouTube; the same
 components serve both, with type scales set per format rather than scaled from one.
 
-## Legacy renderer geometry — NOT Film Type
-
-These values verify the Legacy renderer. Applying any of them to a Film Type
-render is a bug, not a stricter check.
-
-- **Legacy scrim peak:** `SCRIM.peakAlpha = 0.72` — `remotion-composer/src/persian/components/PersianMomentBlock.tsx:166`; the Legacy verifier also documents it at `lib/persian_verify.py:44`.
-- **Legacy contrast floor:** `5.6:1` — `lib/persian_verify.py:193` (`SCRIM_GUARANTEED_CONTRAST`); the Film Type verifier uses `4.5:1` at `lib/persian_film_verify.py:72–74`.
-- **Legacy moment zone / plateau:** `MOMENT_ZONE_FRACTION` — `lib/persian_verify.py:118`; `SCRIM_PLATEAU_MARGIN_PX = 28` — `remotion-composer/src/persian/tokens.ts:714` and `lib/persian_verify.py:270`; Legacy optical centre is derived as `44%` vertical / `50%` landscape by `remotion-composer/src/persian/tokens.ts:698–700`.
-- **Legacy stack-height contradiction:** `maxStackFraction = 0.58` — `remotion-composer/src/persian/tokens.ts:568`; Film Type profile `maxStackFraction = 0.6` — `styles/persian-footage/film-type.json:92`.
-- **Legacy anchor/ink tolerances:** `ANCHOR_TOLERANCE_PX = 32` — `lib/persian_verify.py:152`; `INK_OVERSHOOT_PX = 8` and `INK_OVERSHOOT_EM = 0.065` — `lib/persian_verify.py:252–253`.
-- **Legacy watermark positions:** `WATERMARK_TOP_FRACTION` — `lib/persian_verify.py:167`; exact positions are vertical `17.0419%` quiet / `11%` resting and landscape `17.8211%` quiet / `8%` resting, as used by the Legacy verifier and its documented contract.
-- **Legacy zone ink ceiling and falloff:** `ZONE_INK_CEILING = 0.35` (35%) — `lib/persian_verify.py:209`; `falloffFraction = 0.28` — `remotion-composer/src/persian/tokens.ts:186`, yielding the documented `302px` vertical falloff in `skills/pipelines/persian-footage/compose-director.md:333–334`.
-
 ### What it deliberately does not produce
 
 A running transcript on screen. That was the first version and it was wrong: with a
@@ -96,6 +92,19 @@ moment model exists to make the difference structural rather than a matter of ta
 Karaoke emphasis went with it. It needed word-for-word on-screen text to highlight, and
 there is none. Accessibility is better served by the sidecar `.srt` than it ever was by
 burned-in words.
+
+## Legacy renderer geometry — NOT Film Type
+
+These values verify the Legacy renderer. Applying any of them to a Film Type
+render is a bug, not a stricter check.
+
+- **Legacy scrim peak:** `SCRIM.peakAlpha = 0.72` — definition at `remotion-composer/src/persian/tokens.ts:181`; consumed by `remotion-composer/src/persian/components/PersianMomentBlock.tsx:166`; the Legacy verifier also documents it at `lib/persian_verify.py:44`.
+- **Legacy contrast floor:** `5.6:1` — `lib/persian_verify.py:193` (`SCRIM_GUARANTEED_CONTRAST`); the Film Type verifier uses `4.5:1` at `lib/persian_film_verify.py:72–74`.
+- **Legacy moment zone / plateau:** `MOMENT_ZONE_FRACTION` — `lib/persian_verify.py:118`; `SCRIM_PLATEAU_MARGIN_PX = 28` — `remotion-composer/src/persian/tokens.ts:714` and `lib/persian_verify.py:270`; Legacy optical centre is derived as `44%` vertical / `50%` landscape by `remotion-composer/src/persian/tokens.ts:698–700`.
+- **Legacy stack-height contradiction:** `maxStackFraction = 0.58` — `remotion-composer/src/persian/tokens.ts:568`; Film Type profile `maxStackFraction = 0.6` — `styles/persian-footage/film-type.json:92`.
+- **Legacy anchor/ink tolerances:** `ANCHOR_TOLERANCE_PX = 32` — `lib/persian_verify.py:152`; `INK_OVERSHOOT_PX = 8` and `INK_OVERSHOOT_EM = 0.065` — `lib/persian_verify.py:252–253`.
+- **Legacy watermark positions:** `WATERMARK_TOP_FRACTION` — `lib/persian_verify.py:167`; exact positions are vertical `17.0419%` quiet / `11%` resting and landscape `17.8211%` quiet / `8%` resting, as used by the Legacy verifier and its documented contract.
+- **Legacy zone ink ceiling and falloff:** `ZONE_INK_CEILING = 0.35` (35%) — `lib/persian_verify.py:209`; `falloffFraction = 0.28` — `remotion-composer/src/persian/tokens.ts:186`, yielding the documented `302px` vertical falloff in `skills/pipelines/persian-footage/compose-director.md:333–334`.
 
 ## The two non-negotiables
 
