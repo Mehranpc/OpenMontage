@@ -6,6 +6,7 @@ checkpoints to resume pipelines and to present state at human checkpoints.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from functools import lru_cache
 from datetime import datetime, timezone
@@ -419,6 +420,214 @@ def _merge_decision_log(
         json.dump(existing, f, indent=2)
 
 
+def _resolve_render_output_path(
+    pipeline_dir: Path,
+    project_id: str,
+    reported_path: str,
+) -> Path:
+    """Resolve a report path without guessing between multiple existing files."""
+    raw = Path(reported_path).expanduser()
+    candidates = [raw] if raw.is_absolute() else [
+        pipeline_dir / project_id / raw,
+        Path(__file__).resolve().parent.parent / raw,
+        Path.cwd() / raw,
+    ]
+    existing: list[Path] = []
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve(strict=True)
+        except (OSError, RuntimeError):
+            continue
+        if resolved.is_file() and resolved not in existing:
+            existing.append(resolved)
+    if not existing:
+        raise CheckpointValidationError(
+            "FINAL CANDIDATE VIOLATION: the primary MP4 does not exist at the "
+            f"reported path {reported_path!r}"
+        )
+    if len(existing) != 1:
+        raise CheckpointValidationError(
+            "FINAL CANDIDATE VIOLATION: the reported output path is ambiguous; "
+            "record one stable absolute MP4 path"
+        )
+    return existing[0]
+
+
+def _sha256_render_output(path: Path) -> str:
+    """Hash the bytes and refuse a file that changes while it is being read."""
+    before = path.stat()
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(4 * 1024 * 1024), b""):
+            digest.update(chunk)
+    after = path.stat()
+    fingerprint_before = (
+        before.st_dev,
+        before.st_ino,
+        before.st_size,
+        before.st_mtime_ns,
+    )
+    fingerprint_after = (
+        after.st_dev,
+        after.st_ino,
+        after.st_size,
+        after.st_mtime_ns,
+    )
+    if fingerprint_before != fingerprint_after:
+        raise CheckpointValidationError(
+            "FINAL CANDIDATE VIOLATION: the primary MP4 changed while its sha256 "
+            "was being computed; render or hash it again"
+        )
+    return digest.hexdigest()
+
+
+def _render_identity(
+    report: dict[str, Any],
+    pipeline_dir: Path,
+    project_id: str,
+) -> tuple[str, str]:
+    """Return and verify the primary output path/digest approval identity."""
+    outputs = report.get("outputs")
+    if not isinstance(outputs, list) or not outputs or not isinstance(outputs[0], dict):
+        raise CheckpointValidationError(
+            "FINAL CANDIDATE VIOLATION: render_report.outputs[0] is required"
+        )
+    primary = outputs[0]
+    path = str(primary.get("path") or "").strip()
+    digest = str(primary.get("sha256") or "").strip().lower()
+    if (
+        not path
+        or str(primary.get("format") or "").strip().lower() != "mp4"
+        or len(digest) != 64
+        or any(c not in "0123456789abcdef" for c in digest)
+    ):
+        raise CheckpointValidationError(
+            "FINAL CANDIDATE VIOLATION: the primary output needs format='mp4', "
+            "a path, and a 64-character sha256"
+        )
+    resolved_path = _resolve_render_output_path(pipeline_dir, project_id, path)
+    actual_digest = _sha256_render_output(resolved_path)
+    if actual_digest != digest:
+        raise CheckpointValidationError(
+            "FINAL CANDIDATE VIOLATION: outputs[0].sha256 does not match the "
+            "exact file bytes at outputs[0].path"
+        )
+    return path, digest
+
+
+def _validate_persian_compose_lifecycle(
+    pipeline_dir: Path,
+    project_id: str,
+    stage: str,
+    status: str,
+    artifacts: dict[str, Any],
+    human_approved: bool,
+    metadata: Optional[dict],
+) -> None:
+    """Bind Persian approval to a prior awaiting-human candidate and its bytes."""
+    if stage != "compose":
+        return
+    if human_approved and status != "completed":
+        raise CheckpointValidationError(
+            "APPROVAL PROVENANCE VIOLATION: human_approved=True is valid only "
+            "when completing the compose stage"
+        )
+    if status not in {"awaiting_human", "completed"}:
+        return
+
+    # Let the generic manifest gate produce its established message when a
+    # completion simply omitted human_approved=True.
+    if status == "completed" and not human_approved:
+        return
+
+    report = artifacts.get("render_report")
+    if not isinstance(report, dict):
+        raise CheckpointValidationError(
+            "FINAL CANDIDATE VIOLATION: Persian compose requires render_report"
+        )
+    identity = _render_identity(report, pipeline_dir, project_id)
+
+    if status == "awaiting_human":
+        if human_approved:
+            raise CheckpointValidationError(
+                "APPROVAL PROVENANCE VIOLATION: a final candidate cannot approve itself"
+            )
+        if (
+            report.get("delivery_status") != "final_candidate"
+            or report.get("human_visual_approval") is not False
+            or report.get("persian_text_verified") is not False
+        ):
+            raise CheckpointValidationError(
+                "FINAL CANDIDATE VIOLATION: awaiting_human requires "
+                "delivery_status='final_candidate' and both approval booleans false"
+            )
+        return
+
+    if (
+        report.get("delivery_status") != "approved"
+        or report.get("human_visual_approval") is not True
+        or not isinstance(report.get("persian_text_verified"), bool)
+    ):
+        raise CheckpointValidationError(
+            "APPROVAL PROVENANCE VIOLATION: approved compose completion requires "
+            "delivery_status='approved', human_visual_approval=true, and an explicit "
+            "persian_text_verified boolean"
+        )
+
+    previous_path = _checkpoint_path(pipeline_dir, project_id, "compose")
+    try:
+        previous = json.loads(previous_path.read_text(encoding="utf-8"))
+        previous_report = previous["artifacts"]["render_report"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise CheckpointValidationError(
+            "APPROVAL TRANSITION VIOLATION: compose must first persist an "
+            "awaiting_human final candidate"
+        ) from exc
+    if (
+        previous.get("version") != "1.0"
+        or previous.get("project_id") != project_id
+        or previous.get("pipeline_type") != "persian-footage"
+        or previous.get("stage") != "compose"
+        or previous.get("status") != "awaiting_human"
+        or previous.get("human_approval_required") is not True
+        or previous.get("human_approved") is not False
+    ):
+        raise CheckpointValidationError(
+            "APPROVAL TRANSITION VIOLATION: the prior compose checkpoint is not an "
+            "unapproved awaiting_human candidate for this project"
+        )
+    if not isinstance(previous_report, dict):
+        raise CheckpointValidationError(
+            "APPROVAL TRANSITION VIOLATION: the prior render report is invalid"
+        )
+    if (
+        previous_report.get("delivery_status") != "final_candidate"
+        or previous_report.get("human_visual_approval") is not False
+        or previous_report.get("persian_text_verified") is not False
+    ):
+        raise CheckpointValidationError(
+            "APPROVAL TRANSITION VIOLATION: the prior render report is not a valid "
+            "unapproved final candidate"
+        )
+    if _render_identity(previous_report, pipeline_dir, project_id) != identity:
+        raise CheckpointValidationError(
+            "APPROVAL TRANSITION VIOLATION: output path or sha256 changed after the "
+            "candidate was shown; render a new candidate instead"
+        )
+
+    record = (metadata or {}).get("approval_record")
+    if not isinstance(record, dict) or (
+        record.get("source") != "explicit_user_response"
+        or str(record.get("candidate_path") or "").strip() != identity[0]
+        or str(record.get("candidate_sha256") or "").strip().lower() != identity[1]
+    ):
+        raise CheckpointValidationError(
+            "APPROVAL PROVENANCE VIOLATION: completion requires metadata.approval_record "
+            "with source='explicit_user_response' and the candidate's exact path/hash; "
+            "a goal, retry, silence, or agent judgment is not approval"
+        )
+
+
 def write_checkpoint(
     pipeline_dir: Path,
     project_id: str,
@@ -462,6 +671,18 @@ def write_checkpoint(
         raise ValueError(
             f"Invalid stage: {stage!r} for pipeline {pipeline_type!r}. "
             f"Valid stages: {sorted(valid_stages)}"
+        )
+
+    # Persian footage has one human gate: the rendered compose candidate.
+    if pipeline_type == "persian-footage" and stage != "compose" and human_approved:
+        raise CheckpointValidationError(
+            "APPROVAL PROVENANCE VIOLATION: persian-footage may record "
+            "human_approved=True only on compose after explicit user approval "
+            "of the rendered candidate; a continuation goal is not approval."
+        )
+    if pipeline_type == "persian-footage":
+        _validate_persian_compose_lifecycle(
+            pipeline_dir, project_id, stage, status, artifacts, human_approved, metadata
         )
 
     # --- Gate enforcement (GI-4) ---

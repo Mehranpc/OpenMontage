@@ -45,6 +45,10 @@ with no profile branch at all, and each of those now says so beside itself.
 
 # Edit Director — Persian Footage Pipeline
 
+## Joint planning
+
+Read `final-candidate-protocol.md`. Measure exact/adaptable copy, candidate shot, crop, truthful regions, placement, ladder rung, dwell, cuts, and watermark together with `python -m lib.persian_preflight`. Never persist failed probes.
+
 ## Your job
 
 Produce `edit_decisions` with a `persian` block: the exact props the composition
@@ -558,9 +562,10 @@ Starting at 0 is a default, not a decision.
 ### Place moments against the footage, not against the script
 
 A moment lands on a shot. Prefer a shot whose subject is low or left in frame, or
-whose motion has settled. Neither profile detects subjects. Film Type 2.12 instead requires a human-reviewed
-`avoidRegions` array on every overlapping shot (use `[]` only after checking the
-whole crop/camera move) and rejects any text candidate that intersects it. A wide
+whose motion has settled. Neither profile detects subjects. Film Type 2.12 requires conservative machine-estimated
+`avoidRegions` on every overlapping shot (use `[]` only after the agent checks the
+whole crop/camera move) and rejects intersecting candidates. Human approval applies
+to the complete rendered candidate. A wide
 block over a centre-framed face therefore goes back to the edit for shorter copy, a
 new crop, or another shot; never weaken the region to make it pass.
 
