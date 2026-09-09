@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from lib.persian_design import resolve_design, prepare_v2, SUPPORTED_FILM_TYPE_HASH, SUPPORTED_FILM_TYPE_MOTION_HASH, SUPPORTED_FILM_TYPE_LEGACY_HASH, SUPPORTED_FILM_TYPE_POLISH_HASH, SUPPORTED_FILM_TYPE_REPAIR_HASH
+from lib.persian_design import resolve_design, prepare_v2, SUPPORTED_FILM_TYPE_27_HASH, SUPPORTED_FILM_TYPE_26_HASH, SUPPORTED_FILM_TYPE_25_HASH, SUPPORTED_FILM_TYPE_HASH, SUPPORTED_FILM_TYPE_MOTION_HASH, SUPPORTED_FILM_TYPE_LEGACY_HASH, SUPPORTED_FILM_TYPE_POLISH_HASH, SUPPORTED_FILM_TYPE_REPAIR_HASH
 from lib.persian_film_type import prepare_film_type_props
 from tools.video.persian_compose import PersianCompose
 
@@ -93,14 +93,17 @@ class FilmTypeContracts(unittest.TestCase):
                                         ('2.2.0','film-type-2.2.0.json',SUPPORTED_FILM_TYPE_POLISH_HASH),
                                         ('2.3.0','film-type-2.3.0.json',SUPPORTED_FILM_TYPE_REPAIR_HASH),
                                         ('2.4.0','film-type-2.4.0.json',SUPPORTED_FILM_TYPE_MOTION_HASH),
-                                        ('2.5.0','film-type.json',SUPPORTED_FILM_TYPE_HASH)]:
+                                        ('2.5.0','film-type-2.5.0.json',SUPPORTED_FILM_TYPE_25_HASH),
+                                        ('2.6.0','film-type-2.6.0.json',SUPPORTED_FILM_TYPE_26_HASH),
+                                        ('2.7.0','film-type-2.7.0.json',SUPPORTED_FILM_TYPE_27_HASH),
+                                        ('2.8.0','film-type.json',SUPPORTED_FILM_TYPE_HASH)]:
             with self.subTest(version=version):
                 profile=json.loads((ROOT/'styles/persian-footage'/filename).read_text())
                 pin={**self.raw,'profileVersion':version,'contentHash':digest,'resolved':profile}
                 self.assertEqual(resolve_design(pin),pin)
                 self.assertEqual(self._bridge(design=pin)['filmType']['version'],profile['layoutVersion'])
     def test_bridge_refuses_wrong_layout_version(self):
-        for wrong in [1,2,3,4,True,False,'5',6,None]:
+        for wrong in [1,2,3,4,5,6,7,True,False,'8',9,None]:
             with self.subTest(wrong=wrong),self.assertRaisesRegex(ValueError,'provenance'):
                 self._bridge(lambda p:p['filmType'].update(version=wrong))
     def test_repair_tokens_restore_scale_and_real_watermark_policy(self):
@@ -115,7 +118,7 @@ class FilmTypeContracts(unittest.TestCase):
         self.assertFalse(any(z.startswith('upper') for z in p['watermark']['allowedZones']))
     def test_motion_profile_preserves_type_and_geometry_tokens(self):
         old=json.loads((ROOT/'styles/persian-footage/film-type-2.3.0.json').read_text())
-        new=resolve_design(self.raw)['resolved']
+        new=json.loads((ROOT/'styles/persian-footage/film-type-2.5.0.json').read_text())
         for key in ['typography','layout','formats','palette']:self.assertEqual(old[key],new[key])
         self.assertEqual(new['profileVersion'],'2.5.0');self.assertEqual(new['layoutVersion'],5)
         self.assertEqual(new['motion']['cutInSeconds'],.48)
@@ -125,14 +128,17 @@ class FilmTypeContracts(unittest.TestCase):
         new=resolve_design(self.raw)['resolved']
         field=new['contrast']['compactField']
         self.assertEqual(field['blend'],'multiply')
-        self.assertGreaterEqual(field['featherPx'],200)
+        self.assertGreaterEqual(field['featherPx'],32)
+        self.assertLessEqual(field['featherPx'],160)
+        self.assertEqual(field['exponent'],3)
         self.assertLess(field['paddingPx'],28)
         self.assertLessEqual(new['contrast']['strengths']['standard'],.6)
-    def test_approved_shadow_tokens_are_registry_default(self):
+    def test_ranked_tokens_are_registry_default(self):
         new=resolve_design(self.raw)['resolved']
-        self.assertEqual(new['profileVersion'],'2.5.0');self.assertEqual(new['layoutVersion'],5)
+        self.assertEqual(new['profileVersion'],'2.8.0');self.assertEqual(new['layoutVersion'],8)
+        self.assertEqual(new['layout']['aestheticPolicy'],'ranked-v1')
         self.assertEqual(new['contrast']['darkField'],'#191919')
-        self.assertEqual(new['contrast']['strengths'],{'soft':.5,'standard':.6,'strong':.7})
+        self.assertEqual(new['contrast']['strengths'],{'soft':.24,'standard':.34,'strong':.44})
         self.assertEqual(new['watermark']['introDelaySeconds'],5)
     def test_motion_pin_stays_supported(self):
         p=json.loads((ROOT/'styles/persian-footage/film-type-2.4.0.json').read_text())

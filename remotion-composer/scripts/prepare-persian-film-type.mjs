@@ -37,10 +37,11 @@ try {
   if (!composition.props?.filmType?.inputHash) throw new Error('The real metadata prepass returned no measured layout.');
   fs.writeFileSync(outputPath, JSON.stringify(composition.props));
 } catch (error) {
+  console.error("OPENMONTAGE_PREPASS_ERROR=" + JSON.stringify({message: error?.message ?? String(error)}));
   console.error(error?.stack ?? String(error));
   process.exitCode = 1;
 } finally {
   // This is our own Remotion worker, not a shared/user browser.
-  if (browser) await browser.close({silent: true});
+  if (browser) { try { await browser.close({silent: true}); } catch (cleanupError) { console.error("PREPASS_CLEANUP_WARNING", cleanupError?.message ?? String(cleanupError)); } }
   if (temporary) fs.rmSync(temporary, {recursive: true, force: true});
 }

@@ -129,3 +129,4 @@ venv/
 
 # Local Wan / diffusers GPU environment
 .venv-wan/
+META/

@@ -1261,6 +1261,8 @@ def verify_frames(
     fmt: PersianFormat = "vertical",
     plateau_rows: dict[str, tuple[int, int]] | None = None,
     stack_heights_px: dict[str, float] | None = None,
+    *, props: dict[str, Any] | None = None,
+    evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Measure a set of labelled frames and summarize.
 
@@ -1278,6 +1280,9 @@ def verify_frames(
     ``stack_heights_px[label]`` (or ``plateau_rows[label]``) so the measurement is
     scoped to the scrim plateau that the frame's moment actually darkened.
     """
+    if props is not None and props.get("design", {}).get("profile") == "film-type":
+        from lib.persian_film_verify import verify_film_frames
+        return verify_film_frames(frames, props, evidence)
     measurements: dict[str, dict[str, Any]] = {}
     problems: list[str] = []
 

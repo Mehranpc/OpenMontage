@@ -1,18 +1,16 @@
 {
   "profile": "film-type",
-  "profileVersion": "2.8.0",
-  "layoutVersion": 8,
+  "profileVersion": "2.7.0",
+  "layoutVersion": 7,
   "name": "Pathway Film Type",
   "scope": "persian-footage",
   "rollout": "opt-in",
   "formats": {
     "vertical": {
       "safeArea": {
-        "top": 0.14,
-        "bottom": 0.35,
-        "side": 0.08,
-        "left": 0.08,
-        "right": 0.16
+        "top": 0.08,
+        "bottom": 0.2,
+        "side": 0.08
       },
       "columnFraction": 0.62,
       "wideColumnFraction": 0.82
@@ -106,7 +104,7 @@
       "standard": 0.34,
       "strong": 0.44
     },
-    "defaultStrength": "strong",
+    "defaultStrength": "standard",
     "plateauStop": 0.68,
     "plateauPaddingPx": 36,
     "footageGrade": "none",
@@ -149,9 +147,9 @@
     "safeAreas": {
       "vertical": {
         "top": 0.14,
-        "bottom": 0.35,
+        "bottom": 0.25,
         "left": 0.08,
-        "right": 0.16
+        "right": 0.14
       },
       "landscape": {
         "top": 0.08,
@@ -164,9 +162,7 @@
       "mid-left",
       "lower-left",
       "mid-right",
-      "lower-right",
-      "upper-left",
-      "upper-right"
+      "lower-right"
     ],
     "preferStablePosition": false,
     "pairWithText": true,

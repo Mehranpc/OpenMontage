@@ -4,7 +4,7 @@
  */
 type Rect={x:number;y:number;w:number;h:number};
 type Config={minDwellSeconds:number;maxRelocations:number;targetDwellSeconds?:number};
-export function planMovingBrand(duration:number,shotTimes:number[],eventTimes:number[],order:string[],rects:Record<string,Rect>,clear:(r:Rect,a:number,b:number)=>boolean,cfg:Config,introDelay=0){
+export function planMovingBrand(duration:number,shotTimes:number[],eventTimes:number[],order:string[],rects:Record<string,Rect>,clear:(r:Rect,a:number,b:number)=>boolean,cfg:Config,introDelay=0,diagnostics?:()=>string){
  const min=cfg.minDwellSeconds,target=cfg.targetDwellSeconds??12;
  const delay=Math.max(0,introDelay);
  if(delay>0&&delay>=duration)throw new Error("Film Type watermark intro delay covers the whole film; shorten it or author an empty watermark.");
@@ -40,6 +40,6 @@ export function planMovingBrand(duration:number,shotTimes:number[],eventTimes:nu
  const eligible=finals.filter(s=>duration<2*min||s.slots.length>=2);
  const score=(s:State)=>s.cost-(s.slots.some(x=>x.zone.endsWith("left"))&&s.slots.some(x=>x.zone.endsWith("right"))?24:0);
  eligible.sort((a,b)=>score(a)-score(b));const best=eligible[0];
- if(!best)throw new Error("No safe moving watermark schedule: review text/subject regions; stationary or hidden fallback was not used.");
+ if(!best)throw new Error("No safe moving watermark schedule: review text/subject regions; stationary or hidden fallback was not used. " + (diagnostics?.()??""));
  return best.slots.map((s,i)=>({zone:s.zone,startSeconds:s.start,endSeconds:s.end,rect:rects[s.zone],transition:i?"relocate-fade":"fade-in",reason:"Event-based full-dwell clearance; bounded relocation; side diversity preferred, not copy protection"}));
 }

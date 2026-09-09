@@ -35,7 +35,15 @@ def prepare_film_type_props(props: dict[str, Any], composer: Path) -> dict[str, 
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ValueError(f"Film Type browser preparation could not finish: {exc}") from exc
         if process.returncode != 0 or not result.is_file():
-            detail = (process.stderr or process.stdout or "no output")[-4000:]
+            log = process.stderr or process.stdout or "no output"
+            detail = log[-4000:]
+            for line in log.splitlines():
+                if line.startswith("OPENMONTAGE_PREPASS_ERROR="):
+                    try:
+                        detail = json.loads(line.split("=", 1)[1])["message"]
+                        break
+                    except (ValueError, KeyError, TypeError):
+                        pass
             raise ValueError(
                 "Film Type requires real browser font measurement; no estimated "
                 "or Legacy fallback was used. Browser preparation failed:\n" + detail
@@ -48,7 +56,7 @@ def prepare_film_type_props(props: dict[str, Any], composer: Path) -> dict[str, 
             raise ValueError("Film Type preparation returned a non-object")
         measured = prepared.get("filmType")
         design = props.get("design") or {}
-        expected_version = {"2.1.0": 1, "2.2.0": 2, "2.3.0": 3, "2.4.0": 4, "2.5.0": 5}.get(design.get("profileVersion"))
+        expected_version = {"2.1.0": 1, "2.2.0": 2, "2.3.0": 3, "2.4.0": 4, "2.5.0": 5, "2.6.0": 6, "2.7.0": 7, "2.8.0": 8}.get(design.get("profileVersion"))
         if (expected_version is None or (design.get("resolved") or {}).get("layoutVersion") != expected_version
                 or not isinstance(measured, dict) or type(measured.get("version")) is not int
                 or measured["version"] != expected_version or not measured.get("inputHash")):

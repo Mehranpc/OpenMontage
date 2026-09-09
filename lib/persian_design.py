@@ -6,7 +6,10 @@ from typing import Any
 
 PROFILE_PATH = Path(__file__).resolve().parents[1] / "styles" / "persian-footage" / "v2.json"
 FILM_TYPE_PROFILE_PATH = PROFILE_PATH.with_name("film-type.json")
-SUPPORTED_FILM_TYPE_HASH = "ba44a26a97c680a8e714d5578fcab01cb7009a986e4d1361f9ce49dd3aab0261"
+SUPPORTED_FILM_TYPE_25_HASH = "ba44a26a97c680a8e714d5578fcab01cb7009a986e4d1361f9ce49dd3aab0261"
+SUPPORTED_FILM_TYPE_26_HASH = "1f763aed6dbfa2b61cdc6ce30558f6bc6e5ab318fb88e0125d84b07b0ae28967"
+SUPPORTED_FILM_TYPE_27_HASH = "b069a090061c1011d456cc5c63ff6989382f9044fdd38abb7c12db359710cea5"
+SUPPORTED_FILM_TYPE_HASH = "acfa082438f473f34f595a3a9132e03e26fda7dac0522f9c7ca00267272ac468"
 SUPPORTED_FILM_TYPE_MOTION_HASH = "06a6cc6297df4146f9a8fa82af6617cec1e07ff420c72d134fbf878217dca543"
 SUPPORTED_FILM_TYPE_REPAIR_HASH = "3ee76f211682537b5b1ac457063a76cd81f1c84dd7fa916fddeef299ff3eecab"
 SUPPORTED_FILM_TYPE_POLISH_HASH = "6d71bee9de74a627f393544bbcf9caf37b7349c422397b016f1f10597a1c43c2"
@@ -165,7 +168,10 @@ def resolve_design(raw: Any) -> dict[str, Any] | None:
             "2.2.0": (2, SUPPORTED_FILM_TYPE_POLISH_HASH),
             "2.3.0": (3, SUPPORTED_FILM_TYPE_REPAIR_HASH),
             "2.4.0": (4, SUPPORTED_FILM_TYPE_MOTION_HASH),
-            "2.5.0": (5, SUPPORTED_FILM_TYPE_HASH),
+            "2.5.0": (5, SUPPORTED_FILM_TYPE_25_HASH),
+            "2.6.0": (6, SUPPORTED_FILM_TYPE_26_HASH),
+            "2.7.0": (7, SUPPORTED_FILM_TYPE_27_HASH),
+            "2.8.0": (8, SUPPORTED_FILM_TYPE_HASH),
         }
         expected = supported.get(profile.get("profileVersion"))
         if expected is None or type(profile.get("layoutVersion")) is not int or profile["layoutVersion"] != expected[0]:

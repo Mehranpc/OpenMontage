@@ -1,4 +1,66 @@
-## Film Type 2.5 — soft shadow field and delayed brand
+## Film Type 2.8 current default
+
+Read `docs/persian-film-type-2.8-patch.md` before the historical guidance below.
+Approved diffuse shadow now defaults to strong for every new moment. Vertical
+text and watermark use a conservative Reels safe area (14% top, 35% bottom,
+8% left, 16% right), not a generic 9:16 margin. Reprepare all geometry; never move
+measured rows manually. Review every moment with scripts/review_reels_safe_area.py
+and the actual Instagram UI. Preserve face/action regions simultaneously; refusal
+requires an editorial solution, not weaker margins. Existing complete pins stay
+unchanged. 2.7 QA limitations still apply; safe-area success is not full approval.
+
+## Film Type 2.7 migration override
+
+For the current unpinned default, read `docs/persian-film-type-2.7-patch.md`
+BEFORE the historical guidance below. That guide owns diffuse shadow, region
+interpretation, diagnostic probes and version-aware QA. Pass resolved props to
+verify_frames; never apply Legacy scrim-ceiling/anchor/orange-gap rules to Film
+Type. Missing synchronized diagnostic evidence is not_checked, NOT a pass and
+NOT evidence that the shadow failed. Do not set persian_text_verified from these
+sampled checks. Review bright-background watermark separately. Keep old complete
+pins unchanged; migrate only by fresh resolution and prepass.
+
+# Film Type 2.6 editorial quality gate
+
+The unpinned default now resolves to 2.6/layout 6. Archived 2.1–2.5 pins remain
+reproducible. Never relabel an old snapshot; resolve a fresh unpinned design and
+rerun preparation to migrate. Do not edit frozen rows or geometry by hand.
+
+Before composing ANY moment (not only a hook):
+- Identify the semantic payoff and assign the authored hero to it. Read lead,
+  hero and tail in display order as a grammatical sentence. Do not let filler or
+  auxiliary words inherit display emphasis merely because they are in the middle.
+- Preserve approved text, facts and narration. A role change, shortened phrase or
+  two-beat alternative is an editorial decision before preparation, never a hidden
+  renderer rewrite. Confirm it against the approved message and voice timestamps.
+- For long copy, review the ranked result first. Prefer one or two hero rows.
+  If it still needs three, propose shorter display copy or separately authored
+  timed beats using existing moments/revealAfterSeconds. Preserve reading time,
+  empty gaps and coverage limits; never split at arbitrary character counts.
+- Review every overlapping shot across the full dwell, including camera movement
+  and cuts. Supply screen-space avoidRegions for faces, important action, products
+  and existing lettering. [] is a reviewed clear shot, NOT an automatic default.
+  Both explicit and auto placement now refuse absent shot reviews. If no position
+  clears both ink and the bounded shadow, change placement/shot or edit the copy.
+- Review filmType.warnings. editorial-review-required and semantic-review-required
+  require an actual editorial decision; contrast-review-required requires visual
+  inspection on each shot, not just a geometry pass. Do not declare visual approval
+  from successful preparation, test results, or an empty region list.
+- Inspect entry, stable frame, exit and each crossed cut. Require readable ink,
+  unobscured subject, coherent phrase breaks and a subordinate contrast field.
+  The system does not detect faces or measure footage contrast automatically.
+
+The ranker evaluates every supported size and three column widths, using the real
+loaded font. It penalizes excess hero rows, uneven line lengths, shrinking, height
+and footprint. Author-chosen positions remain binding. Impossible text is refused
+rather than clipped, truncated, reordered or shrunk below the existing floors.
+The opaque contrast core is preserved; its outer feather is capped and may shrink
+only if doing so avoids supplied subject regions. This is not a guarantee for
+arbitrary unreviewed footage or unlimited text.
+
+---
+
+## Film Type 2.6 — soft shadow field and delayed brand
 
 Current opt-in registry: 2.5.0/layout 5. Preserve 2.1/2.2/2.3/2.4 pins verbatim.
 Fonts, wrapping, explicit placements, source content and approved edit times are
@@ -33,10 +95,10 @@ layout, audio, provider or runtime design pass. Keep old projects/reviews intact
 
 ### Historical contract for the named earlier versions
 
-# Pathway Film Type 2.5 — the default path, Persian footage only
+# Pathway Film Type 2.6 — the default path, Persian footage only
 
 This is a visual profile, not a new pipeline, runtime, narration mode or approval.
-Film Type 2.5 is the default: every persian-footage run carries a film-type design
+Film Type 2.6 is the default: every persian-footage run carries a film-type design
 unless explicitly directed elsewhere. `quiet-editorial` remains available as an
 explicit option. Absent design is refused by persian_compose; the old Legacy render
 is reachable only through the explicit hidden opt-out {"version":2,"profile":"legacy"}
