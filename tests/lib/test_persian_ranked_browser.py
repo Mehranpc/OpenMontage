@@ -14,9 +14,12 @@ ROOT = Path(__file__).resolve().parents[2]
 @unittest.skipUnless(os.environ.get('OPENMONTAGE_BROWSER_TESTS') == '1', 'opt-in real browser suite')
 class RankedBrowserContracts(unittest.TestCase):
     def props(self, text='«ببخشید» گفتن‌های همیشگی‌ت', format='vertical'):
+        # Same complete shape persian_compose sends, including the beats key: the
+        # prepass guard refuses any key the composition would have to default.
         return {'format':format, 'durationSeconds':20,
                 'design':resolve_design({'version':2,'profile':'film-type','seed':'regression'}),
                 'watermark':{'persianText':'','latinText':''},
+                'typographicBeats':[],
                 'shots':[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':20,'avoidRegions':[]}],
                 'moments':[{'id':'m','kind':'statement','startSeconds':0,'endSeconds':15,
                             'presentation':{'placement':'auto'},
@@ -39,6 +42,20 @@ class RankedBrowserContracts(unittest.TestCase):
         self.assertLessEqual(rect['x']+rect['w'],.84+1e-8)
         self.assertLessEqual(rect['y']+rect['h']+18/1920,.65+1e-8)
         self.assertEqual(q['filmType']['moments']['m']['strength'],'strong')
+    def test_incomplete_props_are_refused_not_silently_completed(self):
+        p=self.props();p.pop('typographicBeats')
+        with self.assertRaisesRegex(ValueError,'unexpectedly changed typographicBeats'):self.prepare(p)
+    def test_field_is_per_row_and_bounded_by_the_frame(self):
+        q=self.prepare(self.props())
+        layout=q['filmType']['moments']['m']
+        field=q['design']['resolved']['contrast']['diffuseField']
+        self.assertTrue(field['perRow'])
+        # Every row carries the geometry the per-row field is drawn from, and no
+        # row's field can be wider than the frame it sits in.
+        for row in layout['rows']:
+            self.assertGreater(row['widthPx'],0)
+            self.assertLessEqual(max(field['minRadiusPx'],row['widthPx']*field['radiusScale']),1080/2+1e-8)
+            self.assertGreater(row['baselinePx'],0)
     def test_formats_and_phrase_variants(self):
         for fmt in ['vertical','landscape']:
             for text in ['یه سپره','بی‌آزار و دوست‌داشتنی','قبل از شروع کار','هیچ‌وقت عذرخواهی نکن!']:
