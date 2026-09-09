@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 import unittest
-from lib.persian_design import resolve_design, SUPPORTED_FILM_TYPE_28_HASH
+from lib.persian_design import resolve_design, SUPPORTED_FILM_TYPE_28_HASH, SUPPORTED_FILM_TYPE_211_HASH
 from lib.persian_film_type import prepare_film_type_props
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,6 +32,10 @@ class RankedBrowserContracts(unittest.TestCase):
         profile=json.loads((ROOT/'styles/persian-footage/film-type-2.8.0.json').read_text(encoding='utf-8'))
         return {'version':2,'profile':'film-type','seed':'regression','profileVersion':'2.8.0',
                 'contentHash':SUPPORTED_FILM_TYPE_28_HASH,'resolved':profile}
+    def pinned_211(self):
+        profile=json.loads((ROOT/'styles/persian-footage/film-type-2.11.0.json').read_text(encoding='utf-8'))
+        return {'version':2,'profile':'film-type','seed':'regression','profileVersion':'2.11.0',
+                'contentHash':SUPPORTED_FILM_TYPE_211_HASH,'resolved':profile}
     def prepare(self, p):
         return prepare_film_type_props(p, ROOT/'remotion-composer')
     def test_ranked_long_copy_preserves_content_and_frozen_geometry(self):
@@ -78,20 +82,18 @@ class RankedBrowserContracts(unittest.TestCase):
                 with self.subTest(format=fmt,text=text):
                     q=self.prepare(self.props(text,fmt))
                     self.assertTrue(q['filmType']['moments']['m']['rows'])
-    def test_default_profile_ignores_regions_and_reports_not_checked(self):
-        # 2.9 turned subject-region enforcement OFF on purpose: the only hard
-        # geometric contract left is the platform safe area. The opt-out must be
-        # visible in the output, never silently claimed as verified.
-        for label,mutate in [('missing reviews',lambda p:p['shots'][0].pop('avoidRegions')),
-                             ('full-frame review',lambda p:p['shots'][0].update(avoidRegions=[{'x':0,'y':0,'w':1,'h':1}]))]:
-            with self.subTest(case=label):
-                p=self.props();mutate(p)
-                layout=self.prepare(p)['filmType']['moments']['m']
-                self.assertEqual(layout['subjectSafety'],'not-checked')
-                rect=layout['rect']
-                self.assertGreaterEqual(rect['x'],.08)
-                self.assertGreaterEqual(rect['y'],.14)
-                self.assertLessEqual(rect['y']+rect['h']+18/1920,.65+1e-8)
+    def test_default_profile_requires_review_and_enforces_regions(self):
+        p=self.props();p['shots'][0].pop('avoidRegions')
+        with self.assertRaisesRegex(ValueError,'review'):self.prepare(p)
+        region={'x':0.55,'y':0.45,'w':0.45,'h':0.55}
+        p=self.props();p['shots'][0]['avoidRegions']=[region]
+        layout=self.prepare(p)['filmType']['moments']['m']
+        self.assertEqual(layout['subjectSafety'],'checked-against-supplied-regions')
+        self.assertFalse(self._overlaps(layout['rect'],region))
+    def test_default_profile_refuses_the_reviewed_m1_face_collision(self):
+        p=self.props();p['moments'][0]['presentation']['placement']='upper-right'
+        p['shots'][0]['avoidRegions']=[{'x':0.27,'y':0.28,'w':0.39,'h':0.21}]
+        with self.assertRaisesRegex(ValueError,'no readable'):self.prepare(p)
     def test_28_pin_still_refuses_missing_reviews_and_obstructed_frames(self):
         p=self.props(design=self.pinned_28());p['shots'][0].pop('avoidRegions')
         p['moments'][0]['presentation']['placement']='upper-right'
@@ -115,8 +117,8 @@ class RankedBrowserContracts(unittest.TestCase):
         # region that relocates 2.8 text must leave the 2.11 rect bit-identical,
         # with the opt-out still reported as not-checked.
         region={'x':0.55,'y':0.45,'w':0.45,'h':0.55}
-        plain=self.prepare(self.props())['filmType']['moments']['m']['rect']
-        p=self.props();p['shots'][0]['avoidRegions']=[region]
+        plain=self.prepare(self.props(design=self.pinned_211()))['filmType']['moments']['m']['rect']
+        p=self.props(design=self.pinned_211());p['shots'][0]['avoidRegions']=[region]
         layout=self.prepare(p)['filmType']['moments']['m']
         self.assertEqual(layout['subjectSafety'],'not-checked')
         self.assertEqual(layout['rect'],plain)
@@ -125,7 +127,7 @@ class RankedBrowserContracts(unittest.TestCase):
         # text upper-right and the upper band covered for the whole film, every
         # planned slot must avoid the region (and a plan must still exist).
         region={'x':0,'y':0.10,'w':1,'h':0.15}
-        p=self.props();p['watermark']={'persianText':'برند','latinText':'Brand'}
+        p=self.props(design=self.pinned_211());p['watermark']={'persianText':'برند','latinText':'Brand'}
         p['moments'][0]['presentation']['placement']='upper-right'
         p['shots'][0]['avoidRegions']=[region]
         plan=self.prepare(p)['watermarkPlan']
@@ -133,6 +135,25 @@ class RankedBrowserContracts(unittest.TestCase):
         for slot in plan:
             with self.subTest(slot=slot['zone']):
                 self.assertFalse(self._overlaps(slot['rect'],region))
+    def test_212_suppresses_brand_instead_of_grouping_it_with_m5(self):
+        p=self.props();p['durationSeconds']=47
+        p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':47,
+                     'avoidRegions':[{'x':0.05,'y':0.10,'w':0.90,'h':0.20}]}]
+        p['moments']=[{'id':'m5','kind':'statement','startSeconds':42.47,'endSeconds':46.97,
+                       'presentation':{'placement':'lower-right','motion':'cut-in'},
+                       'segments':[{'role':'lead','text':'ولی برای «بودنت»'},
+                                   {'role':'hero','text':'هیچ‌وقت عذرخواهی نکن!'}]}]
+        p['watermark']={'persianText':'طریقت تسلیم','latinText':'@Pathway_of_Surrender'}
+        q=self.prepare(p);layout=q['filmType']['moments']['m5'];lockup=q['filmType']['lockup']
+        clearance=max(q['design']['resolved']['watermark']['minTextClearancePx'],lockup['heightPx'])
+        width,height=FRAME['vertical']
+        for slot in q['watermarkPlan']:
+            if slot['startSeconds']<46.97 and slot['endSeconds']>42.47:
+                expanded={'x':slot['rect']['x']-clearance/width,'y':slot['rect']['y']-clearance/height,
+                          'w':slot['rect']['w']+2*clearance/width,'h':slot['rect']['h']+2*clearance/height}
+                self.assertFalse(self._overlaps(expanded,layout['rect']))
+        self.assertFalse(any(s['startSeconds']<46.97 and s['endSeconds']>42.47 for s in q['watermarkPlan']))
+        self.assertTrue(any('watermark-suppressed-for-text-clearance' in w for w in q['filmType']['warnings']))
     def test_stale_layout_refused(self):
         p=self.prepare(self.props());p['filmType']['inputHash']='stale'
         with self.assertRaisesRegex(ValueError,'stale'):self.prepare(p)

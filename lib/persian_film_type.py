@@ -56,7 +56,7 @@ def prepare_film_type_props(props: dict[str, Any], composer: Path) -> dict[str, 
             raise ValueError("Film Type preparation returned a non-object")
         measured = prepared.get("filmType")
         design = props.get("design") or {}
-        expected_version = {"2.1.0": 1, "2.2.0": 2, "2.3.0": 3, "2.4.0": 4, "2.5.0": 5, "2.6.0": 6, "2.7.0": 7, "2.8.0": 8, "2.9.0": 9, "2.10.0": 10, "2.11.0": 11}.get(design.get("profileVersion"))
+        expected_version = {"2.1.0": 1, "2.2.0": 2, "2.3.0": 3, "2.4.0": 4, "2.5.0": 5, "2.6.0": 6, "2.7.0": 7, "2.8.0": 8, "2.9.0": 9, "2.10.0": 10, "2.11.0": 11, "2.12.0": 12}.get(design.get("profileVersion"))
         if (expected_version is None or (design.get("resolved") or {}).get("layoutVersion") != expected_version
                 or not isinstance(measured, dict) or type(measured.get("version")) is not int
                 or measured["version"] != expected_version or not measured.get("inputHash")):

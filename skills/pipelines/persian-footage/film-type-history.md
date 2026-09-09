@@ -309,3 +309,11 @@ as a containment pass. Await prepared metadata before mounting a raw Player.
 6. Keep humanVisualApproval pending; keep quiet-editorial, other
    pipelines and C–E rollout unchanged. Legacy is disabled by default (hidden
    opt-out only) per the locked 2026-09-08 decision.
+
+
+## Film Type 2.11.0 — archived
+
+2.11 lowered mid placements, added 20px safe-area padding, strengthened the
+brand-only shadow, and used reviewed regions to steer the brand while text
+remained unenforced. Reproduce it only with the archived profile and read
+`docs/persian-film-type-2.11-patch.md`; the current contract is 2.12.

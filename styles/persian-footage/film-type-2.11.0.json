@@ -1,7 +1,7 @@
 {
   "profile": "film-type",
-  "profileVersion": "2.12.0",
-  "layoutVersion": 12,
+  "profileVersion": "2.11.0",
+  "layoutVersion": 11,
   "name": "Pathway Film Type",
   "scope": "persian-footage",
   "rollout": "opt-in",
@@ -96,7 +96,7 @@
     "safeAreaPaddingPx": 20,
     "motionClearancePx": 18,
     "collisionMarginPx": 12,
-    "autoRequiresReviewedAvoidRegions": true,
+    "autoRequiresReviewedAvoidRegions": false,
     "aestheticPolicy": "ranked-v1"
   },
   "contrast": {
@@ -190,8 +190,6 @@
       "haloAlpha": 0.26
     },
     "targetDwellSeconds": 12,
-    "introDelaySeconds": 5,
-    "minTextClearancePx": 64,
-    "suppressWhenNoTextClearance": true
+    "introDelaySeconds": 5
   }
 }

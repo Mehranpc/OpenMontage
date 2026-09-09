@@ -1,18 +1,18 @@
-# Film Type — current default: 2.11.0 / layout 11
+# Film Type — current default: 2.12.0 / layout 12
 
 This is a visual profile for the Persian footage pipeline. It is not a new
 pipeline, runtime, narration mode, or approval.
 
 **One current default.** Every unpinned `persian-footage` run resolves to
-`2.11.0` / `layoutVersion 11`. If any other document, comment, or memory tells
+`2.12.0` / `layoutVersion 12`. If any other document, comment, or memory tells
 you a different version is current, it is stale and this file wins.
 
 **Read before composing:**
 
 | Purpose | File |
 | --- | --- |
-| What 2.11 changed and why | `docs/persian-film-type-2.11-patch.md` |
-| Archived 2.5–2.10 guidance (reproducing old pins only) | `skills/pipelines/persian-footage/film-type-history.md` |
+| What 2.11 changed and why | `docs/persian-film-type-2.12-patch.md` |
+| Archived 2.5–2.11 guidance (reproducing old pins only) | `skills/pipelines/persian-footage/film-type-history.md` |
 | How to audit a render's geometry | `docs/film-type-visual-regression.md` |
 
 `film-type-history.md` is an archive. It contains sentences such as "current
@@ -41,64 +41,48 @@ the rest of the props. All three fields (`resolved`, `contentHash`,
 unsupported version is refused.
 
 Supported pairs are `2.1.0`/layout 1 through `2.11.0`/layout 11, each with its
-exact canonical hash. The 2.11 hash is
-`ee04b0e576891828d754b2dc8bc7139178174251e3755dea4797dd480df4f687`.
+exact canonical hash. The 2.12 hash is
+`3580543858c134902cf1539fccf6d66e31f870d88a0b39a41ed1a28603f7aa5a`.
 
 Older pins keep their own versioned behaviour. Never relabel a snapshot, edit a
 frozen hash or sidecar by hand, or migrate projects in bulk. Migration means
 resolving a fresh unpinned design and rerunning preparation.
 
-## What 2.11 changed
+## What 2.12 changed
 
-2.11 keeps 2.10's fonts, wrapping, field strengths (`soft 0.24` / `standard
-0.34` / `strong 0.40`), diffuse radii, motion envelope, and safe-area values.
-It changes four things:
+2.12 turns the two rejected review frames into hard, versioned behaviour:
 
-1. **`layout.middleCentre` 0.49 → 0.56.** Mid-placed blocks sit lower, away from
-   the centre of the frame where faces usually are. `upperCentre` (0.32) is
-   unchanged, so `upper-*` placements are unaffected.
-2. **`layout.safeAreaPaddingPx: 20`** — a new token, separate from `safeArea`.
-   It tightens the clamp bounds only; it does not change any safe-area value.
-3. **`watermark.glyphShadow`** gives the brand lockup its own near shadow plus
-   halo, so it stays legible on bright backgrounds. It is **required** in 2.11:
-   if it is missing, both preparation and paint fail loudly. There is no silent
-   fallback to the text glyph shadow.
-4. **Reviewed avoid regions now steer the brand.** The moving-watermark planner
-   deprioritises zones overlapping a reviewed region and vetoes overlapping
-   (zone, interval) pairs outright. If no safe slot remains, preparation fails
-   with "No safe moving watermark schedule" — it never hides or shrinks the mark.
+1. **Every overlapping shot must carry reviewed `avoidRegions`**, including
+   `[]` only after a human reviewed the crop and camera move. Both `auto` and
+   explicit placement are refused without that evidence.
+2. **Reviewed regions reject text placements.** A block that cannot clear the
+   supplied subject/action envelope fails and goes back to the edit: shorten the
+   copy, reframe, or change the shot. The contrast field remains at full strength;
+   regions never weaken it.
+3. **Brand/text separation is measured edge-to-edge.** The clearance is
+   `max(watermark.minTextClearancePx, measured lockup height)` — 77px for the
+   default two-line lockup, instead of the old 12px collision-only margin.
+4. **No-slot cases suppress the brand explicitly.** If safe area, reviewed
+   regions, and text clearance leave no legal full-dwell slot, the planner removes
+   the brand for that interval (including its fade envelope), records a warning,
+   and keeps every remaining visible dwell at least 6s. It never groups the brand
+   with moment text or parks it on a reviewed subject.
+
+2.11 is archived unchanged at `styles/persian-footage/film-type-2.11.0.json` and
+its behaviour remains pinnable. See `docs/persian-film-type-2.12-patch.md`.
 
 ## Subject safety: reviewed geometry, never detection
 
-There is no face, person, or subject detection anywhere in this system, and no
-classifier of any kind. Nothing may be added.
+There is still no face/person detector or classifier. The edit supplies normalized
+screen-space envelopes after crop and across camera motion. In 2.12 those reviewed
+regions are mandatory and binding for both auto and explicit typography placement.
+Missing review is a refusal; a blocked wide phrase is an editorial refusal, not an
+invitation to weaken the region. `subjectSafety` is
+`checked-against-supplied-regions` only after the whole dwell clears them.
 
-Supported placements: `upper-left`, `upper-right`, `mid-left`, `mid-right`,
-`lower-left`, `lower-right`, `center`, `auto`.
-
-`avoidRegions` are normalized screen coordinates AFTER cover crop, covering the
-subject and action across the entire camera move and dwell. `x,y,w,h`; optional
-`start`/`end` are ABSOLUTE timeline seconds within that shot, and omitted times
-inherit the shot window. `avoidRegions: []` means a reviewed clear shot; missing
-metadata is not the same thing, and `auto` refuses to guess.
-
-**In 2.11, `enforceSubject` is OFF.** Consequences you must understand:
-
-- Reviewed regions steer the **brand**. They do **not** move authored **text**.
-- `subjectSafety` is therefore always `not-checked` in the saved warnings, even
-  when you supplied regions. That warning is correct, not a bug. The system
-  refuses to claim it checked something it did not check.
-- A text block overlapping a subject is **reported, never silently corrected**.
-
-### When text lands on a face
-
-A wide block cannot be moved off a centre-framed face by placement. The safe
-area leaves no clear column. Do not chase it with placement, weaker margins, or
-a smaller size floor. Fix it editorially:
-
-1. shorten the display copy so the block is narrower and shorter,
-2. change or reframe the shot so the subject leaves the centre, or
-3. pin that project to `2.8.0`, where subject enforcement is active.
+When text cannot clear a centre-framed subject, shorten/narrow the display copy,
+change the crop or shot, or deliberately pin an older profile for reproduction.
+Never remove a truthful region to make a render pass.
 
 ## Safe area, contrast, and brand
 
@@ -116,8 +100,10 @@ frame-by-frame pumping. `soft` is not permission to accept unreadable text.
 The brand is bilingual, Persian 30px Estedad 500 / Latin 24px Arial 400, 6px
 gap, measured in the browser with the real strings. No clipping, ellipsis, or
 emergency shrinking; a brand that cannot fit fails. `introDelaySeconds 5` keeps
-the opening clean. Minimum dwell 6s, target 12s, at most 5 relocations, one
-lockup at a time, fade to zero between slots. Movement is not copy protection.
+the opening clean. Minimum visible dwell 6s, target 12s, at most 5 relocations, one
+lockup at a time, fade to zero between slots. The brand stays at least one
+measured lockup height from moment text; where no legal slot exists it is
+explicitly suppressed and the warning names the interval. Movement is not copy protection.
 
 ## Acceptance
 

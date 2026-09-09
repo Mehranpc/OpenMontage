@@ -1,9 +1,9 @@
 ## Film Type is the active visual profile
 
-Film Type 2.11.0 / layout 11 is the default for every persian-footage run.
+Film Type 2.12.0 / layout 12 is the default for every persian-footage run.
 **This file does not restate the profile's rules.** Read
 `skills/pipelines/persian-footage/film-type.md` for the active contract, and
-`docs/persian-film-type-2.11-patch.md` for what the current version changed.
+`docs/persian-film-type-2.12-patch.md` for what the current version changed.
 Guidance for older pins lives in
 `skills/pipelines/persian-footage/film-type-history.md` — archive only.
 
@@ -337,8 +337,8 @@ common right edge and no single band, so do not describe the layout to a reviewe
 a spine.
 
 What holds in both: the position is computed, never authored for aesthetic reasons.
-Explicit placement without reviewed avoid regions is exactly what the 2.11 warning
-list flags, and it is not a shortcut around a moment that does not fit.
+On Film Type 2.12 explicit placement is binding but not a review bypass: missing
+reviewed avoid regions is a refusal, and a blocked authored zone is a refusal.
 
 Contrast is profile-specific. The `5.6:1` floor is Legacy (`lib/persian_verify.py:193`);
 the Film Type verifier uses a `4.5:1` floor (`lib/persian_film_verify.py:69–74`).
@@ -558,10 +558,11 @@ Starting at 0 is a default, not a decision.
 ### Place moments against the footage, not against the script
 
 A moment lands on a shot. Prefer a shot whose subject is low or left in frame, or
-whose motion has settled. Neither profile detects subjects, so the shadow or scrim
-helps legibility without knowing what is behind the text — a moment over a close-up
-face still competes with it for attention, and on Film Type 2.11 subject-region
-enforcement is off, which the run reports as a warning rather than a refusal.
+whose motion has settled. Neither profile detects subjects. Film Type 2.12 instead requires a human-reviewed
+`avoidRegions` array on every overlapping shot (use `[]` only after checking the
+whole crop/camera move) and rejects any text candidate that intersects it. A wide
+block over a centre-framed face therefore goes back to the edit for shorter copy, a
+new crop, or another shot; never weaken the region to make it pass.
 
 The strongest placement is a moment that *arrives with a cut*: the shot changes and
 the figure appears on the new frame. Placing one mid-shot works; placing one two
