@@ -29,19 +29,24 @@ timing, wrapping, or watermark policy.
 
 | Token | 2.9.0 | 2.10.0 |
 | --- | --- | --- |
-| `contrast.strengths.soft` | 0.26 | 0.24 |
-| `contrast.strengths.standard` | 0.36 | 0.34 |
-| `contrast.strengths.strong` | 0.44 | 0.40 |
-| `contrast.diffuseField.radiusScale` | 1.05 | 0.85 |
-| `contrast.diffuseField.minRadiusPx` | 220 | 180 |
-| `contrast.diffuseField.perRow` | — | `true` |
-| `contrast.diffuseField.rowPaddingPx` | — | 26 |
+| `contrast.strengths.soft` | 0.24 | 0.24 (unchanged) |
+| `contrast.strengths.standard` | 0.34 | 0.34 (unchanged) |
+| `contrast.strengths.strong` | 0.44 | **0.40** |
+| `contrast.diffuseField.radiusScale` | 1.15 | **0.85** |
+| `contrast.diffuseField.minRadiusPx` | 180 | 180 (unchanged) |
+| `contrast.diffuseField.maxSubjectAlpha` | 0.12 | 0.12 (unchanged) |
+| `contrast.diffuseField.perRow` | — | **`true`** |
+| `contrast.diffuseField.rowPaddingPx` | — | **26** |
 | `contrast.glyphShadow.color` | — | `#191919` |
 | `contrast.glyphShadow.nearOffsetPx` / `nearBlurPx` / `nearAlpha` | — | 2 / 6 / 0.38 |
 | `contrast.glyphShadow.haloBlurPx` / `haloAlpha` | — | 22 / 0.22 |
 
 `profileVersion` `2.10.0`, `layoutVersion` `10`, profile hash
 `60ff5e80524aaa3877e8bd94e2bdd8c957c9f367947066ced034cbfb8be678e0`.
+
+Because `radiusScale` now multiplies a single row's width instead of the whole
+block, the effective field is much smaller than the ratio alone suggests; the
+`minRadiusPx` floor keeps very short rows from getting a hard-edged blob.
 
 ## Behaviour inherited from 2.9 (unchanged)
 
@@ -51,6 +56,14 @@ timing, wrapping, or watermark policy.
 - The field is bounded by the frame, so it can never be wider or taller than the
   video.
 - Reels safe area: top 14%, bottom 35%, left 8%, right 16%.
+
+## Test contract note
+
+`tests/lib/test_persian_reels_safe_area.py` used to freeze the default field to
+the 2.7 values. That is no longer the contract: it now asserts the ink colours,
+typography and safe-area geometry are frozen, and that the field is **no darker
+and no larger** than the 2.7 baseline, still diffuse, still ungraded. If a
+future patch makes the field bigger or darker, that test fails on purpose.
 
 ## Verify
 
