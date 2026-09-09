@@ -127,10 +127,10 @@ Then judge, in priority order:
    inside one beat reads as a glitch.
 4. **Does the orientation match?** Portrait for vertical, landscape for landscape.
    A landscape clip cropped to vertical loses its subject to the crop.
-5. **Is there room for text?** Moments occupy a band across the vertical middle —
-   roughly 30%–58% of frame height in vertical, 30%–70% in landscape, anchored to the
-   right. A clip whose subject sits exactly there competes with the type, even through
-   the scrim. Prefer a subject low or left in frame for a beat that carries a moment.
+5. **Can footage and type be solved together?** Read the provisional display
+   requirement; inspect the cropped window at start/middle/end and record genuine
+   negative space plus conservative subject envelopes. Do not assume a fixed text band.
+   Keep ranked alternatives until no-copy edit preflight chooses a feasible pair.
 6. **Is the motion compatible?** Fast internal motion plus a camera move is queasy.
    If the clip moves a lot, revisit the beat's camera and set `none`.
 

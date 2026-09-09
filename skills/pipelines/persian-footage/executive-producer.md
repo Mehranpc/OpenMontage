@@ -32,6 +32,10 @@ this file does not repeat those rules.
 
 # Executive Producer — Persian Footage Pipeline
 
+## Final-candidate protocol
+
+Read `skills/pipelines/persian-footage/final-candidate-protocol.md`. Intermediate stages run autonomously; compose is the single post-render human gate.
+
 ## When To Use
 
 The user wants a Persian (Farsi) video. Signals: the request itself is written in
@@ -182,9 +186,9 @@ audio and produce the sidecar `.srt`.
 Timing accuracy matters less than it once did: nothing on screen is locked to a word, so
 a tenth of a second of drift is cosmetic rather than a visible bug.
 
-The script stage **stops and hands the narration text to the user**. This is a real
-handoff, not a checkpoint to click through — the pipeline cannot continue until the
-audio comes back. Say so plainly and wait.
+Only when narration audio is missing, hand the narration text to the user and wait
+for audio as an input dependency. If final narration audio is already supplied,
+transcribe it and continue autonomously to the rendered candidate.
 
 ### `silent`
 

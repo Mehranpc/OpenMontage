@@ -101,9 +101,18 @@
       "description": "Readability notes on the sidecar subtitles. Advisories rather than failures on purpose: an over-speed cue is a property of how fast the narrator spoke, and the honest remedy is a shorter script, not a blocked delivery.",
       "items": { "type": "string" }
     },
+    "delivery_status": {
+      "type": "string",
+      "enum": ["final_candidate", "approved", "rejected"],
+      "description": "Lifecycle of a rendered candidate; final_candidate awaits the user’s one post-render review."
+    },
+    "human_visual_approval": {
+      "type": "boolean",
+      "description": "False for automation. Only explicit approval of the rendered output may set it true."
+    },
     "persian_text_verified": {
       "type": "boolean",
-      "description": "Set by the compose director, and only when all five measurements agree: verify_frames(...)['passed'] over every moment, check_gap_is_empty over every gap, check_moment_arrangement over every moment with its own roles list, measure_stack_rhythm over every moment with its own fitted lead size, and find_watermark reporting found and not clipped_at_edge. persian_compose returns it false and cannot know otherwise — it renders, it does not look. Setting it true without those measurements defeats the only check that catches the failures this pipeline was built to prevent."
+      "description": "False on an automatically produced Persian final candidate. It may become true only after the user approves that render; verification_notes still records the automated measurements and their limits."
     },
     "verification_frames": {
       "type": "array",

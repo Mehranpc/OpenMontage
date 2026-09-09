@@ -62,6 +62,7 @@ required_skills:
   - pipelines/persian-footage/asset-director
   - pipelines/persian-footage/edit-director
   - pipelines/persian-footage/compose-director
+  - pipelines/persian-footage/final-candidate-protocol
   - meta/reviewer
   - meta/checkpoint-protocol
 
@@ -115,7 +116,7 @@ stages:
     tools_available:
       - web_search
     checkpoint_required: true
-    human_approval_default: true
+    human_approval_default: false
     review_focus:
       - production_mode is chosen and recorded (narrated or silent) — NOT inferred later
       - format is chosen and recorded (vertical or landscape)
@@ -143,7 +144,7 @@ stages:
     tools_available:
       - web_search
     checkpoint_required: true
-    human_approval_default: true
+    human_approval_default: false
     review_focus:
       - "Persian orthography: ZWNJ present in every compound («می‌کند», not «میکند» or «می کند»)"
       - "Normalization: Farsi yeh (U+06CC) and keheh (U+06A9) only — no Arabic yeh/kaf"
@@ -167,7 +168,7 @@ stages:
       - scene_plan
     tools_available: []
     checkpoint_required: true
-    human_approval_default: true
+    human_approval_default: false
     review_focus:
       - Every beat has 2 ENGLISH search queries (Pexels/Pixabay do not index Persian)
       - Queries name concrete visual nouns, not the abstract idea they represent
@@ -212,7 +213,7 @@ stages:
     fallback_tools:
       - transcriber
     checkpoint_required: true
-    human_approval_default: true
+    human_approval_default: false
     review_focus:
       - "EVERY asset is a VIDEO. A still image in the manifest is a CRITICAL violation — this pipeline forbids photo footage outright."
       - Every clip is at least as long as the beat it fills
@@ -242,7 +243,7 @@ stages:
       - edit_decisions
     tools_available: []
     checkpoint_required: true
-    human_approval_default: true
+    human_approval_default: false
     review_focus:
       - "render_runtime is 'remotion' and composition_mode is 'templated' — the Persian composition IS the template"
       - "renderer_family is 'persian-footage'"
@@ -293,7 +294,7 @@ stages:
       - audio_mixer
       - audio_probe
     checkpoint_required: true
-    human_approval_default: false
+    human_approval_default: true
     review_focus:
       - "render_runtime MUST remain 'remotion'. The Persian composition depends on Estedad loading through FontFace and on canvas text measurement; neither exists on the ffmpeg path. A silent swap to ffmpeg or hyperframes is a CRITICAL governance violation — raise a structured blocker instead."
       - Output dimensions match the chosen format exactly
@@ -316,7 +317,8 @@ stages:
     success_criteria:
       - Schema-valid render_report artifact
       - Output file exists and passes ffprobe validation
-      - "render_report.persian_text_verified = true, set only after all four measurements agree: verify_frames over every moment, check_gap_is_empty over every gap, check_moment_arrangement over every moment, and find_watermark reporting found and not clipped_at_edge — persian_compose returns it false because it renders, it does not look"
+      - "Initial candidate: delivery_status is final_candidate, human_visual_approval is false, persian_text_verified is false, and compose is awaiting_human"
+      - "Only explicit approval of that MP4 completes compose with human_approved true; then delivery_status is approved and the two verification booleans may become true"
       - "render_report.verification_notes carries measured numbers rather than adjectives: anchor offsets, contrast range, line counts, watermark rows — and names what was NOT verified (intra-word glyph order)"
       - render_report.moment_count and render_report.text_coverage are recorded
       - "In narrated mode: render_report.subtitle_path points at an existing SRT"

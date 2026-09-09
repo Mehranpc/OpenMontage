@@ -32,6 +32,10 @@ that the shadow failed. Do not set `persian_text_verified` from sampled checks.
 
 # Compose Director — Persian Footage Pipeline
 
+## Final candidate
+
+Read `final-candidate-protocol.md`. Probe with `python -m lib.persian_preflight`, render the accepted edit once, build the review package, and checkpoint compose as `awaiting_human`. Only explicit approval of that MP4 completes compose.
+
 ## Film Type 2.5 — historical default path
 
 See `skills/pipelines/persian-footage/film-type-history.md` for the archived

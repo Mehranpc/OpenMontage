@@ -52,9 +52,10 @@ resolving a fresh unpinned design and rerunning preparation.
 
 2.12 turns the two rejected review frames into hard, versioned behaviour:
 
-1. **Every overlapping shot must carry reviewed `avoidRegions`**, including
-   `[]` only after a human reviewed the crop and camera move. Both `auto` and
-   explicit placement are refused without that evidence.
+1. **Every overlapping shot must carry truthful `avoidRegions`**, including
+   `[]` only after the agent inspected the whole cropped window and camera move.
+   Regions may be machine-estimated; human approval occurs after the full candidate.
+   Both `auto` and explicit placement are refused without region evidence.
 2. **Reviewed regions reject text placements.** A block that cannot clear the
    supplied subject/action envelope fails and goes back to the edit: shorten the
    copy, reframe, or change the shot. The contrast field remains at full strength;
@@ -71,14 +72,14 @@ resolving a fresh unpinned design and rerunning preparation.
 2.11 is archived unchanged at `styles/persian-footage/film-type-2.11.0.json` and
 its behaviour remains pinnable. See `docs/persian-film-type-2.12-patch.md`.
 
-## Subject safety: reviewed geometry, never detection
+## Subject safety: supplied geometry, never detection
 
-There is still no face/person detector or classifier. The edit supplies normalized
-screen-space envelopes after crop and across camera motion. In 2.12 those reviewed
-regions are mandatory and binding for both auto and explicit typography placement.
-Missing review is a refusal; a blocked wide phrase is an editorial refusal, not an
-invitation to weaken the region. `subjectSafety` is
-`checked-against-supplied-regions` only after the whole dwell clears them.
+Film Type still has no built-in face/person detector or classifier. The edit supplies
+normalized envelopes after crop and across camera motion. They are mandatory and
+binding; during autonomous planning they are conservative machine estimates, while
+the user reviews the final render rather than JSON boxes. Missing geometry is a
+refusal; a blocked phrase is not permission to weaken a truthful region.
+`subjectSafety` is `checked-against-supplied-regions` only after the dwell clears them.
 
 When text cannot clear a centre-framed subject, shorten/narrow the display copy,
 change the crop or shot, or deliberately pin an older profile for reproduction.

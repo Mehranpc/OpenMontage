@@ -464,6 +464,14 @@ def write_checkpoint(
             f"Valid stages: {sorted(valid_stages)}"
         )
 
+    # Persian footage has one human gate: the rendered compose candidate.
+    if pipeline_type == "persian-footage" and stage != "compose" and human_approved:
+        raise CheckpointValidationError(
+            "APPROVAL PROVENANCE VIOLATION: persian-footage may record "
+            "human_approved=True only on compose after explicit user approval "
+            "of the rendered candidate; a continuation goal is not approval."
+        )
+
     # --- Gate enforcement (GI-4) ---
     # The pipeline manifest is the binding source of truth for whether a stage
     # gates on human approval; a caller may gate MORE strictly (e.g. a
