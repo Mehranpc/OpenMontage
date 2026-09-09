@@ -1,52 +1,49 @@
-## Film Type 2.11 current default
+## Film Type is the active visual profile
 
-Read `docs/persian-film-type-2.11-patch.md` before the historical guidance below.
-Approved diffuse shadow now defaults to strong for every new moment. Vertical
-text and watermark use a conservative Reels safe area (14% top, 35% bottom,
-8% left, 16% right), not a generic 9:16 margin. Reprepare all geometry; never move
-measured rows manually. Review every moment with scripts/review_reels_safe_area.py
-and the actual Instagram UI. Preserve face/action regions simultaneously; refusal
-requires an editorial solution, not weaker margins. Existing complete pins stay
-unchanged. 2.7 QA limitations still apply; safe-area success is not full approval.
+Film Type 2.11.0 / layout 11 is the default for every persian-footage run.
+**This file does not restate the profile's rules.** Read
+`skills/pipelines/persian-footage/film-type.md` for the active contract, and
+`docs/persian-film-type-2.11-patch.md` for what the current version changed.
+Guidance for older pins lives in
+`skills/pipelines/persian-footage/film-type-history.md` — archive only.
 
-## Film Type 2.7 migration override
+Activate the active profile with
+`persian.design = {"version":2,"profile":"film-type","seed":"<project-id>-film-type-01"}`;
+the seed is derived from the project id.
+All source, science, selective-moment, reading, coverage, sync, narration/music,
+runtime, attribution and human gates still apply.
+This routing is not Stage B completion, humanVisualApproval or C–E rollout.
+Do not rewrite approved narration or facts to fit; request an editorial revision
+when preparation refuses.
 
-For the 2.7 migration history, read `docs/persian-film-type-2.7-patch.md`
-BEFORE the historical guidance below. That guide owns diffuse shadow, region
-interpretation, diagnostic probes and version-aware QA. Pass resolved props to
-verify_frames; never apply Legacy scrim-ceiling/anchor/orange-gap rules to Film
-Type. Missing synchronized diagnostic evidence is not_checked, NOT a pass and
-NOT evidence that the shadow failed. Do not set persian_text_verified from these
-sampled checks. Review bright-background watermark separately. Keep old complete
-pins unchanged; migrate only by fresh resolution and prepass.
+Absent design is REFUSED by persian_compose. `quiet-editorial` remains an
+explicit option. Legacy is reachable only through the hidden opt-out
+`{"version":2,"profile":"legacy"}`, for emergencies, never for new work.
+
+**Read this before the verification chapter.** Most of the measurement recipes in
+this file are Legacy. `lib/persian_verify.py` locates type by the accent colour
+`#FFC24B` and scopes every ink measurement to the scrim plateau. Film Type paints
+white ink with a diffuse shadow and no scrim, so those two foundations are absent
+— the affected checks do not merely become lenient, they cannot run at all. Never
+apply Legacy scrim-ceiling, anchor-column, plateau or accent-detector rules to a
+Film Type render, and never report a Legacy pass as a Film Type pass. Missing
+synchronized diagnostic evidence is `not_checked`: not a pass, and not evidence
+that the shadow failed. Do not set `persian_text_verified` from sampled checks.
 
 # Compose Director — Persian Footage Pipeline
 
 ## Film Type 2.5 — historical default path
 
-At the time, every persian-footage run rendered Film Type 2.5 unless explicitly directed
-elsewhere. Set `persian.design =
-{"version":2,"profile":"film-type","seed":"<project-id>-film-type-01"}` (seed
-auto-derived from the project id), then read
-`skills/pipelines/persian-footage/film-type.md` before applying visual rules below.
-That guide owns this profile's white ink, compact whole-run typography, placement,
-conditional local contrast and two-line brand. Legacy orange/glow/rule, fixed-right
-anchor, silhouette, static grade, dimming and accent-colour pixel recipes below do
-not certify Film Type. Its prepared geometry requires actual painted-node/frame QA,
-not the Legacy accent detector. All source, science, selective-moment, reading,
-coverage, sync, narration/music, runtime, attribution and human gates still apply.
-Absent design is REFUSED by persian_compose — no video renders Legacy by accident;
-`quiet-editorial` stays available as an explicit option. The old Legacy render
-remains reachable only through the explicit hidden opt-out
-`{"version":2,"profile":"legacy"}` (emergencies only, never for new productions).
-This routing is not Stage B completion, humanVisualApproval or C–E rollout. Do not
-rewrite approved narration or facts to fit; request an editorial revision when
-preparation refuses. See the guide for exact review steps.
+See `skills/pipelines/persian-footage/film-type-history.md` for the archived
+historical guidance. That archive is the source for understanding older pins;
+this file does not repeat those rules.
 
 ## Your job
 
 Render the video, then **look at it**. A schema-valid `render_report` proves nothing
-about whether the Persian is readable.
+about whether the Persian is readable. Neither does a green measurement run: on the
+active profile the measurable surface is smaller than it looks, and the eyes that
+approve a render are the user's.
 
 ## Runtime routing — check before rendering
 
@@ -88,9 +85,12 @@ It also **gates the props before staging anything**. A retired `cues` or `hookTe
 at the top level, a retired `text`/`unit`/`label`/`kicker` key inside a moment, an
 empty moment list, a pacing violation, an unanchored timing, or a moment whose
 segments do not compose one phrase is refused in seconds rather than minutes into a
-render. If it refuses, the fix is at the edit stage — the error names which rule and
-why. Two of those refusals deserve their own paragraph, because the temptation to
-hand-fix them at the compose stage is strong and the remedy is upstream:
+render. These gates are profile-independent: `audit_moments` runs from
+`tools/video/persian_compose.py:801` before staging on every path, Film Type included,
+and has no profile branch. If it refuses, the fix is at the edit stage — the error
+names which rule and why. Two of those refusals deserve their own paragraph, because
+the temptation to hand-fix them at the compose stage is strong and the remedy is
+upstream:
 
 - **A sync refusal means "re-derive", never "nudge".** `persian_compose` runs
   `lib/persian_sync.py`'s `audit_sync(moments, TimedWord.from_dicts(word_timings))`
@@ -137,9 +137,9 @@ hand-fix them at the compose stage is strong and the remedy is upstream:
 
 Defaults worth knowing:
 
-- **`crf: 16`** — the scrim is a large soft gradient and the grain is fine, which are
-  the first two things a higher CRF destroys. Banding across a full-width gradient is
-  very visible.
+- **`crf: 16`** — soft large-area gradients and fine grain are the first two things a
+  higher CRF destroys, and both profiles have one: the Legacy scrim and the Film Type
+  diffuse field. Banding across a full-width gradient is very visible.
 - **`timeout_ms: 60000`** — per frame. The default 30s can expire while a cold font
   cache loads Estedad.
 - **`scale`** — below 1.0 for a quick check. Text is still measured at full size, so a
@@ -163,7 +163,9 @@ inputs["frames"] = "0-120"     # first four seconds
 Render one moment per shape — one lead-above-hero figure, one statement with a long
 hero, one built moment with a late `revealAfterSeconds` — and the watermark's
 migration. Four short renders find more problems than one long one, for less time and
-less disk.
+less disk. On Film Type the watermark relocates, so a frame slice that contains no
+relocation tells you nothing about the schedule; take the windows from the prepared
+geometry's slot boundaries.
 
 Pick the windows from the moment list, not at fixed intervals. Text now covers at most
 55% of the runtime by design, so a blindly chosen window is more likely than not to
@@ -190,9 +192,36 @@ tool stages before rendering. Two caveats, both load-bearing:
 A render that completes tells you the props were well-formed. It says nothing about
 the two things this pipeline exists to get right.
 
-Use `lib/persian_verify.py`. Do not write your own pixel checks: the obvious ones do
-not work, and the section at the end of this file records which ones were tried and
-what defeated each. Everything below is measured, not asserted.
+**Choose the instrument by profile before you measure anything.**
+
+| Profile | Verifier | What it measures |
+|---|---|---|
+| Film Type (active) | `lib/persian_film_verify.py`, `verify_film_frames` | prepared rect, contrast against a **4.5:1** floor (`:69–74`), shadow presence, composite. Its header states it makes no Legacy plateau or accent assumptions (`:1–5`) |
+| Legacy (opt-out only) | `lib/persian_verify.py` | everything described in the rest of this chapter: scrim plateau, accent-located hero, anchor column, zone ink ceiling, stack rhythm, fixed-position watermark |
+
+The Legacy recipes are documented here in full because they are the ones with a decade
+of failure modes attached, and because the reasoning at each threshold is worth reading
+before inventing a new check. But two of their foundations do not exist on the active
+profile:
+
+- **The accent colour.** `check_gap_is_empty`, `check_moment_arrangement` and `_dilate`
+  all locate type by `#FFC24B`, whose channel spread of 180 no footage reproduces under
+  a scrim. Film Type sets every role in white ink. There is no accent mask to build, so
+  these three checks cannot be run against a Film Type frame — not strictly, not
+  leniently. Running them anyway produces a confident answer about a colour that was
+  never painted.
+- **The scrim plateau.** Every ink measurement below is scoped to the rows the scrim
+  darkens at `peakAlpha`. Film Type has no scrim: it uses a per-row diffuse field
+  (`film-type.json:122–127`, `filmType/diffuse27.ts`), so `SCRIM_CEILING` describes a
+  threshold that is not in the frame.
+
+Where Film Type has no automated equivalent, say `not_checked` in the report and name
+the check. A reviewer who sees only passes will assume the rest was covered.
+
+Do not write your own pixel checks: the obvious ones do not work, and the section at
+the end of this file records which ones were tried and what defeated each. That table
+is profile-independent — the traps are properties of H.264 and of footage, not of a
+profile.
 
 ### The moment model you are verifying
 
@@ -200,16 +229,19 @@ Moments are one **grammatical Persian phrase with one emphasised span**, express
 an ordered segment list — `[{role: "lead", text: "…"}, {role: "hero", text: "…"}]`.
 The array order is the reading order, top to bottom, so «مطالعهٔ دانشگاه اولوی فنلاند
 روی» is authored *before* «۲۲۶۴ نفر» because that is the order the sentence is said
-in. There is no arrangement table keyed by `kind` any more, which is worth saying
+in. This part is profile-independent. There is no arrangement table keyed by `kind` any
+more, which is worth saying
 aloud because the shipped render's defects were all arrangement-table defects: a
 floating «نفر» at the hero's baseline (the unit is now *inside* the hero text, so the
 satellite cannot exist), and a 133px vertical gap between the hero and its label
 against a designed 26px — Estedad's 1.665em line box against a numeral's ~0.97em of
-ink, half-leading masquerading as spacing. Rows are now ink-trimmed against
-canvas-measured `actualBoundingBox` extents, so a declared gap is the gap that
-appears; the rhythm measurement below exists to prove it did.
+ink, half-leading masquerading as spacing. Rows are ink-trimmed against
+canvas-measured `actualBoundingBox` extents in both profiles, so a declared gap is the
+gap that appears; the rhythm measurement below is the Legacy proof that the trim
+survived the render.
 
-Sizes derive from one ladder rung per moment — `HERO_LADDER_PX` in `tokens.ts`, walked
+**Legacy sizing:** sizes derive from one ladder rung per moment — `HERO_LADDER_PX` in
+`tokens.ts`, walked
 from the top — with the lead, the source, and the inter-block gap all derived from
 that rung via `computeLeadPx` and its siblings. A short hero lands on a big rung and
 a long claim on a smaller one, and the proportions hold in both. Two hook-scoped
@@ -217,14 +249,23 @@ exceptions live in the same file: a claim+qualifier hook starts its walk below t
 top (its large qualifier adds ink mass the ordinary heroes lack), sizes its
 qualifier as a hook-scoped fraction of the hero, sets both lines in the same weight
 class, gaps them from the qualifier's size, and staggers their arrival in two beats —
-and the silhouette gate refuses a hook whose lines read as a block. The operational
-consequence belongs here, not just in the edit skill: the flat hook's line breaker
-balances lines, balanced lines measure outside the band by construction, and a flat
-hook is therefore refused at compose time — do not treat a flat hook as shippable,
-even if it typeset. The flat-hook
+and the silhouette gate refuses a hook whose lines read as a block. That gate is
+Legacy-only (`HOOK_SILHOUETTE_*`, `tokens.ts:478–481`, checked in
+`tools/video/persian_compose.py:992+`; `filmType/layout.ts` does not import it). The
+operational consequence belongs here, not just in the edit skill: on Legacy the flat
+hook's line breaker balances lines, balanced lines measure outside the band by
+construction, and a flat hook is therefore refused at compose time — do not treat a
+flat hook as shippable on Legacy, even if it typeset. The flat-hook
 exception is narrower: a flat hook (a hero-only moment carrying `accentWords`) is
 typeset as a display block rather than as an emphasis span, so it may occupy more
-lines and breathes on looser leading — the values live in `tokens.ts`. The verifier needs the fitted lead size for
+lines and breathes on looser leading — the values live in `tokens.ts`.
+
+**Film Type sizing:** the three ladders in `styles/persian-footage/film-type.json:51–71`
+are walked in `remotion-composer/src/persian/filmType/layout.ts:297–301`, bounded by
+`maxStackFraction` in the same JSON (0.6; the Legacy token in `tokens.ts` is 0.58 — a
+real difference, not a rounding, so do not quote one at the other's render).
+
+The Legacy verifier needs the fitted lead size for
 the rhythm check below; the tool result carries no fitted sizes, so read the fitted
 `stackHeightPx` off the props moments (`edit_decisions.persian.moments[].stackHeightPx`,
 attached by `_maybe_attach_stack_heights` in `tools/video/persian_compose.py`) and
@@ -236,7 +277,8 @@ Sample the middle of each **moment** — not the boundaries, where enter and exi
 animations are mid-flight, and not at fixed intervals, which under this model mostly
 lands on empty frames. For a **built** moment (one with `revealAfterSeconds`
 segments), sample the last step's midpoint as well as the moment's, so the fully
-built stack is what you measure.
+built stack is what you measure. This sampling discipline applies to both profiles;
+what changes is the function you hand the frames to.
 
 ```python
 import subprocess
@@ -255,12 +297,16 @@ for moment in edit_decisions["persian"]["moments"]:
 
 Sample one frame from the middle of **every gap** as well, and measure those with a
 different function. That separation is not tidiness — it is the correction of a real
-mistake. A gap frame has no scrim, by design, so `ink_mask` sees raw footage and returns
+mistake. A Legacy gap frame has no scrim, by design, so `ink_mask` sees raw footage and
+returns
 31-99% "ink"; feeding gap frames to `verify_frames` produced a confident scrim failure
 (`contrast 2.93:1`, `anchor -85px`) on a frame that was correctly empty. Sample the
 *middle* of the gap for the same reason you sample the middle of a moment: the scrim
 leads the type in and trails it out over `SCRIM.fadeFrames`, so a frame near a boundary
-is a legitimate partial state.
+is a legitimate partial state. On Film Type the analogue is the row's own
+`arrive × leave` envelope rather than a scrim fade, but the boundary caution is the same.
+
+**Legacy only:**
 
 ```python
 from lib.persian_verify import check_gap_is_empty
@@ -276,13 +322,26 @@ the contrast, and `accent_mask` admits 0.0000% of real footage. Real gaps measur
 0.0000-0.0246%; a moment with its hero up measures in whole percentages. The ceiling is
 0.5%.
 
-One honest limit shrank with the new model, and the report should say so: **every**
-moment now paints an accent hero, including statements, so an overrun of *any* kind
-into a gap is detectable — under the slot model a statement had no accent and its
-bleed into a gap was invisible in pixels. What is still not detectable is stated in the
-result and repeated below: intra-word glyph order.
+On Legacy one honest limit shrank with the moment model, and the report should say so:
+**every** moment paints an accent hero, including statements, so an overrun of *any*
+kind into a gap is detectable — under the slot model a statement had no accent and its
+bleed into a gap was invisible in pixels.
 
-### Measure them
+**On Film Type there is no accent ink at all**, so gap emptiness has no colour-separable
+instrument. Do not substitute a brightness test: the abandoned-approach table below
+records exactly why that fails on ungraded footage. Report gap emptiness as
+`not_checked` and confirm it by eye on the sampled gap frames.
+
+What is not detectable on either profile is stated in the result and repeated below:
+intra-word glyph order.
+
+### Measure them — Legacy
+
+Everything in this subsection is `lib/persian_verify.py` and applies to a Legacy
+render. For Film Type, run `verify_film_frames` from `lib/persian_film_verify.py`
+against the resolved props and read its rect/contrast/shadow/composite result; its
+contrast floor is 4.5:1 (`:69–74`), and it deliberately makes no plateau or accent
+assumption (`:1–5`).
 
 ```python
 from lib.persian_verify import verify_frames, scrim_plateau
@@ -314,13 +373,13 @@ outside that band `SCRIM_CEILING` does not hold and bright footage would be
 misread as type. Each problem names its own likely cause. What it checks,
 and what each failure means:
 
-| Measured (plateau-scoped) | Failure means |
+| Measured (plateau-scoped, Legacy) | Failure means |
 |---|---|
 | Ink inside the scrim plateau | Font did not load (tofu has no ink where glyphs belong), or the moment did not paint on its darkened band |
 | Line count, and each line at least `MIN_LINE_PX` tall (30/26) | The fitter and the renderer disagree about the line budget, or a "line" is really an artefact |
 | Ink inside the text column, per-line allowance `INK_OVERSHOOT_PX` + `INK_OVERSHOOT_EM`×line height | Layout measured against a different font than the one that painted |
-| Every line's right edge within 32px of the anchor column | The shared right edge broke — the one thing a reader notices immediately |
-| Contrast ≥ 5.6:1 (inside the plateau) | **The scrim did not render.** Not a grading problem — see below |
+| Every line's right edge within 32px of the anchor column | The shared right edge broke — the one thing a reader notices immediately. **Legacy only: Film Type has no shared anchor**, it scores placement per moment in `filmType/layout.ts:276–310` |
+| Contrast ≥ 5.6:1 (inside the plateau) | **The scrim did not render.** Not a grading problem — see below. The Film Type floor is 4.5:1 and is checked by `persian_film_verify` instead |
 
 The plateau geometry is ``stackHeightPx/2 + SCRIM_PLATEAU_MARGIN_PX=28`` around
 the optical centre (``computeMomentCentreFraction``: 44% vertical, 50%
@@ -363,6 +422,11 @@ measurement is scoped to (one per moment, from that moment's own fitted height).
 `check_gap_is_empty` remains zone-scoped — a gap has no scrim by design, so its
 accent-based check works on raw footage and must not be plateau-scoped.
 
+Film Type's equivalents are different numbers in a different file: a Reels safe area of
+14/35/8/16 (`film-type.json:10–15`), `upperCentre` 0.32 and `middleCentre` 0.56
+(`:94–95`), and `maxStackFraction` 0.6 (`:92`). Do not read a Legacy zone bound against
+a Film Type frame.
+
 The contrast floor is a derived guarantee, not a preference. `SCRIM.peakAlpha` is 0.72,
 so footage of brightness `f` composites to at most `0.28f`, capped at `255 · 0.28 = 71.4`
 for pure white footage. The three inks measured against 71.4 give 8.485:1 (primary),
@@ -370,6 +434,13 @@ for pure white footage. The three inks measured against 71.4 give 8.485:1 (prima
 arithmetically unreachable while the scrim is painting *inside the plateau*. A reading
 under it means the type is sitting directly on the clip. The brightest pixel in the
 real render's vertical plateau measures exactly 71.4, which is the scrim working.
+
+That derivation is what makes the Legacy floor a guarantee, and it is exactly what Film
+Type does not have: a per-row diffuse field is conditional local contrast, not a
+full-width alpha, so no arithmetic ceiling follows from it. `persian_film_verify`
+measures the composite instead of deriving it, against 4.5:1. A Film Type run that
+reports `contrast-review-required` is telling you that measurement, not the derivation,
+is the only evidence available.
 
 Contrast alone cannot catch a *missing* scrim, though, and that is the trap worth knowing:
 against dark footage, unscrimmed white type still measures 15:1 and passes. So
@@ -383,12 +454,19 @@ wrong sampling or a failed font, and both are worth distinguishing from a layout
 Under this model an empty frame is normal: text covers at most 55% of the runtime by
 design, so sample from the moment list's own timings and never at fixed intervals.
 
-### Reading order
+### Reading order — Legacy only
 
 The measurements above cannot see reversed text: «است فارسی متن این» occupies nearly the
 same pixels as the correct order.
 
-`check_moment_arrangement` reads it from geometry. Its signature changed with the
+`check_moment_arrangement` reads it from geometry, by locating the hero's rows through
+the accent colour. **It cannot run on a Film Type frame**, where every role is white:
+there is no accent mask to separate the hero from the neutral ink, so the check has
+nothing to compare. Report reading order as `not_checked` on Film Type and read the
+sampled frames yourself — a reversed phrase is instantly obvious to a Persian reader,
+which is why the pixel check was only ever a safety net.
+
+Its signature changed with the
 segment model, because the old arguments named things that no longer exist — there is
 no `unit` and no `label` to pass, and no `kind`-decided arrangement to assert. What it
 takes now is the moment's own authored role sequence:
@@ -407,7 +485,7 @@ for moment in edit_decisions["persian"]["moments"]:
 
 Run it on **every** moment, not one of them. The check no longer skips statements —
 under the slot model a statement had no accent and nothing to locate, so it was the one
-kind reading order was never verified on. Now every moment paints its hero in the
+kind reading order was never verified on. On Legacy every moment paints its hero in the
 accent, so every moment is verifiable, and the one you skip is the one that ships wrong.
 The one exception is a flat-hook moment (a segment carrying `accentWords`): its accent
 is inline on one or two words of a single block, so there is no accent block whose
@@ -429,7 +507,9 @@ It verifies, from the accent hero's rows against the neutral ink's rows:
 
 The hero is located by colour, which works here and nowhere else: the accent's channel
 spread is 180 against 5 for the primary ink, and under the scrim no footage channel can
-exceed 71 against the accent's red of 255.
+exceed 71 against the accent's red of 255. Both halves of that sentence are Legacy
+preconditions — an accent hue, and a scrim capping the footage — which is precisely why
+the check does not transfer.
 
 Isolating the *neutral* ink then means subtracting the accent — and the subtraction has
 to grow the accent mask first, because a glyph's antialiased rim is bright enough to be
@@ -442,7 +522,7 @@ run that left 43 stray pixels on the hero's own rows out to column 993, every on
 verifier accusing the thing it protects is the worst failure it can have; if you touch
 `_dilate`, `TestDilate` is what holds the shape.
 
-**What it cannot check: glyph order inside a word.** A string reversed character by
+**What no profile can check: glyph order inside a word.** A string reversed character by
 character produces ink of nearly the same extent. Correlating the ink profile against
 the expected string shaped in the same font was tried: in a clean PIL rendering the true
 profile beats its mirror by 0.86 correlation, and on the H.264 output that margin
@@ -453,7 +533,7 @@ is worse than none.
 Intra-word order is covered where it can be: `tests/contracts/test_persian_text_parity.py`
 pins normalization across both languages, and the composition sets each word as its own
 span with `unicodeBidi: "embed"`, so ordering is the browser's bidi implementation rather
-than arithmetic in this repo.
+than arithmetic in this repo. That holds for both profiles.
 
 ### Vertical rhythm — the gap is the thing the user sees
 
@@ -462,8 +542,14 @@ The shipped render's most-photographed defect was not reversed text or tofu; it 
 cause was invisible in every token: Estedad's line box is 1.665em while a Persian
 numeral's ink is ~0.97em, so stacking rows by their line boxes interleaves leading that
 belongs to no glyph, and the slack depends on which glyphs are in the string — the
-reason no line-height multiplier can fix it. The composition now trims rows to their
-measured ink, and `measure_stack_rhythm` is how you prove the trim survived the render:
+reason no line-height multiplier can fix it. That failure mode is a property of the
+font, so it threatens both profiles; the composition trims rows to their measured ink
+on both.
+
+`measure_stack_rhythm` is the **Legacy** proof that the trim survived the render — it
+needs the plateau to find its bands and the fitted lead size from the Legacy ladder, so
+it has no Film Type equivalent. On Film Type, check the gap by eye against the prepared
+row geometry, and report the rhythm as `not_checked`.
 
 ```python
 from lib.persian_verify import measure_stack_rhythm
@@ -500,9 +586,23 @@ passes.
 
 ### Watermark
 
-The watermark cannot be found by looking at one frame. It is white type at 0.6 opacity
+The watermark cannot be found by looking at one frame. It is white type at low opacity
 with no scrim behind it, so it composites to roughly `0.6·255 + 0.4·footage` — a value
-bright footage produces on its own. Pass a reference render with the mark removed:
+bright footage produces on its own. That much is true of both profiles, and so is the
+remedy: an ablation render.
+
+**Where the profiles diverge is whether the position is fixed.** On Legacy the mark has
+two positions from `WATERMARK_TOP_FRACTION` and four phases. On Film Type it *moves*:
+`planMovingBrand` in `remotion-composer/src/persian/filmType/watermark24.ts:7–44`
+schedules slots around the prepared moment rects, bounded by `maxRelocations` 5,
+`minDwellSeconds` 6 and `transitionSeconds` 0.3 from `film-type.json`, and it raises
+"No safe moving watermark schedule" rather than overlapping type. So on Film Type there
+is no single expected top fraction to pass in — take the slot boundaries from the
+prepared geometry, sample one frame inside each slot, and check the mark is where the
+schedule says and clear of that moment's rect. A single frame proves one slot, not the
+schedule.
+
+**Legacy:**
 
 ```python
 from lib.persian_verify import find_watermark, WATERMARK_TOP_FRACTION
@@ -532,20 +632,27 @@ Both positions sit above the moment zone in both formats — including at the bl
 
 Without a reference, `find_watermark` works on a **footage-free** render (`shots: []`)
 and refuses to guess on anything else. That is a cheap standalone check of all four
-phases and the migration path, and it needs no second render of the real video.
+phases and the migration path, and it needs no second render of the real video — and it
+is the cheapest way to inspect a Film Type schedule too, since an empty-footage render
+shows every slot the planner chose.
 
 Two things to know about the numbers it returns. On an MP4 pair the vertical extent is
 exact but the horizontal extent widens by tens of pixels, because H.264 scatters
 differences into neighbouring columns — enough for presence and clipping, not for
 measuring width. And the mark's own soft shadow forms a faint halo contiguous with the
 glyph rows, which is why the detector applies a floor relative to the strongest row;
-without it the reported extent grows from 14 rows to 89.
+without it the reported extent grows from 14 rows to 89. On Film Type the mark carries a
+glyph shadow with a wide halo by design (`watermark.glyphShadow` in `film-type.json`),
+so expect that halo to be larger, not absent.
+
+Bright-background legibility of the mark is reviewed separately, by eye. No check in
+either verifier certifies it.
 
 ### Sync and pacing — the numbers that were never measured
 
 Two properties of the timeline are checked by gates rather than pixels, and they are
 the two the shipped render got wrong, so they belong in the report even though no frame
-can show them:
+can show them. Both gates are profile-independent:
 
 - **Anchor sync.** Every moment records the narration words it is bound to, and
   `audit_sync` re-derives each moment's expected start from the word timings and
@@ -559,7 +666,9 @@ can show them:
   video measured 7-11 cps on every moment and passed its gate while the user could not
   read them, because the gate charged characters only and charged nothing for the
   entrance or for landing on the block. If a moment feels rushed at review, the number
-  to compare is that step's charge, not the raw cps.
+  to compare is that step's charge, not the raw cps. Note that the profiles' entrance
+  times differ (Film Type's is 0.56s from `film-type.json:139`) while the charged
+  fixation constant does not.
 
 Density targets for review: 7-9 moments per 60s, coverage ≤ 55%, every inter-moment gap
 ≥ 0.9s, and the first moment on screen within 0.6s — short-form feeds autoplay muted,
@@ -609,41 +718,48 @@ Do not apply it; it will "fail" every correct render.
 ### What must never ship
 
 Tofu boxes and reversed reading order. Both are immediately obvious to a Persian reader
-and both make the video look broken rather than imperfect. The measurements above catch
-each one specifically.
+and both make the video look broken rather than imperfect. On Legacy the measurements
+above catch each one specifically. On Film Type tofu is still caught by any ink
+measurement, but reversed order has no pixel check — so a Persian reader has to look at
+every sampled frame before delivery.
 
 ### Do not reinvent the pixel checks
 
 Each of these was implemented, measured against real renders, and abandoned. They are
-listed because every one of them looks correct until it is tested.
+listed because every one of them looks correct until it is tested. The traps are
+properties of footage and of H.264, so they apply on both profiles even where the
+quoted constant is Legacy.
 
 | Approach | What defeated it |
 |---|---|
 | `mask = a.max(axis=2) > 200` for text | Selects bright footage. Sun on water scores higher than the glyphs |
-| `min(channel) >= 225` for text | Neutral-and-bright rejects the accent `#FFC24B`, whose blue channel is 75 — i.e. every figure and every term |
+| `min(channel) >= 225` for text | Neutral-and-bright rejects the accent `#FFC24B`, whose blue channel is 75 — i.e. every figure and every term on Legacy |
 | Row-mean dip to find the darkened region | Over a gradient the row mean is dominated by the footage beside the type; the dip vanishes on a bright clip |
 | Per-column darkening ratio | Fails wherever a camera move means the footage above a column is not what would have been under it |
 | Ink-profile correlation for reading order | 0.86 margin in a clean rendering, 0.05-0.07 on the H.264 output — a confident answer from noise |
 | Brightness threshold for the watermark | 35% of one search band came back as "watermark" |
 | Local contrast for the watermark | Textured footage is bright pixels next to dark ones. False positive of 5003px against the mark's 792 |
 | Row-gradient energy | Footage detail beat the mark 26:1 against 21:1 |
-| Temporal invariance across frames | H.264 re-quantizes the static mark every frame, so it is not invariant in the output |
+| Temporal invariance across frames | H.264 re-quantizes the static mark every frame, so it is not invariant in the output — and on Film Type the mark is not static at all |
 | `measure_moment` on a gap frame | No scrim means `ink_mask` reads the footage: 31-99% "ink", and a confident scrim failure on a correctly empty frame |
 | Zone-wide `measure_moment` over real footage | The zone is 803px tall; the scrim plateau for a short moment is ~300px. Rows in the falloff (96–168) pass ``SCRIM_CEILING=95`` and fabricate lines at the zone edges — the rendered fix scopes the verifier to the plateau (``stackHeightPx/2+28``) |
 | Cross-shaped dilation to exclude the accent rim | A cross never covers a diagonal neighbour, so rim on every curve survives and reads as the unit — it failed a correct frame |
 | Ink brightness to check a gap is empty | The zone the type would occupy is ungraded in a gap, so any brightness test is a test of the clip |
 | Line-height arithmetic to predict the vertical gap | Estedad's slack depends on which glyphs are in the string; a numeral and «مسئله» differ by a third of an em, so no multiplier predicts both — only measuring the painted ink does |
 | Centred text detection by column symmetry | A ragged RTL block is asymmetric by design; symmetry checks fire on every correctly set moment |
+| Reusing the Legacy accent detector on a Film Type render | Film Type paints white ink, so the accent mask is empty and every accent-based verdict is about a colour that was never in the frame |
 
 What works instead does not detect the text at all — it computes where the text must be
-from `tokens.ts`, and uses the scrim's own alpha as the threshold that separates ink from
-footage. Neither half depends on what the footage is doing. And where there is no scrim to
-threshold against — the gaps, the watermark — the instrument changes rather than the
-threshold: colour separation for the accent, an ablation render for the mark, band-to-band
-empty rows for the rhythm.
+from the profile's own tokens, and uses a known alpha as the threshold that separates ink
+from footage. Neither half depends on what the footage is doing. And where there is no
+such alpha to threshold against — the gaps, the watermark, the whole Film Type surface —
+the instrument changes rather than the threshold: colour separation for the Legacy accent,
+an ablation render for the mark, band-to-band empty rows for the rhythm, and for Film Type
+a comparison against the prepared geometry plus an actual painted-node or frame QA.
 
-The working versions are all in `lib/persian_verify.py`, with the reasoning at each
-threshold. `tests/lib/test_persian_verify.py` builds frames whose correct answer is known
+The Legacy versions are all in `lib/persian_verify.py`, with the reasoning at each
+threshold; the Film Type verifier is `lib/persian_film_verify.py`.
+`tests/lib/test_persian_verify.py` builds frames whose correct answer is known
 by construction — synthetic bars where shape does not matter, real shaped Estedad where
 it does — and `tests/contracts/test_persian_geometry_parity.py` pins every geometry and
 scrim constant against `tokens.ts`, so the verifier cannot drift into measuring a zone
@@ -656,7 +772,9 @@ the type is not in or asserting a contrast the scrim no longer guarantees.
 | Symptom | Cause | Fix |
 |---|---|---|
 | Hangs, no frames | `delayRender` never resolved — font missing | Confirm `public/fonts/estedad/` exists and `--public-dir` was not overridden |
-| "does not fit" throw | A moment's stack exceeds the height budget even at the smallest rung | Shorten it at the edit stage — split the moment, or cut the lead; the ladder bottoms out at the last rung of `HERO_LADDER_PX` in `tokens.ts` and the fitter throws instead of going below it |
+| "does not fit" throw | A moment's stack exceeds the height budget even at the smallest rung | Shorten it at the edit stage — split the moment, or cut the lead; the ladder bottoms out at its last rung (`HERO_LADDER_PX` in `tokens.ts` on Legacy, the profile ladders in `film-type.json` on Film Type) and the fitter throws instead of going below it |
+| "No safe moving watermark schedule" | Film Type could not place the moving mark clear of every moment rect | An editorial fix: shorten or move a moment, or reduce the stack. Never widen the mark's clearance to make it fit |
+| "Unsupported Film Type tokens" | The resolved profile hash is not in the renderer's version map | The new version needs explicit versioned renderer support; do not force the hash |
 | Refused before rendering | A gate caught retired props, bad pacing, unanchored timings, or a missing music record | Read which rule the error names; fix the edit decisions, not the gate. Sync refusals → `retime_moments`; music refusals → the licence record |
 | Black beats | A shot's `source` did not resolve | `persian_compose` raises `FileNotFoundError` rather than rendering it; fix the path in the edit decisions |
 | Frame timeout | Large clip's first frame decode | Raise `timeout_ms` |
@@ -664,7 +782,8 @@ the type is not in or asserting a contrast the scrim no longer guarantees.
 Do **not** resolve a render failure by switching runtime. If Remotion is genuinely
 broken, raise a structured blocker. A HyperFrames swap produces fallback-font layout,
 which looks plausible and is wrong — and it discards the measurement guarantees that
-every check in this file depends on.
+every check in this file depends on. The same holds for the profile: do not resolve a
+Film Type refusal by falling back to Legacy.
 
 ## Render report contract
 
@@ -702,20 +821,34 @@ every check in this file depends on.
 }
 ```
 
-`persian_text_verified` is set by **you**, and only when all five measurements agree:
+The `verification_notes` above are a **Legacy** example — anchor offsets, a 5.6:1 floor,
+accent gap coverage and band rhythm are all Legacy quantities. A Film Type record reads
+differently: the `verify_film_frames` rect/contrast/shadow/composite result against the
+4.5:1 floor, the watermark slot schedule with each slot checked, the run's own warning
+list, and an explicit `not_checked` for reading order, gap emptiness and stack rhythm.
+
+`persian_text_verified` is set by **you**, never by a tool, and the bar depends on the
+profile. On Legacy it means all five measurements agree:
 `verify_frames(...)["passed"]` over every moment, `check_gap_is_empty` over every gap,
 `check_moment_arrangement` over **every moment** with its own `roles` list,
 `measure_stack_rhythm` over every moment with its own fitted lead size, and
-`find_watermark` reporting `found` and not `clipped_at_edge`. `persian_compose` returns
+`find_watermark` reporting `found` and not `clipped_at_edge`. On Film Type three of
+those five cannot run, so a green run is not sufficient evidence: do not set it from
+sampled checks. It needs `verify_film_frames` passing against the resolved props plus an
+actual painted-node or frame review of every moment. `persian_compose` returns
 it as `false` and cannot know otherwise — it renders, it does not look. Setting it true
-without those measurements defeats the only check that catches the failures this
+without that evidence defeats the only check that catches the failures this
 pipeline was built to prevent.
 
-`verification_notes` should carry the numbers, not adjectives: the anchor offsets, the
-contrast range, the line counts, the watermark's measured rows, the rhythm gaps, the
-sync drift. "Looks good" is not a verification record. Record what was **not** verified
-in the same list — intra-word glyph order — because a reader who sees only passes will
-assume they were covered.
+A green measurement run is not approval. Only the user's eyes approve a render, and a
+run that reports `contrast-review-required` or subject-enforcement warnings is asking
+for exactly that review rather than reporting a fault.
+
+`verification_notes` should carry the numbers, not adjectives: the measured contrast,
+the line counts, the watermark's measured rows or slots, the sync drift. "Looks good"
+is not a verification record. Record what was **not** verified
+in the same list — intra-word glyph order always, plus whatever the active profile has
+no instrument for — because a reader who sees only passes will assume they were covered.
 
 `text_coverage` is worth reading rather than skipping. It is the number that says whether
 this is a typographic edit or a caption track, and it is invisible in the MP4 without
