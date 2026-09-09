@@ -1,6 +1,6 @@
-## Film Type 2.8 current default
+## Film Type 2.11 current default
 
-Read `docs/persian-film-type-2.8-patch.md` before the historical guidance below.
+Read `docs/persian-film-type-2.11-patch.md` before the historical guidance below.
 Approved diffuse shadow now defaults to strong for every new moment. Vertical
 text and watermark use a conservative Reels safe area (14% top, 35% bottom,
 8% left, 16% right), not a generic 9:16 margin. Reprepare all geometry; never move
@@ -11,7 +11,7 @@ unchanged. 2.7 QA limitations still apply; safe-area success is not full approva
 
 ## Film Type 2.7 migration override
 
-For the current unpinned default, read `docs/persian-film-type-2.7-patch.md`
+For the 2.7 migration history, read `docs/persian-film-type-2.7-patch.md`
 BEFORE the historical guidance below. That guide owns diffuse shadow, region
 interpretation, diagnostic probes and version-aware QA. Pass resolved props to
 verify_frames; never apply Legacy scrim-ceiling/anchor/orange-gap rules to Film
@@ -22,9 +22,9 @@ pins unchanged; migrate only by fresh resolution and prepass.
 
 # Compose Director — Persian Footage Pipeline
 
-## Film Type 2.5 is the default path
+## Film Type 2.5 — historical default path
 
-Every persian-footage run renders Film Type 2.5 unless explicitly directed
+At the time, every persian-footage run rendered Film Type 2.5 unless explicitly directed
 elsewhere. Set `persian.design =
 {"version":2,"profile":"film-type","seed":"<project-id>-film-type-01"}` (seed
 auto-derived from the project id), then read
