@@ -1,0 +1,74 @@
+name: Apply Persian final-candidate protocol
+
+on:
+  push:
+    branches:
+      - feat/persian-final-candidate-review
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-persian-final-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/persian-final-candidate-review
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: make install-dev
+
+      - name: Apply protocol patch
+        run: python tools/dev/apply_persian_final_candidate.py
+
+      - name: Run focused protocol tests
+        run: >-
+          python -m pytest
+          tests/lib/test_persian_final_candidate_protocol.py
+          tests/lib/test_checkpoint_prerequisites.py
+          tests/lib/test_skill_version_drift.py
+          -q
+
+      - name: Validate patch
+        run: |
+          python -m py_compile lib/persian_preflight.py lib/checkpoint.py
+          git diff --check
+
+      - name: Commit permanent change and remove migration files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-persian-final-candidate.yml
+          git rm tools/dev/apply_persian_final_candidate.py
+          git add \
+            pipeline_defs/persian-footage.yaml \
+            lib/checkpoint.py \
+            lib/persian_preflight.py \
+            schemas/artifacts/render_report.schema.json \
+            skills/pipelines/persian-footage/final-candidate-protocol.md \
+            skills/pipelines/persian-footage/executive-producer.md \
+            skills/pipelines/persian-footage/asset-director.md \
+            skills/pipelines/persian-footage/edit-director.md \
+            skills/pipelines/persian-footage/compose-director.md \
+            skills/pipelines/persian-footage/film-type.md \
+            tests/lib/test_persian_final_candidate_protocol.py
+          git commit -m "feat: move Persian approval to final candidate"
+          git push origin HEAD:feat/persian-final-candidate-review
