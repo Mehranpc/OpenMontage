@@ -1,0 +1,93 @@
+name: Refine bounded footage acquisition v2
+
+on:
+  push:
+    branches:
+      - fix/bound-stock-footage-acquisition
+    paths:
+      - .github/workflows/refine-download-guardrails-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refine-test-and-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Apply, test, and commit or report
+        shell: bash
+        run: |
+          set -u
+          cat > /tmp/refine.py.gz.b64 <<'B64'
+          H4sICMVZomoAA3JlZmluZV9kb3dubG9hZF9ndWFyZHJhaWxzX3YyLnB5AN1W308jNxB+z1/h+oVd
+          GpbAgUSjplJKgoTEj9ORO1VKI8tZTxKX3fXK9h5BlP+9Y3uTbCBIV6730jzA2p4Zz8z3zYxnWuWk
+          5HaRySmReam0JR9x2Wq1BMyIhjLjKTBVpBA5sS4xVreJykT9VcCD/4rJwW/kRhXQbRH8laTn7Xil
+          2G9ZWFrcLRMNXDC3isJBqqrCnbitxC8itB/O5Kw+/qlHjoJp99NcGiCf8EDmMNRa6WhGYVlCakEQ
+          WPLUZo8EvSE5t+mCyII8OU+e22SuLHnyNp9puKNMHrS0EFzyTtRhOzd8hHGM+djKhVekVqnMHH6V
+          AtShkBpvZ2kmS2aA63SRlI+0HQTZYHjR/3w1Ytf9P9h5/2ZwOeiPhndsdDvqX2Hoxyd/Fv9Gll1c
+          fPx0+/uQfelfuePL2xs2urwe3n4esbvh+e3N4A4lj06Tjrcbf5f3e3t7jgus1GoKLAchec0Fh3Cb
+          7LeJg0FVFlVTVQjTJbNMces5IWRqx54qfo/8jWDYSYCyVkNXc1lEzt02AraMOsnRK5txTZZcoPi4
+          hU79aO805FwWspg7/1ZeebFot2/b4XwDRu3NHTui+27U3D9YplBaYqopJigFY5JR8HK4LFFbEG6c
+          zMvSYgMs0kwWMER9ECAiOpv5FHuLbofYBTRyJGoFGpOZayoo1mo4cCEzuFH2AgtP+IJdX9xE8l0e
+          y1nDjV975BsSv1H+ESE3bF47Pn7hmRTcSlWEVrV1+e5Ljk4PAreIZ/TB17WJFcvo2sq7Eo7kwsaG
+          Pc9Yg5Srq8gtmSz8bUxDZUCwGRpi0jABGWB3jXJV3MNj6foqllZeMt/iQ0aNqnQKaI/d+a/oiWIT
+          pl0yZikvhAsBIr8VT54D5fE6Y3mWsaC7bT7s1bWBLEcvpHajor6WHBLq9+m2SJLf4996voQ4UGtj
+          AdVKWEJmsLIgycsT2pCsx8H0EbMRTemSkn1y3Dk5C9Ya/iUGLLe2AWiuRJVBe72mzbZEN/sZz6eC
+          k33GsUHts/sueaIPUtgFpurol2Nsg3QBcr6wbt05c2tRaY8/7pwlnedgC1EMfpsqc31n4BvCOcZ5
+          59tBFCcYZlph1jHPZWVNtEpdm4w9EJO4NsKNAZz+wVZiqtTVHpGGjHQFOyQQSz4O2a+pQiek1yOd
+          N2XB0dDQybgzGdNywQ0EDbphN20qF8quIIGlRKJGcf0u8TytC4dlKuUZW7VkDX9hCsyGb+xB2oU7
+          STMusTHP2TxT041G9BJWLI7AZv8CcnW8FkXA9Nw4zO4f3Ff8sm8GAiRvNq91T6FtEkyM6aqgJzUQ
+          uxj2yi4yQlc427cdDBR1AZPS0RefMu7YrPR39qN2eCT16JutphHmylBz3PqHHl0n3NdT/Grs9j50
+          dsK3EuOWrRqqazcvQGok5f+LzssJtEZm18z5TzA5dZBg89/50nCz4TC8Nzxir58bLMOKsqbx0l3D
+          W3DDa49KDTPQhk3dLAI3WNArR7Ao7q7fvZtp9PM7rcStfwBMe4NNzgwAAA==
+          B64
+
+          status=0
+          sed 's/^          //' /tmp/refine.py.gz.b64 | base64 -d | gzip -d > /tmp/refine.py 2>/tmp/decode.log || status=$?
+          if [ "$status" -eq 0 ]; then
+            python /tmp/refine.py > /tmp/refine.log 2>&1 || status=$?
+          fi
+          if [ "$status" -eq 0 ]; then
+            python -m py_compile tools/video/direct_clip_search.py tests/tools/test_direct_clip_search_limits.py > /tmp/compile.log 2>&1 || status=$?
+          fi
+          if [ "$status" -eq 0 ]; then
+            make install-dev > /tmp/install.log 2>&1 || status=$?
+          fi
+          if [ "$status" -eq 0 ]; then
+            .venv/bin/python -m pytest tests/tools/test_direct_clip_search_limits.py tests/tools/test_stock_source_adapters.py -q > /tmp/tests.log 2>&1 || status=$?
+          fi
+          if [ "$status" -eq 0 ]; then
+            make lint > /tmp/lint.log 2>&1 || status=$?
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ "$status" -eq 0 ]; then
+            git add tools/video/direct_clip_search.py tests/tools/test_direct_clip_search_limits.py
+            git diff --cached --check
+            git commit -m "fix: distinguish validation and deadline timeouts"
+          else
+            git restore tools/video/direct_clip_search.py tests/tools/test_direct_clip_search_limits.py
+            {
+              echo "status=$status"
+              for log in /tmp/decode.log /tmp/refine.log /tmp/compile.log /tmp/install.log /tmp/tests.log /tmp/lint.log; do
+                if [ -f "$log" ]; then
+                  echo "--- $log"
+                  tail -n 80 "$log"
+                fi
+              done
+            } > .refine-download-guardrails-diagnostic.txt
+            git add .refine-download-guardrails-diagnostic.txt
+            git commit -m "test: record guardrail refinement failure"
+          fi
+          git push origin HEAD:fix/bound-stock-footage-acquisition
