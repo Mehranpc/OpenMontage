@@ -16,7 +16,7 @@ permissions:
 jobs:
   materialize-test-and-commit:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,58 +32,191 @@ jobs:
           cache: npm
           cache-dependency-path: remotion-composer/package-lock.json
 
-      - name: Reconstruct and apply patch
+      - name: Materialize, verify, and record result
+        shell: bash
         run: |
-          cat brand-lock.b64.part-* | tr -d '\n' | base64 -d | gzip -d > /tmp/apply_brand_exact_lock.py
-          python -m py_compile /tmp/apply_brand_exact_lock.py
-          python /tmp/apply_brand_exact_lock.py
+          set +e
 
-      - name: Compile changed Python
-        run: |
-          python -m py_compile \
-            lib/persian_brand.py \
-            lib/persian_moments.py \
-            tools/video/persian_compose.py \
-            tests/lib/test_persian_brand.py \
-            tests/lib/test_persian_film_type.py
+          cat brand-lock.b64.part-* \
+            | tr -d '\n' \
+            | base64 -d \
+            | gzip -d \
+            > /tmp/apply_brand_exact_lock.py 2> /tmp/decode.log
+          decode_status=$?
 
-      - name: Install Python and Node dependencies
-        run: |
-          make install-dev
-          npm ci --prefix remotion-composer
+          actual_sha="$(sha256sum /tmp/apply_brand_exact_lock.py 2>/dev/null | awk '{print $1}')"
+          expected_sha="3ff30db8eca9357db1149545930212b051fbce4c0d4c50e6a77004c10a349188"
+          if [ "$decode_status" -eq 0 ] && [ "$actual_sha" = "$expected_sha" ]; then
+            sha_status=0
+          else
+            sha_status=1
+          fi
 
-      - name: Run focused and representative tests
-        run: |
-          .venv/bin/python -m pytest \
-            tests/lib/test_persian_brand.py \
-            tests/lib/test_persian_film_type.py \
-            tests/lib/test_persian_gates.py \
-            tests/contracts/test_persian_text_parity.py -q | tee /tmp/pytest.log
-          cd remotion-composer
-          ./node_modules/.bin/tsc --noEmit | tee /tmp/tsc.log
+          python -m py_compile /tmp/apply_brand_exact_lock.py \
+            > /tmp/generator-compile.log 2>&1
+          generator_compile_status=$?
 
-      - name: Run lint
-        run: make lint | tee /tmp/lint.log
+          if [ "$sha_status" -eq 0 ] && [ "$generator_compile_status" -eq 0 ]; then
+            python /tmp/apply_brand_exact_lock.py \
+              > /tmp/materialize.log 2>&1
+            materialize_status=$?
+          else
+            materialize_status=125
+            echo "Skipped because decode, checksum, or generator compile failed." \
+              > /tmp/materialize.log
+          fi
 
-      - name: Commit verified implementation
-        run: |
+          if [ "$materialize_status" -eq 0 ]; then
+            python -m py_compile \
+              lib/persian_brand.py \
+              lib/persian_moments.py \
+              tools/video/persian_compose.py \
+              tests/lib/test_persian_brand.py \
+              tests/lib/test_persian_film_type.py \
+              > /tmp/changed-python-compile.log 2>&1
+            changed_python_compile_status=$?
+          else
+            changed_python_compile_status=125
+            echo "Skipped because materialization failed." \
+              > /tmp/changed-python-compile.log
+          fi
+
+          make install-dev > /tmp/install-dev.log 2>&1
+          install_dev_status=$?
+
+          npm ci --prefix remotion-composer > /tmp/npm-ci.log 2>&1
+          npm_ci_status=$?
+
+          if [ "$materialize_status" -eq 0 ] && [ "$install_dev_status" -eq 0 ]; then
+            .venv/bin/python -m pytest \
+              tests/lib/test_persian_brand.py \
+              tests/lib/test_persian_film_type.py \
+              tests/lib/test_persian_gates.py \
+              tests/contracts/test_persian_text_parity.py -q \
+              > /tmp/focused-pytest.log 2>&1
+            focused_pytest_status=$?
+
+            .venv/bin/python -m pytest tests/lib/ -q \
+              > /tmp/lib-pytest.log 2>&1
+            lib_pytest_status=$?
+
+            OPENMONTAGE_BROWSER_TESTS=1 \
+              .venv/bin/python -m unittest \
+              tests.lib.test_persian_ranked_browser -q \
+              > /tmp/browser-tests.log 2>&1
+            browser_tests_status=$?
+          else
+            focused_pytest_status=125
+            lib_pytest_status=125
+            browser_tests_status=125
+            echo "Skipped because materialization or Python dependency installation failed." \
+              > /tmp/focused-pytest.log
+            cp /tmp/focused-pytest.log /tmp/lib-pytest.log
+            cp /tmp/focused-pytest.log /tmp/browser-tests.log
+          fi
+
+          if [ "$materialize_status" -eq 0 ] && [ "$npm_ci_status" -eq 0 ]; then
+            (
+              cd remotion-composer
+              ./node_modules/.bin/tsc --noEmit
+            ) > /tmp/tsc.log 2>&1
+            tsc_status=$?
+          else
+            tsc_status=125
+            echo "Skipped because materialization or Node dependency installation failed." \
+              > /tmp/tsc.log
+          fi
+
+          if [ "$materialize_status" -eq 0 ] && [ "$install_dev_status" -eq 0 ]; then
+            make lint > /tmp/lint.log 2>&1
+            lint_status=$?
+          else
+            lint_status=125
+            echo "Skipped because materialization or Python dependency installation failed." \
+              > /tmp/lint.log
+          fi
+
+          statuses=(
+            "$decode_status"
+            "$sha_status"
+            "$generator_compile_status"
+            "$materialize_status"
+            "$changed_python_compile_status"
+            "$install_dev_status"
+            "$npm_ci_status"
+            "$focused_pytest_status"
+            "$lib_pytest_status"
+            "$browser_tests_status"
+            "$tsc_status"
+            "$lint_status"
+          )
+          result=success
+          for status in "${statuses[@]}"; do
+            if [ "$status" -ne 0 ]; then
+              result=failure
+            fi
+          done
+
+          if [ "$result" = success ]; then
+            marker=.brand-lock-verification.txt
+          else
+            marker=.brand-lock-diagnostics.txt
+          fi
+
           {
-            echo "verified_head=$(git rev-parse HEAD)"
+            echo "result=$result"
+            echo "input_head=$(git rev-parse HEAD)"
             echo "python=$(python --version 2>&1)"
-            echo "node=$(node --version)"
-            echo "pytest_summary=$(tail -n 1 /tmp/pytest.log)"
-            echo "tsc=passed"
-            echo "lint=passed"
-          } > .brand-lock-verification.txt
-          git config user.name "github-actions[bot]]"
+            echo "node=$(node --version 2>&1)"
+            echo "generator_expected_sha=$expected_sha"
+            echo "generator_actual_sha=$actual_sha"
+            echo "decode_status=$decode_status"
+            echo "sha_status=$sha_status"
+            echo "generator_compile_status=$generator_compile_status"
+            echo "materialize_status=$materialize_status"
+            echo "changed_python_compile_status=$changed_python_compile_status"
+            echo "install_dev_status=$install_dev_status"
+            echo "npm_ci_status=$npm_ci_status"
+            echo "focused_pytest_status=$focused_pytest_status"
+            echo "lib_pytest_status=$lib_pytest_status"
+            echo "browser_tests_status=$browser_tests_status"
+            echo "tsc_status=$tsc_status"
+            echo "lint_status=$lint_status"
+            echo "worktree_before_commit:"
+            git status --short
+            for log in \
+              /tmp/decode.log \
+              /tmp/generator-compile.log \
+              /tmp/materialize.log \
+              /tmp/changed-python-compile.log \
+              /tmp/install-dev.log \
+              /tmp/npm-ci.log \
+              /tmp/focused-pytest.log \
+              /tmp/lib-pytest.log \
+              /tmp/browser-tests.log \
+              /tmp/tsc.log \
+              /tmp/lint.log; do
+              echo "===== $log (tail) ====="
+              tail -n 80 "$log" 2>/dev/null || true
+            done
+          } > "$marker"
+
+          git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -u
-          git add lib/persian_brand.py tests/lib/test_persian_brand.py .brand-lock-verification.txt
-          git diff --cached --check
-          {
-            echo "changed_files:"
-            git diff --cached --name-only
-          } >> .brand-lock-verification.txt
-          git add .brand-lock-verification.txt
-          git commit -m "fix: lock Persian brand and exact display text"
+
+          if [ "$result" = success ]; then
+            git add -u
+            git add lib/persian_brand.py tests/lib/test_persian_brand.py "$marker"
+            git diff --cached --check
+            {
+              echo "changed_files:"
+              git diff --cached --name-only
+            } >> "$marker"
+            git add "$marker"
+            git commit -m "fix: lock Persian brand and exact display text"
+          else
+            git add "$marker"
+            git commit -m "chore: record Persian brand materialization failure"
+          fi
+
           git push origin HEAD:fix/lock-persian-brand-exact-text
