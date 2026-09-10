@@ -1,0 +1,6 @@
+verified_head=d7a74d04545ba4b2de7c494a04c86c85af380b6b
+python=Python 3.11.16
+commands=pytest tests/lib; focused stock tests; make lint
+tests_lib_summary=443 passed, 13 skipped, 79 subtests passed in 15.95s
+tests_tools_summary=42 passed, 3 xfailed in 0.21s
+lint_summary=.venv/bin/python -m py_compile tools/analysis/composition_validator.py
