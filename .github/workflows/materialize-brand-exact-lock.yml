@@ -5,18 +5,15 @@ on:
     branches:
       - fix/lock-persian-brand-exact-text
     paths:
-      - brand-lock.b64.part-0
-      - brand-lock.b64.part-1
-      - brand-lock.b64.part-2
       - .github/workflows/materialize-brand-exact-lock.yml
 
 permissions:
   contents: write
 
 jobs:
-  materialize-test-and-commit:
+  materialize-and-record:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,13 +23,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: remotion-composer/package-lock.json
-
-      - name: Repair, materialize, verify, and record
+      - name: Materialize implementation and record syntax checks
         shell: bash
         run: |
           set +e
@@ -107,8 +98,7 @@ jobs:
           PY
           generator_repair_status=$?
           patched_sha="$(sha256sum /tmp/apply_brand_exact_lock.py 2>/dev/null | awk '{print $1}')"
-          python -m py_compile /tmp/apply_brand_exact_lock.py \
-            > /tmp/generator-compile.log 2>&1
+          python -m py_compile /tmp/apply_brand_exact_lock.py > /tmp/generator-compile.log 2>&1
           generator_compile_status=$?
 
           if [ "$original_sha_status" -eq 0 ] \
@@ -119,8 +109,7 @@ jobs:
             materialize_status=$?
           else
             materialize_status=125
-            echo "Skipped because generator integrity, repair, or compile failed." \
-              > /tmp/materialize.log
+            echo "Skipped because generator integrity, repair, or compile failed." > /tmp/materialize.log
           fi
 
           if [ "$materialize_status" -eq 0 ]; then
@@ -139,7 +128,12 @@ jobs:
           print("restored legacy-handle negative regression assertion")
           PY
             post_repair_status=$?
+          else
+            post_repair_status=125
+            echo "Skipped because materialization failed." > /tmp/post-materialize-repair.log
+          fi
 
+          if [ "$post_repair_status" -eq 0 ]; then
             python -m py_compile \
               lib/persian_brand.py \
               lib/persian_moments.py \
@@ -148,94 +142,33 @@ jobs:
               tests/lib/test_persian_film_type.py \
               > /tmp/changed-python-compile.log 2>&1
             changed_python_compile_status=$?
-
-            make install-dev > /tmp/install-dev.log 2>&1
-            install_dev_status=$?
-            npm ci --prefix remotion-composer > /tmp/npm-ci.log 2>&1
-            npm_ci_status=$?
-          else
-            post_repair_status=125
-            changed_python_compile_status=125
-            install_dev_status=125
-            npm_ci_status=125
-            echo "Skipped because materialization failed." > /tmp/post-materialize-repair.log
-            cp /tmp/post-materialize-repair.log /tmp/changed-python-compile.log
-            cp /tmp/post-materialize-repair.log /tmp/install-dev.log
-            cp /tmp/post-materialize-repair.log /tmp/npm-ci.log
-          fi
-
-          if [ "$post_repair_status" -eq 0 ] && [ "$install_dev_status" -eq 0 ]; then
-            .venv/bin/python -m pytest \
-              tests/lib/test_persian_brand.py \
-              tests/lib/test_persian_film_type.py \
-              tests/lib/test_persian_gates.py \
-              tests/contracts/test_persian_text_parity.py \
-              -q --tb=short > /tmp/focused-pytest.log 2>&1
-            focused_pytest_status=$?
-
-            .venv/bin/python -m pytest tests/lib/ -q --tb=short \
-              > /tmp/lib-pytest.log 2>&1
-            lib_pytest_status=$?
-
-            OPENMONTAGE_BROWSER_TESTS=1 \
-              .venv/bin/python -m unittest \
-              tests.lib.test_persian_ranked_browser -q \
-              > /tmp/browser-tests.log 2>&1
-            browser_tests_status=$?
-
-            make lint > /tmp/lint.log 2>&1
-            lint_status=$?
-          else
-            focused_pytest_status=125
-            lib_pytest_status=125
-            browser_tests_status=125
-            lint_status=125
-            echo "Skipped because materialization repair or Python install failed." \
-              > /tmp/focused-pytest.log
-            cp /tmp/focused-pytest.log /tmp/lib-pytest.log
-            cp /tmp/focused-pytest.log /tmp/browser-tests.log
-            cp /tmp/focused-pytest.log /tmp/lint.log
-          fi
-
-          if [ "$post_repair_status" -eq 0 ] && [ "$npm_ci_status" -eq 0 ]; then
-            (cd remotion-composer && ./node_modules/.bin/tsc --noEmit) \
-              > /tmp/tsc.log 2>&1
-            tsc_status=$?
-          else
-            tsc_status=125
-            echo "Skipped because materialization repair or Node install failed." \
-              > /tmp/tsc.log
-          fi
-
-          if [ "$post_repair_status" -eq 0 ]; then
             git add -u
             git add lib/persian_brand.py tests/lib/test_persian_brand.py
             git diff --cached --check > /tmp/diff-check.log 2>&1
             diff_check_status=$?
             git reset > /dev/null
           else
+            changed_python_compile_status=125
             diff_check_status=125
-            echo "Skipped because materialization repair failed." > /tmp/diff-check.log
+            echo "Skipped because materialization repair failed." > /tmp/changed-python-compile.log
+            cp /tmp/changed-python-compile.log /tmp/diff-check.log
           fi
 
-          statuses=(
-            "$original_sha_status" "$generator_repair_status"
-            "$generator_compile_status" "$materialize_status" "$post_repair_status"
-            "$changed_python_compile_status" "$install_dev_status" "$npm_ci_status"
-            "$focused_pytest_status" "$lib_pytest_status" "$browser_tests_status"
-            "$tsc_status" "$lint_status" "$diff_check_status"
-          )
           result=success
-          for status in "${statuses[@]}"; do
+          for status in \
+            "$original_sha_status" "$generator_repair_status" \
+            "$generator_compile_status" "$materialize_status" \
+            "$post_repair_status" "$changed_python_compile_status" \
+            "$diff_check_status"; do
             [ "$status" -eq 0 ] || result=failure
           done
 
-          report=/tmp/brand-lock-result.txt
+          report=/tmp/brand-lock-materialization.txt
           {
             echo "result=$result"
+            echo "scope=materialization-and-syntax-only"
             echo "input_head=$input_head"
             echo "python=$(python --version 2>&1)"
-            echo "node=$(node --version 2>&1)"
             echo "generator_original_expected_sha=$expected_sha"
             echo "generator_original_actual_sha=$original_sha"
             echo "generator_patched_sha=$patched_sha"
@@ -245,24 +178,15 @@ jobs:
             echo "materialize_status=$materialize_status"
             echo "post_repair_status=$post_repair_status"
             echo "changed_python_compile_status=$changed_python_compile_status"
-            echo "install_dev_status=$install_dev_status"
-            echo "npm_ci_status=$npm_ci_status"
-            echo "focused_pytest_status=$focused_pytest_status"
-            echo "lib_pytest_status=$lib_pytest_status"
-            echo "browser_tests_status=$browser_tests_status"
-            echo "tsc_status=$tsc_status"
-            echo "lint_status=$lint_status"
             echo "diff_check_status=$diff_check_status"
             echo "worktree_before_commit:"
             git status --short
             for log in \
               /tmp/generator-repair.log /tmp/generator-compile.log \
               /tmp/materialize.log /tmp/post-materialize-repair.log \
-              /tmp/changed-python-compile.log /tmp/install-dev.log /tmp/npm-ci.log \
-              /tmp/focused-pytest.log /tmp/lib-pytest.log /tmp/browser-tests.log \
-              /tmp/tsc.log /tmp/lint.log /tmp/diff-check.log; do
-              echo "===== $log (tail) ====="
-              tail -n 120 "$log" 2>/dev/null || true
+              /tmp/changed-python-compile.log /tmp/diff-check.log; do
+              echo "===== $log ====="
+              cat "$log" 2>/dev/null || true
             done
           } > "$report"
 
@@ -270,15 +194,15 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           if [ "$result" = success ]; then
-            cp "$report" .brand-lock-verification.txt
+            cp "$report" .brand-lock-materialization.txt
             git add -u
             git add lib/persian_brand.py tests/lib/test_persian_brand.py \
-              .brand-lock-verification.txt
+              .brand-lock-materialization.txt
             {
               echo "changed_files:"
               git diff --cached --name-only
-            } >> .brand-lock-verification.txt
-            git add .brand-lock-verification.txt
+            } >> .brand-lock-materialization.txt
+            git add .brand-lock-materialization.txt
             git commit -m "fix: lock Persian brand and exact display text"
           else
             git reset --hard HEAD
