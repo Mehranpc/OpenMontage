@@ -422,10 +422,12 @@ def test_the_declared_moment_fields_match_the_renderer_type() -> None:
 
     ts_fields = set()
     for line in body.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("readonly "):
+        # Only two-space-indented members belong to PersianMoment itself.
+        # Nested members (for example exactText.text/sha256) are properties of
+        # their inline object and must not be compared with moment-level schema keys.
+        if not line.startswith("  readonly "):
             continue
-        name = stripped[len("readonly ") :].split(":", 1)[0]
+        name = line[len("  readonly ") :].split(":", 1)[0]
         ts_fields.add(name.rstrip("?"))
 
     schema_fields = set(
