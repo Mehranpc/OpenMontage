@@ -5,6 +5,7 @@ import hashlib
 import pytest
 
 from lib.persian_srt_alignment import SubtitleAlignmentError, build_script_aligned_cues
+from tools.video.persian_compose_script_aligned import ScriptAlignedPersianCompose
 
 
 def approved(text: str, policy: str = "exact", max_cps: float = 21.0) -> dict:
@@ -138,10 +139,8 @@ def test_uncovered_or_overlapping_timing_is_rejected() -> None:
 
 
 def test_compose_preflight_requires_approved_script_for_narrated_srt() -> None:
-    from tools.video.persian_compose import PersianCompose
-
     with pytest.raises(ValueError, match="approvedScript"):
-        PersianCompose._aligned_subtitle_cues({
+        ScriptAlignedPersianCompose._aligned_subtitle_cues({
             "audio": {
                 "wordTimings": timed(["متن", "خام"]),
             }
@@ -149,19 +148,31 @@ def test_compose_preflight_requires_approved_script_for_narrated_srt() -> None:
 
 
 def test_compose_writes_only_approved_copy(tmp_path) -> None:
-    from tools.video.persian_compose import PersianCompose
-
     script = "درخواست کردن درست است."
     persian = {
+        "_approvedSubtitleScript": approved(script),
         "audio": {
-            "approvedScript": approved(script),
             "wordTimings": timed(["درخواست", "گردن", "درست", "است."]),
-        }
+        },
     }
     output = tmp_path / "final.mp4"
-    subtitle_path, advisories = PersianCompose._write_subtitles(persian, output)
+    subtitle_path, advisories = ScriptAlignedPersianCompose._write_subtitles(
+        persian, output
+    )
     assert subtitle_path == str(tmp_path / "final.srt")
     assert advisories == []
     assert (tmp_path / "final.srt").read_text(encoding="utf-8-sig").endswith(
         "درخواست کردن درست است.\r\n"
     )
+
+
+def test_registered_tool_name_and_version_are_preserved() -> None:
+    assert issubclass(
+        ScriptAlignedPersianCompose,
+        __import__(
+            "tools.video.persian_compose",
+            fromlist=["PersianCompose"],
+        ).PersianCompose,
+    )
+    assert ScriptAlignedPersianCompose.name == "persian_compose"
+    assert ScriptAlignedPersianCompose.version == "0.3.0"
