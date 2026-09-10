@@ -376,7 +376,6 @@ def test_direct_clip_search_reports_downloaded_clip_when_thumbnail_times_out(
         def download(self, candidate, out_path: Path):
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out_path.write_bytes(b"0" * 2048)
-            clock["now"] = 2.0
             return out_path
 
     source = SlowThumbnailSource("thumb_source", True)
@@ -393,6 +392,25 @@ def test_direct_clip_search_reports_downloaded_clip_when_thumbnail_times_out(
         },
     )
     monkeypatch.setattr(direct_clip_search.time, "time", lambda: clock["now"])
+    monkeypatch.setattr(
+        direct_clip_search,
+        "_probe_media",
+        lambda _path, *, timeout_seconds: {
+            "duration": 4.0,
+            "width": 1920,
+            "height": 1080,
+        },
+    )
+
+    def timeout_thumbnail(_video_path, _thumb_path, *, timeout_seconds):
+        clock["now"] = 2.0
+        raise direct_clip_search._DeadlineExceeded("thumbnail deadline")
+
+    monkeypatch.setattr(
+        direct_clip_search,
+        "_extract_mid_thumbnail",
+        timeout_thumbnail,
+    )
 
     result = DirectClipSearch().execute(
         {
