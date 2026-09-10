@@ -5,6 +5,8 @@ import hashlib
 import pytest
 
 from lib.persian_srt_alignment import SubtitleAlignmentError, build_script_aligned_cues
+from tools.tool_registry import ToolRegistry
+from tools.video.persian_compose import PersianCompose
 from tools.video.persian_compose_script_aligned import ScriptAlignedPersianCompose
 
 
@@ -66,13 +68,19 @@ def test_three_questions_cover_speech_instead_of_leaving_a_5_18_second_gap() -> 
         "چرا زیاد عذرخواهی می‌کنی؟ چه چیزی پشت این عادت است؟ "
         "چطور می‌توانی روشن‌تر حرف بزنی؟"
     )
+    # The final word ends at 7.90s. The rejected hand-repair packed all three
+    # questions into a cue ending at 2.72s, leaving exactly 5.18s of speech bare.
     asr = timed([
         "چرا", "زیاد", "عذرخواهی", "می", "کنی؟",
         "چه", "چیزی", "پشت", "این", "عادت", "است؟",
         "چطور", "می", "توانی", "روشن", "تر", "حرف", "بزنی؟",
-    ], duration=0.42, gap=0.04)
+    ], duration=0.38, gap=1.06 / 17)
+    assert asr[-1]["end"] == pytest.approx(7.90)
+    assert asr[-1]["end"] - 2.72 == pytest.approx(5.18)
+
     cues = build_script_aligned_cues(approved(script), asr)
     assert joined(cues) == script
+    assert cues[-1].end_seconds == pytest.approx(asr[-1]["end"])
     for word in asr:
         midpoint = (word["start"] + word["end"]) / 2
         assert any(
@@ -147,6 +155,30 @@ def test_compose_preflight_requires_approved_script_for_narrated_srt() -> None:
         })
 
 
+def test_execute_injects_schema_valid_metadata_without_mutating_artifact(
+    monkeypatch,
+) -> None:
+    script = "متن روشن است."
+    record = approved(script)
+    captured = {}
+
+    def capture_execute(_self, inputs):
+        captured.update(inputs)
+        return inputs
+
+    monkeypatch.setattr(PersianCompose, "execute", capture_execute)
+    inputs = {
+        "edit_decisions": {
+            "metadata": {"persianSubtitleScript": record},
+            "persian": {"audio": {"wordTimings": timed(script.split())}},
+        }
+    }
+    ScriptAlignedPersianCompose().execute(inputs)
+    runtime_persian = captured["edit_decisions"]["persian"]
+    assert runtime_persian["_approvedSubtitleScript"] == record
+    assert "_approvedSubtitleScript" not in inputs["edit_decisions"]["persian"]
+
+
 def test_compose_writes_only_approved_copy(tmp_path) -> None:
     script = "درخواست کردن درست است."
     persian = {
@@ -161,18 +193,21 @@ def test_compose_writes_only_approved_copy(tmp_path) -> None:
     )
     assert subtitle_path == str(tmp_path / "final.srt")
     assert advisories == []
-    assert (tmp_path / "final.srt").read_text(encoding="utf-8-sig").endswith(
-        "درخواست کردن درست است.\r\n"
-    )
+    data = (tmp_path / "final.srt").read_bytes()
+    assert data.startswith(b"\xef\xbb\xbf")
+    assert data.decode("utf-8-sig").endswith("درخواست کردن درست است.\r\n")
+    assert "درخواست گردن" not in data.decode("utf-8-sig")
+
+
+def test_registry_discovers_the_stricter_existing_tool_name() -> None:
+    registry = ToolRegistry()
+    registry.discover("tools.video")
+    selected = registry.get("persian_compose")
+    assert isinstance(selected, ScriptAlignedPersianCompose)
+    assert selected.version == "0.3.0"
 
 
 def test_registered_tool_name_and_version_are_preserved() -> None:
-    assert issubclass(
-        ScriptAlignedPersianCompose,
-        __import__(
-            "tools.video.persian_compose",
-            fromlist=["PersianCompose"],
-        ).PersianCompose,
-    )
+    assert issubclass(ScriptAlignedPersianCompose, PersianCompose)
     assert ScriptAlignedPersianCompose.name == "persian_compose"
     assert ScriptAlignedPersianCompose.version == "0.3.0"
