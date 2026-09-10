@@ -56,7 +56,7 @@ result = registry.get("direct_clip_search").execute({
         # Resolution floor *and* ceiling in one number — see below.
         "min_width": 1080,
     },
-    "output_dir": str(project_dir / "assets" / "clips"),
+    "output_dir": str(project_dir / "assets"),
     "clips_per_query": 1,
     "max_candidates_total": 16,
     "max_bytes_per_clip": 100663296,       # 96 MiB

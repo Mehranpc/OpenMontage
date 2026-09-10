@@ -77,7 +77,7 @@ Agent reads pipeline manifest (YAML) -> reads stage director skill (MD)
 -> checkpoints (Python utility) -> presents to human for approval
 ```
 
-**Python = tools + persistence.** No orchestration logic, creative decisions, review logic, or checkpoint policy in Python code. The agent makes those decisions guided by instructions.
+**Python = tools + persistence by default.** Do not add orchestration logic, creative decisions, review logic, or checkpoint policy to Python unless a pipeline contract explicitly assigns a bounded workflow envelope to code. The `persian-video` front door is such an exception: code owns progression/budgets/isolation while the agent still owns constrained creative decisions and canonical checkpoints remain authoritative.
 
 Core loop:
 
@@ -180,7 +180,9 @@ This applies especially to:
 
 ## Orchestrator
 
-The agent itself orchestrates the production state machine:
+The agent itself orchestrates the production state machine unless an explicit front-door contract assigns the bounded progression envelope to code. For `persian-video`, follow `skills/persian-video/SKILL.md` and `lib/persian_video_workflow.py`; do not infer or reorder its progression from this generic section.
+
+Generic pipeline progression:
 
 `research -> proposal -> script -> scene_plan -> assets -> edit -> compose`
 
@@ -269,6 +271,13 @@ If the folder has tracks, the proposal and asset stages should present them as o
 > way that reads as carelessness to any Persian speaker. `persian-footage` measures every
 > line against Estedad and breaks it with a Persian-aware algorithm. It renders video
 > footage only; still images are rejected by a gate.
+>
+> **Fresh Persian production entry point:** when a new session starts from narration
+> audio, an approved Persian script, raw text, or an English article, read
+> `skills/persian-video/SKILL.md` first. `lib/persian_video_workflow.py` owns only the
+> bounded workflow envelope (fresh-project bootstrap, progression, isolation, retries,
+> acquisition budgets, and terminal stop); canonical stage execution and checkpoint
+> truth remain in `persian-footage` contracts and `lib/checkpoint.py`.
 
 ## Mandatory Preflight
 
