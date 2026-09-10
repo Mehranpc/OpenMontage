@@ -878,6 +878,35 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "exactText": {
+                "type": "object",
+                "description": "Byte-exact display record for strict copy. The non-source segment texts, joined by one ASCII space, must equal text exactly; no punctuation, Unicode, whitespace, or digit normalization is allowed.",
+                "required": [
+                  "text",
+                  "sha256",
+                  "encoding",
+                  "normalization"
+                ],
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "encoding": {
+                    "type": "string",
+                    "const": "utf-8"
+                  },
+                  "normalization": {
+                    "type": "string",
+                    "const": "none"
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "additionalProperties": false
@@ -989,6 +1018,68 @@
             "latinText": {
               "type": "string",
               "description": "Latin side, rendered in an explicit LTR span."
+            },
+            "brandProfile": {
+              "type": "string",
+              "enum": [
+                "pathway-of-surrender-v1",
+                "authorized-override"
+              ]
+            },
+            "textHashes": {
+              "type": "object",
+              "required": [
+                "algorithm",
+                "persianText",
+                "latinText"
+              ],
+              "properties": {
+                "algorithm": {
+                  "type": "string",
+                  "const": "sha256-utf8"
+                },
+                "persianText": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "latinText": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "additionalProperties": false
+            },
+            "overrideAuthorization": {
+              "type": "object",
+              "required": [
+                "authorized",
+                "source",
+                "decisionId",
+                "reason"
+              ],
+              "properties": {
+                "authorized": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "source": {
+                  "type": "string",
+                  "const": "explicit_user_response"
+                },
+                "decisionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "recordedAt": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false

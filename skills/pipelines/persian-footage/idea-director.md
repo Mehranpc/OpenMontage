@@ -191,7 +191,7 @@ is measured against: a beat that does not serve it does not belong.
   ],
   "watermark": {
     "persian_text": "طریقت تسلیم",
-    "latin_text": "@Pathway_of_Surrender"
+    "latin_text": "Pathway_of_Surrender"
   },
   "music_plan": "ambient, low, no percussion"
 }

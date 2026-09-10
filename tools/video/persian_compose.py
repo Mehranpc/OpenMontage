@@ -54,6 +54,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Optional
 
+from lib.persian_brand import resolve_watermark
 from lib.persian_design import derive_lockup_size, prepare_v2, resolve_watermark_plan
 from lib.persian_film_type import prepare_film_type_props
 from lib.persian_moments import (
@@ -500,6 +501,7 @@ class PersianCompose(BaseTool):
                 black beat that nobody notices until review costs a whole render.
             ValueError: when required timing data is missing.
         """
+        watermark = resolve_watermark(persian.get("watermark"))
         staging_dir.mkdir(parents=True, exist_ok=True)
         attributions: list[str] = []
         # Film Type 2.5 is the default path for persian-footage: absent
@@ -615,8 +617,9 @@ class PersianCompose(BaseTool):
             )
 
         duration_seconds = float(persian["durationSeconds"])
-        moments = (self._build_moments(persian, duration_seconds, v2=True, measure_layout=False) if film_type
-                   else self._build_moments(persian, duration_seconds, v2=design_snapshot is not None))
+        resolved_persian = {**persian, "watermark": watermark}
+        moments = (self._build_moments(resolved_persian, duration_seconds, v2=True, measure_layout=False) if film_type
+                   else self._build_moments(resolved_persian, duration_seconds, v2=design_snapshot is not None))
         # The browser bridge returns the exact lockup geometry used by the V2 planner.
         # Query it independently of moment fitting so an empty moment list cannot
         # accidentally erase the required watermark measurement.
@@ -624,7 +627,7 @@ class PersianCompose(BaseTool):
         if design_snapshot is not None and not film_type and not __import__("os").environ.get("PERSIAN_SKIP_OPTIONAL_BRIDGE"):
             lockup_measurement = _maybe_attach_stack_heights(
                 [], str(persian.get("format") or "vertical"),
-                enforce_silhouette=False, watermark=persian.get("watermark") or {},
+                enforce_silhouette=False, watermark=watermark,
             )
         if design_snapshot is not None:
             authored_by_id = {str(m.get("id")): m for m in persian.get("moments", [])}
@@ -661,8 +664,8 @@ class PersianCompose(BaseTool):
             props["design"] = design_snapshot
         if audio_props:
             props["audio"] = audio_props
-        if persian.get("watermark"):
-            props["watermark"] = persian["watermark"]
+        # Always persist the resolved canonical/authorized brand and exact hashes.
+        props["watermark"] = watermark
         if film_type:
             # Real Chromium font measurement, one shared Film Type layout for
             # rendering and collision planning. Optional Legacy bridge flags do
@@ -716,7 +719,7 @@ class PersianCompose(BaseTool):
                 motion_policy=(design_snapshot.get("resolved", {}).get("watermark") if isinstance(design_snapshot.get("resolved"), dict) else None),
                 lockup_size=derive_lockup_size(
                     persian_text=(props.get("watermark") or {}).get("persianText", "طریقت تسلیم"),
-                    latin_text=(props.get("watermark") or {}).get("latinText", "@Pathway_of_Surrender"),
+                    latin_text=(props.get("watermark") or {}).get("latinText", "Pathway_of_Surrender"),
                     font_size_px=24 if props["format"] == "vertical" else 26,
                     frame_width_px=frame_w, frame_height_px=frame_h,
                     measured_width_px=float(lockup_measurement["widthPx"]),
@@ -1087,7 +1090,7 @@ def _maybe_attach_stack_heights(built: list[Any], fmt: str, *, enforce_silhouett
             " return { heightPx: f.heightPx, widthPx: f.widthPx, geometry: resolveMomentGeometry(f, fmt, p.placement),"
             " lines: f.segments.map(s => ({ role: s.role, widthPx: s.widthPx, heightPx: s.heightPx, paintedWidthPerLine: s.paintedWidthPerLine })),"
             " ratio: p.kind === 'hook' ? silhouetteRatio(f) : null }; });\n"
-            "const lockup = measureWatermarkLockup(watermark.persianText || 'طریقت تسلیم', watermark.latinText || '@Pathway_of_Surrender', fmt === 'vertical' ? 24 : 26, fmt);\n"
+            "const lockup = measureWatermarkLockup(watermark.persianText || 'طریقت تسلیم', watermark.latinText || 'Pathway_of_Surrender', fmt === 'vertical' ? 24 : 26, fmt);\n"
             "process.stdout.write(JSON.stringify({ moments: out, lockup }));\n"
         )
         driver.close()

@@ -173,6 +173,13 @@ export interface PersianMoment {
    * fails if the two disagree.
    */
   readonly anchorText?: string;
+  /** Byte-exact display record. Strict copy is not normalized before props generation. */
+  readonly exactText?: {
+    readonly text: string;
+    readonly sha256: string;
+    readonly encoding: "utf-8";
+    readonly normalization: "none";
+  };
   /**
    * Fitted total ink+gap height in px at nominal width (`FittedMoment.heightPx`
    * in `layout.ts`). Attached by `persian_compose` when the node-canvas bridge
@@ -254,6 +261,19 @@ export interface PersianWatermark {
   readonly persianText: string;
   /** Latin side of the lockup. Rendered in an explicit LTR span. */
   readonly latinText: string;
+  readonly brandProfile?: "pathway-of-surrender-v1" | "authorized-override";
+  readonly textHashes?: {
+    readonly algorithm: "sha256-utf8";
+    readonly persianText: string;
+    readonly latinText: string;
+  };
+  readonly overrideAuthorization?: {
+    readonly authorized: true;
+    readonly source: "explicit_user_response";
+    readonly decisionId: string;
+    readonly reason: string;
+    readonly recordedAt?: string;
+  };
 }
 
 /**
@@ -291,10 +311,17 @@ export type PersianVideoProps = {
   readonly durationSeconds: number;
 };
 
-/** The watermark the user specified for this pipeline. */
+/** One canonical production brand. Missing input resolves to this exact record. */
+export const CANONICAL_BRAND_PROFILE = "pathway-of-surrender-v1" as const;
 export const DEFAULT_WATERMARK: PersianWatermark = {
+  brandProfile: CANONICAL_BRAND_PROFILE,
   persianText: "طریقت تسلیم",
-  latinText: "@Pathway_of_Surrender",
+  latinText: "Pathway_of_Surrender",
+  textHashes: {
+    algorithm: "sha256-utf8",
+    persianText: "2c2e0a9a76b57df83e04e712b82f6d51ec3af600b3a697b281f4d06d5331d02a",
+    latinText: "aca253429dc44dff47a579cd23c532cb97df69771ad022c2236b66c55b1fd030",
+  },
 };
 
 export const DEFAULT_AUDIO_LEVELS = {
@@ -403,6 +430,33 @@ export function assertMomentIsWellFormed(moment: PersianMoment): void {
       `${where}: a 'source' segment must be last. It is a citation appended to ` +
         `the phrase, not a part of it, so anywhere else it interrupts the sentence.`,
     );
+  }
+
+  if (moment.exactText) {
+    if (
+      typeof moment.exactText.text !== "string" ||
+      moment.exactText.text.split(/\s+/u).filter(Boolean).join(" ") !== moment.exactText.text
+    ) {
+      throw new Error(
+        `${where}: strict copy must use one ASCII space between words and no ` +
+          `leading, trailing, repeated, or line-break whitespace; unsupported ` +
+          `whitespace is refused rather than repaired.`,
+      );
+    }
+    const displayText = moment.segments
+      .filter((segment) => segment.role !== "source")
+      .map((segment) => segment.text)
+      .join(" ");
+    if (
+      moment.exactText.encoding !== "utf-8" ||
+      moment.exactText.normalization !== "none" ||
+      displayText !== moment.exactText.text
+    ) {
+      throw new Error(
+        `${where}: exactText does not equal the displayed segments byte-for-byte; ` +
+          `strict punctuation, code points, whitespace, and digits may not be normalized.`,
+      );
+    }
   }
 
   for (const [index, segment] of moment.segments.entries()) {

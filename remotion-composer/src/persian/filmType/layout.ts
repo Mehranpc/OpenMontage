@@ -78,6 +78,11 @@ export async function sha256(value: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(stableJSON(value));
   return [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map(n => n.toString(16).padStart(2,"0")).join("");
 }
+/** Hash an authored string's raw UTF-8 bytes, without stable-JSON quoting. */
+export async function sha256Text(text: string): Promise<string> {
+  const bytes = new TextEncoder().encode(text);
+  return [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map(n => n.toString(16).padStart(2,"0")).join("");
+}
 export function filmProfile(design: PersianDesignSnapshot): FilmProfile {
   const p = design.resolved as unknown as FilmProfile;
   if (!isFilmType(design) || !p || p.profile !== "film-type" || !((p.profileVersion === "2.1.0" && p.layoutVersion === 1) || (p.profileVersion === "2.2.0" && p.layoutVersion === 2) || (p.profileVersion === "2.3.0" && p.layoutVersion === 3) || (p.profileVersion === "2.4.0" && p.layoutVersion === 4) || (p.profileVersion === "2.5.0" && p.layoutVersion === 5) || (p.profileVersion === "2.6.0" && p.layoutVersion === 6) || (p.profileVersion === "2.7.0" && p.layoutVersion === 7) || (p.profileVersion === "2.8.0" && p.layoutVersion === 8) || (p.profileVersion === "2.9.0" && p.layoutVersion === 9) || (p.profileVersion === "2.10.0" && p.layoutVersion === 10) || (p.profileVersion === "2.11.0" && p.layoutVersion === 11) || (p.profileVersion === "2.12.0" && p.layoutVersion === 12)) || design.profileVersion !== p.profileVersion) {
@@ -120,8 +125,10 @@ export function measureRun(text: string, size: number, weight: number, family = 
 
 /** DP over whole shaped runs; reuse the Persian grammar rules, not the Legacy
  * word-span sizing. Forced newlines remain forced and cannot strand a clitic. */
-export function breakFilmLines(text: string, width: number, size: number, weight: number, maxLines: number, version: FilmProfile["profileVersion"] = "2.1.0"): string[] | null {
-  const words = splitWords(text);
+export function breakFilmLines(text: string, width: number, size: number, weight: number, maxLines: number, version: FilmProfile["profileVersion"] = "2.1.0", preserveExact = false): string[] | null {
+  // Strict copy was already validated as single-ASCII-space-separated. Split it
+  // directly so NFC/Arabic-letter folding in splitWords can never change paint.
+  const words = preserveExact ? text.split(" ") : splitWords(text);
   if (!words.length) throw new Error("Film Type received an empty text run.");
   const memo = new Map<string, {cost: number; lines: string[]} | null>();
   const solve = (at: number, remaining: number): {cost: number; lines: string[]} | null => {
@@ -174,7 +181,7 @@ export function splitQuantity(text: string): [string,string] | null {
 
 function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, column: number, selectedSize?: number): Omit<FilmMomentLayout,"rect"|"placement"|"subjectSafety"|"contrastMode"|"strength"> | null {
   const t = p.typography, l = p.layout, dims = FORMAT_DIMENSIONS[fmt];
-  const numeric = moment.kind === "figure" && moment.segments.some(s => s.role === "hero" && splitQuantity(s.text));
+  const numeric = !moment.exactText && moment.kind === "figure" && moment.segments.some(s => s.role === "hero" && splitQuantity(s.text));
   const ladder = numeric ? t.figureLadderPx : moment.kind === "hook" ? t.titleLadderPx : t.statementLadderPx;
   const safe = p.formats[fmt].safeArea;
   const maxHeight = dims.height * (1 - safe.top - safe.bottom) * l.maxStackFraction;
@@ -197,7 +204,7 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
         max: segment.role === "hero" ? 3 : 2}];
       for (const [pieceIndex,piece] of pieces.entries()) {
         if (pieceIndex) y += l.quantityGapPx;
-        const lines = breakFilmLines(piece.text,column - 2 * l.inkPaddingPx,piece.size,piece.weight,piece.max,p.profileVersion);
+        const lines = breakFilmLines(piece.text,column - 2 * l.inkPaddingPx,piece.size,piece.weight,piece.max,p.profileVersion,Boolean(moment.exactText));
         if (!lines) {failed = true; break;}
         for (const [lineIndex,text] of lines.entries()) {
           if (lineIndex) y += l.lineGapPx;
@@ -592,9 +599,19 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
   }[profile.profileVersion];
   if(props.design!.contentHash!==expectedHash) throw new Error(`Unsupported Film Type ${profile.profileVersion} tokens; arbitrary snapshots cannot weaken layout or rollout guards.`);
   if(await sha256(profile)!==props.design!.contentHash) throw new Error("Film Type profile hash mismatch; re-resolve the design rather than silently changing a frozen snapshot.");
+  for (const moment of props.moments) {
+    const record = moment.exactText;
+    if (!record) continue;
+    if (typeof record.text !== "string" || typeof record.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(record.sha256)) {
+      throw new Error(`Moment ${moment.id}: exactText needs an exact string and lowercase SHA-256 digest.`);
+    }
+    if (await sha256Text(record.text) !== record.sha256) {
+      throw new Error(`Moment ${moment.id}: exactText.sha256 does not match the raw UTF-8 display bytes.`);
+    }
+  }
   await document.fonts.load(`${profile.watermark.latinWeight} ${profile.watermark.latinFontPx}px "${profile.watermark.latinFontFamily}"`, "Pathway");
   const input={format:props.format,durationSeconds:props.durationSeconds,design:props.design,shots:props.shots,
-    moments:props.moments.map(m=>({id:m.id,kind:m.kind,startSeconds:m.startSeconds,endSeconds:m.endSeconds,segments:m.segments,presentation:m.presentation})),
+    moments:props.moments.map(m=>({id:m.id,kind:m.kind,startSeconds:m.startSeconds,endSeconds:m.endSeconds,segments:m.segments,presentation:m.presentation,exactText:m.exactText})),
     watermark:props.watermark??DEFAULT_WATERMARK};
   const inputHash=await sha256(input);
   if(!Number.isFinite(props.durationSeconds)||props.durationSeconds<=0) throw new Error("Film Type duration must be positive.");
