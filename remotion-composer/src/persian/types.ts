@@ -433,6 +433,16 @@ export function assertMomentIsWellFormed(moment: PersianMoment): void {
   }
 
   if (moment.exactText) {
+    if (
+      typeof moment.exactText.text !== "string" ||
+      moment.exactText.text.split(/\s+/u).filter(Boolean).join(" ") !== moment.exactText.text
+    ) {
+      throw new Error(
+        `${where}: strict copy must use one ASCII space between words and no ` +
+          `leading, trailing, repeated, or line-break whitespace; unsupported ` +
+          `whitespace is refused rather than repaired.`,
+      );
+    }
     const displayText = moment.segments
       .filter((segment) => segment.role !== "source")
       .map((segment) => segment.text)

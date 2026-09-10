@@ -563,6 +563,15 @@ def build_moments(
             if raw.get("exactText") is not None
             else None
         )
+        if (
+            exact_text is not None
+            and " ".join(exact_text["text"].split()) != exact_text["text"]
+        ):
+            raise ValueError(
+                f"{where} strict copy must use one ASCII space between words and "
+                "no leading, trailing, repeated, or line-break whitespace; "
+                "unsupported whitespace is refused rather than repaired"
+            )
         segments: list[PersianSegment] = []
         for seg_index, raw_segment in enumerate(raw_segments):
             if not isinstance(raw_segment, dict):

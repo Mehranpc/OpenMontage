@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import unittest
+from lib.persian_brand import exact_text_record
 from lib.persian_design import resolve_design, SUPPORTED_FILM_TYPE_28_HASH, SUPPORTED_FILM_TYPE_211_HASH
 from lib.persian_film_type import prepare_film_type_props
 
@@ -154,6 +155,30 @@ class RankedBrowserContracts(unittest.TestCase):
                 self.assertFalse(self._overlaps(expanded,layout['rect']))
         self.assertFalse(any(s['startSeconds']<46.97 and s['endSeconds']>42.47 for s in q['watermarkPlan']))
         self.assertTrue(any('watermark-suppressed-for-text-clearance' in w for w in q['filmType']['warnings']))
+    def test_strict_rows_preserve_arabic_codepoints_quotes_and_zwnj(self):
+        exact="مي‌روم؛ “همین”"
+        p=self.props();p['moments']=[{
+            'id':'strict','kind':'statement','startSeconds':0,'endSeconds':15,
+            'presentation':{'placement':'auto'},
+            'segments':[{'role':'hero','text':exact}],
+            'exactText':exact_text_record(exact),
+        }]
+        q=self.prepare(p)
+        rows=q['filmType']['moments']['strict']['rows']
+        self.assertEqual(' '.join(row['text'] for row in rows),exact)
+        self.assertEqual(q['moments'][0]['segments'][0]['text'],exact)
+        self.assertEqual(q['moments'][0]['exactText'],exact_text_record(exact))
+
+    def test_strict_digest_is_rechecked_in_the_renderer(self):
+        exact="مي‌روم؛ “همین”"
+        p=self.props();p['moments']=[{
+            'id':'strict','kind':'statement','startSeconds':0,'endSeconds':15,
+            'presentation':{'placement':'auto'},
+            'segments':[{'role':'hero','text':exact}],
+            'exactText':{**exact_text_record(exact),'sha256':'0'*64},
+        }]
+        with self.assertRaisesRegex(ValueError,'sha256'):self.prepare(p)
+
     def test_stale_layout_refused(self):
         p=self.prepare(self.props());p['filmType']['inputHash']='stale'
         with self.assertRaisesRegex(ValueError,'stale'):self.prepare(p)

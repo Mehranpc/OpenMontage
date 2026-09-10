@@ -71,8 +71,10 @@ resolved props retain that record; an agent inference is never authorization.
 For copy that must survive literally (especially the opening hook), add `exactText` to
 the moment using `lib.persian_brand.exact_text_record(text)`. Its `text` must equal the
 non-source segment strings joined by one ASCII space. In this mode the pipeline does
-not normalize punctuation, Arabic/Persian code points, ZWNJ, whitespace, or digits;
-any drift or stale hash is a preflight failure rather than a silent repair.
+not normalize punctuation, Arabic/Persian code points, ZWNJ, whitespace, or digits.
+Film Type strict copy uses one ASCII space between words; leading, trailing, repeated,
+or line-break whitespace is rejected rather than repaired. Any drift or stale hash is
+a preflight failure.
 
 ## Moments, not captions
 

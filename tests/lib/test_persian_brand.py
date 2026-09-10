@@ -159,6 +159,22 @@ def test_strict_moment_survives_build_and_props_byte_for_byte() -> None:
     )[0].segments[0].text != exact
 
 
+@pytest.mark.parametrize("text", ["   ", "دو  فاصله", "دو\nخط", "دو\tبخش"])
+def test_unrenderable_strict_whitespace_is_refused_not_repaired(text: str) -> None:
+    with pytest.raises(ValueError, match="one ASCII space"):
+        build_moments(
+            [
+                {
+                    "kind": "statement",
+                    "startSeconds": 0.2,
+                    "endSeconds": 4.0,
+                    "segments": [{"role": "hero", "text": text}],
+                    "exactText": exact_text_record(text),
+                }
+            ]
+        )
+
+
 def test_curly_quote_or_whitespace_rewrite_fails_strict_copy() -> None:
     record = exact_text_record(EXACT_HOOK)
     with pytest.raises(ValueError, match="byte-for-byte"):
