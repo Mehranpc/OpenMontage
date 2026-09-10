@@ -63,6 +63,7 @@ _MIB = 1024 * 1024
 _DEFAULT_MAX_BYTES_PER_CLIP = 96 * _MIB
 _DEFAULT_MAX_TOTAL_DOWNLOAD_BYTES = 512 * _MIB
 _DEFAULT_MAX_CANDIDATES_TOTAL = 24
+_FFPROBE_VALIDATION_TIMEOUT_SECONDS = 15.0
 
 
 class _DownloadQuotaExceeded(RuntimeError):
@@ -859,7 +860,8 @@ def _candidate_filter_error(cand: Any, filters: Any) -> str:
 
 
 def _probe_media(path: Path, *, timeout_seconds: float) -> dict[str, float | int]:
-    timeout = min(15.0, max(0.1, timeout_seconds))
+    remaining = max(0.1, float(timeout_seconds))
+    timeout = min(_FFPROBE_VALIDATION_TIMEOUT_SECONDS, remaining)
     cmd = [
         "ffprobe",
         "-v", "error",
@@ -873,7 +875,11 @@ def _probe_media(path: Path, *, timeout_seconds: float) -> dict[str, float | int
             cmd, capture_output=True, text=True, timeout=timeout
         )
     except subprocess.TimeoutExpired as exc:
-        raise _DeadlineExceeded("ffprobe exceeded the remaining deadline") from exc
+        if remaining <= _FFPROBE_VALIDATION_TIMEOUT_SECONDS:
+            raise _DeadlineExceeded("ffprobe exceeded the remaining deadline") from exc
+        raise _MediaValidationError(
+            "ffprobe exceeded the 15-second media-validation timeout"
+        ) from exc
     except FileNotFoundError as exc:
         raise _MediaValidationError("ffprobe is required for downloaded media") from exc
     if result.returncode != 0:

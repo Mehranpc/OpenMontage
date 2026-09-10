@@ -184,6 +184,47 @@ def test_candidate_cap_is_hard(monkeypatch, tmp_path):
     assert result.data["clips_downloaded"] == 1
 
 
+def test_invalid_reused_file_is_deleted(monkeypatch, tmp_path):
+    source = _Source({"one": [_candidate("one")]})
+    _install_source(monkeypatch, source)
+    clips_dir = tmp_path / "clips"
+    clips_dir.mkdir()
+    reused = clips_dir / "pexels_one.mp4"
+    reused.write_bytes(b"x" * 2048)
+    monkeypatch.setattr(
+        module,
+        "_probe_media",
+        lambda *_a, **_k: {"width": 1920, "height": 1080, "duration": 8.0},
+    )
+
+    result = DirectClipSearch().execute(_inputs(tmp_path, ["one"]))
+
+    assert result.success is True
+    assert result.data["clips_reused"] == 0
+    assert result.data["errors"][0]["phase"] == "validation"
+    assert not reused.exists()
+
+
+def test_ffprobe_local_timeout_rejects_candidate_without_claiming_global_timeout(
+    monkeypatch,
+):
+    def raise_timeout(*_args, **kwargs):
+        raise module.subprocess.TimeoutExpired("ffprobe", kwargs["timeout"])
+
+    monkeypatch.setattr(module.subprocess, "run", raise_timeout)
+    with pytest.raises(module._MediaValidationError, match="media-validation timeout"):
+        module._probe_media(Path("candidate.mp4"), timeout_seconds=30)
+
+
+def test_ffprobe_timeout_at_deadline_is_global_timeout(monkeypatch):
+    def raise_timeout(*_args, **kwargs):
+        raise module.subprocess.TimeoutExpired("ffprobe", kwargs["timeout"])
+
+    monkeypatch.setattr(module.subprocess, "run", raise_timeout)
+    with pytest.raises(module._DeadlineExceeded, match="remaining deadline"):
+        module._probe_media(Path("candidate.mp4"), timeout_seconds=5)
+
+
 def test_nasa_probe_prefers_bounded_rendition():
     urls = [
         "https://images-assets.nasa.gov/video/demo/demo~orig.mp4",
