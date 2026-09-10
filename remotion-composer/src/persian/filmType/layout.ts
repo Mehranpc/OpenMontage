@@ -594,7 +594,7 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
   if(await sha256(profile)!==props.design!.contentHash) throw new Error("Film Type profile hash mismatch; re-resolve the design rather than silently changing a frozen snapshot.");
   await document.fonts.load(`${profile.watermark.latinWeight} ${profile.watermark.latinFontPx}px "${profile.watermark.latinFontFamily}"`, "Pathway");
   const input={format:props.format,durationSeconds:props.durationSeconds,design:props.design,shots:props.shots,
-    moments:props.moments.map(m=>({id:m.id,kind:m.kind,startSeconds:m.startSeconds,endSeconds:m.endSeconds,segments:m.segments,presentation:m.presentation})),
+    moments:props.moments.map(m=>({id:m.id,kind:m.kind,startSeconds:m.startSeconds,endSeconds:m.endSeconds,segments:m.segments,presentation:m.presentation,exactText:m.exactText})),
     watermark:props.watermark??DEFAULT_WATERMARK};
   const inputHash=await sha256(input);
   if(!Number.isFinite(props.durationSeconds)||props.durationSeconds<=0) throw new Error("Film Type duration must be positive.");

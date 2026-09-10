@@ -26,7 +26,7 @@ SUPPORTED_CONTRAST_MODES = {"dark", "light"}
 SUPPORTED_PLACEMENTS = {"upper-left", "upper-right", "mid-left", "mid-right", "lower-left", "lower-right", "center", "auto"}
 
 
-def derive_lockup_size(*, persian_text: str = "طریقت تسلیم", latin_text: str = "@Pathway_of_Surrender", font_size_px: float = 36.0, frame_width_px: float = 1080.0, frame_height_px: float = 1920.0, measured_width_px: float | None = None, measured_height_px: float | None = None) -> dict[str, float | bool]:
+def derive_lockup_size(*, persian_text: str = "طریقت تسلیم", latin_text: str = "Pathway_of_Surrender", font_size_px: float = 36.0, frame_width_px: float = 1080.0, frame_height_px: float = 1920.0, measured_width_px: float | None = None, measured_height_px: float | None = None) -> dict[str, float | bool]:
     """Normalize dimensions from an actual raster/layout measurement.
 
     Deliberately refuses the old character-count estimate. The compose bridge must

@@ -177,7 +177,7 @@ def _minimal_persian_block() -> dict[str, Any]:
         },
         "watermark": {
             "persianText": "طریقت تسلیم",
-            "latinText": "@Pathway_of_Surrender",
+            "latinText": "Pathway_of_Surrender",
         },
     }
 

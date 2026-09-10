@@ -1,7 +1,7 @@
 /**
  * Five-phase animated watermark.
  *
- * The lockup is «طریقت تسلیم | @Pathway_of_Surrender». It stays hidden for the
+ * The lockup is «طریقت تسلیم | Pathway_of_Surrender». It stays hidden for the
  * opening, then announces itself once near the centre, migrates to a corner and
  * stays out of the way — so a viewer who watches the whole piece sees the brand
  * clearly without it competing with the opening typography.

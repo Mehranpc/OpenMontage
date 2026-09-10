@@ -143,7 +143,7 @@ class RankedBrowserContracts(unittest.TestCase):
                        'presentation':{'placement':'lower-right','motion':'cut-in'},
                        'segments':[{'role':'lead','text':'ولی برای «بودنت»'},
                                    {'role':'hero','text':'هیچ‌وقت عذرخواهی نکن!'}]}]
-        p['watermark']={'persianText':'طریقت تسلیم','latinText':'@Pathway_of_Surrender'}
+        p['watermark']={'persianText':'طریقت تسلیم','latinText':'Pathway_of_Surrender'}
         q=self.prepare(p);layout=q['filmType']['moments']['m5'];lockup=q['filmType']['lockup']
         clearance=max(q['design']['resolved']['watermark']['minTextClearancePx'],lockup['heightPx'])
         width,height=FRAME['vertical']

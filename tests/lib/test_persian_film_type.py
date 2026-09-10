@@ -14,6 +14,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from lib.persian_brand import canonical_watermark
 from lib.persian_design import resolve_design, prepare_v2, SUPPORTED_FILM_TYPE_29_HASH, SUPPORTED_FILM_TYPE_28_HASH, SUPPORTED_FILM_TYPE_27_HASH, SUPPORTED_FILM_TYPE_26_HASH, SUPPORTED_FILM_TYPE_25_HASH, SUPPORTED_FILM_TYPE_210_HASH, SUPPORTED_FILM_TYPE_211_HASH, SUPPORTED_FILM_TYPE_HASH, SUPPORTED_FILM_TYPE_MOTION_HASH, SUPPORTED_FILM_TYPE_LEGACY_HASH, SUPPORTED_FILM_TYPE_POLISH_HASH, SUPPORTED_FILM_TYPE_REPAIR_HASH
 from lib.persian_film_type import prepare_film_type_props
 from tools.video.persian_compose import PersianCompose
@@ -210,12 +211,11 @@ class FilmTypeContracts(unittest.TestCase):
     def test_film_producer_preserves_reviewed_empty_regions(self):
         clip=self.root/'clip.mp4';clip.write_bytes(b'fixture-not-decoded')
         persian={'format':'vertical','durationSeconds':12,'design':self.raw,'moments':[],
-                 'shots':[{'id':'s','source':str(clip),'startSeconds':0,'endSeconds':12,'camera':'none','attribution':'Synthetic unit-test fixture','avoidRegions':[]}],
-                 'watermark':{'persianText':'','latinText':''}}
+                 'shots':[{'id':'s','source':str(clip),'startSeconds':0,'endSeconds':12,'camera':'none','attribution':'Synthetic unit-test fixture','avoidRegions':[]}]}
         with patch('tools.video.persian_compose.prepare_film_type_props',side_effect=lambda p,c:p) as bridge,patch.dict(os.environ,{'PERSIAN_SKIP_OPTIONAL_BRIDGE':'1'}):
             props,_=PersianCompose()._build_props(persian,self.root/'stage','unit-review')
         self.assertEqual(props['shots'][0]['avoidRegions'],[]);bridge.assert_called_once()
-        self.assertEqual(props['watermark'],persian['watermark'])
+        self.assertEqual(props['watermark'],canonical_watermark())
     def _lifecycle(self,keep,success):
         composer=self.root/'runtime';(composer/'node_modules').mkdir(parents=True,exist_ok=True)
         output=self.root/'result.mp4';stages=[]

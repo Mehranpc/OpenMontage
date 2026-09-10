@@ -71,6 +71,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Literal
 
+from lib.persian_brand import validate_exact_text_record
 from lib.persian_text import (
     break_class,
     compare_key,
@@ -261,6 +262,8 @@ class PersianMoment:
     end_seconds: float
     segments: list[PersianSegment]
     anchor_text: str = ""
+    # Present only for copy that must survive artifact/props transport byte-for-byte.
+    exact_text: dict[str, str] | None = None
     # Fitted total ink+gap height, px at nominal width. Set by the compose
     # step via canvas measurement when available, so the verifier can derive
     # the scrim plateau (``height/2 + margin`` around the optical centre) from
@@ -418,6 +421,8 @@ class PersianMoment:
         }
         if self.anchor_text:
             props["anchorText"] = self.anchor_text
+        if self.exact_text is not None:
+            props["exactText"] = dict(self.exact_text)
         if self.stack_height_px is not None:
             props["stackHeightPx"] = round(float(self.stack_height_px), 2)
         if getattr(self, "stack_width_px", None) is not None:
@@ -553,6 +558,11 @@ def build_moments(
                 "reading order."
             )
 
+        exact_text = (
+            validate_exact_text_record(raw.get("exactText"))
+            if raw.get("exactText") is not None
+            else None
+        )
         segments: list[PersianSegment] = []
         for seg_index, raw_segment in enumerate(raw_segments):
             if not isinstance(raw_segment, dict):
@@ -563,7 +573,18 @@ def build_moments(
                     f"{where} segment {seg_index} has role {role!r}; expected one of "
                     f"{sorted(SEGMENT_ROLES)}."
                 )
-            text = _clean(raw_segment.get("text"), persian_digits=persian_digits)
+            if exact_text is None:
+                text = _clean(
+                    raw_segment.get("text"), persian_digits=persian_digits
+                )
+            else:
+                authored_text = raw_segment.get("text")
+                if not isinstance(authored_text, str) or authored_text == "":
+                    raise ValueError(
+                        f"{where} strict segment {seg_index} ({role}) needs a "
+                        "non-empty string; strict copy is never coerced or stripped"
+                    )
+                text = authored_text
             if not text:
                 raise ValueError(
                     f"{where} segment {seg_index} ({role}) has no text. An empty "
@@ -585,6 +606,17 @@ def build_moments(
                 )
             )
 
+        if exact_text is not None:
+            display_text = " ".join(
+                segment.text for segment in segments if segment.role != "source"
+            )
+            if display_text != exact_text["text"]:
+                raise ValueError(
+                    f"{where} exactText.text does not equal the authored display "
+                    "segments byte-for-byte; punctuation, code points, whitespace, "
+                    "and digits may not be normalized"
+                )
+
         start = raw.get("startSeconds", raw.get("start"))
         end = raw.get("endSeconds", raw.get("end"))
         if start is None or end is None:
@@ -601,6 +633,7 @@ def build_moments(
                 end_seconds=float(end),
                 segments=segments,
                 anchor_text=_clean(raw.get("anchorText"), persian_digits=False),
+                exact_text=exact_text,
             )
         )
 

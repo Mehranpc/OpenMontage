@@ -58,6 +58,22 @@ The text half of that job is **not** transcribing the narration. It is choosing 
 few things worth setting in type, writing each of them as **one grammatical Persian
 phrase**, and binding every one of them to the moment the voice says it.
 
+## Brand and exact-copy locks
+
+Omit `persian.watermark` to use the one production default: `طریقت تسلیم` and
+`Pathway_of_Surrender`. The compose preflight writes both exact strings and their
+SHA-256 hashes into render props. Do not add `@`, change spacing, or invent a label.
+Any non-canonical lockup — including an empty one — needs the user's explicit decision
+inside `overrideAuthorization` with `authorized: true`,
+`source: "explicit_user_response"`, a non-empty `decisionId`, and a reason. The
+resolved props retain that record; an agent inference is never authorization.
+
+For copy that must survive literally (especially the opening hook), add `exactText` to
+the moment using `lib.persian_brand.exact_text_record(text)`. Its `text` must equal the
+non-source segment strings joined by one ASCII space. In this mode the pipeline does
+not normalize punctuation, Arabic/Persian code points, ZWNJ, whitespace, or digits;
+any drift or stale hash is a preflight failure rather than a silent repair.
+
 ## Moments, not captions
 
 The composition paints an ordered list of `moments`. There is no running subtitle and
@@ -592,7 +608,7 @@ frames before a cut does not, because it is gone before it is read.
       "wordTimings": [ { "word": "قهوه", "start": 0.2, "end": 0.6 } ],
       "musicTrack": { … }
     },
-    "watermark": { "persianText": "طریقت تسلیم", "latinText": "@Pathway_of_Surrender" }
+    "watermark": { "persianText": "طریقت تسلیم", "latinText": "Pathway_of_Surrender" }
   }
 }
 ```
@@ -697,10 +713,14 @@ assert abs(covered - duration_seconds) < 0.5, f"{covered=} vs {duration_seconds=
 # as `not_checked` alongside the Legacy-only frame checks. Its coverage lives
 # in `tests/lib/test_persian_render_qa.py`, not in the gates or verify suites.
 
-# Orthography survived the copy into edit_decisions — every segment, not one field.
+# Ordinary copy is canonicalized; strict copy is verified by its exact UTF-8 hash.
+from lib.persian_brand import validate_exact_text_record
 for moment in moments:
-    for segment in moment.segments:
-        assert normalize(segment.text) == segment.text
+    if moment.exact_text is not None:
+        validate_exact_text_record(moment.exact_text)
+    else:
+        for segment in moment.segments:
+            assert normalize(segment.text) == segment.text
 ```
 
 Note that `audit_moments` takes a `v2` flag and `persian_compose` passes the one the
