@@ -94,8 +94,9 @@ class ScriptAlignedPersianCompose(PersianCompose):
             )
         except SubtitleAlignmentError as exc:
             raise ValueError(
-                "the Persian sidecar SRT is not provably aligned, so delivery is "
-                f"refused rather than shipping ASR copy or a timing gap: {exc}"
+                "the approvedScript-backed Persian sidecar SRT is not provably "
+                "aligned, so delivery is refused rather than shipping ASR copy or "
+                f"a timing gap: {exc}"
             ) from exc
 
     @staticmethod
