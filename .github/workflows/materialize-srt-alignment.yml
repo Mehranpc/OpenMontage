@@ -6,16 +6,25 @@ on:
       - fix/script-aligned-persian-srt
     paths:
       - .srt-alignment-materialize-request
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
 
 permissions:
   contents: write
 
 jobs:
   materialize:
+    if: github.head_ref == 'fix/script-aligned-persian-srt' || github.ref_name == 'fix/script-aligned-persian-srt'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
@@ -55,4 +64,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "fix: align Persian SRT to approved script"
-          git push origin HEAD
+          git push origin HEAD:${{ github.head_ref || github.ref_name }}
