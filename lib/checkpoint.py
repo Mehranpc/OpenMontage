@@ -86,7 +86,7 @@ CHECKPOINT_SCHEMA_PATH = (
 # live under PROJECTS_DIR/<project_id>/ — this is the location the Backlot
 # board watches. Callers may still pass a different pipeline_dir (tests do),
 # but production runs should use the default.
-from lib.paths import PROJECTS_DIR  # noqa: E402  (single source of truth)
+from lib.paths import PROJECTS_DIR, REPO_ROOT  # noqa: E402  (single source of truth)
 
 PROJECT_MARKER_FILENAME = "project.json"
 HISTORY_DIRNAME = "history"
@@ -94,6 +94,22 @@ HISTORY_DIRNAME = "history"
 
 class CheckpointValidationError(ValueError):
     """Raised when a checkpoint or its canonical artifacts are invalid."""
+
+
+def _reject_repository_root_pipeline_dir(pipeline_dir: Path) -> None:
+    """Refuse the repo root as a production checkpoint/project write base."""
+    try:
+        resolved = Path(pipeline_dir).expanduser().resolve()
+        repo_root = REPO_ROOT.expanduser().resolve()
+    except (OSError, RuntimeError) as exc:
+        raise CheckpointValidationError(
+            f"CHECKPOINT PATH VIOLATION: cannot resolve pipeline_dir {pipeline_dir!s}"
+        ) from exc
+    if resolved == repo_root:
+        raise CheckpointValidationError(
+            "CHECKPOINT PATH VIOLATION: repository root cannot be used as pipeline_dir; "
+            "use PROJECTS_DIR (normally <repo>/projects) or an explicit staging/test root"
+        )
 
 
 def _validate_style_playbook(style_playbook: str | None) -> None:
@@ -213,8 +229,9 @@ def init_project(
     Idempotent: re-running preserves the original created_at and merges fields.
     Returns the project directory.
     """
-    _validate_style_playbook(style_playbook)
     base = pipeline_dir or PROJECTS_DIR
+    _reject_repository_root_pipeline_dir(base)
+    _validate_style_playbook(style_playbook)
     project_dir = base / project_id
     for sub in (
         "artifacts",
@@ -646,6 +663,7 @@ def write_checkpoint(
     metadata: Optional[dict] = None,
 ) -> Path:
     """Write a checkpoint file for a pipeline stage."""
+    _reject_repository_root_pipeline_dir(pipeline_dir)
     # Backfill identity fields from the project marker so omitted kwargs
     # cannot bypass either gate enforcement or style validation.
     marker = None
