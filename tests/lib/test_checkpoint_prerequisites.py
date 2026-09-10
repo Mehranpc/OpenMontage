@@ -8,6 +8,57 @@ from lib.checkpoint import (
     init_project,
     write_checkpoint,
 )
+from lib.paths import REPO_ROOT
+
+
+def test_init_project_refuses_repository_root_as_pipeline_dir() -> None:
+    project_id = "must-not-land-in-repo-root"
+    unexpected = REPO_ROOT / project_id
+    assert not unexpected.exists()
+
+    with pytest.raises(CheckpointValidationError, match="repository root cannot be used"):
+        init_project(
+            project_id,
+            title="Bad Root",
+            pipeline_type="framework-smoke",
+            pipeline_dir=REPO_ROOT,
+        )
+
+    assert not unexpected.exists()
+
+
+def test_write_checkpoint_refuses_repository_root_before_writing() -> None:
+    project_id = "must-not-write-checkpoint-in-repo-root"
+    unexpected = REPO_ROOT / project_id / "checkpoint_research.json"
+    assert not unexpected.exists()
+
+    with pytest.raises(CheckpointValidationError, match="repository root cannot be used"):
+        write_checkpoint(
+            REPO_ROOT,
+            project_id,
+            "research",
+            "in_progress",
+            {},
+            pipeline_type="framework-smoke",
+        )
+
+    assert not unexpected.exists()
+
+
+def test_repository_root_symlink_cannot_bypass_write_guard(tmp_path) -> None:
+    alias = tmp_path / "repo-root-alias"
+    try:
+        alias.symlink_to(REPO_ROOT, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlinks are unavailable on this platform")
+
+    with pytest.raises(CheckpointValidationError, match="repository root cannot be used"):
+        init_project(
+            "symlink-bypass",
+            title="Alias",
+            pipeline_type="framework-smoke",
+            pipeline_dir=alias,
+        )
 
 
 def _script_artifact() -> dict:
