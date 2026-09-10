@@ -34,6 +34,7 @@ No CLIP model. No embeddings. No corpus index. Just files on disk.
 from __future__ import annotations
 
 from contextlib import contextmanager
+import json
 import subprocess
 import time
 import urllib.parse
@@ -58,9 +59,93 @@ class _DeadlineExceeded(TimeoutError):
     """Raised when the direct-clip-search wall-clock deadline is exhausted."""
 
 
+_MIB = 1024 * 1024
+_DEFAULT_MAX_BYTES_PER_CLIP = 96 * _MIB
+_DEFAULT_MAX_TOTAL_DOWNLOAD_BYTES = 512 * _MIB
+_DEFAULT_MAX_CANDIDATES_TOTAL = 24
+
+
+class _DownloadQuotaExceeded(RuntimeError):
+    """Raised before an acquisition can exceed a configured byte ceiling."""
+
+    def __init__(self, message: str, *, scope: str) -> None:
+        super().__init__(message)
+        self.scope = scope
+
+
+class _MediaValidationError(ValueError):
+    """Raised when downloaded bytes do not satisfy the requested media filters."""
+
+
+class _DownloadBudget:
+    """Counts streamed network bytes for one invocation and its current clip."""
+
+    def __init__(self, *, max_bytes_per_clip: int, max_total_bytes: int) -> None:
+        if max_bytes_per_clip <= 0 or max_total_bytes <= 0:
+            raise ValueError("download byte limits must be positive")
+        if max_bytes_per_clip > max_total_bytes:
+            raise ValueError("max_bytes_per_clip cannot exceed max_total_download_bytes")
+        self.max_bytes_per_clip = max_bytes_per_clip
+        self.max_total_bytes = max_total_bytes
+        self.total_bytes = 0
+        self.clip_bytes = 0
+
+    def start_clip(self) -> None:
+        self.clip_bytes = 0
+
+    def preflight_content_length(self, raw_value: Any) -> None:
+        if raw_value in (None, ""):
+            return
+        try:
+            declared = int(raw_value)
+        except (TypeError, ValueError):
+            return
+        if declared < 0:
+            return
+        if declared > self.max_bytes_per_clip:
+            raise _DownloadQuotaExceeded(
+                f"server declared {declared} bytes for one clip; limit is "
+                f"{self.max_bytes_per_clip}",
+                scope="clip",
+            )
+        if self.total_bytes + declared > self.max_total_bytes:
+            raise _DownloadQuotaExceeded(
+                f"server-declared download would exceed invocation limit "
+                f"{self.max_total_bytes} bytes",
+                scope="total",
+            )
+
+    def consume(self, size: int) -> None:
+        if size <= 0:
+            return
+        self.clip_bytes += size
+        self.total_bytes += size
+        if self.clip_bytes > self.max_bytes_per_clip:
+            raise _DownloadQuotaExceeded(
+                f"clip exceeded {self.max_bytes_per_clip} bytes while streaming",
+                scope="clip",
+            )
+        if self.total_bytes > self.max_total_bytes:
+            raise _DownloadQuotaExceeded(
+                f"invocation exceeded {self.max_total_bytes} downloaded bytes",
+                scope="total",
+            )
+
+    def reconcile_file_size(self, size: int) -> None:
+        """Count bytes for adapters that do not consume via iter_content."""
+        if size > self.clip_bytes:
+            self.consume(size - self.clip_bytes)
+        if size > self.max_bytes_per_clip:
+            raise _DownloadQuotaExceeded(
+                f"downloaded file is {size} bytes; per-clip limit is "
+                f"{self.max_bytes_per_clip}",
+                scope="clip",
+            )
+
+
 class DirectClipSearch(BaseTool):
     name = "direct_clip_search"
-    version = "0.1.0"
+    version = "0.2.0"
     tier = ToolTier.SOURCE
     capability = "clip_acquisition"
     provider = "openmontage"
@@ -156,6 +241,32 @@ class DirectClipSearch(BaseTool):
                 "description": (
                     "How many clips to download per query (across all sources). "
                     "Lower = faster. 2-3 is enough for manual selection."
+                ),
+            },
+            "max_candidates_total": {
+                "type": "integer",
+                "default": 24,
+                "minimum": 1,
+                "maximum": 200,
+                "description": (
+                    "Hard cap on candidates considered across the invocation, "
+                    "including rejected and reused candidates."
+                ),
+            },
+            "max_bytes_per_clip": {
+                "type": "integer",
+                "default": 100663296,
+                "minimum": 1048576,
+                "description": (
+                    "Hard streamed-byte ceiling per candidate (default 96 MiB)."
+                ),
+            },
+            "max_total_download_bytes": {
+                "type": "integer",
+                "default": 536870912,
+                "minimum": 1048576,
+                "description": (
+                    "Hard aggregate streamed-byte ceiling (default 512 MiB)."
                 ),
             },
             "filters": {
@@ -261,6 +372,23 @@ class DirectClipSearch(BaseTool):
             extract_thumbs = bool(inputs.get("extract_thumbnails", True))
             skip_existing = bool(inputs.get("skip_existing", True))
             timeout_seconds = float(inputs.get("timeout_seconds", 600))
+            max_candidates_total = int(
+                inputs.get("max_candidates_total", _DEFAULT_MAX_CANDIDATES_TOTAL)
+            )
+            max_bytes_per_clip = int(
+                inputs.get("max_bytes_per_clip", _DEFAULT_MAX_BYTES_PER_CLIP)
+            )
+            max_total_download_bytes = int(
+                inputs.get(
+                    "max_total_download_bytes", _DEFAULT_MAX_TOTAL_DOWNLOAD_BYTES
+                )
+            )
+            if max_candidates_total <= 0:
+                raise ValueError("max_candidates_total must be positive")
+            download_budget = _DownloadBudget(
+                max_bytes_per_clip=max_bytes_per_clip,
+                max_total_bytes=max_total_download_bytes,
+            )
             deadline = start + timeout_seconds
 
             clips_dir = output_dir / "clips"
@@ -313,6 +441,27 @@ class DirectClipSearch(BaseTool):
             skipped = 0
             per_source_counts: dict[str, int] = {s.name: 0 for s in sources}
             queries_started = 0
+            candidates_considered = 0
+
+            def progress_data() -> dict[str, Any]:
+                return {
+                    "output_dir": str(output_dir),
+                    "clips_downloaded": len(
+                        [d for d in downloaded if not d.get("skipped_existing")]
+                    ),
+                    "clips_reused": skipped,
+                    "total_clips": len(downloaded),
+                    "per_source_counts": per_source_counts,
+                    "queries_run": queries_started,
+                    "resolved_sources": [s.name for s in sources],
+                    "clips": downloaded,
+                    "errors": errors[:25],
+                    "candidates_considered": candidates_considered,
+                    "bytes_downloaded": download_budget.total_bytes,
+                    "max_candidates_total": max_candidates_total,
+                    "max_bytes_per_clip": max_bytes_per_clip,
+                    "max_total_download_bytes": max_total_download_bytes,
+                }
 
             def timeout_result(
                 *,
@@ -329,22 +478,40 @@ class DirectClipSearch(BaseTool):
                         f"during {phase}."
                     ),
                     data={
+                        **progress_data(),
                         "timed_out": True,
                         "phase": phase,
                         "query": query,
                         "source": source,
                         "clip_id": clip_id,
-                        "output_dir": str(output_dir),
-                        "clips_downloaded": len([d for d in downloaded if not d.get("skipped_existing")]),
-                        "clips_reused": skipped,
-                        "total_clips": len(downloaded),
-                        "per_source_counts": per_source_counts,
-                        "queries_run": queries_started,
-                        "resolved_sources": [s.name for s in sources],
-                        "clips": downloaded,
-                        "errors": errors[:25],
                         "elapsed_seconds": round(elapsed, 2),
                         "timeout_seconds": timeout_seconds,
+                    },
+                    cost_usd=0.0,
+                    duration_seconds=round(elapsed, 2),
+                )
+
+            def limit_result(
+                error: Exception,
+                *,
+                phase: str,
+                query: str = "",
+                source: str = "",
+                clip_id: str = "",
+            ) -> ToolResult:
+                _cleanup_partial_files(clips_dir)
+                elapsed = time.time() - start
+                return ToolResult(
+                    success=False,
+                    error=f"Direct clip search stopped at a hard limit: {error}",
+                    data={
+                        **progress_data(),
+                        "budget_exhausted": True,
+                        "phase": phase,
+                        "query": query,
+                        "source": source,
+                        "clip_id": clip_id,
+                        "elapsed_seconds": round(elapsed, 2),
                     },
                     cost_usd=0.0,
                     duration_seconds=round(elapsed, 2),
@@ -394,6 +561,28 @@ class DirectClipSearch(BaseTool):
                         continue
 
                     for cand in candidates:
+                        if candidates_considered >= max_candidates_total:
+                            return limit_result(
+                                _DownloadQuotaExceeded(
+                                    f"candidate cap {max_candidates_total} reached",
+                                    scope="candidates",
+                                ),
+                                phase="candidate_selection",
+                                query=query,
+                                source=src.name,
+                            )
+                        candidates_considered += 1
+
+                        metadata_error = _candidate_filter_error(cand, filters)
+                        if metadata_error:
+                            errors.append({
+                                "phase": "metadata_filter",
+                                "clip_id": cand.clip_id,
+                                "source": src.name,
+                                "error": metadata_error,
+                            })
+                            continue
+
                         if timed_out():
                             return timeout_result(
                                 phase="download",
@@ -409,10 +598,39 @@ class DirectClipSearch(BaseTool):
                         ext = _guess_ext(cand)
                         clip_path = clips_dir / f"{clip_id}{ext}"
 
-                        # Skip if already downloaded
+                        # Reused files still have to satisfy today's filters. A stale
+                        # landscape or corrupt clip must not bypass validation merely because
+                        # it already exists.
                         if skip_existing and clip_path.exists() and clip_path.stat().st_size > 1024:
+                            try:
+                                existing_probe = _probe_media(
+                                    clip_path,
+                                    timeout_seconds=remaining_seconds(deadline),
+                                )
+                                validation_error = _probed_filter_error(
+                                    cand.kind, existing_probe, filters
+                                )
+                                if validation_error:
+                                    raise _MediaValidationError(validation_error)
+                            except _DeadlineExceeded:
+                                return timeout_result(
+                                    phase="validation",
+                                    query=query,
+                                    source=src.name,
+                                    clip_id=clip_id,
+                                )
+                            except Exception as e:
+                                errors.append({
+                                    "phase": "validation",
+                                    "clip_id": clip_id,
+                                    "source": src.name,
+                                    "error": f"{type(e).__name__}: {e}",
+                                })
+                                _cleanup_file(clip_path)
+                                _cleanup_file(thumbs_dir / f"{clip_id}.jpg")
+                                continue
+
                             skipped += 1
-                            # Still record it in results so the agent knows it's there
                             thumb_path = thumbs_dir / f"{clip_id}.jpg"
                             downloaded.append({
                                 "clip_id": clip_id,
@@ -424,9 +642,10 @@ class DirectClipSearch(BaseTool):
                                 "kind": cand.kind,
                                 "path": str(clip_path),
                                 "thumbnail": str(thumb_path) if thumb_path.exists() else "",
-                                "duration": cand.duration,
-                                "width": cand.width,
-                                "height": cand.height,
+                                "duration": existing_probe["duration"],
+                                "width": existing_probe["width"],
+                                "height": existing_probe["height"],
+                                "file_size_bytes": clip_path.stat().st_size,
                                 "creator": cand.creator,
                                 "license": cand.license,
                                 "source_tags": cand.source_tags,
@@ -435,18 +654,63 @@ class DirectClipSearch(BaseTool):
                             collected_for_query += 1
                             continue
 
-                        # Download
+                        # Download to a hidden partial path. Only validated bytes are
+                        # atomically promoted to the final filename.
+                        partial_path = clip_path.with_name(
+                            f".{clip_path.stem}.part{clip_path.suffix}"
+                        )
+                        _cleanup_file(partial_path)
+                        download_budget.start_clip()
                         try:
-                            with _requests_deadline(deadline):
-                                src.download(cand, clip_path)
+                            with _requests_deadline(
+                                deadline, download_budget=download_budget
+                            ):
+                                src.download(cand, partial_path)
+                            if not partial_path.exists() or partial_path.stat().st_size < 1024:
+                                raise _MediaValidationError(
+                                    "Download produced empty or tiny file"
+                                )
+                            download_budget.reconcile_file_size(
+                                partial_path.stat().st_size
+                            )
+                            probe = _probe_media(
+                                partial_path,
+                                timeout_seconds=remaining_seconds(deadline),
+                            )
+                            validation_error = _probed_filter_error(
+                                cand.kind, probe, filters
+                            )
+                            if validation_error:
+                                raise _MediaValidationError(validation_error)
+                            partial_path.replace(clip_path)
                         except _DeadlineExceeded:
+                            _cleanup_file(partial_path)
                             return timeout_result(
                                 phase="download",
                                 query=query,
                                 source=src.name,
                                 clip_id=clip_id,
                             )
+                        except _DownloadQuotaExceeded as e:
+                            _cleanup_file(partial_path)
+                            return limit_result(
+                                e,
+                                phase="download",
+                                query=query,
+                                source=src.name,
+                                clip_id=clip_id,
+                            )
+                        except _MediaValidationError as e:
+                            _cleanup_file(partial_path)
+                            errors.append({
+                                "phase": "validation",
+                                "clip_id": clip_id,
+                                "source": src.name,
+                                "error": str(e),
+                            })
+                            continue
                         except Exception as e:
+                            _cleanup_file(partial_path)
                             errors.append({
                                 "phase": "download",
                                 "clip_id": clip_id,
@@ -479,9 +743,10 @@ class DirectClipSearch(BaseTool):
                             "kind": cand.kind,
                             "path": str(clip_path),
                             "thumbnail": "",
-                            "duration": cand.duration,
-                            "width": cand.width,
-                            "height": cand.height,
+                            "duration": probe["duration"],
+                            "width": probe["width"],
+                            "height": probe["height"],
+                            "file_size_bytes": clip_path.stat().st_size,
                             "creator": cand.creator,
                             "license": cand.license,
                             "source_tags": cand.source_tags,
@@ -523,17 +788,7 @@ class DirectClipSearch(BaseTool):
 
             return ToolResult(
                 success=True,
-                data={
-                    "output_dir": str(output_dir),
-                    "clips_downloaded": len([d for d in downloaded if not d.get("skipped_existing")]),
-                    "clips_reused": skipped,
-                    "total_clips": len(downloaded),
-                    "per_source_counts": per_source_counts,
-                    "queries_run": queries_started,
-                    "resolved_sources": [s.name for s in sources],
-                    "clips": downloaded,
-                    "errors": errors[:25],
-                },
+                data=progress_data(),
                 cost_usd=0.0,
                 duration_seconds=round(elapsed, 2),
             )
@@ -550,6 +805,118 @@ class DirectClipSearch(BaseTool):
 # Helpers
 # ----------------------------------------------------------------------
 
+
+
+def _cleanup_file(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _cleanup_partial_files(clips_dir: Path) -> None:
+    if not clips_dir.exists():
+        return
+    for path in clips_dir.glob(".*.part.*"):
+        _cleanup_file(path)
+
+
+def _number(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _orientation(width: int, height: int) -> str:
+    if width <= 0 or height <= 0:
+        return "unknown"
+    if abs(width - height) <= max(width, height) * 0.05:
+        return "square"
+    return "portrait" if height > width else "landscape"
+
+
+def _candidate_filter_error(cand: Any, filters: Any) -> str:
+    """Reject known mismatches before any bytes are requested."""
+    kind = str(getattr(cand, "kind", "")).lower()
+    if filters.kind != "any" and kind != filters.kind:
+        return f"kind {kind!r} does not match requested {filters.kind!r}"
+    width = int(getattr(cand, "width", 0) or 0)
+    height = int(getattr(cand, "height", 0) or 0)
+    duration = _number(getattr(cand, "duration", 0.0))
+    if filters.orientation and width > 0 and height > 0:
+        actual = _orientation(width, height)
+        if actual != filters.orientation:
+            return f"declared orientation {actual} does not match {filters.orientation}"
+    if filters.min_width is not None and width > 0 and width < filters.min_width:
+        return f"declared width {width} is below minimum {filters.min_width}"
+    if kind == "video" and duration > 0:
+        if filters.min_duration is not None and duration < filters.min_duration:
+            return f"declared duration {duration:.3f}s is below {filters.min_duration}s"
+        if filters.max_duration is not None and duration > filters.max_duration:
+            return f"declared duration {duration:.3f}s exceeds {filters.max_duration}s"
+    return ""
+
+
+def _probe_media(path: Path, *, timeout_seconds: float) -> dict[str, float | int]:
+    timeout = min(15.0, max(0.1, timeout_seconds))
+    cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,duration:format=duration",
+        "-of", "json",
+        str(path),
+    ]
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise _DeadlineExceeded("ffprobe exceeded the remaining deadline") from exc
+    except FileNotFoundError as exc:
+        raise _MediaValidationError("ffprobe is required for downloaded media") from exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()[-300:]
+        raise _MediaValidationError(f"ffprobe rejected downloaded media: {detail}")
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        raise _MediaValidationError("ffprobe returned invalid JSON") from exc
+    streams = payload.get("streams") or []
+    stream = streams[0] if streams else {}
+    duration = _number(stream.get("duration")) or _number(
+        (payload.get("format") or {}).get("duration")
+    )
+    return {
+        "width": int(stream.get("width") or 0),
+        "height": int(stream.get("height") or 0),
+        "duration": duration,
+    }
+
+
+def _probed_filter_error(kind: str, probe: dict[str, Any], filters: Any) -> str:
+    width = int(probe.get("width") or 0)
+    height = int(probe.get("height") or 0)
+    duration = _number(probe.get("duration"))
+    if width <= 0 or height <= 0:
+        return "downloaded media has no measurable video geometry"
+    if kind == "video" and duration <= 0:
+        return "downloaded video has no measurable positive duration"
+    actual_orientation = _orientation(width, height)
+    if filters.orientation and actual_orientation != filters.orientation:
+        return (
+            f"probed orientation {actual_orientation} ({width}x{height}) does not "
+            f"match requested {filters.orientation}"
+        )
+    if filters.min_width is not None and width < filters.min_width:
+        return f"probed width {width} is below minimum {filters.min_width}"
+    if kind == "video":
+        if filters.min_duration is not None and duration < filters.min_duration:
+            return f"probed duration {duration:.3f}s is below {filters.min_duration}s"
+        if filters.max_duration is not None and duration > filters.max_duration:
+            return f"probed duration {duration:.3f}s exceeds {filters.max_duration}s"
+    return ""
 
 def _guess_ext(cand) -> str:
     """Extract a sensible file extension from a candidate's URL."""
@@ -581,7 +948,11 @@ def _clamp_timeout(timeout: Any, remaining: float) -> Any:
 
 
 @contextmanager
-def _requests_deadline(deadline: float):
+def _requests_deadline(
+    deadline: float,
+    *,
+    download_budget: Optional[_DownloadBudget] = None,
+):
     """Clamp adapter requests calls to the direct-search deadline.
 
     Stock-source adapters are intentionally simple and call `requests.get`
@@ -597,11 +968,18 @@ def _requests_deadline(deadline: float):
         remaining = remaining_seconds(deadline)
         kwargs["timeout"] = _clamp_timeout(kwargs.get("timeout"), remaining)
         response = original_get(*args, **kwargs)
+        if download_budget is not None:
+            headers = getattr(response, "headers", {}) or {}
+            download_budget.preflight_content_length(
+                headers.get("Content-Length") or headers.get("content-length")
+            )
         original_iter_content = getattr(response, "iter_content", None)
         if callable(original_iter_content):
             def iter_content_with_deadline(*iter_args, **iter_kwargs):
                 for chunk in original_iter_content(*iter_args, **iter_kwargs):
                     remaining_seconds(deadline)
+                    if download_budget is not None and chunk:
+                        download_budget.consume(len(chunk))
                     yield chunk
 
             response.iter_content = iter_content_with_deadline

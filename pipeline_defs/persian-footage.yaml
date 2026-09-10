@@ -220,8 +220,10 @@ stages:
       - Provenance (provider, original_url, license, attribution) present on every asset
       - No clip_id fills two beats
       - Clip orientation matches the chosen format
-      - "clips_per_query is 2 — the parameter is clips_per_query, NOT per_query. An unknown key is ignored and silently falls back to the default of 3, which turned a 24-download run into 36."
-      - "filters.min_width is 1080. _pick_video_rendition takes the largest rendition at or below 1920px WIDE, and for a portrait clip width is the short edge — so without a floor, vertical clips arrive at 1440x2732, tens of MB each, for a 1080-wide render. Setting the floor fixes both ends at once. Do NOT change direct_clip_search or the Pexels adapter; both are shared with documentary-montage, which wants the 1920-wide rendition."
+      - "Acquisition uses only sources [pexels, pixabay_video], clips_per_query 1, one primary query per footage beat, and at most one retry pass with the authored alternate query. No smoke-* provider probing is allowed inside a production project."
+      - "Every direct_clip_search call sets max_candidates_total, max_bytes_per_clip, and max_total_download_bytes. Quota exhaustion is a blocker; the agent may not raise a limit without explicit user approval."
+      - "filters.min_width is 1080. _pick_video_rendition takes the largest rendition at or below 1920px WIDE, and for a portrait clip width is the short edge — so without a floor, vertical clips arrive at 1440x2732, tens of MB each, for a 1080-wide render."
+      - "The tool's post-download ffprobe values, not provider claims, satisfy duration and orientation. A mismatch or unknown probe is deleted immediately and never enters the manifest."
       - "SUBJECT SURVIVED SELECTION: the anchor quota the scene plan declared still holds in the chosen clips. Selection is where it gets lost, because the beat whose subject clip was unusable is exactly the beat where a generic one is tempting."
       - "Every asset records a selection_reason naming what is IN FRAME. 'best match' is not a reason — the coffee run's manifest recorded twelve chosen clips and nothing about what any showed, so 'waist measurement' and 'coffee cup' looked identical at the checkpoint."
       - "In narrated mode: word-level timings exist and cover the narration duration"

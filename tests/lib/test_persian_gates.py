@@ -461,6 +461,20 @@ class TestAssetAudit:
         assert any("dimensions unknown" in problem for problem in problems)
 
 
+    def test_nasa_is_outside_the_persian_provider_allowlist(self) -> None:
+        problems = audit_asset_manifest(
+            {"assets": [self._asset(provider="nasa")]}
+        )
+        assert any("outside the Persian production allowlist" in p for p in problems)
+
+    @pytest.mark.parametrize("provider", ["pexels", "pixabay", "pixabay_video"])
+    def test_approved_persian_video_providers_pass(self, provider: str) -> None:
+        problems = audit_asset_manifest(
+            {"assets": [self._asset(provider=provider)]}
+        )
+        assert not any("provider" in p and "allowlist" in p for p in problems)
+
+
 class TestSrtRendering:
     """The sidecar file itself. Every assertion here is a real player's requirement."""
 

@@ -43,6 +43,14 @@ _IMAGE_PROVIDER_TOOLS = frozenset(
 )
 
 
+_PERSIAN_VIDEO_PROVIDER_ALIASES = {
+    "pexels": "pexels",
+    "pixabay": "pixabay_video",
+    "pixabay_video": "pixabay_video",
+}
+ALLOWED_PERSIAN_VIDEO_PROVIDERS = frozenset({"pexels", "pixabay_video"})
+
+
 class ImageFootageRejected(ValueError):
     """Raised when a Persian-pipeline manifest contains still-image footage.
 
@@ -140,6 +148,15 @@ def audit_asset_manifest(
         for field in ("provider", "original_url", "license", "attribution"):
             if not entry.get(field):
                 problems.append(f"{label}: missing {field} — required by the stock licence")
+
+        provider = str(entry.get("provider") or "").strip().lower()
+        normalized_provider = _PERSIAN_VIDEO_PROVIDER_ALIASES.get(provider)
+        if provider and normalized_provider not in ALLOWED_PERSIAN_VIDEO_PROVIDERS:
+            allowed = ", ".join(sorted(ALLOWED_PERSIAN_VIDEO_PROVIDERS))
+            problems.append(
+                f"{label}: provider {provider!r} is outside the Persian production "
+                f"allowlist ({allowed})"
+            )
 
         # The clip has to be findable, and "findable" means on disk at the recorded
         # path. It deliberately does NOT mean `public_path`.
@@ -267,6 +284,7 @@ def assert_orientation(manifest: dict[str, Any], video_format: str) -> list[str]
 
 
 __all__ = [
+    "ALLOWED_PERSIAN_VIDEO_PROVIDERS",
     "ImageFootageRejected",
     "assert_video_only",
     "audit_asset_manifest",
