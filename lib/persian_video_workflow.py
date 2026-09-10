@@ -1,0 +1,969 @@
+"""Deterministic front-door state for Persian video production.
+
+The pipeline director skills still own creative decisions. This module owns the
+workflow envelope: fresh-project bootstrap, stage order, read isolation, retry
+and download budgets, and the terminal digest-bound awaiting-human transition.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import shutil
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable, Mapping, Sequence
+from uuid import uuid4
+
+from backlot.__main__ import cmd_open as open_backlot
+from lib.checkpoint import CheckpointValidationError, init_project, read_checkpoint
+from lib.paths import PROJECTS_DIR, REPO_ROOT
+from lib.pipeline_loader import load_pipeline_readonly
+
+WORKFLOW_VERSION = "1.0"
+STATE_FILENAME = "persian-video-workflow.json"
+INPUT_KINDS = ("narration_path", "script", "raw_text", "english_article")
+PHASES = (
+    "validate_input",
+    "create_project",
+    "open_backlot",
+    "prepare_narration",
+    "align_script_timing",
+    "plan_scenes_moments",
+    "acquire_assets",
+    "review_subject_regions",
+    "no_copy_preflight",
+    "render_final_candidate",
+    "final_review",
+    "awaiting_human",
+)
+
+_PROJECT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,79}$")
+
+
+class PersianVideoWorkflowError(ValueError):
+    """Raised when the front-door workflow contract would be violated."""
+
+
+@dataclass(frozen=True)
+class WorkflowBudgets:
+    max_revisions_per_stage: int
+    max_send_backs: int
+    max_wall_time_minutes: int
+    asset_retry_passes: int = 1
+    clips_per_query: int = 1
+    max_candidates_total: int = 16
+    max_bytes_per_clip: int = 96 * 1024 * 1024
+    max_total_download_bytes: int = 512 * 1024 * 1024
+
+
+def get_workflow_budgets() -> WorkflowBudgets:
+    """Resolve the orchestration envelope from the canonical manifest."""
+    manifest = load_pipeline_readonly("persian-footage")
+    orchestration = manifest.get("orchestration") or {}
+    try:
+        return WorkflowBudgets(
+            max_revisions_per_stage=int(orchestration["max_revisions_per_stage"]),
+            max_send_backs=int(orchestration["max_send_backs"]),
+            max_wall_time_minutes=int(orchestration["max_wall_time_minutes"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PersianVideoWorkflowError(
+            "persian-footage orchestration limits are missing or invalid"
+        ) from exc
+
+
+def asset_search_policy() -> dict[str, Any]:
+    """Return the only automatic stock-search budget for this workflow."""
+    budget = get_workflow_budgets()
+    return {
+        "sources": ["pexels", "pixabay_video"],
+        "clips_per_query": budget.clips_per_query,
+        "max_candidates_total": budget.max_candidates_total,
+        "max_bytes_per_clip": budget.max_bytes_per_clip,
+        "max_total_download_bytes": budget.max_total_download_bytes,
+        "max_retry_passes": budget.asset_retry_passes,
+    }
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _hash_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(4 * 1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _hash_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _slug(text: str) -> str:
+    value = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return value[:40] or "persian-video"
+
+
+def new_project_id(
+    title: str,
+    *,
+    now: datetime | None = None,
+    token: str | None = None,
+) -> str:
+    stamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%d-%H%M%S")
+    suffix = (token or uuid4().hex[:8]).lower()
+    return f"{_slug(title)}-{stamp}-{suffix}"
+
+
+def _validate_project_id(project_id: str) -> None:
+    if not _PROJECT_ID_RE.fullmatch(project_id):
+        raise PersianVideoWorkflowError(
+            "project_id must be 2-80 lowercase ASCII letters/digits plus ._-"
+        )
+
+
+def _validate_input(input_kind: str, input_value: str) -> dict[str, Any]:
+    if input_kind not in INPUT_KINDS:
+        raise PersianVideoWorkflowError(
+            f"unsupported input kind {input_kind!r}; expected one of {INPUT_KINDS}"
+        )
+    if input_kind == "narration_path":
+        path = Path(input_value).expanduser().resolve()
+        if not path.is_file():
+            raise PersianVideoWorkflowError(f"narration file does not exist: {path}")
+        return {
+            "kind": input_kind,
+            "source_path": str(path),
+            "sha256": _hash_file(path),
+            "prepare_mode": "transcribe_existing_narration",
+        }
+
+    text = str(input_value)
+    if not text.strip():
+        raise PersianVideoWorkflowError(f"{input_kind} input must not be empty")
+    prepare_mode = {
+        "script": "use_approved_persian_script",
+        "raw_text": "author_persian_narration",
+        "english_article": "translate_and_author_persian_narration",
+    }[input_kind]
+    return {
+        "kind": input_kind,
+        "text": text,
+        "sha256": _hash_text(text),
+        "prepare_mode": prepare_mode,
+    }
+
+
+def _state_path(project_dir: Path) -> Path:
+    return project_dir / STATE_FILENAME
+
+
+def _write_state(project_dir: Path, state: Mapping[str, Any]) -> None:
+    path = _state_path(project_dir)
+    temp = path.with_suffix(path.suffix + ".tmp")
+    temp.write_text(json.dumps(dict(state), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temp.replace(path)
+
+
+def _repo_read_allowlist() -> list[str]:
+    return [
+        str((REPO_ROOT / "skills" / "persian-video").resolve()),
+        str((REPO_ROOT / "skills" / "pipelines" / "persian-footage").resolve()),
+        str((REPO_ROOT / "skills" / "meta" / "checkpoint-protocol.md").resolve()),
+        str((REPO_ROOT / "skills" / "meta" / "reviewer.md").resolve()),
+        str((REPO_ROOT / "pipeline_defs" / "persian-footage.yaml").resolve()),
+        str((REPO_ROOT / "styles" / "persian-footage").resolve()),
+        str((REPO_ROOT / "docs" / "persian-film-type-2.12-patch.md").resolve()),
+        str((REPO_ROOT / "docs" / "film-type-visual-regression.md").resolve()),
+        str((REPO_ROOT / ".agents" / "skills" / "music").resolve()),
+        str((REPO_ROOT / ".agents" / "skills" / "speech-to-text").resolve()),
+        str((REPO_ROOT / ".agents" / "skills" / "ffmpeg").resolve()),
+        str((REPO_ROOT / ".agents" / "skills" / "video-toolkit").resolve()),
+    ]
+
+
+def bootstrap_persian_video(
+    *,
+    title: str,
+    input_kind: str,
+    input_value: str,
+    project_id: str | None = None,
+    pipeline_dir: Path | None = None,
+    backlot_opener: Callable[[str | None], int] = open_backlot,
+    now: datetime | None = None,
+    id_token: str | None = None,
+) -> dict[str, Any]:
+    """Create one fresh Persian project and open its Backlot board immediately."""
+    projects_root = (pipeline_dir or PROJECTS_DIR).resolve()
+    if input_kind == "narration_path":
+        requested_source = Path(input_value).expanduser().resolve()
+        if _is_within(requested_source, projects_root):
+            raise PersianVideoWorkflowError(
+                "refusing narration input from an existing project directory"
+            )
+
+    source = _validate_input(input_kind, input_value)
+    created_at = now or datetime.now(timezone.utc)
+    pid = project_id or new_project_id(title, now=created_at, token=id_token)
+    _validate_project_id(pid)
+
+    project_dir = projects_root / pid
+    if project_dir.exists():
+        raise PersianVideoWorkflowError(
+            f"refusing to reuse existing project directory: {project_dir}"
+        )
+
+    created = False
+    try:
+        init_project(pid, title=title, pipeline_type="persian-footage", pipeline_dir=projects_root)
+        created = True
+        inputs_dir = project_dir / "inputs"
+        inputs_dir.mkdir(parents=True, exist_ok=True)
+        if input_kind != "narration_path":
+            source_path = inputs_dir / f"{input_kind}.txt"
+            source_path.write_text(source.pop("text"), encoding="utf-8")
+            source["source_path"] = str(source_path.resolve())
+
+        state: dict[str, Any] = {
+            "version": WORKFLOW_VERSION,
+            "project_id": pid,
+            "pipeline_type": "persian-footage",
+            "created_at": created_at.isoformat(),
+            "budget_window_started_at": created_at.isoformat(),
+            "status": "active",
+            "completed_phases": ["validate_input", "create_project"],
+            "next_phase": "open_backlot",
+            "input": source,
+            "budgets": asdict(get_workflow_budgets()),
+            "attempts": {},
+            "send_backs": 0,
+            "projects_root": str(projects_root),
+            "read_allowlist": {
+                "project_root": str(project_dir.resolve()),
+                "source_paths": [source["source_path"]],
+                "repo_paths": _repo_read_allowlist(),
+            },
+            "evidence": {},
+        }
+        _write_state(project_dir, state)
+    except Exception:
+        if created:
+            shutil.rmtree(project_dir, ignore_errors=True)
+        raise
+
+    try:
+        backlot_code = int(backlot_opener(pid))
+    except Exception:
+        backlot_code = 1
+    state["completed_phases"].append("open_backlot")
+    state["next_phase"] = "prepare_narration"
+    state["backlot"] = {"attempted": True, "exit_code": backlot_code}
+    _write_state(project_dir, state)
+    return state
+
+
+def load_workflow_state(
+    project_id: str,
+    *,
+    pipeline_dir: Path | None = None,
+) -> dict[str, Any]:
+    _validate_project_id(project_id)
+    project_dir = (pipeline_dir or PROJECTS_DIR).resolve() / project_id
+    path = _state_path(project_dir)
+    if not path.is_file():
+        raise PersianVideoWorkflowError(f"workflow state not found: {path}")
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PersianVideoWorkflowError(f"workflow state is unreadable: {path}") from exc
+    if state.get("version") != WORKFLOW_VERSION or state.get("project_id") != project_id:
+        raise PersianVideoWorkflowError("workflow state identity/version mismatch")
+    return state
+
+
+def assert_read_allowed(state: Mapping[str, Any], requested_path: str | Path) -> Path:
+    """Reject reads from sibling projects and anything outside the explicit allowlist."""
+    requested = Path(requested_path).expanduser().resolve()
+    policy = state.get("read_allowlist") or {}
+    project_root = Path(str(policy.get("project_root") or "")).resolve()
+    projects_root = Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve()
+
+    if _is_within(requested, projects_root):
+        if _is_within(requested, project_root):
+            return requested
+        raise PersianVideoWorkflowError(
+            f"read isolation violation: sibling project path is forbidden: {requested}"
+        )
+
+    for raw in policy.get("source_paths", []):
+        if requested == Path(str(raw)).expanduser().resolve():
+            return requested
+
+    for raw in policy.get("repo_paths", []):
+        allowed = Path(str(raw)).resolve()
+        if requested == allowed or (allowed.is_dir() and _is_within(requested, allowed)):
+            return requested
+
+    raise PersianVideoWorkflowError(
+        f"read path is outside the Persian workflow allowlist: {requested}"
+    )
+
+
+def _parse_timestamp(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise PersianVideoWorkflowError("invalid workflow created_at timestamp") from exc
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def assert_within_wall_time(
+    state: Mapping[str, Any], *, now: datetime | None = None
+) -> None:
+    started = _parse_timestamp(
+        str(state.get("budget_window_started_at") or state.get("created_at") or "")
+    )
+    current = now or datetime.now(timezone.utc)
+    elapsed_minutes = max(0.0, (current - started).total_seconds() / 60.0)
+    limit = int((state.get("budgets") or {}).get("max_wall_time_minutes", 0))
+    if limit <= 0 or elapsed_minutes > limit:
+        raise PersianVideoWorkflowError(
+            f"workflow wall-time budget exceeded: {elapsed_minutes:.1f}m > {limit}m"
+        )
+
+
+def record_phase_attempt(
+    project_id: str,
+    phase: str,
+    *,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    assert_within_wall_time(state, now=now)
+    if phase != state.get("next_phase") or phase not in PHASES:
+        raise PersianVideoWorkflowError(
+            f"cannot attempt {phase!r}; next phase is {state.get('next_phase')!r}"
+        )
+    attempts = dict(state.get("attempts") or {})
+    count = int(attempts.get(phase, 0)) + 1
+    limit = 1 + int(state["budgets"]["max_revisions_per_stage"])
+    if count > limit:
+        raise PersianVideoWorkflowError(
+            f"retry budget exhausted for {phase}: {count - 1} retries > {limit - 1}"
+        )
+    attempts[phase] = count
+    state["attempts"] = attempts
+    _write_state(Path(state["read_allowlist"]["project_root"]), state)
+    return state
+
+
+def _project_root(state: Mapping[str, Any]) -> Path:
+    return Path(str(state["read_allowlist"]["project_root"])).resolve()
+
+
+def _phase_index(phase: str) -> int:
+    try:
+        return PHASES.index(phase)
+    except ValueError as exc:
+        raise PersianVideoWorkflowError(f"unknown workflow phase: {phase!r}") from exc
+
+
+def complete_phase(
+    project_id: str,
+    phase: str,
+    *,
+    evidence: Mapping[str, Any] | None = None,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Advance exactly one phase; terminal advancement validates the real candidate."""
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    assert_within_wall_time(state, now=now)
+    if (state.get("asset_usage") or {}).get("pending_pass") is not None:
+        raise PersianVideoWorkflowError(
+            "asset search result accounting must complete before send-back"
+        )
+    if state.get("status") == "awaiting_human":
+        raise PersianVideoWorkflowError("workflow already stopped at awaiting_human")
+    if phase != state.get("next_phase"):
+        raise PersianVideoWorkflowError(
+            f"cannot complete {phase!r}; next phase is {state.get('next_phase')!r}"
+        )
+    if phase not in {"open_backlot", "awaiting_human"} and not int(
+        (state.get("attempts") or {}).get(phase, 0)
+    ):
+        raise PersianVideoWorkflowError(
+            f"phase {phase!r} must be attempted before it can complete"
+        )
+    phase_evidence = dict(evidence or {})
+    if phase == "acquire_assets" and (state.get("asset_usage") or {}).get("pending_pass") is not None:
+        raise PersianVideoWorkflowError(
+            "asset search result accounting must complete before acquire_assets can complete"
+        )
+    if phase == "awaiting_human":
+        phase_evidence.update(_validate_awaiting_human_candidate(state))
+
+    completed = list(state.get("completed_phases") or [])
+    if phase not in completed:
+        completed.append(phase)
+    state["completed_phases"] = completed
+    all_evidence = dict(state.get("evidence") or {})
+    all_evidence[phase] = phase_evidence
+    state["evidence"] = all_evidence
+
+    if phase == "awaiting_human":
+        state["status"] = "awaiting_human"
+        state["next_phase"] = None
+    else:
+        state["next_phase"] = PHASES[_phase_index(phase) + 1]
+    _write_state(_project_root(state), state)
+    return state
+
+
+def request_send_back(
+    project_id: str,
+    target_phase: str,
+    *,
+    reason: str,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Rewind a bounded production without erasing retry history."""
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    assert_within_wall_time(state, now=now)
+    if state.get("status") == "awaiting_human":
+        raise PersianVideoWorkflowError(
+            "workflow already stopped at awaiting_human; use the checkpoint approval protocol"
+        )
+    if target_phase not in PHASES[3:-1]:
+        raise PersianVideoWorkflowError(
+            "send-back target must be an operational phase before awaiting_human"
+        )
+    if not reason.strip():
+        raise PersianVideoWorkflowError("send-back requires a non-empty reason")
+    current = state.get("next_phase")
+    current_index = len(PHASES) if current is None else _phase_index(str(current))
+    target_index = _phase_index(target_phase)
+    if target_index >= current_index:
+        raise PersianVideoWorkflowError(
+            f"send-back must rewind the workflow; current={current!r}, target={target_phase!r}"
+        )
+
+    used = int(state.get("send_backs", 0)) + 1
+    limit = int(state["budgets"]["max_send_backs"])
+    if used > limit:
+        raise PersianVideoWorkflowError(
+            f"send-back budget exhausted: {used} requested > {limit} allowed"
+        )
+    state["send_backs"] = used
+    state["status"] = "active"
+    state["next_phase"] = target_phase
+    state["completed_phases"] = [
+        p for p in state.get("completed_phases", []) if _phase_index(p) < target_index
+    ]
+    evidence = dict(state.get("evidence") or {})
+    state["evidence"] = {
+        key: value for key, value in evidence.items() if _phase_index(key) < target_index
+    }
+    history = list(state.get("send_back_history") or [])
+    history.append({"target_phase": target_phase, "reason": reason.strip()})
+    state["send_back_history"] = history
+    _write_state(_project_root(state), state)
+    return state
+
+
+def bounded_asset_search_request(
+    project_id: str,
+    request: Mapping[str, Any],
+    *,
+    retry_pass: int,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Return a direct_clip_search request clamped to the shared workflow budget."""
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    assert_within_wall_time(state, now=now)
+    if state.get("next_phase") != "acquire_assets":
+        raise PersianVideoWorkflowError("asset search is allowed only during acquire_assets")
+    policy = asset_search_policy()
+    if retry_pass < 0 or retry_pass > policy["max_retry_passes"]:
+        raise PersianVideoWorkflowError(
+            f"asset retry pass {retry_pass} exceeds max {policy['max_retry_passes']}"
+        )
+    usage = dict(state.get("asset_usage") or {})
+    completed_passes = list(usage.get("completed_passes") or [])
+    pending_pass = usage.get("pending_pass")
+    if pending_pass is not None:
+        raise PersianVideoWorkflowError(
+            f"asset search pass {pending_pass} is still pending result accounting"
+        )
+    if retry_pass in completed_passes:
+        raise PersianVideoWorkflowError(f"asset search pass {retry_pass} was already recorded")
+    if retry_pass != len(completed_passes):
+        raise PersianVideoWorkflowError(
+            f"asset search passes must be sequential; completed={completed_passes}"
+        )
+
+    bounded = dict(request)
+    project_root = _project_root(state)
+    raw_output_dir = str(bounded.get("output_dir") or "").strip()
+    if raw_output_dir:
+        raw_output = Path(raw_output_dir).expanduser()
+        output_dir = (
+            raw_output.resolve()
+            if raw_output.is_absolute()
+            else (project_root / raw_output).resolve()
+        )
+    else:
+        output_dir = (project_root / "assets").resolve()
+    if not _is_within(output_dir, project_root):
+        raise PersianVideoWorkflowError(
+            f"asset output_dir must stay inside the current project: {output_dir}"
+        )
+    bounded["output_dir"] = str(output_dir)
+
+    sources = bounded.get("sources", policy["sources"])
+    if list(sources) != policy["sources"]:
+        raise PersianVideoWorkflowError(
+            f"asset sources must be exactly {policy['sources']}; got {sources}"
+        )
+    bounded["sources"] = policy["sources"]
+    if int(bounded.get("clips_per_query", policy["clips_per_query"])) != policy["clips_per_query"]:
+        raise PersianVideoWorkflowError("clips_per_query is fixed at 1 for Persian production")
+    bounded["clips_per_query"] = policy["clips_per_query"]
+
+    used_candidates = int(usage.get("candidates_considered", 0))
+    used_bytes = int(usage.get("bytes_downloaded", 0))
+    remaining_candidates = policy["max_candidates_total"] - used_candidates
+    remaining_bytes = policy["max_total_download_bytes"] - used_bytes
+    if remaining_candidates <= 0 or remaining_bytes <= 0:
+        raise PersianVideoWorkflowError("shared asset download/candidate budget is exhausted")
+
+    for key, ceiling in (
+        ("max_candidates_total", remaining_candidates),
+        ("max_bytes_per_clip", policy["max_bytes_per_clip"]),
+        ("max_total_download_bytes", remaining_bytes),
+    ):
+        requested = int(bounded.get(key, ceiling))
+        if requested > ceiling:
+            raise PersianVideoWorkflowError(
+                f"{key}={requested} exceeds remaining workflow ceiling {ceiling}"
+            )
+        if requested <= 0:
+            raise PersianVideoWorkflowError(f"{key} must be positive")
+        bounded[key] = requested
+
+    usage["pending_pass"] = retry_pass
+    usage["pending_output_dir"] = bounded["output_dir"]
+    usage["pending_limits"] = {
+        "max_candidates_total": bounded["max_candidates_total"],
+        "max_bytes_per_clip": bounded["max_bytes_per_clip"],
+        "max_total_download_bytes": bounded["max_total_download_bytes"],
+    }
+    state["asset_usage"] = usage
+    _write_state(_project_root(state), state)
+    return bounded
+
+
+def record_asset_search_result(
+    project_id: str,
+    *,
+    retry_pass: int,
+    result_data: Mapping[str, Any],
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Account a completed stock-search pass against shared candidate/byte limits."""
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    assert_within_wall_time(state, now=now)
+    if state.get("next_phase") != "acquire_assets":
+        raise PersianVideoWorkflowError("asset results are accepted only during acquire_assets")
+    policy = asset_search_policy()
+    if retry_pass < 0 or retry_pass > policy["max_retry_passes"]:
+        raise PersianVideoWorkflowError("asset retry pass is outside the workflow budget")
+
+    usage = dict(state.get("asset_usage") or {})
+    completed_passes = list(usage.get("completed_passes") or [])
+    if retry_pass != len(completed_passes):
+        raise PersianVideoWorkflowError(
+            f"asset result pass must be next in sequence; completed={completed_passes}"
+        )
+    if usage.get("pending_pass") != retry_pass:
+        raise PersianVideoWorkflowError(
+            f"asset result pass {retry_pass} has no matching issued request"
+        )
+    pending_limits = dict(usage.get("pending_limits") or {})
+    pending_output_dir = str(usage.get("pending_output_dir") or "")
+    if str(result_data.get("output_dir") or "") != pending_output_dir:
+        raise PersianVideoWorkflowError(
+            "asset result output_dir does not match the issued request"
+        )
+    if list(result_data.get("resolved_sources") or []) != policy["sources"]:
+        raise PersianVideoWorkflowError("asset result sources do not match the issued provider set")
+    for key, expected in pending_limits.items():
+        try:
+            actual = int(result_data[key])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PersianVideoWorkflowError(
+                f"asset result must echo the issued {key} limit"
+            ) from exc
+        if actual != int(expected):
+            raise PersianVideoWorkflowError(
+                f"asset result {key} does not match the issued request"
+            )
+    try:
+        candidates = int(result_data["candidates_considered"])
+        downloaded_bytes = int(result_data["bytes_downloaded"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PersianVideoWorkflowError(
+            "asset result requires integer candidates_considered and bytes_downloaded counters"
+        ) from exc
+    if candidates < 0 or downloaded_bytes < 0:
+        raise PersianVideoWorkflowError("asset usage counters must be non-negative")
+    if candidates > int(pending_limits["max_candidates_total"]):
+        raise PersianVideoWorkflowError("asset result exceeded its issued candidate ceiling")
+    if downloaded_bytes > int(pending_limits["max_total_download_bytes"]):
+        raise PersianVideoWorkflowError("asset result exceeded its issued download-byte ceiling")
+    clip_ceiling = int(pending_limits["max_bytes_per_clip"])
+    clips = result_data.get("clips") or []
+    if not isinstance(clips, list):
+        raise PersianVideoWorkflowError("asset result clips must be a list")
+    project_root = _project_root(state)
+    for clip in clips:
+        if not isinstance(clip, Mapping):
+            raise PersianVideoWorkflowError("asset result clip entries must be objects")
+        reported_path = str(clip.get("path") or "").strip()
+        if not reported_path:
+            raise PersianVideoWorkflowError("asset result clips require a path")
+        raw_path = Path(reported_path).expanduser()
+        clip_path = (
+            raw_path.resolve()
+            if raw_path.is_absolute()
+            else (project_root / raw_path).resolve()
+        )
+        if not _is_within(clip_path, project_root):
+            raise PersianVideoWorkflowError(
+                f"asset clip must stay inside the current project: {clip_path}"
+            )
+        if not clip_path.is_file():
+            raise PersianVideoWorkflowError(f"asset clip file does not exist: {clip_path}")
+        if clip.get("skipped_existing"):
+            continue
+        try:
+            clip_bytes = int(clip["file_size_bytes"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PersianVideoWorkflowError(
+                "downloaded asset result clips require integer file_size_bytes"
+            ) from exc
+        if clip_bytes < 0:
+            raise PersianVideoWorkflowError("asset clip byte counters must be non-negative")
+        if clip_path.stat().st_size != clip_bytes:
+            raise PersianVideoWorkflowError(
+                "asset result file_size_bytes does not match the clip on disk"
+            )
+        if clip_bytes > clip_ceiling:
+            raise PersianVideoWorkflowError("asset result exceeded its issued per-clip byte ceiling")
+
+    candidates += int(usage.get("candidates_considered", 0))
+    downloaded_bytes += int(usage.get("bytes_downloaded", 0))
+    if candidates > policy["max_candidates_total"]:
+        raise PersianVideoWorkflowError("asset candidate budget exceeded")
+    if downloaded_bytes > policy["max_total_download_bytes"]:
+        raise PersianVideoWorkflowError("asset download-byte budget exceeded")
+    usage.pop("pending_pass", None)
+    usage.pop("pending_output_dir", None)
+    usage.pop("pending_limits", None)
+    usage.update(
+        completed_passes=completed_passes + [retry_pass],
+        candidates_considered=candidates,
+        bytes_downloaded=downloaded_bytes,
+    )
+    state["asset_usage"] = usage
+    _write_state(_project_root(state), state)
+    return state
+
+
+def _candidate_path(project_root: Path, reported: str) -> Path:
+    raw = Path(reported).expanduser()
+    path = raw.resolve() if raw.is_absolute() else (project_root / raw).resolve()
+    if not _is_within(path, project_root):
+        raise PersianVideoWorkflowError(
+            f"final candidate must live inside its own project: {path}"
+        )
+    if not path.is_file():
+        raise PersianVideoWorkflowError(f"final candidate file does not exist: {path}")
+    return path
+
+
+def _validate_awaiting_human_candidate(state: Mapping[str, Any]) -> dict[str, Any]:
+    project_id = str(state["project_id"])
+    projects_root = Path(str(state["projects_root"])).resolve()
+    try:
+        checkpoint = read_checkpoint(projects_root, project_id, "compose")
+    except (CheckpointValidationError, OSError, json.JSONDecodeError) as exc:
+        raise PersianVideoWorkflowError(
+            "compose checkpoint is invalid or unreadable"
+        ) from exc
+    if not checkpoint:
+        raise PersianVideoWorkflowError("compose checkpoint is required before awaiting_human")
+    if checkpoint.get("project_id") != project_id:
+        raise PersianVideoWorkflowError("compose checkpoint belongs to another project")
+    if checkpoint.get("stage") != "compose":
+        raise PersianVideoWorkflowError("checkpoint_compose.json must identify stage='compose'")
+    if checkpoint.get("pipeline_type") != "persian-footage":
+        raise PersianVideoWorkflowError("compose checkpoint belongs to another pipeline")
+    if checkpoint.get("status") != "awaiting_human":
+        raise PersianVideoWorkflowError("compose checkpoint must have status='awaiting_human'")
+    if checkpoint.get("human_approval_required") is not True:
+        raise PersianVideoWorkflowError("compose checkpoint must require human approval")
+    if checkpoint.get("human_approved") is not False:
+        raise PersianVideoWorkflowError("final candidate must remain unapproved")
+
+    report = (checkpoint.get("artifacts") or {}).get("render_report")
+    if not isinstance(report, Mapping):
+        raise PersianVideoWorkflowError("compose checkpoint is missing render_report")
+    if (
+        report.get("delivery_status") != "final_candidate"
+        or report.get("human_visual_approval") is not False
+        or report.get("persian_text_verified") is not False
+    ):
+        raise PersianVideoWorkflowError(
+            "terminal candidate must be final_candidate with both approval flags false"
+        )
+    outputs = report.get("outputs")
+    if not isinstance(outputs, Sequence) or not outputs or not isinstance(outputs[0], Mapping):
+        raise PersianVideoWorkflowError("render_report.outputs[0] is required")
+    primary = outputs[0]
+    reported_path = str(primary.get("path") or "").strip()
+    if not reported_path or str(primary.get("format") or "").strip().lower() != "mp4":
+        raise PersianVideoWorkflowError("final candidate primary output must be a reported MP4 path")
+    reported_digest = str(primary.get("sha256") or "").strip().lower()
+    if len(reported_digest) != 64 or any(ch not in "0123456789abcdef" for ch in reported_digest):
+        raise PersianVideoWorkflowError("final candidate requires a lowercase 64-character sha256")
+
+    project_root = _project_root(state)
+    candidate = _candidate_path(project_root, reported_path)
+    actual_digest = _hash_file(candidate)
+    if actual_digest != reported_digest:
+        raise PersianVideoWorkflowError(
+            "final candidate sha256 does not match the exact MP4 bytes"
+        )
+    return {
+        "candidate_path": str(candidate),
+        "candidate_sha256": actual_digest,
+        "checkpoint": "checkpoint_compose.json",
+    }
+
+
+def workflow_status(
+    project_id: str, *, pipeline_dir: Path | None = None
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    return {
+        "project_id": state["project_id"],
+        "status": state["status"],
+        "next_phase": state.get("next_phase"),
+        "completed_phases": state.get("completed_phases", []),
+        "attempts": state.get("attempts", {}),
+        "send_backs": state.get("send_backs", 0),
+        "asset_usage": state.get("asset_usage", {}),
+    }
+
+
+def _load_text_file(path: str) -> str:
+    source = Path(path).expanduser().resolve()
+    if _is_within(source, PROJECTS_DIR.resolve()):
+        raise PersianVideoWorkflowError(
+            "refusing text input from an existing project directory"
+        )
+    if not source.is_file():
+        raise PersianVideoWorkflowError(f"text input file does not exist: {source}")
+    return source.read_text(encoding="utf-8")
+
+
+def _add_bootstrap_input_group(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--narration", metavar="PATH")
+    group.add_argument("--script", metavar="TEXT")
+    group.add_argument("--script-file", metavar="PATH")
+    group.add_argument("--raw-text", metavar="TEXT")
+    group.add_argument("--raw-text-file", metavar="PATH")
+    group.add_argument("--english-article", metavar="TEXT")
+    group.add_argument("--english-article-file", metavar="PATH")
+
+
+def _bootstrap_input(args: argparse.Namespace) -> tuple[str, str]:
+    if args.narration is not None:
+        return "narration_path", args.narration
+    if args.script is not None:
+        return "script", args.script
+    if args.script_file is not None:
+        return "script", _load_text_file(args.script_file)
+    if args.raw_text is not None:
+        return "raw_text", args.raw_text
+    if args.raw_text_file is not None:
+        return "raw_text", _load_text_file(args.raw_text_file)
+    if args.english_article is not None:
+        return "english_article", args.english_article
+    return "english_article", _load_text_file(args.english_article_file)
+
+
+def resume_workflow(
+    project_id: str,
+    *,
+    pipeline_dir: Path | None = None,
+    backlot_opener: Callable[[str | None], int] = open_backlot,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Start a fresh wall-time window without resetting durable workflow budgets."""
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    stamp = now or datetime.now(timezone.utc)
+    state["budget_window_started_at"] = stamp.isoformat()
+    state["resumed_at"] = stamp.isoformat()
+    try:
+        code = int(backlot_opener(project_id))
+    except Exception:
+        code = 1
+    history = list(state.get("backlot_resume_attempts") or [])
+    history.append({"at": stamp.isoformat(), "exit_code": code})
+    state["backlot_resume_attempts"] = history
+    _write_state(_project_root(state), state)
+    return state
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="persian-video")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    bootstrap = sub.add_parser("bootstrap", help="create a fresh Persian video project")
+    bootstrap.add_argument("--title", required=True)
+    bootstrap.add_argument("--project-id")
+    _add_bootstrap_input_group(bootstrap)
+
+    status = sub.add_parser("status", help="show bounded workflow state")
+    status.add_argument("project_id")
+
+    resume = sub.add_parser("resume", help="start a new bounded session and reopen Backlot")
+    resume.add_argument("project_id")
+
+    attempt = sub.add_parser("attempt", help="record one phase attempt")
+    attempt.add_argument("project_id")
+    attempt.add_argument("--phase")
+
+    complete = sub.add_parser("complete", help="complete exactly one phase")
+    complete.add_argument("project_id")
+    complete.add_argument("--phase")
+    complete.add_argument("--evidence-json")
+
+    send_back = sub.add_parser("send-back", help="rewind within the send-back budget")
+    send_back.add_argument("project_id")
+    send_back.add_argument("target_phase")
+    send_back.add_argument("--reason", required=True)
+
+    guard = sub.add_parser("guard-read", help="check one path against the read allowlist")
+    guard.add_argument("project_id")
+    guard.add_argument("path")
+
+    asset_request = sub.add_parser("asset-request", help="clamp a stock request to workflow budgets")
+    asset_request.add_argument("project_id")
+    asset_request.add_argument("--retry-pass", type=int, required=True)
+    asset_request.add_argument("--json", required=True, metavar="PATH")
+
+    asset_result = sub.add_parser("asset-result", help="account one stock-search result")
+    asset_result.add_argument("project_id")
+    asset_result.add_argument("--retry-pass", type=int, required=True)
+    asset_result.add_argument("--json", required=True, metavar="PATH")
+    return parser
+
+
+def _read_json(path: str) -> dict[str, Any]:
+    raw = Path(path).expanduser().resolve()
+    try:
+        value = json.loads(raw.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PersianVideoWorkflowError(f"could not read JSON object: {raw}") from exc
+    if not isinstance(value, dict):
+        raise PersianVideoWorkflowError(f"expected a JSON object: {raw}")
+    return value
+
+
+def _print_json(value: Mapping[str, Any]) -> None:
+    print(json.dumps(dict(value), ensure_ascii=False, indent=2))
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        if args.command == "bootstrap":
+            input_kind, input_value = _bootstrap_input(args)
+            state = bootstrap_persian_video(
+                title=args.title,
+                input_kind=input_kind,
+                input_value=input_value,
+                project_id=args.project_id,
+            )
+            _print_json(workflow_status(state["project_id"]))
+        elif args.command == "status":
+            _print_json(workflow_status(args.project_id))
+        elif args.command == "resume":
+            _print_json(resume_workflow(args.project_id))
+        elif args.command == "attempt":
+            state = load_workflow_state(args.project_id)
+            phase = args.phase or state.get("next_phase")
+            if not phase:
+                raise PersianVideoWorkflowError("workflow has no next phase")
+            _print_json(record_phase_attempt(args.project_id, str(phase)))
+        elif args.command == "complete":
+            state = load_workflow_state(args.project_id)
+            phase = args.phase or state.get("next_phase")
+            if not phase:
+                raise PersianVideoWorkflowError("workflow has no next phase")
+            evidence = _read_json(args.evidence_json) if args.evidence_json else None
+            _print_json(complete_phase(args.project_id, str(phase), evidence=evidence))
+        elif args.command == "send-back":
+            _print_json(
+                request_send_back(
+                    args.project_id,
+                    args.target_phase,
+                    reason=args.reason,
+                )
+            )
+        elif args.command == "guard-read":
+            state = load_workflow_state(args.project_id)
+            _print_json({"allowed_path": str(assert_read_allowed(state, args.path))})
+        elif args.command == "asset-request":
+            _print_json(
+                bounded_asset_search_request(
+                    args.project_id,
+                    _read_json(args.json),
+                    retry_pass=args.retry_pass,
+                )
+            )
+        elif args.command == "asset-result":
+            _print_json(
+                record_asset_search_result(
+                    args.project_id,
+                    retry_pass=args.retry_pass,
+                    result_data=_read_json(args.json),
+                )
+            )
+        return 0
+    except PersianVideoWorkflowError as exc:
+        parser = build_parser()
+        parser.error(str(exc))
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

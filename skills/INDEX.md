@@ -282,6 +282,8 @@ Stage director skills teach the agent HOW to execute each pipeline stage. Each s
 
 ### Persian Footage Pipeline (`pipelines/persian-footage/`) — v1.0
 
+**Fresh-session front door:** for a Persian video starting from narration audio, an approved Persian script, raw text, or an English article, begin with `skills/persian-video/SKILL.md`. It creates/resumes the bounded workflow envelope while the director files below remain the canonical stage-execution contracts.
+
 Persian (Farsi / RTL) video over real stock footage. Route here whenever the on-screen
 language is Persian — the other pipelines have no Persian font, no RTL handling in their
 caption components, and wrap text with CSS, which breaks Persian lines at grammatically

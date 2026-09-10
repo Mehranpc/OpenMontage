@@ -290,7 +290,6 @@ stages:
       - persian_compose
     optional_tools:
       - audio_mixer
-      - video_probe
     tools_available:
       - persian_compose
       - audio_mixer
