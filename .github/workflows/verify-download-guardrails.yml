@@ -1,0 +1,54 @@
+name: Verify bounded footage acquisition
+
+on:
+  push:
+    branches:
+      - fix/bound-stock-footage-acquisition
+    paths:
+      - .github/workflows/verify-download-guardrails.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install development dependencies
+        run: make install-dev
+
+      - name: Verify Python behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python -m pytest tests/lib/ -q | tee /tmp/tests-lib.log
+          .venv/bin/python -m pytest \
+            tests/tools/test_direct_clip_search_limits.py \
+            tests/tools/test_stock_source_adapters.py -q | tee /tmp/tests-tools.log
+          make lint | tee /tmp/lint.log
+
+      - name: Record successful verification
+        shell: bash
+        run: |
+          {
+            echo "verified_head=$(git rev-parse HEAD)"
+            echo "python=$(python --version 2>&1)"
+            echo "commands=pytest tests/lib; focused stock tests; make lint"
+            echo "tests_lib_summary=$(tail -n 1 /tmp/tests-lib.log)"
+            echo "tests_tools_summary=$(tail -n 1 /tmp/tests-tools.log)"
+            echo "lint_summary=$(tail -n 1 /tmp/lint.log)"
+          } > .download-guardrails-verification.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .download-guardrails-verification.txt
+          git commit -m "test: verify download guardrails"
+          git push origin HEAD:fix/bound-stock-footage-acquisition
