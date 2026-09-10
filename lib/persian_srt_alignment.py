@@ -31,7 +31,7 @@ MIN_GROUP_SIMILARITY = 0.28
 MIN_OVERALL_SIMILARITY = 0.55
 MAX_ASR_INSERTION_FRACTION = 0.20
 COVERAGE_EPSILON_SECONDS = 0.08
-
+TIMING_EPSILON_SECONDS = 0.001
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _MISSING_ZWNJ_RE = re.compile(r"(?<!\S)(?:می|نمی) (?=\S)")
 _SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+[،؛؟.!:…]")
@@ -84,7 +84,7 @@ def _fail(problems: Sequence[str]) -> None:
 def _parse_approved_script(raw: Mapping[str, Any] | None) -> ApprovedScript:
     if not isinstance(raw, Mapping):
         _fail([
-            "audio.approvedScript is required when audio.wordTimings is present; "
+            "metadata.persianSubtitleScript is required when audio.wordTimings is present; "
             "ASR wording is timing evidence, never delivery copy"
         ])
 
@@ -116,7 +116,7 @@ def _parse_approved_script(raw: Mapping[str, Any] | None) -> ApprovedScript:
             f"the repository ceiling of {MAX_CPS:g}"
         ])
 
-    problems = _audit_script_text(text)
+    problems = _audit_script_text(text, policy)
     if problems:
         _fail(problems)
 
@@ -130,7 +130,7 @@ def _parse_approved_script(raw: Mapping[str, Any] | None) -> ApprovedScript:
     )
 
 
-def _audit_script_text(text: str) -> list[str]:
+def _audit_script_text(text: str, match_policy: str) -> list[str]:
     problems: list[str] = []
     if text != text.strip(" "):
         problems.append("approved script has leading or trailing spaces")
@@ -141,9 +141,9 @@ def _audit_script_text(text: str) -> list[str]:
         )
     if "  " in text:
         problems.append("approved script has repeated spaces")
-    if normalize(text) != text:
+    if match_policy == "exact" and normalize(text) != text:
         problems.append(
-            "approved script is not in canonical Persian NFC/Farsi-yeh/keheh form"
+            "exact approved script is not in canonical Persian NFC/Farsi-yeh/keheh form"
         )
     if _SPACE_BEFORE_PUNCT_RE.search(text):
         problems.append("approved script has whitespace before Persian punctuation")
@@ -187,6 +187,9 @@ def _asr_words(words: Iterable[Mapping[str, Any]]) -> list[_AsrWord]:
     parsed: list[_AsrWord] = []
     problems: list[str] = []
     for index, raw in enumerate(words):
+        if not isinstance(raw, Mapping):
+            problems.append(f"ASR word {index} must be an object")
+            continue
         surface = raw.get("word", raw.get("text"))
         if surface is None:
             problems.append(f"ASR word {index} has neither 'word' nor 'text'")
@@ -212,10 +215,10 @@ def _asr_words(words: Iterable[Mapping[str, Any]]) -> list[_AsrWord]:
             problems.append(
                 f"ASR word {index} starts before the preceding word; timings are not ordered"
             )
-        if parsed and start < parsed[-1].end - COVERAGE_EPSILON_SECONDS:
+        if parsed and start < parsed[-1].end - TIMING_EPSILON_SECONDS:
             problems.append(
                 f"ASR word {index - 1} overlaps word {index} by more than "
-                f"{COVERAGE_EPSILON_SECONDS:.2f}s"
+                f"{TIMING_EPSILON_SECONDS:.3f}s"
             )
         parsed.append(
             _AsrWord(
