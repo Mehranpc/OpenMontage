@@ -1,0 +1,58 @@
+name: Materialize script-aligned Persian SRT
+
+on:
+  push:
+    branches:
+      - fix/script-aligned-persian-srt
+    paths:
+      - .srt-alignment-materialize-request
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Apply focused source changes
+        run: python .srt-alignment-materialize.py
+      - name: Verify alignment core
+        run: |
+          python -m compileall -q lib/persian_srt_alignment.py tools/video/persian_compose.py
+          PYTHONPATH=. python - <<'PY'
+          import hashlib
+          from lib.persian_srt_alignment import build_script_aligned_cues
+
+          text = "درخواست کردن آسان نیست. عذرخواهی می‌کنی؟"
+          record = {
+              "text": text,
+              "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+              "matchPolicy": "exact",
+              "maxCps": 21,
+          }
+          raw = [
+              {"word": "درخواست", "start": 0.0, "end": 0.5},
+              {"word": "گردن", "start": 0.55, "end": 1.05},
+              {"word": "آسان", "start": 1.1, "end": 1.6},
+              {"word": "نیست.", "start": 1.65, "end": 2.15},
+              {"word": "اصخایی", "start": 2.2, "end": 2.8},
+              {"word": "می", "start": 2.85, "end": 3.2},
+              {"word": "کنی؟", "start": 3.25, "end": 3.8},
+          ]
+          cues = build_script_aligned_cues(record, raw)
+          assert " ".join(cue.text for cue in cues) == text
+          PY
+          git diff --check
+      - name: Commit materialized implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: align Persian SRT to approved script"
+          git push origin HEAD
