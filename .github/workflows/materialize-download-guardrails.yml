@@ -1,0 +1,69 @@
+name: Materialize bounded footage acquisition
+
+on:
+  push:
+    branches:
+      - fix/bound-stock-footage-acquisition
+    paths:
+      - materialize_download_guardrails.b64.part-0
+      - materialize_download_guardrails.b64.part-1
+      - .github/workflows/materialize-download-guardrails.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Apply guarded patch
+        run: |
+          cat materialize_download_guardrails.b64.part-* | base64 -d | gzip -d > /tmp/materialize_download_guardrails.py
+          python /tmp/materialize_download_guardrails.py
+
+      - name: Compile changed Python
+        run: |
+          python -m py_compile \
+            tools/video/direct_clip_search.py \
+            tools/video/stock_sources/nasa.py \
+            lib/persian_assets.py \
+            tests/tools/test_direct_clip_search_limits.py \
+            tests/lib/test_persian_gates.py
+
+      - name: Install development dependencies
+        run: make install-dev
+
+      - name: Run focused tests
+        run: |
+          .venv/bin/python -m pytest \
+            tests/tools/test_direct_clip_search_limits.py \
+            tests/tools/test_stock_source_adapters.py \
+            tests/lib/test_persian_gates.py -q
+
+      - name: Lint
+        run: make lint
+
+      - name: Commit materialized changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            tools/video/direct_clip_search.py \
+            tools/video/stock_sources/nasa.py \
+            lib/persian_assets.py \
+            tests/tools/test_direct_clip_search_limits.py \
+            tests/lib/test_persian_gates.py \
+            skills/pipelines/persian-footage/asset-director.md \
+            pipeline_defs/persian-footage.yaml
+          git diff --cached --check
+          git commit -m "fix: bound stock-footage acquisition"
+          git push origin HEAD:fix/bound-stock-footage-acquisition
