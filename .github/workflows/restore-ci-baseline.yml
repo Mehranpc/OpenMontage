@@ -1,0 +1,62 @@
+name: Restore CI baseline
+
+on:
+  pull_request:
+    branches:
+      - fix/restore-ci-baseline
+    types:
+      - opened
+
+permissions:
+  contents: write
+
+jobs:
+  repair-and-verify:
+    if: github.head_ref == 'materialize/restore-ci-baseline'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/restore-ci-baseline
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: remotion-composer/package-lock.json
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Materialize repairs and remove harness
+        run: |
+          python .ci-baseline-materialize.py
+          rm .ci-baseline-materialize.py .github/workflows/restore-ci-baseline.yml
+          python -m compileall -q tests/contracts/test_persian_artifact_schemas.py tests/tools/test_documentary_governance.py
+          git diff --check
+      - name: Install Python dependencies
+        run: make install-dev
+      - name: Install Remotion dependencies
+        working-directory: remotion-composer
+        run: npm ci
+      - name: Run focused regressions
+        run: |
+          .venv/bin/python -m pytest \
+            tests/contracts/test_persian_artifact_schemas.py::test_the_declared_moment_fields_match_the_renderer_type \
+            tests/tools/test_documentary_governance.py::test_direct_clip_search_reports_downloaded_clip_when_thumbnail_times_out \
+            -v
+      - name: Run lint
+        run: make lint
+      - name: Run full suite
+        run: make test
+      - name: Commit verified repairs
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'test: restore deterministic CI baseline'
+          git push origin HEAD:fix/restore-ci-baseline
