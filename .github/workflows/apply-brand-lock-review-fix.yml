@@ -1,0 +1,92 @@
+name: Apply Persian brand-lock review fixes
+
+on:
+  push:
+    branches:
+      - fix/lock-persian-brand-exact-text
+    paths:
+      - .brand-lock-review-fix.py
+
+permissions:
+  contents: write
+
+jobs:
+  apply-test-and-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: remotion-composer/package-lock.json
+
+      - name: Apply, test, and commit
+        shell: bash
+        run: |
+          set +e
+          patch_status=125
+          install_status=125
+          npm_status=125
+          focused_status=125
+          tsc_status=125
+          browser_status=125
+          lint_status=125
+          diff_status=125
+
+          python .brand-lock-review-fix.py > /tmp/review-fix.log 2>&1
+          patch_status=$?
+          if [ "$patch_status" -eq 0 ]; then
+            make install-dev > /tmp/install.log 2>&1
+            install_status=$?
+            npm ci --prefix remotion-composer > /tmp/npm.log 2>&1
+            npm_status=$?
+            .venv/bin/python -m pytest tests/lib/test_persian_brand.py tests/lib/test_persian_film_type.py tests/lib/test_persian_gates.py tests/contracts/test_persian_text_parity.py -q > /tmp/focused.log 2>&1
+            focused_status=$?
+            (cd remotion-composer && ./node_modules/.bin/tsc --noEmit) > /tmp/tsc.log 2>&1
+            tsc_status=$?
+            OPENMONTAGE_BROWSER_TESTS=1 .venv/bin/python -m unittest tests.lib.test_persian_ranked_browser -q > /tmp/browser.log 2>&1
+            browser_status=$?
+            make lint > /tmp/lint.log 2>&1
+            lint_status=$?
+            git diff --check > /tmp/diff.log 2>&1
+            diff_status=$?
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "$patch_status" -eq 0 ] && [ "$install_status" -eq 0 ] && [ "$npm_status" -eq 0 ] && [ "$focused_status" -eq 0 ] && [ "$tsc_status" -eq 0 ] && [ "$browser_status" -eq 0 ] && [ "$lint_status" -eq 0 ] && [ "$diff_status" -eq 0 ]; then
+            rm -f .brand-lock-review-fix.py .github/workflows/apply-brand-lock-review-fix.yml .brand-lock-review-diagnostics.txt
+            git add -A
+            git diff --cached --check
+            git commit -m "fix: preserve strict copy in Film Type renderer"
+          else
+            git reset --hard HEAD
+            {
+              echo "result=failure"
+              echo "input_head=$(git rev-parse HEAD)"
+              echo "patch_status=$patch_status"
+              echo "install_status=$install_status"
+              echo "npm_status=$npm_status"
+              echo "focused_status=$focused_status"
+              echo "tsc_status=$tsc_status"
+              echo "browser_status=$browser_status"
+              echo "lint_status=$lint_status"
+              echo "diff_status=$diff_status"
+              for log in review-fix install npm focused tsc browser lint diff; do
+                echo "===== /tmp/$log.log (tail) ====="
+                tail -n 120 "/tmp/$log.log" 2>/dev/null || true
+              done
+            } > .brand-lock-review-diagnostics.txt
+            git add .brand-lock-review-diagnostics.txt
+            git commit -m "chore: record Persian brand review-fix failure"
+          fi
+          git push origin HEAD:fix/lock-persian-brand-exact-text
