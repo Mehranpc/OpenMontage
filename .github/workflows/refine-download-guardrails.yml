@@ -1,0 +1,56 @@
+name: Refine bounded footage acquisition
+
+on:
+  push:
+    branches:
+      - fix/bound-stock-footage-acquisition
+    paths:
+      - refine_download_guardrails.py
+      - .github/workflows/refine-download-guardrails.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refine-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Apply review refinements
+        run: python refine_download_guardrails.py
+
+      - name: Compile changed Python
+        run: |
+          python -m py_compile \
+            tools/video/direct_clip_search.py \
+            tests/tools/test_direct_clip_search_limits.py
+
+      - name: Install development dependencies
+        run: make install-dev
+
+      - name: Run focused tests and lint
+        run: |
+          .venv/bin/python -m pytest \
+            tests/tools/test_direct_clip_search_limits.py \
+            tests/tools/test_stock_source_adapters.py -q
+          make lint
+
+      - name: Commit review refinements
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            tools/video/direct_clip_search.py \
+            tests/tools/test_direct_clip_search_limits.py \
+            skills/pipelines/persian-footage/asset-director.md
+          git diff --cached --check
+          git commit -m "fix: distinguish media validation from global timeout"
+          git push origin HEAD:fix/bound-stock-footage-acquisition
