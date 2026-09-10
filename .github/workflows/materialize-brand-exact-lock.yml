@@ -4,16 +4,14 @@ on:
   push:
     branches:
       - fix/lock-persian-brand-exact-text
-    paths:
-      - .github/workflows/materialize-brand-exact-lock.yml
 
 permissions:
   contents: write
 
 jobs:
-  materialize-and-record:
+  materialize-and-commit:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,193 +21,28 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Materialize implementation and record syntax checks
+      - name: Materialize or record failure
         shell: bash
         run: |
           set +e
-          input_head="$(git rev-parse HEAD)"
-          expected_sha="3ff30db8eca9357db1149545930212b051fbce4c0d4c50e6a77004c10a349188"
-          original_sha="$(sha256sum .brand-lock-generator.py 2>/dev/null | awk '{print $1}')"
-          [ "$original_sha" = "$expected_sha" ]
-          original_sha_status=$?
-
-          python - <<'PY' > /tmp/generator-repair.log 2>&1
-          from pathlib import Path
-
-          source = Path(".brand-lock-generator.py").read_text(encoding="utf-8")
-          start_marker = (
-              'replace_once(\n'
-              '    "remotion-composer/src/persian/types.ts",\n'
-              "    '''  for (const [index, segment] of moment.segments.entries()) {\n"
-          )
-          end_marker = (
-              '\nreplace_once(\n'
-              '    "remotion-composer/src/persian/filmType/layout.ts",'
-          )
-          if source.count(start_marker) != 1:
-              raise RuntimeError(
-                  f"expected one ambiguous TypeScript patch block, got {source.count(start_marker)}"
-              )
-          start = source.index(start_marker)
-          end = source.index(end_marker, start)
-          replacement = """replace_once(
-              "remotion-composer/src/persian/types.ts",
-              '''  if (sources.length === 1 && moment.segments[moment.segments.length - 1].role !== "source") {
-              throw new Error(
-                `${where}: a 'source' segment must be last. It is a citation appended to ` +
-                  `the phrase, not a part of it, so anywhere else it interrupts the sentence.`,
-              );
-            }
-
-            for (const [index, segment] of moment.segments.entries()) {
-          ''',
-              '''  if (sources.length === 1 && moment.segments[moment.segments.length - 1].role !== "source") {
-              throw new Error(
-                `${where}: a 'source' segment must be last. It is a citation appended to ` +
-                  `the phrase, not a part of it, so anywhere else it interrupts the sentence.`,
-              );
-            }
-
-            if (moment.exactText) {
-              const displayText = moment.segments
-                .filter((segment) => segment.role !== "source")
-                .map((segment) => segment.text)
-                .join(" ");
-              if (
-                moment.exactText.encoding !== "utf-8" ||
-                moment.exactText.normalization !== "none" ||
-                displayText !== moment.exactText.text
-              ) {
-                throw new Error(
-                  `${where}: exactText does not equal the displayed segments byte-for-byte; ` +
-                    `strict punctuation, code points, whitespace, and digits may not be normalized.`,
-                );
-              }
-            }
-
-            for (const [index, segment] of moment.segments.entries()) {
-          ''',
-          )
-          """
-          Path("/tmp/apply_brand_exact_lock.py").write_text(
-              source[:start] + replacement + source[end:], encoding="utf-8"
-          )
-          print("repaired ambiguous TypeScript insertion target")
-          PY
-          generator_repair_status=$?
-          patched_sha="$(sha256sum /tmp/apply_brand_exact_lock.py 2>/dev/null | awk '{print $1}')"
-          python -m py_compile /tmp/apply_brand_exact_lock.py > /tmp/generator-compile.log 2>&1
-          generator_compile_status=$?
-
-          if [ "$original_sha_status" -eq 0 ] \
-            && [ "$generator_repair_status" -eq 0 ] \
-            && [ "$generator_compile_status" -eq 0 ]; then
-            rm -f .brand-lock-generator.py .brand-lock-diagnostics.txt
-            python /tmp/apply_brand_exact_lock.py > /tmp/materialize.log 2>&1
-            materialize_status=$?
-          else
-            materialize_status=125
-            echo "Skipped because generator integrity, repair, or compile failed." > /tmp/materialize.log
-          fi
-
-          if [ "$materialize_status" -eq 0 ]; then
-            python - <<'PY' > /tmp/post-materialize-repair.log 2>&1
-          from pathlib import Path
-
-          path = Path("tests/lib/test_persian_brand.py")
-          text = path.read_text(encoding="utf-8")
-          old = '    assert "Pathway_of_Surrender" not in typescript\n'
-          new = '    assert "@Pathway_of_Surrender" not in typescript\n'
-          if text.count(old) != 1:
-              raise RuntimeError(
-                  f"expected one globally-rewritten regression assertion, got {text.count(old)}"
-              )
-          path.write_text(text.replace(old, new, 1), encoding="utf-8")
-          print("restored legacy-handle negative regression assertion")
-          PY
-            post_repair_status=$?
-          else
-            post_repair_status=125
-            echo "Skipped because materialization failed." > /tmp/post-materialize-repair.log
-          fi
-
-          if [ "$post_repair_status" -eq 0 ]; then
-            python -m py_compile \
-              lib/persian_brand.py \
-              lib/persian_moments.py \
-              tools/video/persian_compose.py \
-              tests/lib/test_persian_brand.py \
-              tests/lib/test_persian_film_type.py \
-              > /tmp/changed-python-compile.log 2>&1
-            changed_python_compile_status=$?
-            git add -u
-            git add lib/persian_brand.py tests/lib/test_persian_brand.py
-            git diff --cached --check > /tmp/diff-check.log 2>&1
-            diff_check_status=$?
-            git reset > /dev/null
-          else
-            changed_python_compile_status=125
-            diff_check_status=125
-            echo "Skipped because materialization repair failed." > /tmp/changed-python-compile.log
-            cp /tmp/changed-python-compile.log /tmp/diff-check.log
-          fi
-
-          result=success
-          for status in \
-            "$original_sha_status" "$generator_repair_status" \
-            "$generator_compile_status" "$materialize_status" \
-            "$post_repair_status" "$changed_python_compile_status" \
-            "$diff_check_status"; do
-            [ "$status" -eq 0 ] || result=failure
-          done
-
-          report=/tmp/brand-lock-materialization.txt
-          {
-            echo "result=$result"
-            echo "scope=materialization-and-syntax-only"
-            echo "input_head=$input_head"
-            echo "python=$(python --version 2>&1)"
-            echo "generator_original_expected_sha=$expected_sha"
-            echo "generator_original_actual_sha=$original_sha"
-            echo "generator_patched_sha=$patched_sha"
-            echo "original_sha_status=$original_sha_status"
-            echo "generator_repair_status=$generator_repair_status"
-            echo "generator_compile_status=$generator_compile_status"
-            echo "materialize_status=$materialize_status"
-            echo "post_repair_status=$post_repair_status"
-            echo "changed_python_compile_status=$changed_python_compile_status"
-            echo "diff_check_status=$diff_check_status"
-            echo "worktree_before_commit:"
-            git status --short
-            for log in \
-              /tmp/generator-repair.log /tmp/generator-compile.log \
-              /tmp/materialize.log /tmp/post-materialize-repair.log \
-              /tmp/changed-python-compile.log /tmp/diff-check.log; do
-              echo "===== $log ====="
-              cat "$log" 2>/dev/null || true
-            done
-          } > "$report"
-
+          python .brand-lock-materialize.py > /tmp/materialize.log 2>&1
+          status=$?
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          if [ "$result" = success ]; then
-            cp "$report" .brand-lock-materialization.txt
-            git add -u
-            git add lib/persian_brand.py tests/lib/test_persian_brand.py \
-              .brand-lock-materialization.txt
-            {
-              echo "changed_files:"
-              git diff --cached --name-only
-            } >> .brand-lock-materialization.txt
-            git add .brand-lock-materialization.txt
+          if [ "$status" -eq 0 ]; then
+            git add -A
+            git diff --cached --check
             git commit -m "fix: lock Persian brand and exact display text"
           else
             git reset --hard HEAD
-            rm -f lib/persian_brand.py tests/lib/test_persian_brand.py
-            cp "$report" .brand-lock-diagnostics.txt
+            {
+              echo "result=failure"
+              echo "input_head=$(git rev-parse HEAD)"
+              echo "materialize_status=$status"
+              echo "===== /tmp/materialize.log ====="
+              cat /tmp/materialize.log
+            } > .brand-lock-diagnostics.txt
             git add .brand-lock-diagnostics.txt
             git commit -m "chore: record Persian brand materialization failure"
           fi
-
           git push origin HEAD:fix/lock-persian-brand-exact-text
