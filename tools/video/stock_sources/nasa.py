@@ -253,10 +253,11 @@ def _pick_video_url(file_urls: list[str]) -> str:
 
     NASA file URLs follow a ``<nasa_id>~<tag>.<ext>`` naming convention
     where tag is one of: ``orig``, ``large``, ``medium``, ``small``,
-    ``preview``, ``thumb``. Preference order (best quality first):
-    orig → large → medium → small. We skip previews and thumbnails.
+    ``preview``, ``thumb``. Direct search is a probe, so prefer a bounded
+    rendition and let the caller's byte/geometry gates decide whether it is usable:
+    medium → small → large → orig. We skip preview and thumbnail files.
     """
-    priority = ("orig", "large", "medium", "small")
+    priority = ("medium", "small", "large", "orig")
     buckets: dict[str, list[str]] = {p: [] for p in priority}
     for url in file_urls:
         lower = url.lower()

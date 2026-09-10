@@ -44,10 +44,12 @@ with little free disk that difference matters, and it wastes minutes per beat.
 
 ```python
 result = registry.get("direct_clip_search").execute({
+    # First pass: ONE primary query and ONE candidate per footage beat.
+    # Use the beat's second query only for an unresolved beat in a bounded retry.
     "queries": [
         {"query": "close up pouring coffee into cup morning", "slot_id": "beat-1", "kind": "video"},
-        {"query": "steam rising from coffee cup kitchen",     "slot_id": "beat-1", "kind": "video"},
     ],
+    "sources": ["pexels", "pixabay_video"],
     "filters": {
         "orientation": "portrait",
         "min_duration": 6,
@@ -55,13 +57,18 @@ result = registry.get("direct_clip_search").execute({
         "min_width": 1080,
     },
     "output_dir": str(project_dir / "assets" / "clips"),
-    "clips_per_query": 2,
+    "clips_per_query": 1,
+    "max_candidates_total": 16,
+    "max_bytes_per_clip": 100663296,       # 96 MiB
+    "max_total_download_bytes": 536870912, # 512 MiB
 })
 ```
 
-The parameter is `clips_per_query`. `per_query` is not a key this tool accepts, and
-because the schema ignores unknown keys it silently falls back to the default of 3 —
-which is how a 12-beat run became 36 downloads instead of 24.
+The parameter is `clips_per_query`. `per_query` is not a key this tool accepts.
+For this pipeline it is always `1`: one primary candidate per footage beat on the
+first pass, then the unused second query only for unresolved beats. The hard
+`max_candidates_total`, per-clip byte ceiling, and aggregate byte ceiling are required
+on every call; raising them requires an explicit user decision, not an agent retry.
 
 `orientation` is `"portrait"` for vertical, `"landscape"` for landscape. Add
 `min_duration` at or above the longest beat, so clips too short to fill a beat never
@@ -83,26 +90,25 @@ and takes the first candidate within `[min_width, 1920]`:
 
 On the 12-beat run this is the difference between roughly 300 MB and roughly 80 MB.
 
-Do not try to fix this inside `direct_clip_search` or the Pexels adapter. Both are
-shared with `documentary-montage`, which renders landscape and wants the 1920-wide
-rendition; changing the default there would silently degrade a pipeline this one has
-nothing to do with.
+`direct_clip_search` now enforces byte limits and verifies the downloaded file,
+but rendition choice still belongs to the source adapter. Keep `min_width: 1080` here
+so the Persian vertical path asks Pexels for the smallest production-suitable width
+rather than spending the byte budget on detail the render discards.
 
-**Pexels honours `orientation`; Pixabay does not.** Its API has no orientation
-parameter, so `pixabay_video` results arrive unfiltered and are usually landscape.
-Probe every downloaded clip with `ffprobe` and discard the mismatches yourself rather
-than trusting the filter to have applied:
+**Pexels honours `orientation`; Pixabay does not.** `direct_clip_search` therefore
+runs `ffprobe` after every download and deletes a mismatch before it can enter the
+candidate set. Unknown pre-download geometry is not permission to keep the bytes.
 
-```bash
-ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 clip.mp4
-```
+Use only `sources: ["pexels", "pixabay_video"]` in this production pipeline. NASA,
+Archive.org, Wikimedia, NARA, LOC, Pond5 and exploratory provider cascades are outside
+the approved path. Never create `smoke-*` directories under a production project. If a
+provider needs investigation, stop and do it in an isolated diagnostic directory after
+explicit approval.
 
-Fan out all beats' queries in one call rather than per beat — the tool parallelizes
-internally, and per-beat calls serialize the network waits.
-
-Download 2 candidates per query, so 2 queries per beat gives 4 candidates to choose
-from. That is enough to have an alternative when the first is wrong and few enough that
-a 12-beat vertical run stays inside a few hundred megabytes.
+Run one batched first pass containing one primary query per footage beat and
+`clips_per_query: 1`. Inspect those results. Run at most one second pass for unresolved
+beats, using their already-authored alternate query and the remaining shared byte and
+candidate budget. Do not widen providers, add generic queries, or start a third pass.
 
 ## Selection
 
