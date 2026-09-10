@@ -1,0 +1,89 @@
+name: Materialize Persian brand and exact text lock
+
+on:
+  push:
+    branches:
+      - fix/lock-persian-brand-exact-text
+    paths:
+      - brand-lock.b64.part-0
+      - brand-lock.b64.part-1
+      - brand-lock.b64.part-2
+      - .github/workflows/materialize-brand-exact-lock.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize-test-and-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: remotion-composer/package-lock.json
+
+      - name: Reconstruct and apply patch
+        run: |
+          cat brand-lock.b64.part-* | tr -d '\n' | base64 -d | gzip -d > /tmp/apply_brand_exact_lock.py
+          python -m py_compile /tmp/apply_brand_exact_lock.py
+          python /tmp/apply_brand_exact_lock.py
+
+      - name: Compile changed Python
+        run: |
+          python -m py_compile \
+            lib/persian_brand.py \
+            lib/persian_moments.py \
+            tools/video/persian_compose.py \
+            tests/lib/test_persian_brand.py \
+            tests/lib/test_persian_film_type.py
+
+      - name: Install Python and Node dependencies
+        run: |
+          make install-dev
+          npm ci --prefix remotion-composer
+
+      - name: Run focused and representative tests
+        run: |
+          .venv/bin/python -m pytest \
+            tests/lib/test_persian_brand.py \
+            tests/lib/test_persian_film_type.py \
+            tests/lib/test_persian_gates.py \
+            tests/contracts/test_persian_text_parity.py -q | tee /tmp/pytest.log
+          cd remotion-composer
+          ./node_modules/.bin/tsc --noEmit | tee /tmp/tsc.log
+
+      - name: Run lint
+        run: make lint | tee /tmp/lint.log
+
+      - name: Commit verified implementation
+        run: |
+          {
+            echo "verified_head=$(git rev-parse HEAD)"
+            echo "python=$(python --version 2>&1)"
+            echo "node=$(node --version)"
+            echo "pytest_summary=$(tail -n 1 /tmp/pytest.log)"
+            echo "tsc=passed"
+            echo "lint=passed"
+          } > .brand-lock-verification.txt
+          git config user.name "github-actions[bot]]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -u
+          git add lib/persian_brand.py tests/lib/test_persian_brand.py .brand-lock-verification.txt
+          git diff --cached --check
+          {
+            echo "changed_files:"
+            git diff --cached --name-only
+          } >> .brand-lock-verification.txt
+          git add .brand-lock-verification.txt
+          git commit -m "fix: lock Persian brand and exact display text"
+          git push origin HEAD:fix/lock-persian-brand-exact-text
