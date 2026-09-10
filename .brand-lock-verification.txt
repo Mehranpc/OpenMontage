@@ -1,0 +1,49 @@
+result=success
+scope=independent-full-verification
+request_head=475c20257fcd73287e1180890ba6489752883bbc
+implementation_head=c024978e4cd0e86b3ddff0dbf2303e74138af232
+parent_head=c024978e4cd0e86b3ddff0dbf2303e74138af232
+lineage_status=0
+python=Python 3.11.16
+node=v22.23.2
+install_status=0
+npm_status=0
+focused_pytest_status=0
+lib_pytest_status=0
+tsc_status=0
+browser_tests_status=0
+lint_status=0
+diff_check_status=0
+===== /tmp/focused.log (tail) =====
+.................................................. [ 10%]
+............................................................ [ 22%]
+........................................................................ [ 36%]
+..................................................s..................... [ 51%]
+........................................................................ [ 66%]
+........................................................................ [ 80%]
+........................................................................ [ 95%]
+.......................                                                  [100%]
+492 passed, 1 skipped, 34 subtests passed in 1.16s
+===== /tmp/lib.log (tail) =====
+........................... [  5%]
+..................................................... [ 16%]
+......................................................... [ 28%]
+........................................................................ [ 43%]
+........................................................................ [ 58%]
+............s................ssssssssssssss............................. [ 74%]
+........................................................................ [ 89%]
+....................................................                     [100%]
+462 passed, 15 skipped, 79 subtests passed in 15.83s
+===== /tmp/tsc.log (tail) =====
+===== /tmp/browser.log (tail) =====
+----------------------------------------------------------------------
+Ran 14 tests in 192.003s
+
+OK
+===== /tmp/lint.log (tail) =====
+==> Using existing virtual environment: .venv
+.venv/bin/python -m py_compile tools/base_tool.py
+.venv/bin/python -m py_compile tools/tool_registry.py
+.venv/bin/python -m py_compile tools/cost_tracker.py
+.venv/bin/python -m py_compile tools/analysis/composition_validator.py
+===== /tmp/diff.log (tail) =====
