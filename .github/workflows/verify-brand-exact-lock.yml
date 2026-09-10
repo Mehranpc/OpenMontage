@@ -1,0 +1,102 @@
+name: Verify Persian brand and exact text lock
+
+on:
+  push:
+    branches:
+      - fix/lock-persian-brand-exact-text
+    paths:
+      - .brand-lock-verification-request
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: remotion-composer/package-lock.json
+
+      - name: Install ffmpeg
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Run every required verification and record results
+        shell: bash
+        run: |
+          set +e
+          request_head=$(git rev-parse HEAD)
+          implementation_head=$(sed -n 's/^implementation_head=//p' .brand-lock-verification-request)
+          parent_head=$(git rev-parse HEAD^)
+          lineage_status=0
+          if [ "$implementation_head" != "$parent_head" ]; then lineage_status=1; fi
+
+          make install-dev > /tmp/install.log 2>&1
+          install_status=$?
+          npm ci --prefix remotion-composer > /tmp/npm.log 2>&1
+          npm_status=$?
+
+          .venv/bin/python -m pytest tests/lib/test_persian_brand.py tests/lib/test_persian_film_type.py tests/lib/test_persian_gates.py tests/contracts/test_persian_text_parity.py -q > /tmp/focused.log 2>&1
+          focused_status=$?
+          .venv/bin/python -m pytest tests/lib/ -q > /tmp/lib.log 2>&1
+          lib_status=$?
+          (cd remotion-composer && ./node_modules/.bin/tsc --noEmit) > /tmp/tsc.log 2>&1
+          tsc_status=$?
+          OPENMONTAGE_BROWSER_TESTS=1 .venv/bin/python -m unittest tests.lib.test_persian_ranked_browser -q > /tmp/browser.log 2>&1
+          browser_status=$?
+          make lint > /tmp/lint.log 2>&1
+          lint_status=$?
+          git diff --check > /tmp/diff.log 2>&1
+          diff_status=$?
+
+          result=failure
+          if [ "$lineage_status" -eq 0 ] && [ "$install_status" -eq 0 ] && [ "$npm_status" -eq 0 ] && [ "$focused_status" -eq 0 ] && [ "$lib_status" -eq 0 ] && [ "$tsc_status" -eq 0 ] && [ "$browser_status" -eq 0 ] && [ "$lint_status" -eq 0 ] && [ "$diff_status" -eq 0 ]; then
+            result=success
+          fi
+
+          {
+            echo "result=$result"
+            echo "scope=independent-full-verification"
+            echo "request_head=$request_head"
+            echo "implementation_head=$implementation_head"
+            echo "parent_head=$parent_head"
+            echo "lineage_status=$lineage_status"
+            echo "python=$(python --version 2>&1)"
+            echo "node=$(node --version 2>&1)"
+            echo "install_status=$install_status"
+            echo "npm_status=$npm_status"
+            echo "focused_pytest_status=$focused_status"
+            echo "lib_pytest_status=$lib_status"
+            echo "tsc_status=$tsc_status"
+            echo "browser_tests_status=$browser_status"
+            echo "lint_status=$lint_status"
+            echo "diff_check_status=$diff_status"
+            for log in focused lib tsc browser lint diff; do
+              echo "===== /tmp/$log.log (tail) ====="
+              tail -n 160 "/tmp/$log.log" 2>/dev/null || true
+            done
+          } > .brand-lock-verification.txt
+
+          rm -f .brand-lock-verification-request .github/workflows/verify-brand-exact-lock.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          if [ "$result" = success ]; then
+            git commit -m "test: record Persian brand verification"
+          else
+            git commit -m "test: record Persian brand verification failure"
+          fi
+          git push origin HEAD:fix/lock-persian-brand-exact-text
