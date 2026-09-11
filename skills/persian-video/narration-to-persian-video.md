@@ -2,6 +2,8 @@
 
 Use this capability only for the middle production phases reported by `persian-video status`. The code state owns their order; this document only tells you which canonical contracts to execute.
 
+The narration/script entering these phases is authoritative production copy. Scene and edit stages may derive selective on-screen moments under their own contracts, but must not rewrite the narration itself or reopen it as a writing task.
+
 For scene/moment planning, read `skills/pipelines/persian-footage/scene-director.md` and `edit-director.md`. Persist the normal `scene_plan`, `asset_manifest`, and `edit_decisions` checkpoints in manifest order; do not invent a second artifact system for the front door.
 
 For acquisition, read `asset-director.md`. Every `direct_clip_search` call must first be passed through the code-owned budget clamp:

@@ -272,9 +272,8 @@ If the folder has tracks, the proposal and asset stages should present them as o
 > line against Estedad and breaks it with a Persian-aware algorithm. It renders video
 > footage only; still images are rejected by a gate.
 >
-> **Fresh Persian production entry point:** when a new session starts from narration
-> audio, an approved Persian script, raw text, or an English article, read
-> `skills/persian-video/SKILL.md` first. `lib/persian_video_workflow.py` owns only the
+> **Fresh Persian production entry point:** when a new session starts an actual video production from narration audio, an approved Persian script, or both, read
+> `skills/persian-video/SKILL.md` first. Text-only narration writing, translation, rewriting, captions, and hooks are outside this repo-local production skill and must not create an OpenMontage project. `lib/persian_video_workflow.py` owns only the
 > bounded workflow envelope (fresh-project bootstrap, progression, isolation, retries,
 > acquisition budgets, and terminal stop); canonical stage execution and checkpoint
 > truth remain in `persian-footage` contracts and `lib/checkpoint.py`.

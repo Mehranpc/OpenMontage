@@ -23,14 +23,13 @@ from lib.checkpoint import CheckpointValidationError, init_project, read_checkpo
 from lib.paths import PROJECTS_DIR, REPO_ROOT
 from lib.pipeline_loader import load_pipeline_readonly
 
-WORKFLOW_VERSION = "1.0"
+WORKFLOW_VERSION = "2.0"
 STATE_FILENAME = "persian-video-workflow.json"
-INPUT_KINDS = ("narration_path", "script", "raw_text", "english_article")
 PHASES = (
     "validate_input",
     "create_project",
     "open_backlot",
-    "prepare_narration",
+    "prepare_inputs",
     "align_script_timing",
     "plan_scenes_moments",
     "acquire_assets",
@@ -132,36 +131,33 @@ def _validate_project_id(project_id: str) -> None:
         )
 
 
-def _validate_input(input_kind: str, input_value: str) -> dict[str, Any]:
-    if input_kind not in INPUT_KINDS:
-        raise PersianVideoWorkflowError(
-            f"unsupported input kind {input_kind!r}; expected one of {INPUT_KINDS}"
-        )
-    if input_kind == "narration_path":
-        path = Path(input_value).expanduser().resolve()
-        if not path.is_file():
-            raise PersianVideoWorkflowError(f"narration file does not exist: {path}")
-        return {
-            "kind": input_kind,
-            "source_path": str(path),
-            "sha256": _hash_file(path),
-            "prepare_mode": "transcribe_existing_narration",
-        }
-
-    text = str(input_value)
-    if not text.strip():
-        raise PersianVideoWorkflowError(f"{input_kind} input must not be empty")
-    prepare_mode = {
-        "script": "use_approved_persian_script",
-        "raw_text": "author_persian_narration",
-        "english_article": "translate_and_author_persian_narration",
-    }[input_kind]
+def _validate_narration_source(path_value: str) -> dict[str, Any]:
+    path = Path(path_value).expanduser().resolve()
+    if not path.is_file():
+        raise PersianVideoWorkflowError(f"narration file does not exist: {path}")
     return {
-        "kind": input_kind,
-        "text": text,
-        "sha256": _hash_text(text),
-        "prepare_mode": prepare_mode,
+        "original_source_path": str(path),
+        "sha256": _hash_file(path),
     }
+
+
+def _validate_approved_script(text_value: str) -> dict[str, Any]:
+    text = str(text_value)
+    if not text.strip():
+        raise PersianVideoWorkflowError("approved script must not be empty")
+    return {"text": text, "sha256": _hash_text(text)}
+
+
+def _production_input_mode(*, has_script: bool, has_narration: bool) -> str:
+    if has_script and has_narration:
+        return "approved_script_with_narration"
+    if has_script:
+        return "approved_script_only"
+    if has_narration:
+        return "narration_only"
+    raise PersianVideoWorkflowError(
+        "Persian video production requires an approved Persian script and/or narration audio"
+    )
 
 
 def _state_path(project_dir: Path) -> Path:
@@ -195,28 +191,32 @@ def _repo_read_allowlist() -> list[str]:
 def bootstrap_persian_video(
     *,
     title: str,
-    input_kind: str,
-    input_value: str,
+    narration_path: str | None = None,
+    approved_script: str | None = None,
     project_id: str | None = None,
     pipeline_dir: Path | None = None,
     backlot_opener: Callable[[str | None], int] = open_backlot,
     now: datetime | None = None,
     id_token: str | None = None,
 ) -> dict[str, Any]:
-    """Create one fresh Persian project and open its Backlot board immediately."""
+    """Create one fresh production project from already-approved Persian inputs."""
     projects_root = (pipeline_dir or PROJECTS_DIR).resolve()
-    if input_kind == "narration_path":
-        requested_source = Path(input_value).expanduser().resolve()
+    script_source = _validate_approved_script(approved_script) if approved_script is not None else None
+    narration_source = _validate_narration_source(narration_path) if narration_path is not None else None
+    mode = _production_input_mode(
+        has_script=script_source is not None,
+        has_narration=narration_source is not None,
+    )
+    if narration_source is not None:
+        requested_source = Path(narration_source["original_source_path"])
         if _is_within(requested_source, projects_root):
             raise PersianVideoWorkflowError(
-                "refusing narration input from an existing project directory"
+                "refusing initial narration input from an existing project directory"
             )
 
-    source = _validate_input(input_kind, input_value)
     created_at = now or datetime.now(timezone.utc)
     pid = project_id or new_project_id(title, now=created_at, token=id_token)
     _validate_project_id(pid)
-
     project_dir = projects_root / pid
     if project_dir.exists():
         raise PersianVideoWorkflowError(
@@ -229,11 +229,25 @@ def bootstrap_persian_video(
         created = True
         inputs_dir = project_dir / "inputs"
         inputs_dir.mkdir(parents=True, exist_ok=True)
-        if input_kind != "narration_path":
-            source_path = inputs_dir / f"{input_kind}.txt"
-            source_path.write_text(source.pop("text"), encoding="utf-8")
-            source["source_path"] = str(source_path.resolve())
+        input_record: dict[str, Any] = {"mode": mode}
 
+        if script_source is not None:
+            script_path = inputs_dir / "approved_script.txt"
+            script_path.write_text(script_source.pop("text"), encoding="utf-8")
+            script_source["source_path"] = str(script_path.resolve())
+            input_record["approved_script"] = script_source
+
+        if narration_source is not None:
+            original = Path(narration_source["original_source_path"])
+            suffix = original.suffix if original.suffix else ".audio"
+            narration_copy = inputs_dir / f"narration{suffix}"
+            shutil.copy2(original, narration_copy)
+            narration_source["source_path"] = str(narration_copy.resolve())
+            input_record["narration"] = narration_source
+
+        input_record["script_authority"] = (
+            "approved_script" if script_source is not None else "spoken_narration"
+        )
         state: dict[str, Any] = {
             "version": WORKFLOW_VERSION,
             "project_id": pid,
@@ -243,14 +257,14 @@ def bootstrap_persian_video(
             "status": "active",
             "completed_phases": ["validate_input", "create_project"],
             "next_phase": "open_backlot",
-            "input": source,
+            "input": input_record,
             "budgets": asdict(get_workflow_budgets()),
             "attempts": {},
             "send_backs": 0,
             "projects_root": str(projects_root),
             "read_allowlist": {
                 "project_root": str(project_dir.resolve()),
-                "source_paths": [source["source_path"]],
+                "source_paths": [],
                 "repo_paths": _repo_read_allowlist(),
             },
             "evidence": {},
@@ -266,9 +280,53 @@ def bootstrap_persian_video(
     except Exception:
         backlot_code = 1
     state["completed_phases"].append("open_backlot")
-    state["next_phase"] = "prepare_narration"
+    state["next_phase"] = "prepare_inputs"
     state["backlot"] = {"attempted": True, "exit_code": backlot_code}
     _write_state(project_dir, state)
+    return state
+
+
+def attach_narration(
+    project_id: str,
+    narration_path: str,
+    *,
+    pipeline_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Attach narration audio to a script-first project before input preparation completes."""
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    if state.get("next_phase") != "prepare_inputs":
+        raise PersianVideoWorkflowError(
+            "narration can be attached only while prepare_inputs is active"
+        )
+    input_record = dict(state.get("input") or {})
+    if input_record.get("narration"):
+        raise PersianVideoWorkflowError("this project already has narration audio")
+    if not input_record.get("approved_script"):
+        raise PersianVideoWorkflowError(
+            "attach-narration is only for an approved-script-first project"
+        )
+
+    source = _validate_narration_source(narration_path)
+    raw = Path(source["original_source_path"])
+    project_root = _project_root(state)
+    projects_root = Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve()
+    if _is_within(raw, projects_root) and not _is_within(raw, project_root):
+        raise PersianVideoWorkflowError("refusing narration audio from a sibling project")
+
+    if _is_within(raw, project_root):
+        stored = raw
+    else:
+        inputs_dir = project_root / "inputs"
+        inputs_dir.mkdir(parents=True, exist_ok=True)
+        suffix = raw.suffix if raw.suffix else ".audio"
+        stored = inputs_dir / f"narration{suffix}"
+        shutil.copy2(raw, stored)
+    source["source_path"] = str(stored.resolve())
+    input_record["narration"] = source
+    input_record["mode"] = "approved_script_with_narration"
+    input_record["script_authority"] = "approved_script"
+    state["input"] = input_record
+    _write_state(project_root, state)
     return state
 
 
@@ -372,6 +430,55 @@ def _project_root(state: Mapping[str, Any]) -> Path:
     return Path(str(state["read_allowlist"]["project_root"])).resolve()
 
 
+def _valid_sha256(value: object) -> bool:
+    raw = str(value or "").strip().lower()
+    return len(raw) == 64 and all(ch in "0123456789abcdef" for ch in raw)
+
+
+def _validate_prepare_inputs_completion(
+    state: Mapping[str, Any], evidence: Mapping[str, Any]
+) -> dict[str, Any]:
+    input_record = dict(state.get("input") or {})
+    narration = input_record.get("narration")
+    if not isinstance(narration, Mapping):
+        raise PersianVideoWorkflowError(
+            "prepare_inputs cannot complete until narration audio is attached"
+        )
+    narration_path = Path(str(narration.get("source_path") or "")).resolve()
+    if not _is_within(narration_path, _project_root(state)) or not narration_path.is_file():
+        raise PersianVideoWorkflowError(
+            "prepare_inputs narration must be a real file inside the current project"
+        )
+    actual_audio_sha = _hash_file(narration_path)
+    if actual_audio_sha != str(narration.get("sha256") or "").lower():
+        raise PersianVideoWorkflowError("prepare_inputs narration hash no longer matches its bytes")
+
+    script_sha = str(evidence.get("authoritative_script_sha256") or "").strip().lower()
+    if not _valid_sha256(script_sha):
+        raise PersianVideoWorkflowError(
+            "prepare_inputs evidence requires authoritative_script_sha256"
+        )
+    approved = input_record.get("approved_script")
+    if isinstance(approved, Mapping):
+        expected = str(approved.get("sha256") or "").strip().lower()
+        if script_sha != expected:
+            raise PersianVideoWorkflowError(
+                "prepare_inputs authoritative script hash does not match the approved script"
+            )
+
+    reported_audio_sha = str(evidence.get("narration_sha256") or "").strip().lower()
+    if reported_audio_sha != actual_audio_sha:
+        raise PersianVideoWorkflowError(
+            "prepare_inputs evidence narration_sha256 does not match the attached audio"
+        )
+    return {
+        "authoritative_script_sha256": script_sha,
+        "narration_sha256": actual_audio_sha,
+        "input_mode": input_record.get("mode"),
+        "script_authority": input_record.get("script_authority"),
+    }
+
+
 def _phase_index(phase: str) -> int:
     try:
         return PHASES.index(phase)
@@ -407,6 +514,8 @@ def complete_phase(
             f"phase {phase!r} must be attempted before it can complete"
         )
     phase_evidence = dict(evidence or {})
+    if phase == "prepare_inputs":
+        phase_evidence.update(_validate_prepare_inputs_completion(state, phase_evidence))
     if phase == "acquire_assets" and (state.get("asset_usage") or {}).get("pending_pass") is not None:
         raise PersianVideoWorkflowError(
             "asset search result accounting must complete before acquire_assets can complete"
@@ -770,10 +879,13 @@ def workflow_status(
     project_id: str, *, pipeline_dir: Path | None = None
 ) -> dict[str, Any]:
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    input_record = dict(state.get("input") or {})
     return {
         "project_id": state["project_id"],
         "status": state["status"],
         "next_phase": state.get("next_phase"),
+        "input_mode": input_record.get("mode"),
+        "script_authority": input_record.get("script_authority"),
         "completed_phases": state.get("completed_phases", []),
         "attempts": state.get("attempts", {}),
         "send_backs": state.get("send_backs", 0),
@@ -792,31 +904,23 @@ def _load_text_file(path: str) -> str:
     return source.read_text(encoding="utf-8")
 
 
-def _add_bootstrap_input_group(parser: argparse.ArgumentParser) -> None:
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--narration", metavar="PATH")
-    group.add_argument("--script", metavar="TEXT")
-    group.add_argument("--script-file", metavar="PATH")
-    group.add_argument("--raw-text", metavar="TEXT")
-    group.add_argument("--raw-text-file", metavar="PATH")
-    group.add_argument("--english-article", metavar="TEXT")
-    group.add_argument("--english-article-file", metavar="PATH")
+def _add_bootstrap_inputs(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--narration", metavar="PATH")
+    script = parser.add_mutually_exclusive_group()
+    script.add_argument("--approved-script", metavar="TEXT")
+    script.add_argument("--approved-script-file", metavar="PATH")
 
 
-def _bootstrap_input(args: argparse.Namespace) -> tuple[str, str]:
-    if args.narration is not None:
-        return "narration_path", args.narration
-    if args.script is not None:
-        return "script", args.script
-    if args.script_file is not None:
-        return "script", _load_text_file(args.script_file)
-    if args.raw_text is not None:
-        return "raw_text", args.raw_text
-    if args.raw_text_file is not None:
-        return "raw_text", _load_text_file(args.raw_text_file)
-    if args.english_article is not None:
-        return "english_article", args.english_article
-    return "english_article", _load_text_file(args.english_article_file)
+def _bootstrap_inputs(args: argparse.Namespace) -> tuple[str | None, str | None]:
+    narration = args.narration
+    approved_script = args.approved_script
+    if args.approved_script_file is not None:
+        approved_script = _load_text_file(args.approved_script_file)
+    if narration is None and approved_script is None:
+        raise PersianVideoWorkflowError(
+            "bootstrap requires --narration and/or --approved-script/--approved-script-file"
+        )
+    return narration, approved_script
 
 
 def resume_workflow(
@@ -849,7 +953,11 @@ def build_parser() -> argparse.ArgumentParser:
     bootstrap = sub.add_parser("bootstrap", help="create a fresh Persian video project")
     bootstrap.add_argument("--title", required=True)
     bootstrap.add_argument("--project-id")
-    _add_bootstrap_input_group(bootstrap)
+    _add_bootstrap_inputs(bootstrap)
+
+    attach = sub.add_parser("attach-narration", help="attach audio to a script-first project")
+    attach.add_argument("project_id")
+    attach.add_argument("path")
 
     status = sub.add_parser("status", help="show bounded workflow state")
     status.add_argument("project_id")
@@ -906,13 +1014,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         if args.command == "bootstrap":
-            input_kind, input_value = _bootstrap_input(args)
+            narration_path, approved_script = _bootstrap_inputs(args)
             state = bootstrap_persian_video(
                 title=args.title,
-                input_kind=input_kind,
-                input_value=input_value,
+                narration_path=narration_path,
+                approved_script=approved_script,
                 project_id=args.project_id,
             )
+            _print_json(workflow_status(state["project_id"]))
+        elif args.command == "attach-narration":
+            state = attach_narration(args.project_id, args.path)
             _print_json(workflow_status(state["project_id"]))
         elif args.command == "status":
             _print_json(workflow_status(args.project_id))

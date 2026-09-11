@@ -2,8 +2,16 @@
 
 ## Your job
 
-Write the Persian text of the video, and make it pass the orthography gate. In
-`narrated` mode, hand that text to the user and stop.
+Write the Persian text when this stage is genuinely an authoring stage, and make it pass the orthography gate. In `narrated` mode, hand newly authored text to the user and stop.
+
+## Authoritative-input / fidelity mode
+
+When this director is entered through `skills/persian-video/SKILL.md`, the production front door already has authoritative Persian copy from an approved script or a faithful transcription of supplied narration. **Do not rewrite that copy.** In this mode your job is validation and canonical script-artifact packaging, not authorship.
+
+- Preserve lexical wording and sentence order.
+- Mechanical Persian letter/digit canonicalization may use the `normalized` policy defined by `subtitle-alignment.md`; it must not change words.
+- If duration, orthography, or speakability fails a hard production gate, surface the blocker. Do not silently shorten, formalize, simplify, add a hook, or inject figures/terms.
+- Requirements below that encourage figures, named terms, or hook-friendly phrasing are authoring guidance only. In fidelity mode they become diagnostics for later visual planning, never permission to alter approved copy.
 
 ## Persian orthography — the mechanical rules
 
@@ -161,6 +169,5 @@ because the same source will keep producing it.
 - Total visible characters fit the duration at 14–16 chars/second of speech.
 - No sentence exceeds ~15 words.
 - Every sentence has at least one legal break point.
-- The script contains at least three precise figures or named terms the edit stage can
-  set in type.
-- In `narrated` mode: the text has been handed over and the stage has stopped.
+- When this is a genuine authoring stage, the script contains enough precise figures or named terms for the edit stage to set useful moments in type. In authoritative-input/fidelity mode, absence of such material is not a reason to rewrite approved copy.
+- In newly authored `narrated` mode: the text has been handed over and the stage has stopped. In authoritative-input/fidelity mode, package the validated copy and continue according to the production front door.

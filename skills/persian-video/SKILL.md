@@ -1,25 +1,44 @@
 ---
 name: persian-video
-description: Reliable front door for a fresh, bounded, resumable Persian video production.
+description: Production-only front door for building a Persian video from approved Persian copy and/or narration audio.
 ---
 
 # Persian Video
 
-Use this skill when a new session starts a Persian video from narration audio, an approved Persian script, raw text, or an English article.
+Use this skill only when the user explicitly asks to **make, build, render, continue, or resume a Persian video**.
 
-The ordered workflow, retry/send-back limits, stock-download ceilings, read isolation, and terminal state are owned by `lib/persian_video_workflow.py`. Do not reproduce or reorder its phase list in prose. The canonical stage contracts remain in `pipeline_defs/persian-footage.yaml` and `skills/pipelines/persian-footage/`.
+This skill does not write, translate, improve, or rewrite narration. Text-only Persian writing belongs to separate user/global skills. **Do not create a project for a text-only request**, even if the user mentions `/persian-video` while asking only for narration, rewriting, translation, captions, hooks, or other copy.
 
-## Start exactly once
+The ordered workflow, retry/send-back limits, stock-download ceilings, read isolation, and terminal state are owned by `lib/persian_video_workflow.py`. Do not reproduce or reorder its phase list in prose. Canonical production-stage contracts remain in `pipeline_defs/persian-footage.yaml` and `skills/pipelines/persian-footage/`.
 
-Create a genuinely new project before reading any prior project artifact:
+## Production input boundary
+
+A fresh production may start from:
+
+- narration audio whose spoken words are authoritative;
+- an approved Persian script whose wording is authoritative;
+- both, which is preferred when recorded narration must match approved copy.
+
+"Approved" means the user supplied or selected that Persian wording as the copy to produce. The production pipeline may perform technical normalization allowed by the subtitle contract, but it must not editorially rewrite the wording.
+## Start a fresh production
+
+Create a genuinely new project only after video-production intent is explicit:
 
 ```bash
 python -m lib.persian_video_workflow bootstrap --title "Title" --narration /abs/narration.wav
-python -m lib.persian_video_workflow bootstrap --title "Title" --script-file /abs/script.txt
-python -m lib.persian_video_workflow bootstrap --title "Title" --raw-text-file /abs/source.txt
-python -m lib.persian_video_workflow bootstrap --title "Title" --english-article-file /abs/article.txt
+python -m lib.persian_video_workflow bootstrap --title "Title" --approved-script-file /abs/approved-script.txt
+python -m lib.persian_video_workflow bootstrap --title "Title" --narration /abs/narration.wav --approved-script-file /abs/approved-script.txt
 ```
-Bootstrap creates `projects/<new-id>/`, copies text input into that project when needed, records a hash-bound workflow state, and opens that project's Backlot board. An existing project directory is a hard refusal, never a resume shortcut.
+
+Raw notes, source articles, English articles, and unapproved draft copy are intentionally not valid bootstrap inputs. Author or revise those outside this production skill first.
+
+Bootstrap creates `projects/<new-id>/`, copies the approved production inputs into that project, records hash-bound workflow state, and opens that project's Backlot board. An existing project directory is a hard refusal, never a resume shortcut.
+
+If production starts from an approved script without audio, remain in input preparation. When recorded narration or an explicitly approved TTS result exists, attach it to the same project:
+
+```bash
+python -m lib.persian_video_workflow attach-narration <project-id> /abs/narration.wav
+```
 
 For a later session, resume the same bounded state without resetting durable counters:
 
@@ -27,12 +46,11 @@ For a later session, resume the same bounded state without resetting durable cou
 python -m lib.persian_video_workflow resume <project-id>
 python -m lib.persian_video_workflow status <project-id>
 ```
-
 ## Route only by code state
 
-Read `next_phase` from `status`; do not infer progress from conversation memory or filenames.
+Read `next_phase` from `status`; do not infer progress from conversation memory, filenames, or an earlier writing session.
 
-- `prepare_narration` / `align_script_timing` → `source-to-persian-narration.md`
+- `prepare_inputs` / `align_script_timing` → `prepare-production-inputs.md`
 - `plan_scenes_moments` through `render_final_candidate` → `narration-to-persian-video.md`
 - `final_review` / `awaiting_human` → `persian-final-review.md`
 
@@ -42,6 +60,7 @@ Before executing a phase, record its attempt. Complete only that same phase afte
 python -m lib.persian_video_workflow attempt <project-id>
 python -m lib.persian_video_workflow complete <project-id> --evidence-json /abs/evidence.json
 ```
+
 If a review requires going backward, use `send-back`; never edit `next_phase` by hand. The code preserves attempt history and enforces the manifest's send-back ceiling.
 
 Before reading any path not already opened by the current tool call, enforce project isolation:
@@ -50,15 +69,15 @@ Before reading any path not already opened by the current tool call, enforce pro
 python -m lib.persian_video_workflow guard-read <project-id> /absolute/path
 ```
 
-Sibling `projects/<other-id>/` artifacts, checkpoints, timings, props, and renders are forbidden. Only the current project, its declared input source, and the canonical Persian workflow/skill paths are readable through this front door.
-
-## Canonical contracts, not copies
+Sibling `projects/<other-id>/` artifacts, checkpoints, timings, props, and renders are forbidden. The bootstrap copies initial production inputs into the current project so later stages do not depend on an external article, writing workspace, or another project.
+## Canonical production contracts
 
 Always follow these sources rather than restating their rules here:
 
 - `pipeline_defs/persian-footage.yaml` — canonical stage/artifact contracts.
 - `skills/pipelines/persian-footage/executive-producer.md` — stage execution and delegation.
-- `skills/pipelines/persian-footage/subtitle-alignment.md` — exact approved-script/timing contract.
+- `skills/pipelines/persian-footage/script-director.md` — technical Persian script validation; in this front door, authoritative copy is preserved rather than newly authored.
+- `skills/pipelines/persian-footage/subtitle-alignment.md` — approved-script/timing authority boundary.
 - `skills/pipelines/persian-footage/final-candidate-protocol.md` — no-copy preflight and candidate lifecycle.
 - `skills/meta/checkpoint-protocol.md` — checkpoint persistence and approval protocol.
 
