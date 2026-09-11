@@ -797,12 +797,14 @@ class PersianCompose(BaseTool):
                     .get(props["format"], {})
                     .get("safeArea", {})
                 )
-                text_rects.append(
-                    caption_band_rect(
-                        props["format"], safe_area=safe_cfg,
-                        start_seconds=0.0, end_seconds=duration_seconds,
+                for caption in captions:
+                    text_rects.append(
+                        caption_band_rect(
+                            props["format"], safe_area=safe_cfg,
+                            start_seconds=float(caption["startSeconds"]),
+                            end_seconds=float(caption["endSeconds"]),
+                        )
                     )
-                )
             avoid_regions = [r for shot in shots for r in (shot.get("avoidRegions") or [])]
             if lockup_measurement is None:
                 raise ValueError("V2 watermark requires loaded-font lockup measurement")

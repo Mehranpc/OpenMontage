@@ -8,12 +8,14 @@ export function planMovingBrand(duration:number,shotTimes:number[],eventTimes:nu
  const min=cfg.minDwellSeconds,target=cfg.targetDwellSeconds??12;
  const delay=Math.max(0,introDelay);
  if(delay>0&&delay>=duration)throw new Error("Film Type watermark intro delay covers the whole film; shorten it or author an empty watermark.");
+ const visibleDuration=duration-delay;
+ const minDwell=Math.min(min,visibleDuration);
  const shots=new Set([0,duration,...shotTimes]),events=new Set([...shots,...eventTimes]);
  if(delay>0)events.add(delay);
- for(let t=min;t<duration;t+=min)events.add(t);
+ for(let t=delay+min;t<duration;t+=min)events.add(t);
  const times=[...events].filter(t=>t>=0&&t<=duration).sort((a,b)=>a-b);
  if(times.length>512)throw new Error("Film Type moving-brand timeline exceeds 512 boundaries; split the review explicitly.");
- const maxCount=Math.max(1,Math.min(1+cfg.maxRelocations,Math.floor(duration/min)));
+ const maxCount=Math.max(1,Math.min(1+cfg.maxRelocations,Math.max(1,Math.floor(visibleDuration/min))));
  type State={cost:number;zone:string;mask:number;slots:{zone:string;start:number;end:number}[]};
  const seedIdx=delay>0?times.findIndex(t=>t>=delay-1e-9):0;
  if(delay>0&&seedIdx<1)throw new Error("Film Type watermark intro delay covers the whole film; shorten it or author an empty watermark.");
@@ -24,7 +26,7 @@ export function planMovingBrand(duration:number,shotTimes:number[],eventTimes:nu
   for(const [key,state] of layer){const i=Number(key.split(":")[0]),start=times[i];
    for(let j=i+1;j<times.length;j++){
     const end=times[j],dwell=end-start,last=j===times.length-1;
-    if(dwell+1e-8<Math.min(min,duration)||(!last&&duration-end<min-1e-8))continue;
+    if(dwell+1e-8<minDwell||(!last&&duration-end<minDwell-1e-8))continue;
     for(const [z,zone] of order.entries()){
      if(zone===state.zone)continue;
      const ck=`${i}:${j}:${z}`;if(!valid.has(ck))valid.set(ck,clear(rects[zone],start,end));if(!valid.get(ck))continue;
@@ -37,7 +39,7 @@ export function planMovingBrand(duration:number,shotTimes:number[],eventTimes:nu
   for(const [key,state] of next)if(Number(key.split(":")[0])===times.length-1)finals.push(state);
   layer=next;
  }
- const eligible=finals.filter(s=>duration<2*min||s.slots.length>=2);
+ const eligible=finals.filter(s=>visibleDuration<2*min||s.slots.length>=2);
  const score=(s:State)=>s.cost-(s.slots.some(x=>x.zone.endsWith("left"))&&s.slots.some(x=>x.zone.endsWith("right"))?24:0);
  eligible.sort((a,b)=>score(a)-score(b));const best=eligible[0];
  if(!best)throw new Error("No safe moving watermark schedule: review text/subject regions; stationary or hidden fallback was not used. " + (diagnostics?.()??""));

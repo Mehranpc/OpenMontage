@@ -516,8 +516,13 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
   };
   if (regionAvoid.length) order.sort((a,b)=>regionBlockedSeconds(a)-regionBlockedSeconds(b));
   const textRects: TimedRect[]=props.moments.map(m=>({...layouts[m.id].rect,h:layouts[m.id].rect.h+l.motionClearancePx/dims.height,startSeconds:m.startSeconds,endSeconds:m.endSeconds}));
-  if(props.captionMode === "burned_captions" || props.captionMode === "hybrid") {
-    textRects.push({...captionBandRect(props.format, props.design),startSeconds:0,endSeconds:props.durationSeconds});
+  const textLabels:string[]=props.moments.map(m=>`moment ${m.id}`);
+  const captionActive=props.captionMode === "burned_captions" || props.captionMode === "hybrid";
+  if(captionActive) {
+    for(const caption of props.captions ?? []) {
+      textRects.push({...captionBandRect(props.format, props.design),startSeconds:caption.startSeconds,endSeconds:caption.endSeconds});
+      textLabels.push(`caption ${caption.id}`);
+    }
   }
   const blockers:string[]=[];
   const visualClearancePx=p.profileVersion==="2.12.0"
@@ -532,7 +537,7 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
     const envelope=expand(r,marginPx/dims.width,marginPx/dims.height);
     const index=textRects.findIndex(o=>o.startSeconds<end&&o.endSeconds>start&&intersects(envelope,o));
     if(index<0)return true;
-    noteBlocker(r,start,end,`text ${props.moments[index].id}`,textRects[index]);
+    noteBlocker(r,start,end,textLabels[index]??`text ${index}`,textRects[index]);
     return false;
   };
   const clearSubject=(r:Rect,start:number,end:number)=>{
@@ -550,7 +555,7 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
   if(p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0")))) {
     const run=(clearance:(r:Rect,start:number,end:number)=>boolean)=>planMovingBrand(props.durationSeconds,
       props.shots.flatMap(s=>[s.startSeconds,s.endSeconds]),
-      [...props.moments.flatMap(m=>[m.startSeconds,m.endSeconds]),...subjectAvoid.flatMap(r=>[r.startSeconds,r.endSeconds])],
+      [...props.moments.flatMap(m=>[m.startSeconds,m.endSeconds]),...(captionActive?(props.captions ?? []).flatMap(c=>[c.startSeconds,c.endSeconds]):[]),...subjectAvoid.flatMap(r=>[r.startSeconds,r.endSeconds])],
       order,rects,clearance,cfg,cfg.introDelaySeconds ?? 0,()=>blockers.join("; "));
     if(p.profileVersion!=="2.12.0")return run(hardClear);
     try{return run(preferredClear);}catch(error){

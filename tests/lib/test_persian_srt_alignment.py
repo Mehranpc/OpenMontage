@@ -291,3 +291,34 @@ def test_hybrid_build_props_creates_burned_approved_copy(tmp_path) -> None:
     assert burned == script
     assert "گردن" not in burned
     assert all(1 <= len(caption["lines"]) <= 2 for caption in props["captions"])
+
+
+def test_short_hybrid_film_type_keeps_watermark_after_intro_delay(tmp_path) -> None:
+    script = "شروع روشن است."
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"x" * 64)
+    persian = {
+        "design": {"version": 2, "profile": "film-type", "seed": "short-hybrid-watermark"},
+        "format": "vertical",
+        "durationSeconds": 10.5,
+        "platformTarget": "instagram-reels",
+        "captionMode": "hybrid",
+        "_approvedSubtitleScript": approved(script),
+        "shots": [{
+            "id": "s1", "source": str(clip), "startSeconds": 0.0,
+            "endSeconds": 10.5, "camera": "none",
+            "attribution": "Fixture attribution",
+        }],
+        "moments": [],
+        "typographicBeats": [],
+        "audio": {"wordTimings": timed(script.split())},
+    }
+    props, _ = ScriptAlignedPersianCompose()._build_props(
+        persian, tmp_path / "stage", "short-hybrid"
+    )
+    assert props["captionMode"] == "hybrid"
+    assert props["captions"]
+    assert props["captions"][-1]["endSeconds"] < props["durationSeconds"]
+    assert props["watermarkPlan"]
+    assert props["watermarkPlan"][0]["startSeconds"] >= 5.0
+    assert props["watermarkPlan"][-1]["endSeconds"] == pytest.approx(10.5)
