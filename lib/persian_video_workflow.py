@@ -877,6 +877,14 @@ def _render_report_review_fields(report: Mapping[str, Any]) -> None:
     if problems:
         raise PersianVideoWorkflowError("retention_audit has blocking problems; revise before human review")
 
+    motion = report.get("post_render_motion_qa")
+    if not isinstance(motion, Mapping):
+        raise PersianVideoWorkflowError("final review requires render_report.post_render_motion_qa")
+    if motion.get("passed") is not True or list(motion.get("failRuns") or []):
+        raise PersianVideoWorkflowError(
+            "post_render_motion_qa failed the anti-slideshow gate; revise before human review"
+        )
+
     silent = report.get("silent_watch_audit")
     if not isinstance(silent, Mapping):
         raise PersianVideoWorkflowError("final review requires render_report.silent_watch_audit")

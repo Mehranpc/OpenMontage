@@ -227,7 +227,7 @@ class FilmTypeContracts(unittest.TestCase):
         class QA:
             passed=True;warn_runs=[]
             def to_dict(self):return {'passed':True,'scope':'mocked cleanup test'}
-        with patch('tools.video.persian_compose._composer_dir',return_value=composer),patch.object(PersianCompose,'_build_props',side_effect=build),patch.object(PersianCompose,'run_command',side_effect=render),patch('tools.video.persian_compose.audit_render_luminance',return_value=QA()):
+        with patch('tools.video.persian_compose._composer_dir',return_value=composer),patch.object(PersianCompose,'_build_props',side_effect=build),patch.object(PersianCompose,'run_command',side_effect=render),patch('tools.video.persian_compose.audit_render_luminance',return_value=QA()),patch('tools.video.persian_compose.audit_render_motion',return_value=QA()):
             result=PersianCompose().execute({'edit_decisions':{'render_runtime':'remotion','persian':{'format':'vertical'}},'output_path':str(output),'keep_staged_assets':keep})
         self.assertEqual(result.success,success)
         self.assertEqual(stages[0].exists(),keep is True and success)

@@ -70,6 +70,7 @@ from lib.persian_render_qa import (
     audit_render_luminance,
     find_coverage_gaps,
 )
+from lib.persian_motion_qa import audit_render_motion
 from lib.persian_music import audit_music, audio_props_with_music, build_music_track
 from lib.persian_srt import audit_cues, build_cues, render_srt
 from lib.persian_captions import (
@@ -450,6 +451,54 @@ class PersianCompose(BaseTool):
                     ),
                 )
 
+            try:
+                motion_qa = audit_render_motion(output_path)
+            except RuntimeError as exc:
+                return ToolResult(
+                    success=False,
+                    data={
+                        "output_path": str(output_path),
+                        "luminance_qa": qa.to_dict(),
+                    },
+                    artifacts=[str(output_path)],
+                    error=(
+                        "The render finished but its post-render motion could not be "
+                        f"measured, so anti-slideshow QA refuses blind delivery: {exc}"
+                    ),
+                )
+            if motion_qa.warn_runs:
+                ranges = ", ".join(
+                    f"{run.start_seconds:.1f}-{run.end_seconds:.1f}s "
+                    f"(mean pixel delta {run.mean_abs_delta:.2f})"
+                    for run in motion_qa.warn_runs
+                )
+                logging.getLogger(__name__).warning(
+                    "Near-static post-render stretch in %s: %s. This is a retention "
+                    "risk advisory; inspect the actual candidate rather than inventing motion.",
+                    output_path,
+                    ranges,
+                )
+            if not motion_qa.passed:
+                ranges = ", ".join(
+                    f"{run.start_seconds:.1f}-{run.end_seconds:.1f}s "
+                    f"(mean pixel delta {run.mean_abs_delta:.2f})"
+                    for run in motion_qa.fail_runs
+                )
+                return ToolResult(
+                    success=False,
+                    data={
+                        "output_path": str(output_path),
+                        "luminance_qa": qa.to_dict(),
+                        "post_render_motion_qa": motion_qa.to_dict(),
+                    },
+                    artifacts=[str(output_path)],
+                    error=(
+                        "The rendered MP4 contains a long near-frozen stretch and fails "
+                        "the anti-slideshow gate: " + ranges + ". Revise the visual event, "
+                        "shot choice, or honest camera treatment and re-render."
+                    ),
+                )
+
             subtitle_path, subtitle_advisories = self._write_subtitles(
                 persian, output_path
             )
@@ -483,6 +532,7 @@ class PersianCompose(BaseTool):
                     "attributions": attributions,
                     "persian_text_verified": False,  # Set by the reviewer, not here.
                     "luminance_qa": qa.to_dict(),
+                    "post_render_motion_qa": motion_qa.to_dict(),
                     **({"staged_assets_retained": True, "staged_assets_directory": str(staging_dir)} if inputs.get("keep_staged_assets") is True else {}),
                 },
                 artifacts=artifacts,

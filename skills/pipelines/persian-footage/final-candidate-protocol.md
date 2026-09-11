@@ -74,9 +74,13 @@ requested.
 Present the complete MP4 and its sha256 plus entry/stable/exit frames for every
 moment, both sides of crossed cuts, warnings for geometry/contrast/watermark/luminance/
 captions/subtitles (including burned-caption entry/mid/exit samples when enabled), and an optional separate debug sheet with region boxes. The non-human review
-package also carries the measured retention audit plus muted-viewer comprehension, cut
-rhythm, caption readability, strongest scene, weakest scene, hook strength, and resolution
-strength. Timeline code measures cadence; the reviewer states semantic judgements instead
+package also carries the measured retention audit plus `post_render_motion_qa`, muted-viewer
+comprehension, cut rhythm, caption readability, strongest scene, weakest scene, hook
+strength, and resolution strength. Timeline code measures authored cadence; the motion QA
+samples the actual MP4 at 2fps after a tiny grayscale downscale and measures consecutive
+pixel deltas. A roughly eight-second near-frozen stretch is an advisory; a roughly ten-second
+near-frozen stretch blocks delivery. These thresholds are deliberately conservative and do
+not pretend to score subtle creative motion. The reviewer states semantic judgements instead
 of pretending they were inferred from timestamps. Persist a schema-valid `final_review`
 artifact inside the project and link it from `render_report.final_review_ref`; the workflow
 rehashes that review artifact and the MP4 before entering `awaiting_human`. Burned/hybrid

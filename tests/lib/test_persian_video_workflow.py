@@ -91,6 +91,11 @@ def _report(
         }],
         "final_review_ref": review_ref,
         "caption_mode": "sidecar_only",
+        "post_render_motion_qa": {
+            "passed": True, "sampleFps": 2.0, "nearStaticDeltaMax": 1.0,
+            "warningRunSeconds": 7.0, "failRunSeconds": 9.0,
+            "deltas": [], "warnRuns": [], "failRuns": [], "elapsedSeconds": 0.1,
+        },
         "retention_audit": {
             "problems": [], "advisories": [],
             "first3Seconds": {"eventCount": 2, "events": []},
@@ -666,6 +671,23 @@ def test_final_review_rejects_retention_problems_and_weak_hook(tmp_path):
             pipeline_dir=tmp_path, now=BASE,
         )
 
+
+
+def test_final_review_rejects_failed_post_render_motion_gate(tmp_path):
+    _, _, review_path, report = _review_ready_project(tmp_path)
+    report["post_render_motion_qa"]["passed"] = False
+    report["post_render_motion_qa"]["failRuns"] = [{
+        "startSeconds": 4.0, "endSeconds": 14.0,
+        "durationSeconds": 10.0, "meanAbsDelta": 0.1,
+    }]
+    (tmp_path / "run" / "checkpoint_compose.json").write_text(
+        json.dumps(_checkpoint(report)), encoding="utf-8"
+    )
+    with pytest.raises(PersianVideoWorkflowError, match="anti-slideshow"):
+        complete_phase(
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
+        )
 
 def test_burned_caption_review_requires_real_entry_mid_exit_frames(tmp_path):
     _, _, review_path, report = _review_ready_project(tmp_path)

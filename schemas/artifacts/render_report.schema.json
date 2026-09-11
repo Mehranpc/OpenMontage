@@ -347,6 +347,80 @@
         "acceptable",
         "strong"
       ]
+    },
+    "post_render_motion_qa": {
+      "type": "object",
+      "description": "Pixel-derived anti-slideshow audit over the finished MP4. Persian final review requires passed=true; warnRuns are review advisories, failRuns block delivery.",
+      "properties": {
+        "passed": {
+          "type": "boolean"
+        },
+        "sampleFps": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "nearStaticDeltaMax": {
+          "type": "number",
+          "minimum": 0
+        },
+        "warningRunSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "failRunSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "deltas": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "atSeconds",
+              "meanAbsDelta"
+            ],
+            "properties": {
+              "atSeconds": {
+                "type": "number",
+                "minimum": 0
+              },
+              "meanAbsDelta": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "warnRuns": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "failRuns": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "elapsedSeconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "passed",
+        "sampleFps",
+        "nearStaticDeltaMax",
+        "warningRunSeconds",
+        "failRunSeconds",
+        "deltas",
+        "warnRuns",
+        "failRuns",
+        "elapsedSeconds"
+      ],
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

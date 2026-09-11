@@ -566,6 +566,12 @@ def test_render_report_can_carry_retention_and_silent_watch_evidence() -> None:
             "path": "a.mp4", "format": "mp4", "resolution": "1080x1920",
             "duration_seconds": 12.0,
         }],
+        "post_render_motion_qa": {
+            "passed": True, "sampleFps": 2.0, "nearStaticDeltaMax": 1.0,
+            "warningRunSeconds": 7.0, "failRunSeconds": 9.0,
+            "deltas": [{"atSeconds": 0.5, "meanAbsDelta": 4.2}],
+            "warnRuns": [], "failRuns": [], "elapsedSeconds": 0.2,
+        },
         "retention_audit": {
             "problems": [], "advisories": [],
             "first3Seconds": {"eventCount": 2, "events": []},
@@ -589,6 +595,13 @@ def test_render_report_can_carry_retention_and_silent_watch_evidence() -> None:
     problems = _errors("render_report", report)
     assert not problems, problems
 
+
+
+def test_render_report_declares_post_render_motion_qa() -> None:
+    props = _schema("render_report")["properties"]
+    motion = props["post_render_motion_qa"]
+    assert motion["properties"]["passed"]["type"] == "boolean"
+    assert "failRuns" in motion["required"]
 
 def test_render_report_declares_caption_verification_frames() -> None:
     props = _schema("render_report")["properties"]

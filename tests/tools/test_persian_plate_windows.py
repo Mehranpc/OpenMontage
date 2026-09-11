@@ -293,6 +293,12 @@ class TestPreRenderCoverageGate:
                 passed=True, warn_runs=[], dead_runs=[], to_dict=lambda: {}
             ),
         )
+        monkeypatch.setattr(
+            "tools.video.persian_compose.audit_render_motion",
+            lambda *a, **k: mock.Mock(
+                passed=True, warn_runs=[], fail_runs=[], to_dict=lambda: {}
+            ),
+        )
         result = tool.execute(
             {
                 "edit_decisions": {"persian": persian, "render_runtime": "remotion"},
@@ -301,6 +307,45 @@ class TestPreRenderCoverageGate:
         )
         assert calls, "the render must start when only rounding noise separates shots"
         assert result.success is True
+
+
+class TestPostRenderMotionGate:
+    def test_a_long_near_frozen_render_is_refused(self, clip: Path, tmp_path: Path, monkeypatch) -> None:
+        import subprocess
+        from types import SimpleNamespace
+
+        persian = _persian(clip, [_opener()], [])
+        tool = PersianCompose()
+        fake_path = tmp_path / "out.mp4"
+
+        def fake_run(cmd, **kwargs):
+            fake_path.write_bytes(b"mocked-output")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(tool, "run_command", fake_run)
+        monkeypatch.setattr(
+            "tools.video.persian_compose.audit_render_luminance",
+            lambda *a, **k: mock.Mock(
+                passed=True, warn_runs=[], dead_runs=[], to_dict=lambda: {"passed": True}
+            ),
+        )
+        frozen = SimpleNamespace(
+            start_seconds=4.0, end_seconds=14.0, mean_abs_delta=0.1
+        )
+        monkeypatch.setattr(
+            "tools.video.persian_compose.audit_render_motion",
+            lambda *a, **k: mock.Mock(
+                passed=False, warn_runs=[], fail_runs=[frozen],
+                to_dict=lambda: {"passed": False, "failRuns": [{"startSeconds": 4.0, "endSeconds": 14.0}]},
+            ),
+        )
+        result = tool.execute({
+            "edit_decisions": {"persian": persian, "render_runtime": "remotion"},
+            "output_path": str(fake_path),
+        })
+        assert result.success is False
+        assert "anti-slideshow" in (result.error or "")
+        assert result.data["post_render_motion_qa"]["passed"] is False
 
 
 class TestFfmpegMissingAfterRender:
