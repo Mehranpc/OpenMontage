@@ -77,5 +77,10 @@ captions/subtitles (including burned-caption entry/mid/exit samples when enabled
 package also carries the measured retention audit plus muted-viewer comprehension, cut
 rhythm, caption readability, strongest scene, weakest scene, hook strength, and resolution
 strength. Timeline code measures cadence; the reviewer states semantic judgements instead
-of pretending they were inferred from timestamps. The user reviews once. On rejection,
-revise only named scenes and produce a new candidate.
+of pretending they were inferred from timestamps. Persist a schema-valid `final_review`
+artifact inside the project and link it from `render_report.final_review_ref`; the workflow
+rehashes that review artifact and the MP4 before entering `awaiting_human`. Burned/hybrid
+captions retain at least entry/mid/exit frame paths in
+`render_report.caption_verification_frames`, and the generic visual spotcheck retains at
+least four real frame paths. The user reviews once. On rejection, revise only named scenes
+and produce a new candidate.

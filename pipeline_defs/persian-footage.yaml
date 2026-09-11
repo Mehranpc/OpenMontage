@@ -337,5 +337,7 @@ stages:
       - render_report.moment_count and render_report.text_coverage are recorded
       - "caption_mode is recorded in render_report. sidecar_only/hybrid => subtitle_path points at an existing approved-script SRT; burned_captions => no sidecar is required; burned_captions/hybrid => burned_caption_count > 0"
       - render_report.attributions[] covers every clip used
-      - "render_report.retention_audit.problems is empty and the report carries silent-watch, cut-rhythm, caption-readability, strongest/weakest-scene, hook-strength, and resolution-strength evidence before awaiting_human"
+      - "render_report.retention_audit.problems is empty; muted main point/hook direction/conclusion are understood; hook/resolution are at least acceptable; and the report carries cut-rhythm, caption-readability, strongest/weakest-scene evidence before awaiting_human"
+      - "A schema-valid in-project final_review artifact passes technical/visual/audio/promise/subtitle checks, points at the same digest-bound MP4, is linked by render_report.final_review_ref, and is re-hashed by the workflow before awaiting_human"
+      - "burned_captions/hybrid retain at least entry/mid/exit post-render caption frame paths in render_report.caption_verification_frames"
       - "Post-render luminance gate holds: no contiguous run of >= 1.0s averages below YAVG 22; runs below 30 are warnings, not failures"

@@ -578,8 +578,9 @@ def test_render_report_can_carry_retention_and_silent_watch_evidence() -> None:
         },
         "silent_watch_audit": {
             "main_point_understood": True, "hook_direction_understood": True,
-            "conclusion_understood": True, "notes": [],
+            "conclusion_understood": True, "notes": ["Muted review preserves the main point."],
         },
+        "caption_verification_frames": ["entry.png", "mid.png", "exit.png"],
         "cut_rhythm": "Hard cuts feel intentional; no repeated dissolve grammar.",
         "caption_readability": "Sidecar captions are readable when enabled.",
         "strongest_scene": "opening", "weakest_scene": "middle exposition",
@@ -587,6 +588,12 @@ def test_render_report_can_carry_retention_and_silent_watch_evidence() -> None:
     }
     problems = _errors("render_report", report)
     assert not problems, problems
+
+
+def test_render_report_declares_caption_verification_frames() -> None:
+    props = _schema("render_report")["properties"]
+    assert "caption_verification_frames" in props
+    assert props["caption_verification_frames"]["items"]["type"] == "string"
 
 
 def test_text_coverage_is_bounded_to_a_fraction() -> None:

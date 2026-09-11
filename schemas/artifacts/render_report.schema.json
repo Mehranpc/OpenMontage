@@ -206,6 +206,13 @@
         "type": "string"
       }
     },
+    "caption_verification_frames": {
+      "type": "array",
+      "description": "Post-render caption samples retained for burned_captions/hybrid review. Persian final review requires at least entry/mid/exit examples from the actual MP4.",
+      "items": {
+        "type": "string"
+      }
+    },
     "music_mixed": {
       "type": "boolean"
     },
