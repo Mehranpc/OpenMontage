@@ -280,6 +280,7 @@ class DirectClipSearch(BaseTool):
                         "enum": ["landscape", "portrait", "square"],
                     },
                     "min_width": {"type": "integer"},
+                    "max_width": {"type": "integer"},
                 },
             },
             "extract_thumbnails": {
@@ -538,6 +539,7 @@ class DirectClipSearch(BaseTool):
                     max_duration=filters_in.get("max_duration"),
                     orientation=filters_in.get("orientation"),
                     min_width=filters_in.get("min_width"),
+                    max_width=filters_in.get("max_width"),
                 )
 
                 for src in sources:
@@ -562,6 +564,8 @@ class DirectClipSearch(BaseTool):
                         continue
 
                     for cand in candidates:
+                        if collected_for_query >= clips_per_query:
+                            break
                         if candidates_considered >= max_candidates_total:
                             return limit_result(
                                 _DownloadQuotaExceeded(
@@ -591,9 +595,6 @@ class DirectClipSearch(BaseTool):
                                 source=src.name,
                                 clip_id=cand.clip_id,
                             )
-
-                        if collected_for_query >= clips_per_query:
-                            break
 
                         clip_id = cand.clip_id
                         ext = _guess_ext(cand)
@@ -851,6 +852,8 @@ def _candidate_filter_error(cand: Any, filters: Any) -> str:
             return f"declared orientation {actual} does not match {filters.orientation}"
     if filters.min_width is not None and width > 0 and width < filters.min_width:
         return f"declared width {width} is below minimum {filters.min_width}"
+    if filters.max_width is not None and width > 0 and width > filters.max_width:
+        return f"declared width {width} exceeds maximum {filters.max_width}"
     if kind == "video" and duration > 0:
         if filters.min_duration is not None and duration < filters.min_duration:
             return f"declared duration {duration:.3f}s is below {filters.min_duration}s"
@@ -917,6 +920,8 @@ def _probed_filter_error(kind: str, probe: dict[str, Any], filters: Any) -> str:
         )
     if filters.min_width is not None and width < filters.min_width:
         return f"probed width {width} is below minimum {filters.min_width}"
+    if filters.max_width is not None and width > filters.max_width:
+        return f"probed width {width} exceeds maximum {filters.max_width}"
     if kind == "video":
         if filters.min_duration is not None and duration < filters.min_duration:
             return f"probed duration {duration:.3f}s is below {filters.min_duration}s"

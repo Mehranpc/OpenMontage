@@ -74,7 +74,11 @@ class PixabayVideoSource:
         out: list[Candidate] = []
         for h in hits:
             videos = h.get("videos", {})
-            rend = _pick_rendition(videos, min_width=filters.min_width or 0)
+            rend = _pick_rendition(
+                videos,
+                min_width=filters.min_width or 0,
+                max_width=filters.max_width,
+            )
             if rend is None:
                 continue
 
@@ -128,6 +132,7 @@ class PixabayVideoSource:
 def _pick_rendition(
     videos: dict[str, Any],
     min_width: int = 0,
+    max_width: int | None = None,
 ) -> Optional[dict[str, Any]]:
     """Pick the best rendition from Pixabay's nested video dict.
 
@@ -142,6 +147,6 @@ def _pick_rendition(
             continue
         w = int(rend.get("width") or 0)
         h = int(rend.get("height") or 0)
-        if w >= min_width:
+        if w >= min_width and (max_width is None or w <= max_width):
             return {"url": rend["url"], "width": w, "height": h, "size": rend.get("size")}
     return None

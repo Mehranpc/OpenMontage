@@ -53,8 +53,9 @@ result = registry.get("direct_clip_search").execute({
     "filters": {
         "orientation": "portrait",
         "min_duration": 6,
-        # Resolution floor *and* ceiling in one number — see below.
+        # Keep portrait footage at the production width instead of fetching 1440px variants.
         "min_width": 1080,
+        "max_width": 1080,
     },
     "output_dir": str(project_dir / "assets"),
     "clips_per_query": 1,
@@ -74,26 +75,20 @@ on every call; raising them requires an explicit user decision, not an agent ret
 `min_duration` at or above the longest beat, so clips too short to fill a beat never
 get downloaded in the first place.
 
-### Resolution: `min_width` is also the ceiling
+### Resolution: declare both the floor and ceiling
 
-`_pick_video_rendition` in `tools/video/stock_sources/pexels.py` takes the **largest**
-rendition at or below 1920px *wide*. For a portrait clip "width" is the short edge, so
-the cap does nothing: a vertical clip arrives at 1440×2560 or 1440×2732, which is 22–52
-MB per clip for a 1080×1920 render that then downscales it.
+`_pick_video_rendition` in `tools/video/stock_sources/pexels.py` otherwise takes the
+**largest** rendition at or below 1920px *wide*. For a portrait clip "width" is the
+short edge, so `min_width: 1080` alone is only a floor: a vertical clip can still arrive
+at 1440×2560 or 1440×2732 and waste bytes before a 1080×1920 render downsamples it.
 
-Setting `min_width: 1080` fixes both ends at once, because the picker sorts descending
-and takes the first candidate within `[min_width, 1920]`:
+Set both `min_width: 1080` and `max_width: 1080`. The source adapters choose a rendition
+inside that interval before download, and `direct_clip_search` enforces the same maximum
+against declared metadata and the ffprobe result. A source with no suitable 1080-wide
+rendition is unresolved; do not widen the ceiling just to make the search succeed.
 
-- clips whose best rendition is below 1080 wide are rejected outright, and
-- among the rest the 1080 rendition is still the largest that fits, so nothing above it
-  is fetched.
-
-On the 12-beat run this is the difference between roughly 300 MB and roughly 80 MB.
-
-`direct_clip_search` now enforces byte limits and verifies the downloaded file,
-but rendition choice still belongs to the source adapter. Keep `min_width: 1080` here
-so the Persian vertical path asks Pexels for the smallest production-suitable width
-rather than spending the byte budget on detail the render discards.
+On the 12-beat run this avoids spending the shared byte budget on 1440-wide detail the
+render discards. Keep both width bounds on every Persian vertical stock request.
 
 **Pexels honours `orientation`; Pixabay does not.** `direct_clip_search` therefore
 runs `ffprobe` after every download and deletes a mismatch before it can enter the
@@ -338,6 +333,7 @@ Also confirm by hand:
   `shows_subject: true`, and at least 40% of footage visual events do. The scene plan asked for
   this; selection is where it gets lost, because the beat whose subject clip was
   unusable is exactly the beat where a generic one is tempting.
-- Every clip is at most 1920px on its long edge. A 2732px clip means `min_width` was
-  omitted, and the run just downloaded several times more data than it needed.
+- Every selected portrait clip is requested with `min_width: 1080` and `max_width: 1080`.
+  A 1440-wide clip means the width ceiling was omitted and the run spent more of the shared
+  byte budget than the 1080×1920 render needs.
 - In `narrated` mode: word timings cover the narration duration end to end.

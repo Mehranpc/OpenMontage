@@ -10,6 +10,8 @@ from tools.video import direct_clip_search as module
 from tools.video.direct_clip_search import DirectClipSearch
 from tools.video.stock_sources.base import Candidate
 from tools.video.stock_sources.nasa import _pick_video_url
+from tools.video.stock_sources.pexels import _pick_video_rendition
+from tools.video.stock_sources.pixabay_video import _pick_rendition as _pick_pixabay_rendition
 
 
 class _Response:
@@ -184,6 +186,57 @@ def test_candidate_cap_is_hard(monkeypatch, tmp_path):
     assert result.data["clips_downloaded"] == 1
 
 
+def test_successful_query_does_not_consume_an_extra_candidate(monkeypatch, tmp_path):
+    source = _Source(
+        {
+            "one": [_candidate("one"), _candidate("one-extra")],
+            "two": [_candidate("two"), _candidate("two-extra")],
+        },
+        size=1500,
+    )
+    _install_source(monkeypatch, source)
+    monkeypatch.setattr(
+        module,
+        "_probe_media",
+        lambda *_a, **_k: {"width": 1080, "height": 1920, "duration": 8.0},
+    )
+    result = DirectClipSearch().execute(
+        _inputs(tmp_path, ["one", "two"], max_candidates_total=2)
+    )
+    assert result.success is True
+    assert result.data["candidates_considered"] == 2
+    assert result.data["clips_downloaded"] == 2
+
+
+def test_max_width_rejects_oversized_candidate_before_download(monkeypatch, tmp_path):
+    source = _Source(
+        {"one": [_candidate("large", width=1440, height=2560), _candidate("fit")]},
+        size=1500,
+    )
+    _install_source(monkeypatch, source)
+    monkeypatch.setattr(
+        module,
+        "_probe_media",
+        lambda *_a, **_k: {"width": 1080, "height": 1920, "duration": 8.0},
+    )
+    result = DirectClipSearch().execute(
+        _inputs(
+            tmp_path,
+            ["one"],
+            filters={
+                "orientation": "portrait",
+                "min_duration": 5,
+                "min_width": 1080,
+                "max_width": 1080,
+            },
+        )
+    )
+    assert result.success is True
+    assert result.data["clips_downloaded"] == 1
+    assert result.data["clips"][0]["clip_id"] == "pexels_fit"
+    assert any("exceeds maximum 1080" in item["error"] for item in result.data["errors"])
+
+
 def test_invalid_reused_file_is_deleted(monkeypatch, tmp_path):
     source = _Source({"one": [_candidate("one")]})
     _install_source(monkeypatch, source)
@@ -233,3 +286,25 @@ def test_nasa_probe_prefers_bounded_rendition():
         "https://images-assets.nasa.gov/video/demo/demo~medium.mp4",
     ]
     assert _pick_video_url(urls).endswith("~medium.mp4")
+
+
+def test_pexels_rendition_respects_explicit_max_width():
+    files = [
+        {"file_type": "video/mp4", "width": 1440, "link": "https://cdn/1440.mp4"},
+        {"file_type": "video/mp4", "width": 1080, "link": "https://cdn/1080.mp4"},
+        {"file_type": "video/mp4", "width": 720, "link": "https://cdn/720.mp4"},
+    ]
+    picked = _pick_video_rendition(files, min_width=1080, max_width=1080)
+    assert picked is not None
+    assert picked["width"] == 1080
+
+
+def test_pixabay_rendition_respects_explicit_max_width():
+    videos = {
+        "large": {"url": "https://cdn/1440.mp4", "width": 1440, "height": 2560},
+        "medium": {"url": "https://cdn/1080.mp4", "width": 1080, "height": 1920},
+        "small": {"url": "https://cdn/720.mp4", "width": 720, "height": 1280},
+    }
+    picked = _pick_pixabay_rendition(videos, min_width=1080, max_width=1080)
+    assert picked is not None
+    assert picked["width"] == 1080
