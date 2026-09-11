@@ -154,6 +154,43 @@ class TestCueConstruction:
         below = [c for c in cues if c.duration < MIN_CUE_SECONDS]
         assert not below, [(c.id, c.duration, c.text) for c in below]
 
+    def test_tight_caption_budget_rebalances_boundary_instead_of_flashing(self) -> None:
+        """A near-full neighbour should lend a word instead of forcing a 0.96s cue."""
+        words = [
+            {"word": "کم‌کم", "start": 23.42, "end": 24.30},
+            {"word": "به", "start": 24.30, "end": 24.38},
+            {"word": "چیزی", "start": 24.38, "end": 24.66},
+            {"word": "تبدیل", "start": 24.66, "end": 25.02},
+            {"word": "می‌شه", "start": 25.02, "end": 25.28},
+            {"word": "که", "start": 25.28, "end": 25.46},
+            {"word": "فقط", "start": 25.46, "end": 25.80},
+            {"word": "برای", "start": 25.80, "end": 26.16},
+            {"word": "گرفتن", "start": 26.16, "end": 26.58},
+            {"word": "جایزه", "start": 26.58, "end": 27.06},
+            {"word": "انجامش", "start": 27.06, "end": 27.44},
+            {"word": "می‌دن.", "start": 27.44, "end": 27.74},
+            {"word": "از", "start": 27.74, "end": 28.04},
+            {"word": "طرفی،", "start": 28.04, "end": 28.40},
+            {"word": "بچه", "start": 28.40, "end": 29.14},
+            {"word": "ممکنه", "start": 29.14, "end": 29.50},
+            {"word": "به", "start": 29.50, "end": 29.62},
+            {"word": "پاداش", "start": 29.62, "end": 29.94},
+            {"word": "عادت", "start": 29.94, "end": 30.30},
+            {"word": "کنه", "start": 30.30, "end": 30.62},
+            {"word": "و", "start": 30.62, "end": 30.90},
+            {"word": "برای", "start": 30.90, "end": 31.16},
+            {"word": "گرفتن", "start": 31.16, "end": 31.54},
+            {"word": "همون", "start": 31.54, "end": 31.88},
+            {"word": "نتیجه،", "start": 31.88, "end": 32.30},
+        ]
+        cues = build_cues(
+            words, persian_digits=False, max_visible_chars=56
+        )
+        assert " ".join(cue.text for cue in cues) == " ".join(word["word"] for word in words)
+        assert all(cue.duration >= MIN_CUE_SECONDS for cue in cues)
+        assert all(visible_length(cue.text) <= 56 for cue in cues)
+        assert any("انجامش می‌دن. از طرفی،" in cue.text for cue in cues)
+
     def test_zwnj_is_preserved_through_cue_construction(self) -> None:
         """The orthography must survive the grouping.
 

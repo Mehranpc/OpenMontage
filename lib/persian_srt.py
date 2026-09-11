@@ -241,6 +241,9 @@ def build_cues(
     groups = _merge_short_groups(
         groups, max_visible_chars=max_visible_chars, max_seconds=max_seconds
     )
+    groups = _rebalance_short_groups(
+        groups, max_visible_chars=max_visible_chars, max_seconds=max_seconds
+    )
 
     cues: list[PersianCue] = []
     for index, group in enumerate(groups):
@@ -382,6 +385,84 @@ def _merge_short_groups(
                 merged = merged[:-2] + [combined]
 
     return merged
+
+
+def _rebalance_short_groups(
+    groups: list[list[TimedWord]],
+    *,
+    max_visible_chars: int = MAX_CUE_VISIBLE_CHARS,
+    max_seconds: float = MAX_CUE_SECONDS,
+) -> list[list[TimedWord]]:
+    """Repair a remaining short cue by moving the nearest boundary when possible.
+
+    ``_merge_short_groups`` handles the common case where a whole short group can be
+    folded into a neighbour.  A tighter burned-caption character ceiling can leave a
+    different shape: both neighbours are already near the ceiling, but moving just one
+    boundary word would make the short cue readable without making either neighbour
+    invalid.  Keeping the flash merely because a *whole* merge does not fit is an
+    avoidable grouping failure.
+
+    Prefer borrowing the smallest suffix from the previous cue, then the smallest
+    prefix from the next cue.  The donor must remain at least ``MIN_CUE_SECONDS`` and
+    both resulting groups must stay inside the same character/duration budgets.  No
+    timing or wording is invented; only the cue boundary moves.
+    """
+    if len(groups) <= 1:
+        return groups
+
+    result = [list(group) for group in groups]
+
+    def duration(group: list[TimedWord]) -> float:
+        return group[-1].end - group[0].start
+
+    def fits(group: list[TimedWord]) -> bool:
+        if not group:
+            return False
+        return (
+            visible_length(" ".join(word.text for word in group)) <= max_visible_chars
+            and duration(group) <= max_seconds
+        )
+
+    for index in range(len(result)):
+        group = result[index]
+        if duration(group) >= MIN_CUE_SECONDS:
+            continue
+
+        if index > 0:
+            previous = result[index - 1]
+            for moved in range(1, len(previous)):
+                donor = previous[:-moved]
+                repaired = previous[-moved:] + group
+                if (
+                    duration(donor) >= MIN_CUE_SECONDS
+                    and duration(repaired) >= MIN_CUE_SECONDS
+                    and fits(donor)
+                    and fits(repaired)
+                ):
+                    result[index - 1] = donor
+                    result[index] = repaired
+                    group = repaired
+                    break
+
+        if duration(group) >= MIN_CUE_SECONDS:
+            continue
+
+        if index + 1 < len(result):
+            following = result[index + 1]
+            for moved in range(1, len(following)):
+                repaired = group + following[:moved]
+                donor = following[moved:]
+                if (
+                    duration(repaired) >= MIN_CUE_SECONDS
+                    and duration(donor) >= MIN_CUE_SECONDS
+                    and fits(repaired)
+                    and fits(donor)
+                ):
+                    result[index] = repaired
+                    result[index + 1] = donor
+                    break
+
+    return result
 
 
 def audit_cues(cues: list[PersianCue]) -> list[str]:
