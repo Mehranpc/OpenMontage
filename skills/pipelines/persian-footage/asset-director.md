@@ -47,7 +47,7 @@ result = registry.get("direct_clip_search").execute({
     # First pass: ONE primary query and ONE candidate per footage visual event.
     # Use the visual event's second query only for an unresolved event in a bounded retry.
     "queries": [
-        {"query": "close up pouring coffee into cup morning", "slot_id": "beat-1", "kind": "video"},
+        {"query": "close up pouring coffee into cup morning", "slot_id": "beat-1-event-1", "kind": "video"},
     ],
     "sources": ["pexels", "pixabay_video"],
     "filters": {
@@ -107,8 +107,22 @@ explicit approval.
 
 Run one batched first pass containing one primary query per footage visual event and
 `clips_per_query: 1`. Inspect those results. Run at most one second pass for unresolved
-beats, using their already-authored alternate query and the remaining shared byte and
-candidate budget. Do not widen providers, add generic queries, or start a third pass.
+events, using their already-authored alternate query and the remaining shared byte and
+candidate budget. Consume that retry pass in `audit_scene_plan(...)["sourcing_order"]`:
+importance-3 events first, then 2, then 1. Importance changes **priority**, never the
+shared `max_candidates_total`, per-clip limit, aggregate byte ceiling, provider list, or
+number of passes. Do not widen providers, add generic queries, or start a third pass.
+
+### Ordered fallback hierarchy
+
+Search/selection follows the event's declared level in order:
+
+`exact_literal` → `emotional_human` → `adjacent_metaphor` → `abstract` → typography.
+
+The first four are footage levels. Typography is a semantic-beat fallback and remains
+subject to the typographic budget. A selected asset below `exact_literal` records a
+`fallback_reason` naming why earlier levels failed; otherwise the gate refuses it. This
+is what prevents a difficult event from silently widening into generic stock.
 
 ## Selection
 
@@ -116,10 +130,13 @@ Inspect the candidates. Do not select on filename or on the API's relevance scor
 both are unreliable, and a clip selected without being seen is how a video ends up
 with footage that contradicts its narration.
 
-Extract a thumbnail per candidate:
+Inspect the **actual selected crop/window** at start, middle, and end. A single API
+thumbnail cannot reveal a late actor entrance, reframing, or a subject leaving the crop.
+Persist `frame_review: {start, middle, end, observed}` as evidence; all three booleans
+must be true and `observed` must say what remained in frame. A quick extraction can use:
 
 ```bash
-ffmpeg -y -ss 1 -i clip.mp4 -frames:v 1 -vf scale=320:-1 thumb.jpg
+ffmpeg -y -ss <sample-second> -i clip.mp4 -frames:v 1 -vf scale=320:-1 thumb.jpg
 ```
 
 Then judge, in priority order:
@@ -140,14 +157,21 @@ Then judge, in priority order:
    Keep ranked alternatives until no-copy edit preflight chooses a feasible pair.
 7. **Is the motion compatible?** Fast internal motion plus a camera move is queasy.
    If the clip moves a lot, revisit the beat's camera and set `none`.
+8. **Does it look staged/generic?** Record `staged_stock_risk` as low/medium/high.
+   High is rejected. Emotional events should preserve the planned human presence rather
+   than accepting a generic object shot because it technically matches the noun.
 
 Reject freely. Rejecting a clip costs one more search; shipping a wrong clip costs
 the video's credibility.
 
 ### Record why, not just what
 
-Write a one-line `selection_reason` per asset into the manifest, naming what is in
-frame. «قهوه در فنجان روی میز کار» is a reason; "best match" is not.
+Write `selection_reason` naming what is visibly in frame and a separate
+`relevance_reason` explaining why that image serves the semantic beat. Also record the
+actual authored `query`, `candidate_rank`, `affect_match`, `human_presence`,
+`staged_stock_risk`, `semantic_beat_id`, `visual_event_id`, exact `narration_span`,
+`source_in_seconds`, duration, fallback level/reason, and start/middle/end `frame_review`.
+«قهوه در فنجان روی میز کار» is a selection reason; "best match" is not.
 
 This is the artifact a reviewer reads to see whether the footage is about the video's
 subject, and it is what made the coffee run's failure visible only after rendering: the
@@ -171,10 +195,11 @@ every letter that matters.
 Falls back to `transcriber` when MLX is unavailable — with `model_size: "large-v3"`
 if the machine can carry it. A smaller model's Persian word boundaries drift.
 
-Timings feed the sidecar `.srt` rather than any on-screen text, so drift of a tenth of
-a second is now cosmetic instead of a visible bug. Accuracy is still worth having —
-subtitles that lag the voice are irritating — but it is no longer a reason to block the
-stage.
+Timings are a **clock**, never delivery copy. The approved script owns the words; these
+word timings align that copy for sidecar SRT, burned captions, hybrid delivery, and
+narration-anchored moments. In burned/hybrid mode drift is visibly on screen, so timing
+coverage is a real delivery concern again; the remedy is matching narration/timings,
+never substituting Whisper spelling for approved Persian.
 
 ### Reconciling transcript against script
 
@@ -242,7 +267,11 @@ Rules:
   "assets": [
     {
       "beat_id": "beat-1",
+      "semantic_beat_id": "beat-1",
       "visual_event_id": "beat-1-event-1",
+      "narration_span": "هر روز صبح بدون قهوه روزت شروع نمی‌شه؟",
+      "query": "close up pouring coffee morning",
+      "candidate_rank": 1,
       "kind": "video",
       "path": "projects/<project>/assets/video/selected/beat-1_pexels_1234567.mp4",
       "duration_seconds": 12.4,
@@ -254,7 +283,16 @@ Rules:
       "license": "Pexels License",
       "attribution": "Video by Jane Doe on Pexels",
       "shows_subject": true,
-      "selection_reason": "فنجان قهوه روی میز، بخار در نور صبح"
+      "human_presence": true,
+      "affect_match": true,
+      "staged_stock_risk": "low",
+      "fallback_level": "exact_literal",
+      "selection_reason": "فنجان قهوه و دست در قاب، بخار در نور صبح",
+      "relevance_reason": "عمل واقعی ریختن قهوه همان عادت صبحگاهی beat را نشان می‌دهد",
+      "frame_review": {
+        "start": true, "middle": true, "end": true,
+        "observed": "فنجان، دست و عمل ریختن در کل پنجرهٔ انتخابی باقی می‌مانند"
+      }
     }
   ],
   "musicTrack": {
@@ -288,6 +326,10 @@ assert not problems, problems
 Also confirm by hand:
 
 - Every footage visual event has exactly one asset. Legacy checkpoints without `visual_events` are treated as one implicit event per beat.
+- New visual-event assets carry the full semantic/selection evidence listed above;
+  `audit_asset_manifest` rejects missing identity, un-authored queries, affect mismatch,
+  high staged-stock risk, lost required human/subject presence, undocumented fallback,
+  or incomplete start/middle/end inspection.
 - No clip_id fills two visual events. Reuse is visible and reads as running out of material.
 - `ffprobe` agrees with the recorded duration and dimensions on every clip — the
   APIs' metadata is occasionally wrong, and a clip shorter than its beat renders

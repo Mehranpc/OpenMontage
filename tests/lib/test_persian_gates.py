@@ -350,6 +350,7 @@ class TestAssetAudit:
     def _asset(self, **overrides) -> dict:
         base = {
             "beat_id": "b1",
+            "semantic_beat_id": "b1",
             "kind": "video",
             "path": "a.mp4",
             "duration_seconds": 12.0,
@@ -360,6 +361,20 @@ class TestAssetAudit:
             "original_url": "https://example.test/1",
             "license": "Pexels License",
             "attribution": "Video by Someone on Pexels",
+            "narration_span": "هر روز صبح قهوه",
+            "query": "coffee pour close up",
+            "candidate_rank": 1,
+            "selection_reason": "فنجان قهوه و دست در قاب دیده می‌شود",
+            "relevance_reason": "عمل ریختن قهوه مستقیماً beat را نشان می‌دهد",
+            "affect_match": True,
+            "staged_stock_risk": "low",
+            "human_presence": True,
+            "shows_subject": True,
+            "fallback_level": "exact_literal",
+            "frame_review": {
+                "start": True, "middle": True, "end": True,
+                "observed": "قهوه و دست در کل پنجرهٔ انتخابی در قاب می‌مانند",
+            },
         }
         base.update(overrides)
         return base
@@ -377,14 +392,28 @@ class TestAssetAudit:
                 "id": "b1",
                 "duration_seconds": 5.0,
                 "visual_events": [
-                    {"id": "b1-e1", "duration_seconds": 2.0},
-                    {"id": "b1-e2", "duration_seconds": 3.0},
+                    {
+                        "id": "b1-e1", "duration_seconds": 2.0,
+                        "narration_span": "هر روز صبح قهوه",
+                        "queries": ["coffee pour close up", "steam coffee cup"],
+                        "desired_affect": "curiosity", "human_presence": True,
+                        "shows_subject": True, "fallback_level": "exact_literal",
+                        "importance": 2,
+                    },
+                    {
+                        "id": "b1-e2", "duration_seconds": 3.0,
+                        "narration_span": "هر روز صبح قهوه",
+                        "queries": ["coffee pour close up", "hands coffee desk"],
+                        "desired_affect": "recognition", "human_presence": True,
+                        "shows_subject": True, "fallback_level": "exact_literal",
+                        "importance": 1,
+                    },
                 ],
             }]
         }
         manifest = {"assets": [
-            self._asset(beat_id="b1", visual_event_id="b1-e1", path="a.mp4"),
-            self._asset(beat_id="b1", visual_event_id="b1-e2", path="b.mp4"),
+            self._asset(beat_id="b1", semantic_beat_id="b1", visual_event_id="b1-e1", path="a.mp4"),
+            self._asset(beat_id="b1", semantic_beat_id="b1", visual_event_id="b1-e2", path="b.mp4"),
         ]}
         assert audit_asset_manifest(manifest, scene_plan) == []
 
@@ -393,12 +422,84 @@ class TestAssetAudit:
             "beats": [{
                 "id": "b1",
                 "duration_seconds": 5.0,
-                "visual_events": [{"id": "b1-e1", "duration_seconds": 5.0}],
+                "visual_events": [{
+                    "id": "b1-e1", "duration_seconds": 5.0,
+                    "narration_span": "هر روز صبح قهوه",
+                    "queries": ["coffee pour close up", "steam coffee cup"],
+                    "desired_affect": "curiosity", "human_presence": True,
+                    "shows_subject": True, "fallback_level": "exact_literal",
+                    "importance": 2,
+                }],
             }]
         }
         problems = audit_asset_manifest({"assets": [self._asset()]}, scene_plan)
         assert any("missing visual_event_id" in problem for problem in problems)
         assert any("b1-e1: no asset" in problem for problem in problems)
+
+    def _explicit_scene_plan(self, **event_overrides) -> dict:
+        event = {
+            "id": "b1-e1", "duration_seconds": 5.0,
+            "narration_span": "هر روز صبح قهوه",
+            "queries": ["coffee pour close up", "steam coffee cup"],
+            "desired_affect": "curiosity", "human_presence": True,
+            "shows_subject": True, "fallback_level": "exact_literal",
+            "importance": 2,
+        }
+        event.update(event_overrides)
+        return {"beats": [{"id": "b1", "duration_seconds": 5.0, "visual_events": [event]}]}
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "semantic_beat_id", "narration_span", "query", "candidate_rank",
+            "selection_reason", "relevance_reason", "affect_match",
+            "staged_stock_risk", "human_presence", "shows_subject",
+            "source_in_seconds", "duration_seconds", "fallback_level", "frame_review",
+        ],
+    )
+    def test_explicit_visual_event_assets_require_quality_evidence(self, field: str) -> None:
+        asset = self._asset(visual_event_id="b1-e1")
+        asset.pop(field)
+        problems = audit_asset_manifest({"assets": [asset]}, self._explicit_scene_plan())
+        assert any(field.split("_")[0] in problem or field in problem for problem in problems)
+
+    def test_selected_query_must_come_from_the_event(self) -> None:
+        asset = self._asset(visual_event_id="b1-e1", query="generic happy office people")
+        problems = audit_asset_manifest({"assets": [asset]}, self._explicit_scene_plan())
+        assert any("not one of the authored event queries" in problem for problem in problems)
+
+    def test_wrong_affect_or_high_staged_stock_risk_is_rejected(self) -> None:
+        asset = self._asset(
+            visual_event_id="b1-e1", affect_match=False, staged_stock_risk="high"
+        )
+        problems = audit_asset_manifest({"assets": [asset]}, self._explicit_scene_plan())
+        assert any("affect_match is false" in problem for problem in problems)
+        assert any("staged_stock_risk is high" in problem for problem in problems)
+
+    def test_human_presence_and_subject_must_survive_selection(self) -> None:
+        asset = self._asset(
+            visual_event_id="b1-e1", human_presence=False, shows_subject=False
+        )
+        problems = audit_asset_manifest({"assets": [asset]}, self._explicit_scene_plan())
+        assert any("requires human presence" in problem for problem in problems)
+        assert any("subject continuity was lost" in problem for problem in problems)
+
+    def test_nonliteral_fallback_requires_reason_and_matches_plan(self) -> None:
+        scene_plan = self._explicit_scene_plan(fallback_level="adjacent_metaphor")
+        asset = self._asset(visual_event_id="b1-e1", fallback_level="adjacent_metaphor")
+        problems = audit_asset_manifest({"assets": [asset]}, scene_plan)
+        assert any("fallback_reason" in problem for problem in problems)
+        asset["fallback_reason"] = "literal and emotional-human candidates were unusable after inspection"
+        assert audit_asset_manifest({"assets": [asset]}, scene_plan) == []
+
+    def test_frame_review_requires_start_middle_end_and_observation(self) -> None:
+        asset = self._asset(
+            visual_event_id="b1-e1",
+            frame_review={"start": True, "middle": False, "end": True, "observed": ""},
+        )
+        problems = audit_asset_manifest({"assets": [asset]}, self._explicit_scene_plan())
+        assert any("frame_review.middle" in problem for problem in problems)
+        assert any("frame_review.observed" in problem for problem in problems)
 
     @pytest.mark.parametrize(
         "field", ["provider", "original_url", "license", "attribution"]
@@ -1686,6 +1787,31 @@ class TestSceneAudit:
         base.update(overrides)
         return base
 
+    def _event(self, index: int = 1, **overrides) -> dict:
+        base = {
+            "id": f"beat-1-event-{index}",
+            "duration_seconds": 2.5,
+            "narration_span": "هر روز صبح قهوه",
+            "intent": "make the morning ritual concrete",
+            "subject": "coffee",
+            "action": "pouring coffee",
+            "desired_affect": "curiosity",
+            "motif": "morning ritual",
+            "visual_search_brief": "real morning coffee ritual, tactile and unstaged",
+            "shot_composition": "hands and cup dominate foreground; clean negative space above",
+            "human_presence": True,
+            "shot_scale": "close up",
+            "environment": "kitchen",
+            "camera": "push-in",
+            "shows_subject": True,
+            "fallback_level": "exact_literal",
+            "importance": 1,
+            "conflict_visibility": "none",
+            "queries": ["coffee pour close up", "steam coffee cup"],
+        }
+        base.update(overrides)
+        return base
+
     def _plan(self, beats: list[dict], subject: str = "coffee") -> dict:
         return {"metadata": {"subject": subject, "beats": beats}}
 
@@ -1706,26 +1832,13 @@ class TestSceneAudit:
             "duration_seconds": 5.0,
             "typographic": False,
             "visual_events": [
-                {
-                    "id": "beat-1-event-1",
-                    "duration_seconds": 2.0,
-                    "desired_affect": "curiosity",
-                    "camera": "push-in",
-                    "shows_subject": True,
-                    "shot_scale": "close up",
-                    "environment": "kitchen",
-                    "queries": ["coffee pour close up", "steam coffee cup"],
-                },
-                {
-                    "id": "beat-1-event-2",
-                    "duration_seconds": 3.0,
-                    "desired_affect": "recognition",
-                    "camera": "none",
-                    "shows_subject": True,
-                    "shot_scale": "overhead",
-                    "environment": "desk",
-                    "queries": ["coffee cup notebook desk", "hands coffee desk"],
-                },
+                self._event(1, duration_seconds=2.0),
+                self._event(
+                    2, duration_seconds=3.0, desired_affect="recognition",
+                    camera="none", shot_scale="overhead", environment="desk",
+                    action="holding coffee beside notebook", motif="work ritual",
+                    queries=["coffee cup notebook desk", "hands coffee desk"],
+                ),
             ],
         }
         audit = audit_scene_plan(self._plan([beat]))
@@ -1735,22 +1848,63 @@ class TestSceneAudit:
         assert audit["uses_visual_events"] is True
 
     def test_visual_event_duration_and_affect_are_contract_fields(self) -> None:
+        event = self._event(1, id="event-1", duration_seconds=4.0)
+        event.pop("desired_affect")
         beat = {
             "id": "beat-1",
             "duration_seconds": 5.0,
-            "visual_events": [{
-                "id": "event-1",
-                "duration_seconds": 4.0,
-                "camera": "none",
-                "shows_subject": True,
-                "shot_scale": "close up",
-                "environment": "kitchen",
-                "queries": ["coffee cup close up", "coffee steam kitchen"],
-            }],
+            "visual_events": [event],
         }
         problems = audit_scene_plan(self._plan([beat]))["problems"]
         assert any("require desired_affect" in problem for problem in problems)
         assert any("does not match semantic beat duration" in problem for problem in problems)
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "narration_span", "intent", "subject", "action", "motif",
+            "visual_search_brief", "shot_composition", "conflict_visibility",
+        ],
+    )
+    def test_visual_event_semantic_quality_fields_are_required(self, field: str) -> None:
+        event = self._event(1, duration_seconds=5.0)
+        event.pop(field)
+        beat = {"id": "beat-1", "duration_seconds": 5.0, "visual_events": [event]}
+        problems = audit_scene_plan(self._plan([beat]))["problems"]
+        assert any(f"require {field}" in problem for problem in problems)
+
+    def test_visual_event_human_fallback_and_importance_contract(self) -> None:
+        event = self._event(1, duration_seconds=5.0)
+        event["human_presence"] = "yes"
+        event["fallback_level"] = "typography"
+        event["importance"] = 4
+        beat = {"id": "beat-1", "duration_seconds": 5.0, "visual_events": [event]}
+        problems = audit_scene_plan(self._plan([beat]))["problems"]
+        assert any("human_presence must be true or false" in problem for problem in problems)
+        assert any("fallback_level must be one of" in problem for problem in problems)
+        assert any("importance must be integer 1, 2, or 3" in problem for problem in problems)
+
+    def test_importance_orders_the_bounded_retry_pass(self) -> None:
+        beat = {
+            "id": "beat-1", "duration_seconds": 5.0,
+            "visual_events": [
+                self._event(1, importance=1, duration_seconds=2.0),
+                self._event(2, importance=3, duration_seconds=3.0, shot_scale="overhead",
+                            environment="desk", action="holding coffee", motif="work",
+                            queries=["coffee cup notebook desk", "hands coffee desk"]),
+            ],
+        }
+        audit = audit_scene_plan(self._plan([beat]))
+        assert audit["problems"] == []
+        assert audit["sourcing_order"] == ["beat-1-event-2", "beat-1-event-1"]
+
+    def test_emotional_affect_without_human_presence_is_an_advisory(self) -> None:
+        event = self._event(1, duration_seconds=5.0, desired_affect="stress",
+                            human_presence=False)
+        beat = {"id": "beat-1", "duration_seconds": 5.0, "visual_events": [event]}
+        audit = audit_scene_plan(self._plan([beat]))
+        assert audit["problems"] == []
+        assert any("usually benefits from human presence" in item for item in audit["advisories"])
 
     def test_beats_are_read_from_either_shape(self) -> None:
         """Both shapes are in use, and a plan whose beats are invisible to the gate

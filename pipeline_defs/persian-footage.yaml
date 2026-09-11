@@ -177,7 +177,9 @@ stages:
       - "SUBJECT ANCHOR QUOTA: the first footage visual event, the last footage visual event, and at least 40% of footage visual events show the brief's visual_subject literally, each marked shows_subject: true. Legacy one-shot-per-beat plans are treated as one implicit event per beat."
       - "Beats about something else use CO-PRESENCE, not substitution: 'coffee cup beside blood sugar monitor', never 'glucose meter check'. Both things in one frame carries the beat AND keeps the subject on screen."
       - "No query uses stock-medical vocabulary the script does not name: doctor examining patient, blood test vials, DNA strand, laboratory researchers, test tubes, scientist microscope, hospital, medical chart, stethoscope, pills, capsules, measuring waist, measuring tape, weighing scale, blood pressure cuff, syringe, nurse, clinic. When the script genuinely names one, set names_banned_term: true on that visual event and pair the term with the subject in one frame."
-      - Every footage visual event declares a camera move, or "none" deliberately
+      - Every footage visual event declares narration_span, intent, subject, action, desired_affect, motif, visual_search_brief, shot_composition, human_presence, importance (1-3), conflict_visibility, fallback_level, and a camera move (or "none" deliberately)
+      - "FALLBACK HIERARCHY is ordered: exact_literal -> emotional_human -> adjacent_metaphor -> abstract -> typography. Typography is beat-level only. Fear/conflict/embarrassment/distraction/stress/relief prefer human presence; an object-only plan is an explicit advisory, not a silent default."
+      - "IMPORTANCE WEIGHTS RETRIES, NOT BUDGET: audit_scene_plan.sourcing_order gives importance-3 events first use of the one bounded alternate-query pass. Candidate and byte ceilings do not increase."
       - "No two adjacent visual events share BOTH shot_scale and environment. Variety comes from how the subject is shot, not from replacing it — the old rule forbade repeating the subject, which is incompatible with the anchor quota."
       - Beats that no honest footage can serve are marked typographic, within the declared budget
       - Sum of beat durations is within 10% of the target duration
@@ -185,7 +187,8 @@ stages:
     success_criteria:
       - Schema-valid scene_plan artifact
       - metadata.subject present, matching brief.metadata.visual_subject
-      - metadata.beats[] present; every new non-typographic beat carries visual_events[] whose durations sum to the beat and whose entries carry queries[], desired_affect, camera, shows_subject, shot_scale, environment
+      - metadata.beats[] present; every new non-typographic beat carries visual_events[] whose durations sum to the beat and whose entries carry narration_span, intent, subject, action, desired_affect, motif, visual_search_brief, shot_composition, human_presence, importance, conflict_visibility, fallback_level, queries[], camera, shows_subject, shot_scale, environment
+      - "audit_scene_plan.sourcing_order is retained for the bounded asset retry pass"
       - "lib.persian_scenes.audit_scene_plan reports no problems, and every advisory it reports has been read and answered in the checkpoint metadata"
 
   - name: assets
@@ -222,19 +225,20 @@ stages:
       - Provenance (provider, original_url, license, attribution) present on every asset
       - No clip_id fills two visual events
       - Clip orientation matches the chosen format
-      - "Acquisition uses only sources [pexels, pixabay_video], clips_per_query 1, one primary query per footage visual event, and at most one retry pass with the authored alternate query. No smoke-* provider probing is allowed inside a production project."
+      - "Acquisition uses only sources [pexels, pixabay_video], clips_per_query 1, one primary query per footage visual event, and at most one retry pass with the authored alternate query, ordered by audit_scene_plan.sourcing_order (importance 3 -> 2 -> 1). No smoke-* provider probing is allowed inside a production project."
       - "Every direct_clip_search call sets max_candidates_total, max_bytes_per_clip, and max_total_download_bytes. Quota exhaustion is a blocker; the agent may not raise a limit without explicit user approval."
       - "filters.min_width is 1080. _pick_video_rendition takes the largest rendition at or below 1920px WIDE, and for a portrait clip width is the short edge — so without a floor, vertical clips arrive at 1440x2732, tens of MB each, for a 1080-wide render."
       - "The tool's post-download ffprobe values, not provider claims, satisfy duration and orientation. A mismatch or unknown probe is deleted immediately and never enters the manifest."
-      - "SUBJECT SURVIVED SELECTION: the anchor quota the scene plan declared still holds in the chosen clips. Selection is where it gets lost, because the beat whose subject clip was unusable is exactly the beat where a generic one is tempting."
-      - "Every asset records a selection_reason naming what is IN FRAME. 'best match' is not a reason — the coffee run's manifest recorded twelve chosen clips and nothing about what any showed, so 'waist measurement' and 'coffee cup' looked identical at the checkpoint."
+      - "SUBJECT/HUMAN INTENT SURVIVED SELECTION: required subject and human presence in the scene plan still exist in the inspected clip; a blurred/background presence does not count."
+      - "Every new visual-event asset records semantic_beat_id, visual_event_id, narration_span, authored query, candidate_rank, selection_reason (what is in frame), relevance_reason (why it serves the beat), affect_match, staged_stock_risk, human_presence, shows_subject, source_in_seconds, duration_seconds, fallback_level/reason, and frame_review evidence for start/middle/end."
+      - "High staged_stock_risk or affect_match:false is a rejection. Non-literal fallback without a reason is a rejection. The one retry pass follows scene audit sourcing_order; limits never rise automatically."
       - "In narrated mode: word-level timings exist and cover the narration duration"
     success_criteria:
       - Schema-valid asset_manifest artifact
       - Every footage visual event has exactly one video asset; assets in explicit visual-event plans carry visual_event_id
       - Zero assets with kind "image"
       - Every asset is at most 1920px on its long edge
-      - Every asset carries shows_subject and a selection_reason naming what is in frame
+      - "Every new visual-event asset passes audit_asset_manifest semantic/quality evidence: approved query, rank, relevance/selection reasons, affect match, staged-stock risk, human/subject continuity, fallback provenance, and start/middle/end frame review"
       - First and last footage visual events' assets show the subject; at least 40% of footage visual events' assets do
       - "In narrated mode: metadata.word_timings present"
 

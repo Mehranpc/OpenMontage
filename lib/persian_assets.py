@@ -16,6 +16,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from lib.persian_scenes import FALLBACK_LEVELS
+
 #: Extensions that are unambiguously still images. Checked in addition to a
 #: declared `kind`, because an entry can carry `kind: "video"` and a `.jpg` path
 #: when a manifest was assembled by hand or copied from another pipeline.
@@ -49,6 +51,99 @@ _PERSIAN_VIDEO_PROVIDER_ALIASES = {
     "pixabay_video": "pixabay_video",
 }
 ALLOWED_PERSIAN_VIDEO_PROVIDERS = frozenset({"pexels", "pixabay_video"})
+STAGED_STOCK_RISKS = frozenset({"low", "medium", "high"})
+
+
+def _quality_metadata_problems(
+    entry: dict[str, Any], requirement: dict[str, Any]
+) -> list[str]:
+    """Validate new visual-event selection evidence without breaking legacy manifests."""
+    event_id = str(requirement.get("visual_event_id") or "")
+    if not event_id:
+        return []
+    label = event_id
+    problems: list[str] = []
+
+    semantic_beat_id = str(entry.get("semantic_beat_id") or "").strip()
+    if semantic_beat_id != str(requirement.get("beat_id") or ""):
+        problems.append(
+            f"{label}: semantic_beat_id must equal {requirement.get('beat_id')!r}"
+        )
+
+    narration_span = str(entry.get("narration_span") or "").strip()
+    if narration_span != str(requirement.get("narration_span") or "").strip():
+        problems.append(
+            f"{label}: narration_span must preserve the visual event's source span exactly"
+        )
+
+    query = str(entry.get("query") or "").strip()
+    if not query:
+        problems.append(f"{label}: missing query used to acquire the selected candidate")
+    elif query not in [str(q) for q in requirement.get("queries") or []]:
+        problems.append(f"{label}: selected query {query!r} is not one of the authored event queries")
+
+    rank = entry.get("candidate_rank")
+    if isinstance(rank, bool) or not isinstance(rank, int) or rank < 1:
+        problems.append(f"{label}: candidate_rank must be an integer >= 1")
+
+    for field in ("source_in_seconds", "duration_seconds"):
+        if field not in entry:
+            problems.append(f"{label}: missing {field}; selected window timing must be explicit")
+
+    for field in ("selection_reason", "relevance_reason"):
+        if not str(entry.get(field) or "").strip():
+            problems.append(f"{label}: missing {field}; selected footage needs inspectable reasoning")
+
+    if not isinstance(entry.get("affect_match"), bool):
+        problems.append(f"{label}: affect_match must be true or false")
+    elif not entry.get("affect_match"):
+        problems.append(
+            f"{label}: affect_match is false; a selected clip may not contradict desired_affect "
+            f"{requirement.get('desired_affect')!r}"
+        )
+
+    risk = str(entry.get("staged_stock_risk") or "").strip().lower()
+    if risk not in STAGED_STOCK_RISKS:
+        problems.append(f"{label}: staged_stock_risk must be low, medium, or high")
+    elif risk == "high":
+        problems.append(f"{label}: staged_stock_risk is high; reject the generic/staged candidate")
+
+    if not isinstance(entry.get("human_presence"), bool):
+        problems.append(f"{label}: human_presence must be true or false")
+    elif requirement.get("human_presence") and not entry.get("human_presence"):
+        problems.append(f"{label}: scene plan requires human presence but the selected clip has none")
+
+    if not isinstance(entry.get("shows_subject"), bool):
+        problems.append(f"{label}: shows_subject must be true or false on the inspected clip")
+    elif requirement.get("shows_subject") and not entry.get("shows_subject"):
+        problems.append(f"{label}: subject continuity was lost during asset selection")
+
+    fallback = str(entry.get("fallback_level") or "").strip()
+    expected_fallback = str(requirement.get("fallback_level") or "").strip()
+    if fallback not in FALLBACK_LEVELS:
+        problems.append(f"{label}: asset fallback_level must be one of {', '.join(FALLBACK_LEVELS)}")
+    elif fallback != expected_fallback:
+        problems.append(
+            f"{label}: asset fallback_level {fallback!r} does not match planned level {expected_fallback!r}"
+        )
+    if fallback and fallback != "exact_literal" and not str(entry.get("fallback_reason") or "").strip():
+        problems.append(
+            f"{label}: non-literal fallback requires fallback_reason documenting why earlier levels failed"
+        )
+    if fallback == "emotional_human" and entry.get("human_presence") is False:
+        problems.append(f"{label}: emotional_human fallback cannot select a clip with no human presence")
+
+    frame_review = entry.get("frame_review")
+    if not isinstance(frame_review, dict):
+        problems.append(f"{label}: missing frame_review evidence for start/middle/end inspection")
+    else:
+        for key in ("start", "middle", "end"):
+            if frame_review.get(key) is not True:
+                problems.append(f"{label}: frame_review.{key} must be true after inspecting the clip")
+        if not str(frame_review.get("observed") or "").strip():
+            problems.append(f"{label}: frame_review.observed must state what was actually seen")
+
+    return problems
 
 
 def _scene_asset_requirements(
@@ -83,6 +178,13 @@ def _scene_asset_requirements(
                         "beat_id": beat_id,
                         "visual_event_id": str(event.get("id") or ""),
                         "duration_seconds": event.get("duration_seconds"),
+                        "narration_span": event.get("narration_span"),
+                        "queries": list(event.get("queries") or []),
+                        "desired_affect": event.get("desired_affect"),
+                        "human_presence": event.get("human_presence"),
+                        "shows_subject": event.get("shows_subject"),
+                        "fallback_level": event.get("fallback_level"),
+                        "importance": event.get("importance"),
                     }
                 )
         else:
@@ -316,6 +418,7 @@ def audit_asset_manifest(
                         f"{label}: clip provides {usable:.2f}s from its in-point but "
                         f"the visual unit needs {needed:.2f}s — the tail renders black"
                     )
+                problems.extend(_quality_metadata_problems(entry, requirement))
 
     return problems
 
@@ -356,6 +459,7 @@ def assert_orientation(manifest: dict[str, Any], video_format: str) -> list[str]
 
 __all__ = [
     "ALLOWED_PERSIAN_VIDEO_PROVIDERS",
+    "STAGED_STOCK_RISKS",
     "ImageFootageRejected",
     "assert_video_only",
     "audit_asset_manifest",

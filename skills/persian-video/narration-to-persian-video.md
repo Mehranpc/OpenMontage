@@ -5,7 +5,7 @@ Use this capability only for the middle production phases reported by `persian-v
 The narration/script entering these phases is authoritative production copy. Scene and edit stages may derive selective on-screen moments under their own contracts, but must not rewrite the narration itself or reopen it as a writing task.
 
 For scene/moment planning, read `skills/pipelines/persian-footage/scene-director.md` and `edit-director.md`. Persist the normal `scene_plan`, `asset_manifest`, and `edit_decisions` checkpoints in manifest order; do not invent a second artifact system for the front door.
-New scene plans separate semantic narration beats from shot-level `visual_events`; acquisition and edit preserve that identity through `visual_event_id` / `visualEventId` instead of collapsing each semantic beat to one clip.
+New scene plans separate semantic narration beats from shot-level `visual_events`; acquisition and edit preserve that identity through `visual_event_id` / `visualEventId` instead of collapsing each semantic beat to one clip. New events also carry narration span, intent/action/motif, visual search brief, shot composition, affect, human-presence intent, importance, conflict visibility, and an ordered fallback level; run `audit_scene_plan` and retain its `sourcing_order`.
 
 For acquisition, read `asset-director.md`. Every `direct_clip_search` call must first be passed through the code-owned budget clamp:
 
@@ -18,9 +18,9 @@ Execute exactly the returned request. Then account the tool's `result.data` befo
 ```bash
 python -m lib.persian_video_workflow asset-result <project-id> --retry-pass 0 --json result-data.json
 ```
-The automatic path is exactly one primary pass plus at most one alternate-query retry. Provider set, candidate count, per-clip bytes, aggregate bytes, and clips per query come from `lib.persian_video_workflow`, not from agent judgment. Never raise a ceiling to make a difficult beat succeed.
+The automatic path is exactly one primary pass plus at most one alternate-query retry. Provider set, candidate count, per-clip bytes, aggregate bytes, and clips per query come from `lib.persian_video_workflow`, not from agent judgment. Never raise a ceiling to make a difficult beat succeed. On retry pass 1, build the unresolved query list in the scene audit's `sourcing_order` (importance 3 → 2 → 1) before passing it through the clamp; importance prioritizes the bounded retry and never expands it.
 
-Before accepting assets, review the actual subject region under the intended crop/camera path, preserving the subject-anchor requirements in the canonical scene/asset contracts. A relevance score or filename is not visual review.
+Before accepting assets, inspect the intended crop/window at start, middle, and end and persist the canonical `frame_review` evidence. Preserve planned human/subject presence, reject high staged-stock risk or affect mismatch, and record the authored query, candidate rank, semantic relevance, and fallback provenance. A relevance score, filename, or one provider thumbnail is not visual review.
 
 Before rendering, read `skills/pipelines/persian-footage/final-candidate-protocol.md` and run its no-copy preflight. The preflight must use current-project paths and report zero media copies. Do not use `PersianCompose._build_props` directly and do not stage another project's media.
 

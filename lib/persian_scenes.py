@@ -66,6 +66,22 @@ MIN_SUBJECT_FRACTION = 0.4
 #: first run wrote three per beat and downloaded 36 clips to use 12.
 QUERIES_PER_BEAT = 2
 
+#: Ordered fallback ladder from the production spec. Typography is the terminal
+#: beat-level escape hatch and therefore is not a valid footage-event level.
+FALLBACK_LEVELS = (
+    "exact_literal",
+    "emotional_human",
+    "adjacent_metaphor",
+    "abstract",
+)
+
+#: Affects where a human read usually carries more meaning than an object-only stock shot.
+#: The gate surfaces absence as an advisory rather than pretending every emotional idea
+#: can only be shown with a face.
+EMOTIONAL_AFFECTS = frozenset({
+    "fear", "conflict", "embarrassment", "distraction", "stress", "relief",
+})
+
 
 def _beats(scene_plan: dict[str, Any]) -> list[dict[str, Any]]:
     """The beat list, from wherever this plan keeps it.
@@ -163,6 +179,33 @@ def _footage_units(
                     f'{event_id or beat.get("id")}: explicit visual events require desired_affect'
                 )
 
+            for field in (
+                "narration_span", "intent", "subject", "action", "motif",
+                "visual_search_brief", "shot_composition", "conflict_visibility",
+            ):
+                if not str(event.get(field) or "").strip():
+                    problems.append(
+                        f'{event_id or beat.get("id")}: explicit visual events require {field}'
+                    )
+
+            if not isinstance(event.get("human_presence"), bool):
+                problems.append(
+                    f'{event_id or beat.get("id")}: human_presence must be true or false'
+                )
+
+            fallback_level = str(event.get("fallback_level") or "").strip()
+            if fallback_level not in FALLBACK_LEVELS:
+                problems.append(
+                    f'{event_id or beat.get("id")}: fallback_level must be one of '
+                    + ", ".join(FALLBACK_LEVELS)
+                )
+
+            importance = event.get("importance")
+            if isinstance(importance, bool) or not isinstance(importance, int) or not 1 <= importance <= 3:
+                problems.append(
+                    f'{event_id or beat.get("id")}: importance must be integer 1, 2, or 3'
+                )
+
             event["semantic_beat_id"] = str(beat.get("id") or "")
             event["visual_event_id"] = event_id or None
             units.append(event)
@@ -217,6 +260,7 @@ def audit_scene_plan(
             "visual_events": 0,
             "uses_visual_events": False,
             "queries_total": 0,
+            "sourcing_order": [],
         }
 
     subject = subject or _subject(scene_plan)
@@ -231,6 +275,35 @@ def audit_scene_plan(
     footage, visual_event_problems, has_explicit_events = _footage_units(beats)
     problems.extend(visual_event_problems)
     queries_total = sum(len(unit.get("queries") or []) for unit in footage)
+
+    # Importance changes retry order, not the global download ceiling. High-value
+    # events consume the bounded alternate-query pass first; ordinary events do not
+    # get starved by an unbounded search escalation. Legacy implicit events default to 1.
+    def importance_rank(unit: dict[str, Any]) -> int:
+        value = unit.get("importance")
+        return value if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 3 else 1
+
+    sourcing_order = [
+        str(unit.get("visual_event_id") or unit.get("id") or "")
+        for unit in sorted(footage, key=importance_rank, reverse=True)
+    ]
+
+    for unit in footage:
+        if not unit.get("visual_event_id"):
+            continue
+        affect = str(unit.get("desired_affect") or "").strip().lower()
+        if affect in EMOTIONAL_AFFECTS and not unit.get("human_presence"):
+            advisories.append(
+                f'{unit.get("id")}: desired_affect {affect!r} usually benefits from '
+                "human presence. Confirm an object-only choice is intentional rather "
+                "than generic stock avoidance failing silently."
+            )
+        if importance_rank(unit) == 3 and unit.get("fallback_level") == "abstract":
+            advisories.append(
+                f'{unit.get("id")}: importance 3 has fallen to abstract footage. '
+                "Re-check literal, emotional-human, and adjacent-metaphor candidates "
+                "before accepting the weakest footage fallback."
+            )
 
     # --- Anchor quota -----------------------------------------------------------------
     if footage:
@@ -364,6 +437,7 @@ def audit_scene_plan(
         "visual_events": len(footage),
         "uses_visual_events": has_explicit_events,
         "queries_total": queries_total,
+        "sourcing_order": sourcing_order,
     }
 
 
@@ -371,5 +445,7 @@ __all__ = [
     "BANNED_QUERY_TERMS",
     "MIN_SUBJECT_FRACTION",
     "QUERIES_PER_BEAT",
+    "FALLBACK_LEVELS",
+    "EMOTIONAL_AFFECTS",
     "audit_scene_plan",
 ]

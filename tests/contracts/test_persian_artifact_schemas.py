@@ -678,3 +678,18 @@ def test_the_subject_quota_fields_are_declared() -> None:
     asset = _schema("asset_manifest")["properties"]["assets"]["items"]["properties"]
     assert "shows_subject" in asset
     assert "selection_reason" in asset
+
+
+def test_visual_event_asset_quality_fields_are_declared() -> None:
+    asset = _schema("asset_manifest")["properties"]["assets"]["items"]["properties"]
+    for field in (
+        "semantic_beat_id", "visual_event_id", "narration_span", "query",
+        "candidate_rank", "selection_reason", "relevance_reason", "affect_match",
+        "staged_stock_risk", "human_presence", "shows_subject", "source_in_seconds",
+        "duration_seconds", "fallback_level", "fallback_reason", "frame_review",
+    ):
+        assert field in asset
+    assert asset["fallback_level"]["enum"] == [
+        "exact_literal", "emotional_human", "adjacent_metaphor", "abstract"
+    ]
+    assert asset["staged_stock_risk"]["enum"] == ["low", "medium", "high"]
