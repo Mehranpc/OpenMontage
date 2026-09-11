@@ -18,7 +18,7 @@ Execute exactly the returned request. Then account the tool's `result.data` befo
 ```bash
 python -m lib.persian_video_workflow asset-result <project-id> --retry-pass 0 --json result-data.json
 ```
-The automatic path is exactly one primary pass plus at most one alternate-query retry. Provider set, candidate count, per-clip bytes, aggregate bytes, and clips per query come from `lib.persian_video_workflow`, not from agent judgment. Never raise a ceiling to make a difficult beat succeed. On retry pass 1, build the unresolved query list in the scene audit's `sourcing_order` (importance 3 → 2 → 1) before passing it through the clamp; importance prioritizes the bounded retry and never expands it.
+The automatic path is exactly one primary pass plus at most one alternate-query retry. Provider set, candidate count, per-clip bytes, aggregate bytes, and clips per query come from `lib.persian_video_workflow`, not from agent judgment. Never raise a ceiling to make a difficult beat succeed. Persist the scene audit's `sourcing_order` in the planning-phase evidence. On retry pass 1, `bounded_asset_search_request` itself reorders unresolved query slots to that saved importance order and refuses unknown slot IDs; importance therefore prioritizes the bounded retry and never expands it.
 
 Before accepting assets, inspect the intended crop/window at start, middle, and end and persist the canonical `frame_review` evidence. Preserve planned human/subject presence, reject high staged-stock risk or affect mismatch, and record the authored query, candidate rank, semantic relevance, and fallback provenance. A relevance score, filename, or one provider thumbnail is not visual review.
 

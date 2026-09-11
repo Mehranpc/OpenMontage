@@ -230,6 +230,25 @@ def test_persian_shot_can_state_the_executable_hard_cut() -> None:
     assert not _errors("edit_decisions", _edit_decisions(persian))
 
 
+def test_persian_visual_event_shot_declares_edit_grammar_fields() -> None:
+    persian = _minimal_persian_block()
+    shot = persian["shots"][0]
+    shot.update({
+        "visualEventId": "beat-1-event-1",
+        "changeType": "reaction",
+        "narrativeRole": "resolution",
+        "humanPresence": True,
+    })
+    assert not _errors("edit_decisions", _edit_decisions(persian))
+
+
+def test_persian_shot_rejects_unknown_change_type() -> None:
+    persian = _minimal_persian_block()
+    persian["shots"][0]["changeType"] = "montage_magic"
+    problems = _errors("edit_decisions", _edit_decisions(persian))
+    assert any("montage_magic" in problem for problem in problems), problems
+
+
 def test_persian_shot_cannot_claim_an_unimplemented_dissolve() -> None:
     persian = _minimal_persian_block()
     persian["shots"][0]["transitionIn"] = "dissolve"

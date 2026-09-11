@@ -68,3 +68,66 @@ def test_non_cut_transition_is_refused_until_renderer_can_execute_it():
     shots = [_shot("s1", 0, 2), _shot("s2", 2, 12, transitionIn="dissolve")]
     audit = audit_persian_retention(_base(shots=shots))
     assert any("not executable" in p for p in audit["problems"])
+
+
+def _grammar_shot(id, start, end, role, change, human=True):
+    return _shot(
+        id, start, end, visualEventId=f"event-{id}", transitionIn="cut",
+        narrativeRole=role, changeType=change, humanPresence=human,
+    )
+
+
+def test_visual_event_edit_requires_structured_cut_grammar():
+    shots = [
+        _grammar_shot("s1", 0, 2, "hook", "action"),
+        _grammar_shot("s2", 2, 6, "exposition", "detail"),
+        _grammar_shot("s3", 6, 12, "resolution", "reaction"),
+    ]
+    audit = audit_persian_retention(_base(shots=shots))
+    assert not any("changeType" in p or "narrativeRole" in p for p in audit["problems"])
+    assert [event["changeType"] for event in audit["cutGrammar"]["events"]] == [
+        "action", "detail", "reaction"
+    ]
+
+
+def test_visual_event_edit_requires_visible_hook_and_late_resolution():
+    shots = [
+        _grammar_shot("s1", 0, 2, "exposition", "establish"),
+        _grammar_shot("s2", 2, 6, "conflict", "detail"),
+        _grammar_shot("s3", 6, 12, "turn", "reaction"),
+    ]
+    audit = audit_persian_retention(_base(shots=shots, moments=[]))
+    assert any("no hook-labelled" in p for p in audit["problems"])
+    assert any("no resolution-labelled" in p for p in audit["problems"])
+
+
+def test_hook_moment_can_supply_the_opening_hook_for_visual_event_edit():
+    shots = [
+        _grammar_shot("s1", 0, 2, "exposition", "establish"),
+        _grammar_shot("s2", 2, 6, "turn", "detail"),
+        _grammar_shot("s3", 6, 12, "resolution", "reaction"),
+    ]
+    moments = [{"id": "m1", "kind": "hook", "startSeconds": 0.2, "endSeconds": 1.4}]
+    audit = audit_persian_retention(_base(shots=shots, moments=moments))
+    assert not any("no hook-labelled" in p for p in audit["problems"])
+
+
+def test_human_resolution_is_preferred_not_faked_as_absolute_rule():
+    shots = [
+        _grammar_shot("s1", 0, 2, "hook", "action"),
+        _grammar_shot("s2", 2, 6, "turn", "detail"),
+        _grammar_shot("s3", 6, 12, "resolution", "reaction", human=False),
+    ]
+    audit = audit_persian_retention(_base(shots=shots))
+    assert any("prefers a human/relatable ending" in a for a in audit["advisories"])
+    assert not any("human presence" in p.lower() and "resolution" in p.lower() for p in audit["problems"])
+
+
+def test_three_identical_change_types_are_a_rhythm_advisory():
+    shots = [
+        _grammar_shot("s1", 0, 2, "hook", "detail"),
+        _grammar_shot("s2", 2, 6, "turn", "detail"),
+        _grammar_shot("s3", 6, 12, "resolution", "detail"),
+    ]
+    audit = audit_persian_retention(_base(shots=shots))
+    assert any("repeat changeType" in a for a in audit["advisories"])

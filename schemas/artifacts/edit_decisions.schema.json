@@ -665,6 +665,20 @@
                 "default": "cut",
                 "description": "Executable transition entering this Persian shot. The current renderer supports hard cuts only; do not claim dissolve until a real crossfade implementation exists."
               },
+              "changeType": {
+                "type": "string",
+                "enum": ["establish", "action", "reaction", "detail", "scale_change", "punch_in"],
+                "description": "Why this hard cut changes the viewer's visual information. New visual-event edits state one of the executable cut-grammar roles; this is editorial metadata, not a transition effect."
+              },
+              "narrativeRole": {
+                "type": "string",
+                "enum": ["hook", "exposition", "conflict", "turn", "resolution"],
+                "description": "Narrative job of this visual event. The retention gate requires a visible hook in the first 3 seconds and a resolution event in the final quarter for new visual-event edits."
+              },
+              "humanPresence": {
+                "type": "boolean",
+                "description": "Whether a human is visibly present in the selected shot. Preserved from asset review so resolution QA can prefer a relatable human ending without pretending to infer it from pixels."
+              },
               "source": {
                 "type": "string",
                 "description": "Clip path; staged under remotion-composer/public/ at render time and resolved through staticFile()."

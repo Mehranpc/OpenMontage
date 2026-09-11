@@ -516,6 +516,18 @@ def complete_phase(
     phase_evidence = dict(evidence or {})
     if phase == "prepare_inputs":
         phase_evidence.update(_validate_prepare_inputs_completion(state, phase_evidence))
+    if phase == "plan_scenes_moments" and "sourcing_order" in phase_evidence:
+        raw_order = phase_evidence.get("sourcing_order")
+        if not isinstance(raw_order, list) or not raw_order:
+            raise PersianVideoWorkflowError(
+                "plan_scenes_moments sourcing_order must be a non-empty list when provided"
+            )
+        sourcing_order = [str(item).strip() for item in raw_order]
+        if any(not item for item in sourcing_order) or len(set(sourcing_order)) != len(sourcing_order):
+            raise PersianVideoWorkflowError(
+                "plan_scenes_moments sourcing_order requires unique non-empty visual-event ids"
+            )
+        phase_evidence["sourcing_order"] = sourcing_order
     if phase == "acquire_assets" and (state.get("asset_usage") or {}).get("pending_pass") is not None:
         raise PersianVideoWorkflowError(
             "asset search result accounting must complete before acquire_assets can complete"
@@ -625,6 +637,29 @@ def bounded_asset_search_request(
         )
 
     bounded = dict(request)
+    if retry_pass == 1:
+        sourcing_order = list(
+            ((state.get("evidence") or {}).get("plan_scenes_moments") or {}).get("sourcing_order") or []
+        )
+        queries = bounded.get("queries")
+        if sourcing_order and isinstance(queries, list) and queries:
+            priority = {event_id: index for index, event_id in enumerate(sourcing_order)}
+            normalized_queries = []
+            for index, query in enumerate(queries):
+                if not isinstance(query, Mapping):
+                    raise PersianVideoWorkflowError("asset retry queries must be objects")
+                slot_id = str(query.get("slot_id") or "").strip()
+                if not slot_id:
+                    raise PersianVideoWorkflowError(
+                        "importance-weighted asset retry requires slot_id on every query"
+                    )
+                if slot_id not in priority:
+                    raise PersianVideoWorkflowError(
+                        f"asset retry slot_id {slot_id!r} is absent from the scene sourcing_order"
+                    )
+                normalized_queries.append((priority[slot_id], index, dict(query)))
+            normalized_queries.sort(key=lambda item: (item[0], item[1]))
+            bounded["queries"] = [query for _, _, query in normalized_queries]
     project_root = _project_root(state)
     raw_output_dir = str(bounded.get("output_dir") or "").strip()
     if raw_output_dir:

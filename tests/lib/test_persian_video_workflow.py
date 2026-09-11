@@ -459,6 +459,53 @@ def test_asset_result_is_bound_to_issued_request_and_remaining_budget(tmp_path):
         bounded_asset_search_request("run", {}, retry_pass=2, pipeline_dir=tmp_path, now=BASE)
 
 
+def test_second_asset_pass_is_sorted_by_scene_importance_order(tmp_path):
+    _bootstrap(tmp_path)
+    _advance_to(tmp_path, "plan_scenes_moments")
+    record_phase_attempt("run", "plan_scenes_moments", pipeline_dir=tmp_path, now=BASE)
+    complete_phase(
+        "run", "plan_scenes_moments",
+        evidence={"sourcing_order": ["event-high", "event-low"]},
+        pipeline_dir=tmp_path, now=BASE,
+    )
+
+    first = bounded_asset_search_request("run", {}, retry_pass=0, pipeline_dir=tmp_path, now=BASE)
+    record_asset_search_result(
+        "run", retry_pass=0,
+        result_data=_asset_result(first, candidates=0, downloaded_bytes=0),
+        pipeline_dir=tmp_path, now=BASE,
+    )
+    second = bounded_asset_search_request(
+        "run",
+        {"queries": [
+            {"query": "low alternate", "slot_id": "event-low", "kind": "video"},
+            {"query": "high alternate", "slot_id": "event-high", "kind": "video"},
+        ]},
+        retry_pass=1, pipeline_dir=tmp_path, now=BASE,
+    )
+    assert [query["slot_id"] for query in second["queries"]] == ["event-high", "event-low"]
+
+
+def test_second_asset_pass_rejects_slots_outside_scene_importance_order(tmp_path):
+    _bootstrap(tmp_path)
+    _advance_to(tmp_path, "plan_scenes_moments")
+    record_phase_attempt("run", "plan_scenes_moments", pipeline_dir=tmp_path, now=BASE)
+    complete_phase(
+        "run", "plan_scenes_moments", evidence={"sourcing_order": ["event-1"]},
+        pipeline_dir=tmp_path, now=BASE,
+    )
+    first = bounded_asset_search_request("run", {}, retry_pass=0, pipeline_dir=tmp_path, now=BASE)
+    record_asset_search_result(
+        "run", retry_pass=0, result_data=_asset_result(first, candidates=0, downloaded_bytes=0),
+        pipeline_dir=tmp_path, now=BASE,
+    )
+    with pytest.raises(PersianVideoWorkflowError, match="absent from the scene sourcing_order"):
+        bounded_asset_search_request(
+            "run", {"queries": [{"query": "x", "slot_id": "other", "kind": "video"}]},
+            retry_pass=1, pipeline_dir=tmp_path, now=BASE,
+        )
+
+
 def test_asset_actions_and_send_back_obey_session_wall_time(tmp_path):
     _bootstrap_to_assets(tmp_path)
     expired = BASE + timedelta(minutes=46)

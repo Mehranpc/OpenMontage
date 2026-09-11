@@ -563,6 +563,9 @@ is later in the array, which is not a decision you want made by array order.
   "semanticBeatId": "beat-1",
   "visualEventId": "beat-1-event-1",
   "transitionIn": "cut",
+  "changeType": "action",
+  "narrativeRole": "hook",
+  "humanPresence": true,
   "source": "assets/clips/pexels_1234567.mp4",
   "startSeconds": 0.0,
   "endSeconds": 5.0,
@@ -582,6 +585,17 @@ because the editorial spec permits a motivated dissolve: the present Persian Rem
 renderer does not crossfade shots yet, and a schema-valid fiction is worse than a
 missing feature. When real dissolve rendering lands, it must carry a reason and the
 retention audit must refuse repeated consecutive dissolves.
+
+The hard cut still needs an editorial reason. New visual-event shots declare `changeType`
+as one of `establish`, `action`, `reaction`, `detail`, `scale_change`, or `punch_in`.
+They also declare `narrativeRole` as `hook`, `exposition`, `conflict`, `turn`, or
+`resolution`, plus `humanPresence` copied from the inspected asset. This gives the
+retention gate something structural to audit without pretending it can judge emotion
+from pixels. A visible hook must exist in the first three seconds (a hook shot or the
+opening hook moment), and a resolution-labelled shot must land in the final quarter.
+Human presence in the resolution is preferred and surfaced as an advisory, not faked
+into an absolute requirement. Three identical change types in a row are a rhythm
+advisory: vary action/reaction/detail/scale/punch-in when the footage honestly supports it.
 
 `attribution` is required — `persian_compose` refuses to render a shot without one.
 

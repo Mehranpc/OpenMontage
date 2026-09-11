@@ -278,6 +278,7 @@ stages:
       - "Every typographic beat carries typography across its whole window: the plate window is derived from the type span, a beat with no type fails compose, and a beat second with no type on screen is dead screen, not coverage"
       - "RETENTION PREFLIGHT: lib.persian_retention.audit_persian_retention reports no problems. The first 3s contain a second visual event or typographic pattern interrupt; timeline coverage has no empty interval; long >8s visual events and >2s text-only endings are surfaced as retention-risk advisories rather than hidden."
       - "CUT GRAMMAR: every new Persian shot states transitionIn: cut. Hard cuts are the current executable default; do not claim a dissolve until the Persian renderer implements a real crossfade."
+      - "Every new visual-event shot states changeType (establish/action/reaction/detail/scale_change/punch_in), narrativeRole (hook/exposition/conflict/turn/resolution), and humanPresence. The first 3s contain a visible hook role or hook moment; the final quarter contains a resolution role. Repeated identical change types and a non-human resolution are advisories, not fabricated hard failures."
     success_criteria:
       - Schema-valid edit_decisions artifact
       - edit_decisions.persian.moments[] present and audit-clean
@@ -287,6 +288,7 @@ stages:
       - "In narrated mode: musicTrack with a complete licence record, or omitMusicReason"
       - Timeline duration within 10% of brief.metadata.target_duration_seconds
       - "Retention preflight reports no blocking problems and its metrics/advisories are retained for final review"
+      - "New visual-event edits preserve structured cut grammar: hook visible in the opening, resolution in the final quarter, and every visual-event shot has changeType/narrativeRole/humanPresence"
 
   - name: compose
     skill: pipelines/persian-footage/compose-director

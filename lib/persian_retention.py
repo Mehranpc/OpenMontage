@@ -14,6 +14,8 @@ LONG_EVENT_WARNING_SECONDS = 8.0
 LONG_EVENT_HIGH_RISK_SECONDS = 10.0
 ENDING_TYPOGRAPHY_WARNING_SECONDS = 2.0
 WINDOW_SECONDS = 15.0
+EDIT_CHANGE_TYPES = ("establish", "action", "reaction", "detail", "scale_change", "punch_in")
+NARRATIVE_ROLES = ("hook", "exposition", "conflict", "turn", "resolution")
 
 
 def _span(item: dict[str, Any]) -> tuple[float, float]:
@@ -100,6 +102,8 @@ def audit_persian_retention(persian: dict[str, Any]) -> dict[str, Any]:
             )
 
     transitions = []
+    explicit_shots = [shot for shot in shots if shot.get("visualEventId")]
+    grammar_events: list[dict[str, Any]] = []
     for index, shot in enumerate(shots):
         transition = "cut" if index == 0 else str(shot.get("transitionIn") or "cut").lower()
         transitions.append(transition)
@@ -107,6 +111,80 @@ def audit_persian_retention(persian: dict[str, Any]) -> dict[str, Any]:
             problems.append(
                 f"{shot.get('id')}: transitionIn={transition!r} is not executable by the current Persian renderer; "
                 "hard cut is the supported default until motivated dissolve rendering exists"
+            )
+
+        if shot.get("visualEventId"):
+            change_type = str(shot.get("changeType") or "").strip()
+            narrative_role = str(shot.get("narrativeRole") or "").strip()
+            if change_type not in EDIT_CHANGE_TYPES:
+                problems.append(
+                    f"{shot.get('id')}: explicit visual-event shots require changeType in "
+                    + ", ".join(EDIT_CHANGE_TYPES)
+                )
+            if narrative_role not in NARRATIVE_ROLES:
+                problems.append(
+                    f"{shot.get('id')}: explicit visual-event shots require narrativeRole in "
+                    + ", ".join(NARRATIVE_ROLES)
+                )
+            if not isinstance(shot.get("humanPresence"), bool):
+                problems.append(
+                    f"{shot.get('id')}: explicit visual-event shots require humanPresence true/false"
+                )
+            grammar_events.append(
+                {
+                    "id": shot.get("id"),
+                    "visualEventId": shot.get("visualEventId"),
+                    "changeType": change_type,
+                    "narrativeRole": narrative_role,
+                    "humanPresence": shot.get("humanPresence"),
+                    "startSeconds": _span(shot)[0],
+                    "endSeconds": _span(shot)[1],
+                }
+            )
+
+    if explicit_shots:
+        hook_visible = any(
+            event["narrativeRole"] == "hook" and event["startSeconds"] < OPENING_WINDOW_SECONDS
+            for event in grammar_events
+        ) or any(
+            str(moment.get("kind") or "") == "hook" and _span(moment)[0] < OPENING_WINDOW_SECONDS
+            for moment in moments
+        )
+        if not hook_visible:
+            problems.append(
+                "explicit visual-event edit has no hook-labelled shot or hook moment in the first 3 seconds"
+            )
+
+        resolution_floor = duration * 0.75 if duration > 0 else 0.0
+        resolution_events = [
+            event for event in grammar_events
+            if event["narrativeRole"] == "resolution" and event["endSeconds"] >= resolution_floor
+        ]
+        if not resolution_events:
+            problems.append(
+                "explicit visual-event edit has no resolution-labelled shot in the final quarter"
+            )
+        elif resolution_events[-1].get("humanPresence") is False:
+            advisories.append(
+                f"{resolution_events[-1]['id']}: resolution has no human presence; "
+                "the Reels profile prefers a human/relatable ending when honest footage exists"
+            )
+
+        run_type = None
+        run_ids: list[str] = []
+        for event in grammar_events:
+            if event["changeType"] and event["changeType"] == run_type:
+                run_ids.append(str(event["id"]))
+            else:
+                if run_type and len(run_ids) >= 3:
+                    advisories.append(
+                        f"{', '.join(run_ids)} repeat changeType {run_type!r}; vary action/reaction/detail/scale/punch-in grammar"
+                    )
+                run_type = event["changeType"]
+                run_ids = [str(event["id"])]
+        if run_type and len(run_ids) >= 3:
+            advisories.append(
+                f"{', '.join(run_ids)} repeat changeType {run_type!r}; vary action/reaction/detail/scale/punch-in grammar"
             )
 
     changes = []
@@ -131,7 +209,11 @@ def audit_persian_retention(persian: dict[str, Any]) -> dict[str, Any]:
         "weakEmptyIntervals": gaps,
         "textOnlySeconds": round(sum(max(0.0, _span(b)[1] - _span(b)[0]) for b in plates), 3),
         "endingTextOnlySeconds": round(ending_text_only, 3),
-        "cutGrammar": {"transitions": transitions, "nonCutCount": sum(1 for t in transitions if t != "cut")},
+        "cutGrammar": {
+            "transitions": transitions,
+            "nonCutCount": sum(1 for t in transitions if t != "cut"),
+            "events": grammar_events,
+        },
         "judgementRequired": [
             "silent_watch_main_point", "silent_watch_hook_direction", "silent_watch_conclusion",
             "strongest_scene", "weakest_scene", "hook_strength", "resolution_strength", "caption_readability",
@@ -141,5 +223,6 @@ def audit_persian_retention(persian: dict[str, Any]) -> dict[str, Any]:
 
 __all__ = [
     "OPENING_WINDOW_SECONDS", "LONG_EVENT_WARNING_SECONDS", "LONG_EVENT_HIGH_RISK_SECONDS",
-    "ENDING_TYPOGRAPHY_WARNING_SECONDS", "audit_persian_retention",
+    "ENDING_TYPOGRAPHY_WARNING_SECONDS", "EDIT_CHANGE_TYPES", "NARRATIVE_ROLES",
+    "audit_persian_retention",
 ]
