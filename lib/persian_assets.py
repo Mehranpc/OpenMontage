@@ -51,6 +51,51 @@ _PERSIAN_VIDEO_PROVIDER_ALIASES = {
 ALLOWED_PERSIAN_VIDEO_PROVIDERS = frozenset({"pexels", "pixabay_video"})
 
 
+def _scene_asset_requirements(
+    scene_plan: dict[str, Any],
+) -> tuple[list[dict[str, Any]], set[str], set[str]]:
+    """Return the footage units an asset manifest must satisfy.
+
+    A semantic beat may now contain multiple ``visual_events``.  Each explicit
+    event is independently sourced and therefore independently requires one video
+    asset.  Plans without that field keep the historical one-asset-per-beat shape.
+    """
+    beats = scene_plan.get("beats")
+    if beats is None:
+        beats = (scene_plan.get("metadata") or {}).get("beats", [])
+
+    requirements: list[dict[str, Any]] = []
+    typographic_ids: set[str] = set()
+    explicit_event_beats: set[str] = set()
+    for beat in beats or []:
+        beat_id = str(beat.get("id") or "")
+        if beat.get("typographic"):
+            typographic_ids.add(beat_id)
+            continue
+        events = beat.get("visual_events")
+        if isinstance(events, list) and events:
+            explicit_event_beats.add(beat_id)
+            for event in events:
+                if not isinstance(event, dict):
+                    continue
+                requirements.append(
+                    {
+                        "beat_id": beat_id,
+                        "visual_event_id": str(event.get("id") or ""),
+                        "duration_seconds": event.get("duration_seconds"),
+                    }
+                )
+        else:
+            requirements.append(
+                {
+                    "beat_id": beat_id,
+                    "visual_event_id": None,
+                    "duration_seconds": beat.get("duration_seconds"),
+                }
+            )
+    return requirements, typographic_ids, explicit_event_beats
+
+
 class ImageFootageRejected(ValueError):
     """Raised when a Persian-pipeline manifest contains still-image footage.
 
@@ -209,41 +254,67 @@ def audit_asset_manifest(
             seen_paths[str(path)] = str(label)
 
     if scene_plan is not None:
-        beats = scene_plan.get("beats")
-        if beats is None:
-            beats = (scene_plan.get("metadata") or {}).get("beats", [])
-        beats = list(beats or [])
+        requirements, typographic_ids, explicit_event_beats = _scene_asset_requirements(
+            scene_plan
+        )
 
-        by_beat: dict[str, list[dict]] = {}
+        by_beat: dict[str, list[dict[str, Any]]] = {}
+        by_event: dict[str, list[dict[str, Any]]] = {}
         for entry in assets:
-            by_beat.setdefault(str(entry.get("beat_id")), []).append(entry)
+            beat_id = str(entry.get("beat_id") or "")
+            by_beat.setdefault(beat_id, []).append(entry)
+            event_id = str(entry.get("visual_event_id") or "").strip()
+            if event_id:
+                by_event.setdefault(event_id, []).append(entry)
+            elif beat_id in explicit_event_beats:
+                problems.append(
+                    f"{beat_id}: asset {entry.get('path')!r} is missing visual_event_id; "
+                    "this semantic beat contains multiple independently sourced events"
+                )
 
-        for beat in beats:
-            beat_id = str(beat.get("id"))
-            if beat.get("typographic"):
-                if by_beat.get(beat_id):
-                    problems.append(
-                        f"{beat_id}: marked typographic but has footage assigned — "
-                        "one of the two decisions is stale"
-                    )
-                continue
+        for beat_id in typographic_ids:
+            if by_beat.get(beat_id):
+                problems.append(
+                    f"{beat_id}: marked typographic but has footage assigned — "
+                    "one of the two decisions is stale"
+                )
 
-            entries = by_beat.get(beat_id, [])
+        expected_event_ids = {
+            str(req["visual_event_id"])
+            for req in requirements
+            if req.get("visual_event_id")
+        }
+        for event_id, entries in by_event.items():
+            if event_id not in expected_event_ids:
+                problems.append(
+                    f"visual_event_id {event_id!r} is not present in the scene plan"
+                )
+
+        for requirement in requirements:
+            beat_id = str(requirement["beat_id"])
+            event_id = requirement.get("visual_event_id")
+            label = str(event_id or beat_id)
+            entries = by_event.get(str(event_id), []) if event_id else by_beat.get(beat_id, [])
             if len(entries) == 0:
-                problems.append(f"{beat_id}: no asset")
+                problems.append(f"{label}: no asset")
                 continue
             if len(entries) > 1:
-                problems.append(f"{beat_id}: {len(entries)} assets, expected exactly 1")
+                problems.append(f"{label}: {len(entries)} assets, expected exactly 1")
 
-            beat_duration = float(beat.get("duration_seconds") or 0.0)
             for entry in entries:
+                if event_id and str(entry.get("beat_id") or "") != beat_id:
+                    problems.append(
+                        f"{label}: asset beat_id {entry.get('beat_id')!r} does not match "
+                        f"its semantic beat {beat_id!r}"
+                    )
                 source_duration = float(entry.get("duration_seconds") or 0.0)
                 source_in = float(entry.get("source_in_seconds") or 0.0)
                 usable = source_duration - source_in
-                if beat_duration > 0 and usable > 0 and usable < beat_duration:
+                needed = float(requirement.get("duration_seconds") or 0.0)
+                if needed > 0 and usable > 0 and usable < needed:
                     problems.append(
-                        f"{beat_id}: clip provides {usable:.2f}s from its in-point but "
-                        f"the beat needs {beat_duration:.2f}s — the tail renders black"
+                        f"{label}: clip provides {usable:.2f}s from its in-point but "
+                        f"the visual unit needs {needed:.2f}s — the tail renders black"
                     )
 
     return problems

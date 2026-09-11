@@ -2,13 +2,20 @@
 
 ## Your job
 
-Turn the script into a beat list where every beat carries **English search queries**
-that will actually return usable video, plus a camera move.
+Turn the script into **semantic beats**, then express each footage beat as one or more
+**visual events**. A semantic beat is a unit of meaning; a visual event is one shot-level
+thing the viewer actually sees. They are deliberately not the same object.
+
+Each non-typographic semantic beat owns `visual_events[]`. Every visual event independently
+declares its English search queries, duration, camera move, shot scale, environment,
+`shows_subject`, and `desired_affect`. Its durations must add back to the semantic beat.
+The gate still reads old one-shot-per-beat checkpoints as one implicit visual event for
+migration only; do not author new plans in that legacy shape.
 
 ## The translation problem
 
 Pexels and Pixabay do not index Persian. A Persian query returns nothing or noise.
-So every beat needs English queries — but the translation that matters is of the
+So every visual event needs English queries — but the translation that matters is of the
 **visual intent**, not the words.
 
 This is the single highest-leverage judgement in the pipeline. Two examples:
@@ -27,7 +34,7 @@ Rules that make queries work:
 - **Add a qualifier.** `city` returns 10,000 unusable clips; `city street night rain
   overhead` returns a shot.
 - **3–6 words.** Shorter is too broad, longer over-constrains and returns nothing.
-- **2 queries per beat.** Two different angles on the same visual, so one failing
+- **2 queries per visual event.** Two different angles on the same visual, so one failing
   does not empty the beat. Not three: at 2 candidates per query a 12-beat video is
   already 24 downloads and several GB, and the third query is nearly always a
   paraphrase of the second rather than a genuine alternative.
@@ -48,9 +55,9 @@ pour, a grinder, a moka pot, someone drinking. Then:
 
 ### 1. Anchor quota
 
-- The **first** beat shows the subject literally.
-- The **last** beat shows the subject literally.
-- At least **40%** of all footage beats show the subject literally.
+- The **first** footage visual event shows the subject literally.
+- The **last** footage visual event shows the subject literally.
+- At least **40%** of all footage visual events show the subject literally.
 
 First and last are non-negotiable because they are the two frames a viewer decides
 with: the first sets what the video is about, and the last is what they remember. A
@@ -112,7 +119,7 @@ returns a cropped landscape or nothing.
 
 ## Camera moves
 
-Every beat declares one. The vocabulary is fixed by `motion.ts`:
+Every visual event declares one. The vocabulary is fixed by `motion.ts`:
 
 | Move | Use for | Why |
 |------|---------|-----|
@@ -129,12 +136,12 @@ Do not alternate mechanically. Three consecutive `push-in` beats read as a tic.
 
 ## Visual variety
 
-The rule is **no two adjacent beats may share their shot scale and environment** —
+The rule is **no two adjacent visual events may share their shot scale and environment** —
 not their subject.
 
 This is the inverse of what it used to say, and the change is deliberate. The old
 rule forbade repeating the subject, which is precisely the wrong constraint for a
-video that needs its subject present in 40% of its beats: obeying both is
+video that needs its subject present in 40% of its visual events: obeying both is
 impossible, and the subject is the one that matters. Variety comes from how the
 subject is shot, not from replacing it.
 
@@ -152,7 +159,7 @@ Vary at least one of:
 ## Typographic beats
 
 Only for beats the idea director marked infeasible, within the declared budget
-(at most 2). Mark them explicitly with `typographic: true` and no queries. A
+(at most 2). Mark them explicitly with `typographic: true` and no `visual_events`. A
 typographic beat renders as a near-black void plate of last resort (see the
 asset-director for the full rule), never as a way to skip footage that exists.
 
@@ -162,58 +169,64 @@ no longer a footage video.
 
 ## Scene plan metadata contract
 
+`beats[]` carries narration meaning. `visual_events[]` carries shot-level execution.
+Do not duplicate beat-level query/camera fields once `visual_events` exists.
+
 ```json
 {
   "format": "vertical",
   "subject": "coffee",
-  "subject_queries": ["coffee cup", "coffee beans", "pouring coffee", "moka pot"],
   "beats": [
     {
       "id": "beat-1",
       "intent_fa": "شروع روز با قهوه",
       "script_line_fa": "هر روز صبح بدون قهوه روزت شروع نمی‌شه؟",
       "duration_seconds": 5,
-      "camera": "push-in",
       "typographic": false,
-      "shows_subject": true,
-      "shot_scale": "close up",
-      "environment": "kitchen",
-      "queries": [
-        "close up pouring coffee into cup morning",
-        "steam rising from coffee cup kitchen"
-      ]
-    },
-    {
-      "id": "beat-10",
-      "intent_fa": "ارتباط با دیابت",
-      "duration_seconds": 6,
-      "camera": "pull-out",
-      "typographic": false,
-      "shows_subject": true,
-      "shot_scale": "close up",
-      "environment": "kitchen table",
-      "names_banned_term": true,
-      "queries": [
-        "coffee cup beside blood sugar monitor table",
-        "close up coffee cup on kitchen table morning light"
+      "visual_events": [
+        {
+          "id": "beat-1-event-1",
+          "duration_seconds": 2,
+          "desired_affect": "curiosity",
+          "camera": "push-in",
+          "shows_subject": true,
+          "shot_scale": "close up",
+          "environment": "kitchen",
+          "queries": [
+            "close up pouring coffee morning",
+            "steam rising coffee cup kitchen"
+          ]
+        },
+        {
+          "id": "beat-1-event-2",
+          "duration_seconds": 3,
+          "desired_affect": "recognition",
+          "camera": "none",
+          "shows_subject": true,
+          "shot_scale": "overhead",
+          "environment": "desk",
+          "queries": [
+            "coffee cup notebook desk",
+            "hands holding coffee desk"
+          ]
+        }
       ]
     },
     {
       "id": "beat-7",
       "intent_fa": "معنا",
       "duration_seconds": 4,
-      "camera": "none",
-      "typographic": true,
-      "shows_subject": false,
-      "queries": []
+      "typographic": true
     }
   ]
 }
 ```
 
-`shows_subject` is what makes the anchor quota checkable rather than aspirational.
-Set it honestly: a clip where the subject is a blurred shape in the background does
-not show the subject.
+`desired_affect` states what the shot should make the viewer feel or anticipate; semantic
+relevance alone is not enough. `shows_subject` is still literal evidence: a blurred shape
+in the background does not count. `lib.persian_scenes.audit_scene_plan` validates event
+identity, event-duration coverage, the subject quota, query count, camera/variety fields,
+and `desired_affect`.
 
 ## Before you checkpoint
 
@@ -229,7 +242,7 @@ for advisory in audit["advisories"]:
 ```
 
 It enforces the subject anchor quota, the banned vocabulary, the adjacent-variety rule,
-two queries per beat, a declared camera move, and the typographic budget.
+two queries per visual event, a declared camera move, event-duration coverage, desired_affect, and the typographic budget.
 
 **Why a gate and not this checklist.** The checklist was here first, in exactly the form
 below, and it was read. The plan written against it still contained `close up hands coffee
@@ -250,12 +263,12 @@ dismissal.
 What it checks, for reference:
 
 - The plan names a `subject`.
-- The first and last footage beats have `shows_subject: true`.
-- At least 40% of footage beats have `shows_subject: true`.
+- The first and last footage visual events have `shows_subject: true`.
+- At least 40% of footage visual events have `shows_subject: true`.
 - No query uses banned stock-medical vocabulary the script does not name.
-- Every non-typographic beat has 2 English queries.
-- Every beat has a camera move, including a deliberate `none`.
-- No two adjacent beats share both `shot_scale` and `environment`.
+- Every footage visual event has 2 English queries.
+- Every footage visual event has a camera move, including a deliberate `none`.
+- No two adjacent visual events share both `shot_scale` and `environment`.
 - Typographic beats are within budget.
 
 And what it cannot check, so you must:

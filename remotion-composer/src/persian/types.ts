@@ -201,6 +201,10 @@ export interface PersianMoment {
  */
 export interface PersianShot {
   readonly id: string;
+  /** Parent semantic narration beat; metadata only, never inferred from timing. */
+  readonly semanticBeatId?: string;
+  /** Shot-level visual event within the semantic beat. */
+  readonly visualEventId?: string;
   /** Path relative to the composition's public dir. */
   readonly source: string;
   /** Timeline position, seconds. */

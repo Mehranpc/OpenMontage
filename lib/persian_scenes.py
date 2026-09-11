@@ -93,6 +93,93 @@ def _footage_beats(beats: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [beat for beat in beats if not beat.get("typographic")]
 
 
+def _footage_units(
+    beats: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str], bool]:
+    """Expand semantic beats into the visual events the viewer actually sees.
+
+    Older plans used one footage beat as both the semantic unit and the shot unit.
+    New plans may declare ``visual_events`` inside a beat.  Once that list exists,
+    its entries own shot-level search/affect fields and the semantic beat no longer
+    has to collapse to one clip.  Legacy plans remain readable as one implicit event
+    per footage beat so existing checkpoints can still be audited.
+    """
+    units: list[dict[str, Any]] = []
+    problems: list[str] = []
+    seen_ids: set[str] = set()
+    has_explicit_events = False
+
+    for beat in beats:
+        if beat.get("typographic"):
+            if beat.get("visual_events"):
+                problems.append(
+                    f'{beat.get("id")}: typographic beats cannot also declare visual_events'
+                )
+            continue
+
+        raw_events = beat.get("visual_events")
+        if raw_events is None:
+            unit = dict(beat)
+            unit["semantic_beat_id"] = str(beat.get("id") or "")
+            unit["visual_event_id"] = None
+            units.append(unit)
+            continue
+
+        has_explicit_events = True
+        if not isinstance(raw_events, list) or not raw_events:
+            problems.append(
+                f'{beat.get("id")}: visual_events must be a non-empty list for a footage beat'
+            )
+            continue
+
+        total_duration = 0.0
+        for index, raw_event in enumerate(raw_events):
+            if not isinstance(raw_event, dict):
+                problems.append(
+                    f'{beat.get("id")}: visual_event[{index}] must be an object'
+                )
+                continue
+            event = dict(raw_event)
+            event_id = str(event.get("id") or "").strip()
+            if not event_id:
+                problems.append(f'{beat.get("id")}: visual_event[{index}] has no id')
+            elif event_id in seen_ids:
+                problems.append(f'duplicate visual_event id {event_id!r}')
+            else:
+                seen_ids.add(event_id)
+
+            try:
+                duration = float(event.get("duration_seconds") or 0.0)
+            except (TypeError, ValueError):
+                duration = 0.0
+            if duration <= 0:
+                problems.append(
+                    f'{event_id or beat.get("id")}: visual event duration_seconds must be > 0'
+                )
+            total_duration += max(0.0, duration)
+
+            if not str(event.get("desired_affect") or "").strip():
+                problems.append(
+                    f'{event_id or beat.get("id")}: explicit visual events require desired_affect'
+                )
+
+            event["semantic_beat_id"] = str(beat.get("id") or "")
+            event["visual_event_id"] = event_id or None
+            units.append(event)
+
+        try:
+            beat_duration = float(beat.get("duration_seconds") or 0.0)
+        except (TypeError, ValueError):
+            beat_duration = 0.0
+        if beat_duration > 0 and abs(total_duration - beat_duration) > 0.05:
+            problems.append(
+                f'{beat.get("id")}: visual_events total {total_duration:.2f}s does not match '
+                f'semantic beat duration {beat_duration:.2f}s'
+            )
+
+    return units, problems, has_explicit_events
+
+
 def audit_scene_plan(
     scene_plan: dict[str, Any],
     *,
@@ -127,6 +214,8 @@ def audit_scene_plan(
             "advisories": [],
             "subject_fraction": 0.0,
             "footage_beats": 0,
+            "visual_events": 0,
+            "uses_visual_events": False,
             "queries_total": 0,
         }
 
@@ -138,20 +227,22 @@ def audit_scene_plan(
             "twelve defensible queries become a video about something else."
         )
 
-    footage = _footage_beats(beats)
-    queries_total = sum(len(beat.get("queries") or []) for beat in footage)
+    footage_beats = _footage_beats(beats)
+    footage, visual_event_problems, has_explicit_events = _footage_units(beats)
+    problems.extend(visual_event_problems)
+    queries_total = sum(len(unit.get("queries") or []) for unit in footage)
 
     # --- Anchor quota -----------------------------------------------------------------
     if footage:
         if not footage[0].get("shows_subject"):
             problems.append(
-                f'{footage[0].get("id")}: the first footage beat must show the subject. '
+                f'{footage[0].get("id")}: the first footage beat/event must show the subject. '
                 "It is the frame that sets what the video is about, and a video opening "
                 "on a laboratory is a video about medicine whatever the narration says."
             )
         if not footage[-1].get("shows_subject"):
             problems.append(
-                f'{footage[-1].get("id")}: the last footage beat must show the subject. '
+                f'{footage[-1].get("id")}: the last footage beat/event must show the subject. '
                 "It is the frame the viewer remembers."
             )
 
@@ -159,7 +250,7 @@ def audit_scene_plan(
         fraction = showing / len(footage)
         if fraction < MIN_SUBJECT_FRACTION:
             problems.append(
-                f"only {showing} of {len(footage)} footage beats show the subject "
+                f"only {showing} of {len(footage)} footage units show the subject "
                 f"({fraction:.0%}), against {MIN_SUBJECT_FRACTION:.0%} required. The "
                 "remaining beats have real work to do, so this is a floor on "
                 "recognisability rather than a ceiling on variety."
@@ -225,11 +316,11 @@ def audit_scene_plan(
             problems.append(
                 f'{earlier.get("id")} and {later.get("id")} share both shot_scale '
                 f'({earlier.get("shot_scale")!r}) and environment '
-                f'({earlier.get("environment")!r}) — two adjacent beats that look like '
+                f'({earlier.get("environment")!r}) — two adjacent visual events that look like '
                 "one long shot. Change one of the two."
             )
 
-    # --- Per-beat completeness ---------------------------------------------------------
+    # --- Per-visual-event completeness ------------------------------------------------
     for beat in footage:
         label = beat.get("id") or "beat"
         queries = beat.get("queries") or []
@@ -269,7 +360,9 @@ def audit_scene_plan(
         "problems": problems,
         "advisories": advisories,
         "subject_fraction": round(fraction, 4),
-        "footage_beats": len(footage),
+        "footage_beats": len(footage_beats),
+        "visual_events": len(footage),
+        "uses_visual_events": has_explicit_events,
         "queries_total": queries_total,
     }
 

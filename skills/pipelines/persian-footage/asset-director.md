@@ -2,7 +2,7 @@
 
 ## Your job
 
-Acquire, per beat, one **video** clip that means what the beat says. In `narrated`
+Acquire, per visual event, one **video** clip that means what its parent semantic beat says and matches that event's `desired_affect`. In `narrated`
 mode, also produce word-level timings from the narration audio. Optionally acquire
 music.
 
@@ -40,12 +40,12 @@ Concretely:
 Pass `filters.orientation` matching the brief's format. This is the single most
 important input to this stage's efficiency: without it, Pexels returns mostly
 landscape, and a vertical production downloads ten clips to keep two. On a machine
-with little free disk that difference matters, and it wastes minutes per beat.
+with little free disk that difference matters, and it wastes minutes per visual event.
 
 ```python
 result = registry.get("direct_clip_search").execute({
-    # First pass: ONE primary query and ONE candidate per footage beat.
-    # Use the beat's second query only for an unresolved beat in a bounded retry.
+    # First pass: ONE primary query and ONE candidate per footage visual event.
+    # Use the visual event's second query only for an unresolved event in a bounded retry.
     "queries": [
         {"query": "close up pouring coffee into cup morning", "slot_id": "beat-1", "kind": "video"},
     ],
@@ -65,8 +65,8 @@ result = registry.get("direct_clip_search").execute({
 ```
 
 The parameter is `clips_per_query`. `per_query` is not a key this tool accepts.
-For this pipeline it is always `1`: one primary candidate per footage beat on the
-first pass, then the unused second query only for unresolved beats. The hard
+For this pipeline it is always `1`: one primary candidate per footage visual event on the
+first pass, then the unused second query only for unresolved events. The hard
 `max_candidates_total`, per-clip byte ceiling, and aggregate byte ceiling are required
 on every call; raising them requires an explicit user decision, not an agent retry.
 
@@ -105,7 +105,7 @@ the approved path. Never create `smoke-*` directories under a production project
 provider needs investigation, stop and do it in an isolated diagnostic directory after
 explicit approval.
 
-Run one batched first pass containing one primary query per footage beat and
+Run one batched first pass containing one primary query per footage visual event and
 `clips_per_query: 1`. Inspect those results. Run at most one second pass for unresolved
 beats, using their already-authored alternate query and the remaining shared byte and
 candidate budget. Do not widen providers, add generic queries, or start a third pass.
@@ -124,20 +124,21 @@ ffmpeg -y -ss 1 -i clip.mp4 -frames:v 1 -vf scale=320:-1 thumb.jpg
 
 Then judge, in priority order:
 
-1. **Does it mean the beat?** A clip that is beautiful and wrong is wrong.
-2. **Does it hold the subject the scene plan declared?** For a beat with
+1. **Does it mean the semantic beat?** A clip that is beautiful and wrong is wrong.
+2. **Does it produce the visual event's `desired_affect`?** Record the match in the selection reason; a semantically correct shot with the wrong emotional read is still the wrong event.
+3. **Does it hold the subject the scene plan declared?** For a visual event with
    `shows_subject: true`, the subject has to be legible — a blurred shape in the
    background does not count. This is the check that catches a clip which matched its
    query and still moved the video off its topic.
-3. **Is it long enough?** Source duration ≥ beat duration. A clip that has to loop
+4. **Is it long enough?** Source duration ≥ beat duration. A clip that has to loop
    inside one beat reads as a glitch.
-4. **Does the orientation match?** Portrait for vertical, landscape for landscape.
+5. **Does the orientation match?** Portrait for vertical, landscape for landscape.
    A landscape clip cropped to vertical loses its subject to the crop.
-5. **Can footage and type be solved together?** Read the provisional display
+6. **Can footage and type be solved together?** Read the provisional display
    requirement; inspect the cropped window at start/middle/end and record genuine
    negative space plus conservative subject envelopes. Do not assume a fixed text band.
    Keep ranked alternatives until no-copy edit preflight chooses a feasible pair.
-6. **Is the motion compatible?** Fast internal motion plus a camera move is queasy.
+7. **Is the motion compatible?** Fast internal motion plus a camera move is queasy.
    If the clip moves a lot, revisit the beat's camera and set `none`.
 
 Reject freely. Rejecting a clip costs one more search; shipping a wrong clip costs
@@ -241,6 +242,7 @@ Rules:
   "assets": [
     {
       "beat_id": "beat-1",
+      "visual_event_id": "beat-1-event-1",
       "kind": "video",
       "path": "projects/<project>/assets/video/selected/beat-1_pexels_1234567.mp4",
       "duration_seconds": 12.4,
@@ -285,13 +287,13 @@ assert not problems, problems
 
 Also confirm by hand:
 
-- Every non-typographic beat has exactly one asset.
-- No clip_id fills two beats. Reuse is visible and reads as running out of material.
+- Every footage visual event has exactly one asset. Legacy checkpoints without `visual_events` are treated as one implicit event per beat.
+- No clip_id fills two visual events. Reuse is visible and reads as running out of material.
 - `ffprobe` agrees with the recorded duration and dimensions on every clip — the
   APIs' metadata is occasionally wrong, and a clip shorter than its beat renders
   black at the tail.
-- **The anchor quota survived selection.** The first and last footage beats have
-  `shows_subject: true`, and at least 40% of footage beats do. The scene plan asked for
+- **The anchor quota survived selection.** The first and last footage visual events have
+  `shows_subject: true`, and at least 40% of footage visual events do. The scene plan asked for
   this; selection is where it gets lost, because the beat whose subject clip was
   unusable is exactly the beat where a generic one is tempting.
 - Every clip is at most 1920px on its long edge. A 2732px clip means `min_width` was

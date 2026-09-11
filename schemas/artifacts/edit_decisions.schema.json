@@ -618,6 +618,14 @@
               "id": {
                 "type": "string"
               },
+              "semanticBeatId": {
+                "type": "string",
+                "description": "Semantic narration beat this shot serves; provenance only, not a timing source."
+              },
+              "visualEventId": {
+                "type": "string",
+                "description": "Shot-level visual event inside semanticBeatId. New Persian plans use this to preserve semantic beat != visual event through compose."
+              },
               "source": {
                 "type": "string",
                 "description": "Clip path; staged under remotion-composer/public/ at render time and resolved through staticFile()."

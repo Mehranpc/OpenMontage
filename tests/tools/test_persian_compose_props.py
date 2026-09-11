@@ -118,6 +118,16 @@ class TestNoKeyIsInheritable:
             "without failing it."
         )
 
+    def test_shot_semantic_and_visual_event_ids_survive_props_build(
+        self, clip: Path, staging: Path
+    ) -> None:
+        persian = _persian(clip)
+        persian["shots"][0]["semanticBeatId"] = "beat-1"
+        persian["shots"][0]["visualEventId"] = "beat-1-event-2"
+        props, _ = _build(persian, staging)
+        assert props["shots"][0]["semanticBeatId"] == "beat-1"
+        assert props["shots"][0]["visualEventId"] == "beat-1-event-2"
+
     def test_absent_typographic_beats_become_an_empty_list(
         self, clip: Path, staging: Path
     ) -> None:

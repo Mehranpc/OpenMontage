@@ -555,13 +555,20 @@ known licence, known date».
 
 ## Shots
 
-One shot per beat, in timeline order, contiguous. A gap between shots renders as
-black; an overlap renders as whichever `<Sequence>` is later in the array, which is
-not a decision you want made by array order.
+One shot per **visual event**, in timeline order, contiguous. A semantic beat may
+therefore contain several shots; that is the point of separating narration meaning
+from retention/edit rhythm. Carry both `semanticBeatId` and `visualEventId` on every
+new shot so the final timeline remains traceable to both planning levels. Legacy
+checkpoints without visual events remain readable as one implicit event per beat.
+
+A gap between shots renders as black; an overlap renders as whichever `<Sequence>`
+is later in the array, which is not a decision you want made by array order.
 
 ```json
 {
   "id": "shot-1",
+  "semanticBeatId": "beat-1",
+  "visualEventId": "beat-1-event-1",
   "source": "assets/clips/pexels_1234567.mp4",
   "startSeconds": 0.0,
   "endSeconds": 5.0,
@@ -690,7 +697,7 @@ words = TimedWord.from_dicts(audio["wordTimings"])
 sync = audit_sync(moments, words)
 assert not sync.problems, sync.problems
 
-# Shots must tile the timeline with no gap and no overlap.
+# Visual-event shots must tile the timeline with no gap and no overlap.
 for a, b in zip(shots, shots[1:]):
     assert abs(a["endSeconds"] - b["startSeconds"]) < 0.001, (a["id"], b["id"])
 

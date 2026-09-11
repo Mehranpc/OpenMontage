@@ -60,6 +60,10 @@
             "type": "string",
             "description": "Beat this asset fills, for beat-structured pipelines. Distinct from scene_id, which groups beats."
           },
+          "visual_event_id": {
+            "type": "string",
+            "description": "Shot-level visual event this asset fills inside its semantic beat. Required by the Persian visual-event contract whenever scene_plan metadata.beats[].visual_events is present; omitted only for legacy one-asset-per-beat plans."
+          },
           "public_path": {
             "type": "string",
             "description": "Optional path relative to remotion-composer/public/, for pipelines that pre-stage their media. persian-footage does not: persian_compose copies each shot's source into public/persian/<run-id>/ at render time and deletes it afterwards, so it reads `path` and never this field. Recording it is harmless; relying on it is not."

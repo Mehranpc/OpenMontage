@@ -5,6 +5,7 @@ Use this capability only for the middle production phases reported by `persian-v
 The narration/script entering these phases is authoritative production copy. Scene and edit stages may derive selective on-screen moments under their own contracts, but must not rewrite the narration itself or reopen it as a writing task.
 
 For scene/moment planning, read `skills/pipelines/persian-footage/scene-director.md` and `edit-director.md`. Persist the normal `scene_plan`, `asset_manifest`, and `edit_decisions` checkpoints in manifest order; do not invent a second artifact system for the front door.
+New scene plans separate semantic narration beats from shot-level `visual_events`; acquisition and edit preserve that identity through `visual_event_id` / `visualEventId` instead of collapsing each semantic beat to one clip.
 
 For acquisition, read `asset-director.md`. Every `direct_clip_search` call must first be passed through the code-owned budget clamp:
 

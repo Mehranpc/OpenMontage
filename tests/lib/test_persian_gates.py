@@ -369,6 +369,37 @@ class TestAssetAudit:
         scene_plan = {"beats": [{"id": "b1", "duration_seconds": 5.0, "typographic": False}]}
         assert audit_asset_manifest(manifest, scene_plan) == []
 
+    def test_visual_events_are_independently_sourced_inside_one_semantic_beat(self) -> None:
+        second = self._clip.parent / "b.mp4"
+        second.write_bytes(b"\x00" * 64)
+        scene_plan = {
+            "beats": [{
+                "id": "b1",
+                "duration_seconds": 5.0,
+                "visual_events": [
+                    {"id": "b1-e1", "duration_seconds": 2.0},
+                    {"id": "b1-e2", "duration_seconds": 3.0},
+                ],
+            }]
+        }
+        manifest = {"assets": [
+            self._asset(beat_id="b1", visual_event_id="b1-e1", path="a.mp4"),
+            self._asset(beat_id="b1", visual_event_id="b1-e2", path="b.mp4"),
+        ]}
+        assert audit_asset_manifest(manifest, scene_plan) == []
+
+    def test_explicit_visual_event_assets_must_name_the_event(self) -> None:
+        scene_plan = {
+            "beats": [{
+                "id": "b1",
+                "duration_seconds": 5.0,
+                "visual_events": [{"id": "b1-e1", "duration_seconds": 5.0}],
+            }]
+        }
+        problems = audit_asset_manifest({"assets": [self._asset()]}, scene_plan)
+        assert any("missing visual_event_id" in problem for problem in problems)
+        assert any("b1-e1: no asset" in problem for problem in problems)
+
     @pytest.mark.parametrize(
         "field", ["provider", "original_url", "license", "attribution"]
     )
@@ -1668,6 +1699,58 @@ class TestSceneAudit:
         assert audit["problems"] == []
         assert audit["subject_fraction"] == 1.0
         assert audit["footage_beats"] == 3
+
+    def test_one_semantic_beat_can_expand_to_multiple_visual_events(self) -> None:
+        beat = {
+            "id": "beat-1",
+            "duration_seconds": 5.0,
+            "typographic": False,
+            "visual_events": [
+                {
+                    "id": "beat-1-event-1",
+                    "duration_seconds": 2.0,
+                    "desired_affect": "curiosity",
+                    "camera": "push-in",
+                    "shows_subject": True,
+                    "shot_scale": "close up",
+                    "environment": "kitchen",
+                    "queries": ["coffee pour close up", "steam coffee cup"],
+                },
+                {
+                    "id": "beat-1-event-2",
+                    "duration_seconds": 3.0,
+                    "desired_affect": "recognition",
+                    "camera": "none",
+                    "shows_subject": True,
+                    "shot_scale": "overhead",
+                    "environment": "desk",
+                    "queries": ["coffee cup notebook desk", "hands coffee desk"],
+                },
+            ],
+        }
+        audit = audit_scene_plan(self._plan([beat]))
+        assert audit["problems"] == []
+        assert audit["footage_beats"] == 1
+        assert audit["visual_events"] == 2
+        assert audit["uses_visual_events"] is True
+
+    def test_visual_event_duration_and_affect_are_contract_fields(self) -> None:
+        beat = {
+            "id": "beat-1",
+            "duration_seconds": 5.0,
+            "visual_events": [{
+                "id": "event-1",
+                "duration_seconds": 4.0,
+                "camera": "none",
+                "shows_subject": True,
+                "shot_scale": "close up",
+                "environment": "kitchen",
+                "queries": ["coffee cup close up", "coffee steam kitchen"],
+            }],
+        }
+        problems = audit_scene_plan(self._plan([beat]))["problems"]
+        assert any("require desired_affect" in problem for problem in problems)
+        assert any("does not match semantic beat duration" in problem for problem in problems)
 
     def test_beats_are_read_from_either_shape(self) -> None:
         """Both shapes are in use, and a plan whose beats are invisible to the gate

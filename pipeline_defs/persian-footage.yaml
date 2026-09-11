@@ -170,20 +170,20 @@ stages:
     checkpoint_required: true
     human_approval_default: false
     review_focus:
-      - Every beat has 2 ENGLISH search queries (Pexels/Pixabay do not index Persian)
+      - Every footage visual event has 2 ENGLISH search queries (Pexels/Pixabay do not index Persian); semantic beats may contain multiple visual_events
       - Queries name concrete visual nouns, not the abstract idea they represent
-      - "SUBJECT ANCHOR QUOTA: the first footage beat, the last footage beat, and at least 40% of all footage beats show the brief's visual_subject literally, each marked shows_subject: true. Without this quota a video about coffee becomes a video about a medical check-up, one defensible query at a time."
+      - "SUBJECT ANCHOR QUOTA: the first footage visual event, the last footage visual event, and at least 40% of footage visual events show the brief's visual_subject literally, each marked shows_subject: true. Legacy one-shot-per-beat plans are treated as one implicit event per beat."
       - "Beats about something else use CO-PRESENCE, not substitution: 'coffee cup beside blood sugar monitor', never 'glucose meter check'. Both things in one frame carries the beat AND keeps the subject on screen."
-      - "No query uses stock-medical vocabulary the script does not name: doctor examining patient, blood test vials, DNA strand, laboratory researchers, test tubes, scientist microscope, hospital, medical chart, stethoscope, pills, capsules, measuring waist, measuring tape, weighing scale, blood pressure cuff, syringe, nurse, clinic. When the script genuinely names one, set names_banned_term: true on that beat and pair the term with the subject in one frame."
-      - Every beat declares a camera move, or "none" deliberately
-      - "No two adjacent beats share BOTH shot_scale and environment. Variety comes from how the subject is shot, not from replacing it — the old rule forbade repeating the subject, which is incompatible with the anchor quota."
+      - "No query uses stock-medical vocabulary the script does not name: doctor examining patient, blood test vials, DNA strand, laboratory researchers, test tubes, scientist microscope, hospital, medical chart, stethoscope, pills, capsules, measuring waist, measuring tape, weighing scale, blood pressure cuff, syringe, nurse, clinic. When the script genuinely names one, set names_banned_term: true on that visual event and pair the term with the subject in one frame."
+      - Every footage visual event declares a camera move, or "none" deliberately
+      - "No two adjacent visual events share BOTH shot_scale and environment. Variety comes from how the subject is shot, not from replacing it — the old rule forbade repeating the subject, which is incompatible with the anchor quota."
       - Beats that no honest footage can serve are marked typographic, within the declared budget
       - Sum of beat durations is within 10% of the target duration
       - "RUN THE GATE, do not self-assess: lib.persian_scenes.audit_scene_plan(scene_plan, typographic_budget=N) enforces every rule above. It exists because the rewritten prose was read and a banned query still shipped — the beat felt like the exception the rule allows for."
     success_criteria:
       - Schema-valid scene_plan artifact
       - metadata.subject present, matching brief.metadata.visual_subject
-      - metadata.beats[] present, each with queries[], camera, shows_subject, shot_scale, environment
+      - metadata.beats[] present; every new non-typographic beat carries visual_events[] whose durations sum to the beat and whose entries carry queries[], desired_affect, camera, shows_subject, shot_scale, environment
       - "lib.persian_scenes.audit_scene_plan reports no problems, and every advisory it reports has been read and answered in the checkpoint metadata"
 
   - name: assets
@@ -218,9 +218,9 @@ stages:
       - "EVERY asset is a VIDEO. A still image in the manifest is a CRITICAL violation — this pipeline forbids photo footage outright."
       - Every clip is at least as long as the beat it fills
       - Provenance (provider, original_url, license, attribution) present on every asset
-      - No clip_id fills two beats
+      - No clip_id fills two visual events
       - Clip orientation matches the chosen format
-      - "Acquisition uses only sources [pexels, pixabay_video], clips_per_query 1, one primary query per footage beat, and at most one retry pass with the authored alternate query. No smoke-* provider probing is allowed inside a production project."
+      - "Acquisition uses only sources [pexels, pixabay_video], clips_per_query 1, one primary query per footage visual event, and at most one retry pass with the authored alternate query. No smoke-* provider probing is allowed inside a production project."
       - "Every direct_clip_search call sets max_candidates_total, max_bytes_per_clip, and max_total_download_bytes. Quota exhaustion is a blocker; the agent may not raise a limit without explicit user approval."
       - "filters.min_width is 1080. _pick_video_rendition takes the largest rendition at or below 1920px WIDE, and for a portrait clip width is the short edge — so without a floor, vertical clips arrive at 1440x2732, tens of MB each, for a 1080-wide render."
       - "The tool's post-download ffprobe values, not provider claims, satisfy duration and orientation. A mismatch or unknown probe is deleted immediately and never enters the manifest."
@@ -229,11 +229,11 @@ stages:
       - "In narrated mode: word-level timings exist and cover the narration duration"
     success_criteria:
       - Schema-valid asset_manifest artifact
-      - Every non-typographic beat has exactly one video asset
+      - Every footage visual event has exactly one video asset; assets in explicit visual-event plans carry visual_event_id
       - Zero assets with kind "image"
       - Every asset is at most 1920px on its long edge
       - Every asset carries shows_subject and a selection_reason naming what is in frame
-      - First and last footage beats' assets show the subject; at least 40% of footage beats' assets do
+      - First and last footage visual events' assets show the subject; at least 40% of footage visual events' assets do
       - "In narrated mode: metadata.word_timings present"
 
   - name: edit
