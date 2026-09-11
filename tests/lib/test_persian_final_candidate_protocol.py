@@ -11,7 +11,7 @@ from lib.checkpoint import (
     init_project,
     write_checkpoint,
 )
-from lib.persian_preflight import NoCopyPersianCompose, extract_edit_decisions, summarize
+from lib.persian_preflight import (NoCopyPersianCompose, extract_edit_decisions, preflight_edit_decisions, summarize)
 from schemas.artifacts import validate_artifact
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -222,6 +222,26 @@ def test_no_copy_stage_and_helpers(tmp_path):
         "x": .1, "y": .2, "w": .3, "h": .4,
     }
     assert result["moments"][0]["geometry"]["placement"] == "upper-left"
+
+
+def test_preflight_refuses_a_weak_single_event_opening_before_render_work():
+    payload = {
+        "persian": {
+            "durationSeconds": 12.0,
+            "shots": [{"id": "s1", "startSeconds": 0.0, "endSeconds": 12.0}],
+            "moments": [],
+            "typographicBeats": [],
+        }
+    }
+    with pytest.raises(ValueError, match="first 3 seconds"):
+        preflight_edit_decisions(payload)
+
+
+def test_summary_can_carry_retention_audit_without_media_copies():
+    retention = {"problems": [], "first3Seconds": {"eventCount": 2}}
+    result = summarize({"moments": [], "watermarkPlan": []}, [], retention)
+    assert result["retentionAudit"] is retention
+    assert result["mediaCopies"] == 0
 
 
 def test_protocol_is_required_and_bounded():

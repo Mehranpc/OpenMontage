@@ -569,6 +569,7 @@ is later in the array, which is not a decision you want made by array order.
   "id": "shot-1",
   "semanticBeatId": "beat-1",
   "visualEventId": "beat-1-event-1",
+  "transitionIn": "cut",
   "source": "assets/clips/pexels_1234567.mp4",
   "startSeconds": 0.0,
   "endSeconds": 5.0,
@@ -581,6 +582,13 @@ is later in the array, which is not a decision you want made by array order.
 `sourceInSeconds` picks the in-point inside the clip. Choose it by looking: stock
 clips frequently open on a fade, a slate, or a half-second of the wrong framing.
 Starting at 0 is a default, not a decision.
+
+`transitionIn` is explicit edit grammar, not decoration. New Persian/Reels edits use
+`"cut"` as the default and current executable value. Do not write `dissolve` merely
+because the editorial spec permits a motivated dissolve: the present Persian Remotion
+renderer does not crossfade shots yet, and a schema-valid fiction is worse than a
+missing feature. When real dissolve rendering lands, it must carry a reason and the
+retention audit must refuse repeated consecutive dissolves.
 
 `attribution` is required — `persian_compose` refuses to render a shot without one.
 

@@ -100,6 +100,18 @@ def _build(persian: dict, staging: Path) -> tuple[dict, list[str]]:
     return PersianCompose()._build_props(persian, staging, "run-test")
 
 
+def test_shots_state_hard_cut_grammar_by_default(clip: Path, staging: Path) -> None:
+    props, _ = _build(_persian(clip), staging)
+    assert props["shots"][0]["transitionIn"] == "cut"
+
+
+def test_explicit_hard_cut_survives_compose_boundary(clip: Path, staging: Path) -> None:
+    persian = _persian(clip)
+    persian["shots"][0]["transitionIn"] = "cut"
+    props, _ = _build(persian, staging)
+    assert props["shots"][0]["transitionIn"] == "cut"
+
+
 class TestNoKeyIsInheritable:
     @pytest.mark.parametrize("key", PAINTING_KEYS)
     def test_every_painting_key_is_stated_even_when_unused(

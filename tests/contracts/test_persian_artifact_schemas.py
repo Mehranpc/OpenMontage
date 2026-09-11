@@ -204,6 +204,19 @@ def test_a_complete_persian_edit_decision_validates() -> None:
     assert not problems, problems
 
 
+def test_persian_shot_can_state_the_executable_hard_cut() -> None:
+    persian = _minimal_persian_block()
+    persian["shots"][0]["transitionIn"] = "cut"
+    assert not _errors("edit_decisions", _edit_decisions(persian))
+
+
+def test_persian_shot_cannot_claim_an_unimplemented_dissolve() -> None:
+    persian = _minimal_persian_block()
+    persian["shots"][0]["transitionIn"] = "dissolve"
+    problems = _errors("edit_decisions", _edit_decisions(persian))
+    assert any("dissolve" in problem for problem in problems), problems
+
+
 @pytest.mark.parametrize("kind", ["figure", "term", "statement", "hook"])
 def test_every_moment_kind_validates(kind: str) -> None:
     """All four kinds are declared, not just the one the last render happened to use.
@@ -502,6 +515,36 @@ def test_a_persian_render_report_validates() -> None:
         "music_mixed": False,
         "render_time_seconds": 412.0,
         "warnings": [],
+    }
+    problems = _errors("render_report", report)
+    assert not problems, problems
+
+
+def test_render_report_can_carry_retention_and_silent_watch_evidence() -> None:
+    report = {
+        "version": "1.0",
+        "outputs": [{
+            "path": "a.mp4", "format": "mp4", "resolution": "1080x1920",
+            "duration_seconds": 12.0,
+        }],
+        "retention_audit": {
+            "problems": [], "advisories": [],
+            "first3Seconds": {"eventCount": 2, "events": []},
+            "averageVisualEventSeconds": 3.0,
+            "longestVisualEvent": {"id": "s2", "seconds": 4.0},
+            "meaningfulChangesPer15Seconds": [], "weakEmptyIntervals": [],
+            "textOnlySeconds": 0.0, "endingTextOnlySeconds": 0.0,
+            "cutGrammar": {"transitions": ["cut"], "nonCutCount": 0},
+            "judgementRequired": ["silent_watch_main_point"],
+        },
+        "silent_watch_audit": {
+            "main_point_understood": True, "hook_direction_understood": True,
+            "conclusion_understood": True, "notes": [],
+        },
+        "cut_rhythm": "Hard cuts feel intentional; no repeated dissolve grammar.",
+        "caption_readability": "Sidecar captions are readable when enabled.",
+        "strongest_scene": "opening", "weakest_scene": "middle exposition",
+        "hook_strength": "strong", "resolution_strength": "acceptable",
     }
     problems = _errors("render_report", report)
     assert not problems, problems

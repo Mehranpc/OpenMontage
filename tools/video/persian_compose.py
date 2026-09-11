@@ -558,6 +558,7 @@ class PersianCompose(BaseTool):
                     "id": str(shot.get("id") or f"shot-{index + 1}"),
                     **({"semanticBeatId": str(shot["semanticBeatId"])} if shot.get("semanticBeatId") else {}),
                     **({"visualEventId": str(shot["visualEventId"])} if shot.get("visualEventId") else {}),
+                    "transitionIn": str(shot.get("transitionIn") or "cut"),
                     "source": staged,
                     "startSeconds": float(shot["startSeconds"]),
                     "endSeconds": float(shot["endSeconds"]),

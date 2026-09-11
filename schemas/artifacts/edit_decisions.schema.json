@@ -545,7 +545,16 @@
                   "minLength": 1
                 },
                 "profileVersion": {
-                  "enum": ["2.1.0", "2.2.0", "2.3.0", "2.4.0", "2.5.0", "2.6.0", "2.7.0", "2.8.0"]
+                  "enum": [
+                    "2.1.0",
+                    "2.2.0",
+                    "2.3.0",
+                    "2.4.0",
+                    "2.5.0",
+                    "2.6.0",
+                    "2.7.0",
+                    "2.8.0"
+                  ]
                 },
                 "contentHash": {
                   "type": "string",
@@ -625,6 +634,14 @@
               "visualEventId": {
                 "type": "string",
                 "description": "Shot-level visual event inside semanticBeatId. New Persian plans use this to preserve semantic beat != visual event through compose."
+              },
+              "transitionIn": {
+                "type": "string",
+                "enum": [
+                  "cut"
+                ],
+                "default": "cut",
+                "description": "Executable transition entering this Persian shot. The current renderer supports hard cuts only; do not claim dissolve until a real crossfade implementation exists."
               },
               "source": {
                 "type": "string",

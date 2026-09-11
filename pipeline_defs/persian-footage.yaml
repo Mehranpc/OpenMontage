@@ -269,6 +269,8 @@ stages:
       - "In narrated mode: audio.wordTimings is present so persian_compose writes the sidecar SRT"
       - Watermark text is present
       - "Every typographic beat carries typography across its whole window: the plate window is derived from the type span, a beat with no type fails compose, and a beat second with no type on screen is dead screen, not coverage"
+      - "RETENTION PREFLIGHT: lib.persian_retention.audit_persian_retention reports no problems. The first 3s contain a second visual event or typographic pattern interrupt; timeline coverage has no empty interval; long >8s visual events and >2s text-only endings are surfaced as retention-risk advisories rather than hidden."
+      - "CUT GRAMMAR: every new Persian shot states transitionIn: cut. Hard cuts are the current executable default; do not claim a dissolve until the Persian renderer implements a real crossfade."
     success_criteria:
       - Schema-valid edit_decisions artifact
       - edit_decisions.persian.moments[] present and audit-clean
@@ -277,6 +279,7 @@ stages:
       - "In narrated mode: audit_sync reports no problems and every moment carries anchorText"
       - "In narrated mode: musicTrack with a complete licence record, or omitMusicReason"
       - Timeline duration within 10% of brief.metadata.target_duration_seconds
+      - "Retention preflight reports no blocking problems and its metrics/advisories are retained for final review"
 
   - name: compose
     skill: pipelines/persian-footage/compose-director
@@ -314,6 +317,7 @@ stages:
       - "Music ducking is measured from the decoded audio, not inferred from the presence of a stream. The duck follows the NARRATION, so sample a speaking window against a silent one — a moment's timing says nothing about either."
       - "In narrated mode: the sidecar SRT exists beside the MP4, and its readability advisories are reported rather than suppressed. An over-speed subtitle is a property of how fast the narrator spoke; the honest remedy is a shorter script, not a blocked delivery."
       - Attribution for every clip is recorded in the render report
+      - "Final non-human review records retention_audit, silent_watch_audit, cut_rhythm, caption_readability, strongest_scene, weakest_scene, hook_strength, and resolution_strength; muted comprehension is judged by watching muted, never inferred from metadata."
       - Output duration matches the planned duration within 1 second
     success_criteria:
       - Schema-valid render_report artifact
@@ -324,4 +328,5 @@ stages:
       - render_report.moment_count and render_report.text_coverage are recorded
       - "In narrated mode: render_report.subtitle_path points at an existing SRT"
       - render_report.attributions[] covers every clip used
+      - "render_report.retention_audit.problems is empty and the report carries silent-watch, cut-rhythm, caption-readability, strongest/weakest-scene, hook-strength, and resolution-strength evidence before awaiting_human"
       - "Post-render luminance gate holds: no contiguous run of >= 1.0s averages below YAVG 22; runs below 30 are warnings, not failures"

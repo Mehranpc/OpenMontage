@@ -2,7 +2,9 @@
 
 Use this capability only when code reports `final_review` or `awaiting_human`.
 
-Read `skills/pipelines/persian-footage/compose-director.md` and `final-candidate-protocol.md`. Run the canonical media, Persian text, layout/crop, audio, subtitle, and provenance checks against the one current-project candidate. Record measured evidence in the normal `render_report`/review artifacts; do not replace those contracts with prose in workflow state.
+Read `skills/pipelines/persian-footage/compose-director.md` and `final-candidate-protocol.md`. Run the canonical media, Persian text, layout/crop, audio, subtitle, provenance, and retention checks against the one current-project candidate. Record measured evidence in the normal `render_report`/review artifacts; do not replace those contracts with prose in workflow state.
+
+The final non-human review must record `retention_audit`, `silent_watch_audit`, `cut_rhythm`, `caption_readability`, `strongest_scene`, `weakest_scene`, `hook_strength`, and `resolution_strength`. Watch the candidate muted for the silent-watch fields; do not infer comprehension from subtitle presence or timeline metadata. `retention_audit.problems` must be empty before the candidate can advance.
 
 The compose checkpoint must be written as `awaiting_human`, never self-approved. Its primary output must be an MP4 inside this project's directory with a 64-character SHA-256 matching the exact file bytes, `delivery_status="final_candidate"`, `human_visual_approval=false`, and `persian_text_verified=false`.
 

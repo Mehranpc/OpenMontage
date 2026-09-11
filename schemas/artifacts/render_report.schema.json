@@ -4,54 +4,105 @@
   "title": "Render Report",
   "description": "Output report produced by the Composer agent after rendering.",
   "type": "object",
-  "required": ["version", "outputs"],
+  "required": [
+    "version",
+    "outputs"
+  ],
   "properties": {
-    "version": { "type": "string", "const": "1.0" },
+    "version": {
+      "type": "string",
+      "const": "1.0"
+    },
     "outputs": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["path", "format", "resolution", "duration_seconds"],
+        "required": [
+          "path",
+          "format",
+          "resolution",
+          "duration_seconds"
+        ],
         "properties": {
-          "path": { "type": "string" },
-          "format": { "type": "string" },
-          "codec": { "type": "string" },
-          "audio_codec": { "type": "string" },
-          "resolution": { "type": "string" },
-          "fps": { "type": "number" },
-          "duration_seconds": { "type": "number", "minimum": 0 },
-          "file_size_bytes": { "type": "integer" },
+          "path": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "codec": {
+            "type": "string"
+          },
+          "audio_codec": {
+            "type": "string"
+          },
+          "resolution": {
+            "type": "string"
+          },
+          "fps": {
+            "type": "number"
+          },
+          "duration_seconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "file_size_bytes": {
+            "type": "integer"
+          },
           "sha256": {
             "type": "string",
             "pattern": "^[0-9a-fA-F]{64}$",
             "description": "Digest of the exact rendered bytes; Persian checkpoint writes recompute and verify it."
           },
-          "platform_target": { "type": "string" }
+          "platform_target": {
+            "type": "string"
+          }
         },
         "additionalProperties": false
       },
       "minItems": 1
     },
-    "render_time_seconds": { "type": "number", "minimum": 0 },
+    "render_time_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
     "warnings": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "verification_notes": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "render_grammar": {
       "type": "string",
       "description": "Which renderer family was used for this render",
-      "enum": ["explainer-data", "explainer-teacher", "cinematic-trailer", "documentary-montage", "product-reveal", "screen-demo", "presenter", "animation-first", "persian-footage"]
+      "enum": [
+        "explainer-data",
+        "explainer-teacher",
+        "cinematic-trailer",
+        "documentary-montage",
+        "product-reveal",
+        "screen-demo",
+        "presenter",
+        "animation-first",
+        "persian-footage"
+      ]
     },
     "slideshow_risk_score": {
       "type": "object",
       "description": "Final slideshow risk assessment",
       "properties": {
-        "average": { "type": "number" },
-        "verdict": { "type": "string" }
+        "average": {
+          "type": "number"
+        },
+        "verdict": {
+          "type": "string"
+        }
       }
     },
     "decision_log_ref": {
@@ -72,7 +123,11 @@
     },
     "format": {
       "type": "string",
-      "enum": ["vertical", "landscape", "square"],
+      "enum": [
+        "vertical",
+        "landscape",
+        "square"
+      ],
       "description": "Frame orientation of the render, for cross-checking against the brief."
     },
     "duration_seconds": {
@@ -80,11 +135,16 @@
       "minimum": 0,
       "description": "Measured output duration, from ffprobe rather than from the plan."
     },
-    "shot_count": { "type": "integer", "minimum": 0 },
+    "shot_count": {
+      "type": "integer",
+      "minimum": 0
+    },
     "attributions": {
       "type": "array",
       "description": "Credit line per clip used. Both Pexels and Pixabay require attribution, so a render whose attributions do not cover every clip has shipped a licence violation.",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "moment_count": {
       "type": "integer",
@@ -104,11 +164,17 @@
     "subtitle_advisories": {
       "type": "array",
       "description": "Readability notes on the sidecar subtitles. Advisories rather than failures on purpose: an over-speed cue is a property of how fast the narrator spoke, and the honest remedy is a shorter script, not a blocked delivery.",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "delivery_status": {
       "type": "string",
-      "enum": ["final_candidate", "approved", "rejected"],
+      "enum": [
+        "final_candidate",
+        "approved",
+        "rejected"
+      ],
       "description": "Lifecycle of a rendered candidate; final_candidate awaits the user’s one post-render review."
     },
     "human_visual_approval": {
@@ -122,10 +188,145 @@
     "verification_frames": {
       "type": "array",
       "description": "Extracted frames the numeric verification was run against, so the measurements can be re-run or disputed.",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
-    "music_mixed": { "type": "boolean" },
-    "metadata": { "type": "object" }
+    "music_mixed": {
+      "type": "boolean"
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "retention_audit": {
+      "type": "object",
+      "description": "Timeline-derived Persian short-form retention audit from lib.persian_retention. Stores measurable cadence facts; semantic judgements remain separate.",
+      "properties": {
+        "problems": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "advisories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "first3Seconds": {
+          "type": "object"
+        },
+        "averageVisualEventSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "longestVisualEvent": {
+          "type": "object"
+        },
+        "meaningfulChangesPer15Seconds": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "weakEmptyIntervals": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "textOnlySeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "endingTextOnlySeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cutGrammar": {
+          "type": "object"
+        },
+        "judgementRequired": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "problems",
+        "advisories",
+        "first3Seconds",
+        "averageVisualEventSeconds",
+        "longestVisualEvent",
+        "meaningfulChangesPer15Seconds",
+        "weakEmptyIntervals",
+        "textOnlySeconds",
+        "endingTextOnlySeconds",
+        "cutGrammar",
+        "judgementRequired"
+      ],
+      "additionalProperties": false
+    },
+    "silent_watch_audit": {
+      "type": "object",
+      "description": "Muted-viewer review performed on the rendered candidate. This is a judgement, not inferred from timeline metrics.",
+      "properties": {
+        "main_point_understood": {
+          "type": "boolean"
+        },
+        "hook_direction_understood": {
+          "type": "boolean"
+        },
+        "conclusion_understood": {
+          "type": "boolean"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "main_point_understood",
+        "hook_direction_understood",
+        "conclusion_understood",
+        "notes"
+      ],
+      "additionalProperties": false
+    },
+    "cut_rhythm": {
+      "type": "string",
+      "description": "Final-review judgement of cut rhythm after watching the rendered candidate."
+    },
+    "caption_readability": {
+      "type": "string",
+      "description": "Final-review judgement of caption/subtitle readability and competition with typographic moments."
+    },
+    "strongest_scene": {
+      "type": "string"
+    },
+    "weakest_scene": {
+      "type": "string"
+    },
+    "hook_strength": {
+      "type": "string",
+      "enum": [
+        "weak",
+        "acceptable",
+        "strong"
+      ]
+    },
+    "resolution_strength": {
+      "type": "string",
+      "enum": [
+        "weak",
+        "acceptable",
+        "strong"
+      ]
+    }
   },
   "additionalProperties": false
 }

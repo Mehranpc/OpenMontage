@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 from typing import Any
 from tools.video.persian_compose import PersianCompose
+from lib.persian_retention import audit_persian_retention
 
 
 class NoCopyPersianCompose(PersianCompose):
@@ -33,7 +34,11 @@ def extract_edit_decisions(payload: dict[str, Any]) -> dict[str, Any]:
     raise ValueError("Expected a checkpoint, edit_decisions artifact, or raw Persian block")
 
 
-def summarize(props: dict[str, Any], attributions: list[str]) -> dict[str, Any]:
+def summarize(
+    props: dict[str, Any],
+    attributions: list[str],
+    retention_audit: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     design = props.get("design") or {}
     moments = []
     for moment in props.get("moments", []):
@@ -66,16 +71,22 @@ def summarize(props: dict[str, Any], attributions: list[str]) -> dict[str, Any]:
         "warnings": list((props.get("filmType") or {}).get("warnings") or []),
         "attributions": list(attributions),
         "mediaCopies": 0,
+        **({"retentionAudit": retention_audit} if retention_audit is not None else {}),
     }
 
 
 def preflight_edit_decisions(payload: dict[str, Any]) -> dict[str, Any]:
     edit = extract_edit_decisions(payload)
+    retention = audit_persian_retention(edit["persian"])
+    if retention["problems"]:
+        raise ValueError(
+            "Persian retention preflight refused:\n- " + "\n- ".join(retention["problems"])
+        )
     with tempfile.TemporaryDirectory(prefix="persian-preflight-") as temp:
         props, attributions = NoCopyPersianCompose()._build_props(
             edit["persian"], Path(temp), "preflight"
         )
-    return summarize(props, attributions)
+    return summarize(props, attributions, retention)
 
 
 def main(argv=None) -> int:

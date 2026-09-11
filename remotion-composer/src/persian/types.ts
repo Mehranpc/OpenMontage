@@ -205,6 +205,8 @@ export interface PersianShot {
   readonly semanticBeatId?: string;
   /** Shot-level visual event within the semantic beat. */
   readonly visualEventId?: string;
+  /** Executable edit grammar. Persian currently renders hard cuts only. */
+  readonly transitionIn?: "cut";
   /** Path relative to the composition's public dir. */
   readonly source: string;
   /** Timeline position, seconds. */
