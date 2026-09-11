@@ -204,6 +204,26 @@ def test_a_complete_persian_edit_decision_validates() -> None:
     assert not problems, problems
 
 
+def test_persian_platform_target_accepts_instagram_reels() -> None:
+    persian = _minimal_persian_block()
+    persian["platformTarget"] = "instagram-reels"
+    assert not _errors("edit_decisions", _edit_decisions(persian))
+
+
+def test_persian_caption_mode_is_schema_declared() -> None:
+    for mode in ("sidecar_only", "burned_captions", "hybrid"):
+        persian = _minimal_persian_block()
+        persian["captionMode"] = mode
+        assert not _errors("edit_decisions", _edit_decisions(persian))
+
+
+def test_unknown_persian_caption_mode_is_rejected() -> None:
+    persian = _minimal_persian_block()
+    persian["captionMode"] = "karaoke"
+    problems = _errors("edit_decisions", _edit_decisions(persian))
+    assert any("karaoke" in problem for problem in problems), problems
+
+
 def test_persian_shot_can_state_the_executable_hard_cut() -> None:
     persian = _minimal_persian_block()
     persian["shots"][0]["transitionIn"] = "cut"

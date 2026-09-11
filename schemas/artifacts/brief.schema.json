@@ -21,7 +21,7 @@
     "target_audience": { "type": "string" },
     "target_platform": {
       "type": "string",
-      "enum": ["youtube", "instagram", "tiktok", "linkedin", "generic"]
+      "enum": ["youtube", "instagram", "instagram-reels", "tiktok", "linkedin", "generic"]
     },
     "target_duration_seconds": { "type": "number", "minimum": 1 },
     "reference_material": {

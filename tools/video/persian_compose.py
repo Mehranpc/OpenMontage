@@ -72,6 +72,11 @@ from lib.persian_render_qa import (
 )
 from lib.persian_music import audit_music, audio_props_with_music, build_music_track
 from lib.persian_srt import audit_cues, build_cues, render_srt
+from lib.persian_captions import (
+    BURNED_CAPTION_MODES,
+    caption_band_rect,
+    resolve_caption_mode,
+)
 from lib.persian_sync import TimedWord, audit_sync
 from tools.base_tool import (
     BaseTool,
@@ -197,6 +202,8 @@ class PersianCompose(BaseTool):
             "text_coverage": {"type": "number"},
             "subtitle_path": {"type": "string"},
             "subtitle_advisories": {"type": "array"},
+            "caption_mode": {"type": "string"},
+            "burned_caption_count": {"type": "integer"},
             "attributions": {"type": "array"},
             "persian_text_verified": {"type": "boolean"},
         },
@@ -223,6 +230,7 @@ class PersianCompose(BaseTool):
         "Extract a frame and confirm Persian text renders right-to-left with no empty boxes",
         "Confirm every line of every moment shares one right edge",
         "Confirm the footage is visible with nothing over it between moments",
+        "In burned/hybrid mode, confirm captions stay inside the safe area, use at most two lines, and yield to moments",
         "Confirm the watermark is legible and reaches its resting corner",
     ]
 
@@ -470,6 +478,8 @@ class PersianCompose(BaseTool):
                     "text_coverage": round(covered / props["durationSeconds"], 4),
                     "subtitle_path": subtitle_path,
                     "subtitle_advisories": subtitle_advisories,
+                    "caption_mode": str(props.get("captionMode") or "sidecar_only"),
+                    "burned_caption_count": len(props.get("captions") or []),
                     "attributions": attributions,
                     "persian_text_verified": False,  # Set by the reviewer, not here.
                     "luminance_qa": qa.to_dict(),
@@ -487,6 +497,21 @@ class PersianCompose(BaseTool):
             # Props and digest are permanent render provenance artifacts.
             pass
 
+    def _build_caption_props(
+        self, persian: dict[str, Any]
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """Return runtime caption mode/props before any browser layout prepass.
+
+        The registered script-aligned subclass overrides this hook. Keeping the hook
+        in the base class makes Film Type preparation see the exact caption track that
+        Remotion will paint, rather than an empty placeholder populated after geometry
+        was frozen.
+        """
+        mode = resolve_caption_mode(
+            persian.get("captionMode"), platform_target=persian.get("platformTarget")
+        )
+        return mode, []
+
     def _build_props(
         self,
         persian: dict[str, Any],
@@ -501,6 +526,7 @@ class PersianCompose(BaseTool):
                 black beat that nobody notices until review costs a whole render.
             ValueError: when required timing data is missing.
         """
+        caption_mode, captions = self._build_caption_props(persian)
         watermark = resolve_watermark(persian.get("watermark"))
         staging_dir.mkdir(parents=True, exist_ok=True)
         attributions: list[str] = []
@@ -662,6 +688,12 @@ class PersianCompose(BaseTool):
             # The windows are derived from the moments' spans (see
             # `_derive_beat_windows`); the authored numbers are never trusted.
             "typographicBeats": typographic_beats,
+            # Runtime caption props are always explicit because Remotion shallow-merges
+            # caller props over defaultProps. The registered subclass builds approved
+            # caption lines before this point, so the browser prepass validates the exact
+            # track that the render will paint.
+            "captionMode": caption_mode,
+            "captions": captions,
         }
         if design_snapshot is not None:
             props["design"] = design_snapshot
@@ -708,6 +740,19 @@ class PersianCompose(BaseTool):
                 text_rects.append({"x": max(0, x), "y": max(0, y), "w": w, "h": h,
                                    "startSeconds": float(moment.get("startSeconds", 0)),
                                    "endSeconds": float(moment.get("endSeconds", duration_seconds))})
+            if caption_mode in BURNED_CAPTION_MODES:
+                safe_cfg = (
+                    design_snapshot.get("resolved", {})
+                    .get("formats", {})
+                    .get(props["format"], {})
+                    .get("safeArea", {})
+                )
+                text_rects.append(
+                    caption_band_rect(
+                        props["format"], safe_area=safe_cfg,
+                        start_seconds=0.0, end_seconds=duration_seconds,
+                    )
+                )
             avoid_regions = [r for shot in shots for r in (shot.get("avoidRegions") or [])]
             if lockup_measurement is None:
                 raise ValueError("V2 watermark requires loaded-font lockup measurement")

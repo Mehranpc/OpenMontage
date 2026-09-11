@@ -241,6 +241,19 @@ export interface PersianTypographicBeat {
   readonly endSeconds: number;
 }
 
+
+export type PersianCaptionMode = "sidecar_only" | "burned_captions" | "hybrid";
+
+export interface PersianCaption {
+  readonly id: string;
+  /** Approved-script text; ASR wording is never allowed here. */
+  readonly text: string;
+  /** One or two pre-broken lines; the renderer never invents a third line. */
+  readonly lines: readonly string[];
+  readonly startSeconds: number;
+  readonly endSeconds: number;
+}
+
 export interface PersianAudio {
   /** Narration path relative to the public dir, if any. */
   readonly narration?: string;
@@ -308,6 +321,9 @@ export type PersianVideoProps = {
   readonly shots: readonly PersianShot[];
   readonly moments: readonly PersianMoment[];
   readonly typographicBeats?: readonly PersianTypographicBeat[];
+  /** Delivery policy. Burned/hybrid captions are runtime-derived from approved copy. */
+  readonly captionMode: PersianCaptionMode;
+  readonly captions: readonly PersianCaption[];
   readonly audio?: PersianAudio;
   readonly watermark?: PersianWatermark;
   readonly watermarkPlan?: readonly { zone: string; startSeconds: number; endSeconds: number; rect: { x: number; y: number; w: number; h: number }; transition: string; reason?: string; }[];

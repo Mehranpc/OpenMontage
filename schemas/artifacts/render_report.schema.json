@@ -168,6 +168,20 @@
         "type": "string"
       }
     },
+    "caption_mode": {
+      "type": "string",
+      "enum": [
+        "sidecar_only",
+        "burned_captions",
+        "hybrid"
+      ],
+      "description": "Caption surface actually used by the Persian candidate."
+    },
+    "burned_caption_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Runtime-derived approved-script caption cues painted into the MP4. Zero for sidecar_only."
+    },
     "delivery_status": {
       "type": "string",
       "enum": [

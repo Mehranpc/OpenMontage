@@ -5,11 +5,11 @@ import json
 from pathlib import Path
 import tempfile
 from typing import Any
-from tools.video.persian_compose import PersianCompose
+from tools.video.persian_compose_script_aligned import ScriptAlignedPersianCompose
 from lib.persian_retention import audit_persian_retention
 
 
-class NoCopyPersianCompose(PersianCompose):
+class NoCopyPersianCompose(ScriptAlignedPersianCompose):
     @staticmethod
     def _stage(source: str | Path, staging: Path, name: str) -> str:
         del staging, name
@@ -67,6 +67,8 @@ def summarize(
         "contentHash": design.get("contentHash"),
         "durationSeconds": props.get("durationSeconds"),
         "moments": moments,
+        "captionMode": props.get("captionMode", "sidecar_only"),
+        "burnedCaptionCount": len(props.get("captions") or []),
         "watermarkPlanEntries": len(props.get("watermarkPlan") or []),
         "warnings": list((props.get("filmType") or {}).get("warnings") or []),
         "attributions": list(attributions),
@@ -82,9 +84,12 @@ def preflight_edit_decisions(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(
             "Persian retention preflight refused:\n- " + "\n- ".join(retention["problems"])
         )
+    runtime_persian = NoCopyPersianCompose._runtime_persian(edit)
+    if runtime_persian is None:
+        raise ValueError("Expected edit_decisions.persian for Persian preflight")
     with tempfile.TemporaryDirectory(prefix="persian-preflight-") as temp:
         props, attributions = NoCopyPersianCompose()._build_props(
-            edit["persian"], Path(temp), "preflight"
+            runtime_persian, Path(temp), "preflight"
         )
     return summarize(props, attributions, retention)
 

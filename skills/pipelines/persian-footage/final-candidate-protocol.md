@@ -73,7 +73,7 @@ requested.
 
 Present the complete MP4 and its sha256 plus entry/stable/exit frames for every
 moment, both sides of crossed cuts, warnings for geometry/contrast/watermark/luminance/
-subtitles, and an optional separate debug sheet with region boxes. The non-human review
+captions/subtitles (including burned-caption entry/mid/exit samples when enabled), and an optional separate debug sheet with region boxes. The non-human review
 package also carries the measured retention audit plus muted-viewer comprehension, cut
 rhythm, caption readability, strongest scene, weakest scene, hook strength, and resolution
 strength. Timeline code measures cadence; the reviewer states semantic judgements instead

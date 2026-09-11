@@ -1,4 +1,5 @@
 import { diffuseRadii, diffuseAt } from "./diffuse27";
+import { assertCaptionsFit, captionBandRect } from "../captionLayout";
 /** Opt-in Film Type: full shaped runs, real ink baselines, one frozen layout.
  * No imports from the Legacy fitter: its sizing, word spans and silhouette are
  * deliberately unchanged. The same browser measurement feeds paint and planning.
@@ -515,6 +516,9 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
   };
   if (regionAvoid.length) order.sort((a,b)=>regionBlockedSeconds(a)-regionBlockedSeconds(b));
   const textRects: TimedRect[]=props.moments.map(m=>({...layouts[m.id].rect,h:layouts[m.id].rect.h+l.motionClearancePx/dims.height,startSeconds:m.startSeconds,endSeconds:m.endSeconds}));
+  if(props.captionMode === "burned_captions" || props.captionMode === "hybrid") {
+    textRects.push({...captionBandRect(props.format, props.design),startSeconds:0,endSeconds:props.durationSeconds});
+  }
   const blockers:string[]=[];
   const visualClearancePx=p.profileVersion==="2.12.0"
     ? Math.max(cfg.minTextClearancePx??0,lockup.heightPx)
@@ -582,6 +586,7 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
 export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<PersianVideoProps> {
   if (!isFilmType(props.design)) return props;
   await estedadReady;
+  assertCaptionsFit(props.format, props.captions ?? [], props.durationSeconds, props.design);
   const profile=filmProfile(props.design!);
   const expectedHash = {
     "2.1.0":"c56aac71643bdeff4c27b75fa1ef1bb4e2997a3216a886d61dac78c3a021af0c",
@@ -610,7 +615,7 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
     }
   }
   await document.fonts.load(`${profile.watermark.latinWeight} ${profile.watermark.latinFontPx}px "${profile.watermark.latinFontFamily}"`, "Pathway");
-  const input={format:props.format,durationSeconds:props.durationSeconds,design:props.design,shots:props.shots,
+  const input={format:props.format,durationSeconds:props.durationSeconds,captionMode:props.captionMode,design:props.design,shots:props.shots,
     moments:props.moments.map(m=>({id:m.id,kind:m.kind,startSeconds:m.startSeconds,endSeconds:m.endSeconds,segments:m.segments,presentation:m.presentation,exactText:m.exactText})),
     watermark:props.watermark??DEFAULT_WATERMARK};
   const inputHash=await sha256(input);

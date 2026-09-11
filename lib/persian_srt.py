@@ -145,7 +145,13 @@ def _terminator_rank(word: str) -> int:
     return 0
 
 
-def _fits(words: list[TimedWord], extra: TimedWord) -> bool:
+def _fits(
+    words: list[TimedWord],
+    extra: TimedWord,
+    *,
+    max_visible_chars: int = MAX_CUE_VISIBLE_CHARS,
+    max_seconds: float = MAX_CUE_SECONDS,
+) -> bool:
     """Whether `extra` can join `words` without breaking an actionable limit.
 
     Only the two limits that **grouping can actually influence** are checked here:
@@ -170,9 +176,9 @@ def _fits(words: list[TimedWord], extra: TimedWord) -> bool:
     text = " ".join(w.text for w in candidate)
     duration = candidate[-1].end - candidate[0].start
 
-    if duration > MAX_CUE_SECONDS:
+    if duration > max_seconds:
         return False
-    if visible_length(text) > MAX_CUE_VISIBLE_CHARS:
+    if visible_length(text) > max_visible_chars:
         return False
     return True
 
@@ -182,6 +188,8 @@ def build_cues(
     *,
     persian_digits: bool = True,
     id_prefix: str = "cue",
+    max_visible_chars: int = MAX_CUE_VISIBLE_CHARS,
+    max_seconds: float = MAX_CUE_SECONDS,
 ) -> list[PersianCue]:
     """Group timed words into readable Persian cues.
 
@@ -193,6 +201,9 @@ def build_cues(
             On by default: a Persian caption showing Western digits looks unfinished,
             and the conversion is safe because only digit glyphs are substituted.
         id_prefix: Prefix for generated cue IDs.
+        max_visible_chars: Grouping ceiling. Burned captions may lower this while
+            sidecar SRT keeps the repository default.
+        max_seconds: Maximum cue extent; defaults to the SRT policy.
 
     Returns:
         Cues in timeline order. Never overlapping, never shorter than
@@ -224,8 +235,12 @@ def build_cues(
     if not parsed:
         return []
 
-    groups = _group_words(parsed)
-    groups = _merge_short_groups(groups)
+    groups = _group_words(
+        parsed, max_visible_chars=max_visible_chars, max_seconds=max_seconds
+    )
+    groups = _merge_short_groups(
+        groups, max_visible_chars=max_visible_chars, max_seconds=max_seconds
+    )
 
     cues: list[PersianCue] = []
     for index, group in enumerate(groups):
@@ -247,7 +262,12 @@ def build_cues(
     return cues
 
 
-def _group_words(words: list[TimedWord]) -> list[list[TimedWord]]:
+def _group_words(
+    words: list[TimedWord],
+    *,
+    max_visible_chars: int = MAX_CUE_VISIBLE_CHARS,
+    max_seconds: float = MAX_CUE_SECONDS,
+) -> list[list[TimedWord]]:
     """Greedily accumulate words, breaking at the best boundary in budget.
 
     Greedy rather than a global optimization, because cue boundaries have to
@@ -262,7 +282,9 @@ def _group_words(words: list[TimedWord]) -> list[list[TimedWord]]:
     best_rank = 0
 
     for word in words:
-        if current and not _fits(current, word):
+        if current and not _fits(
+            current, word, max_visible_chars=max_visible_chars, max_seconds=max_seconds
+        ):
             # Over budget. Break at the strongest clause boundary found, or at the
             # last word if the whole span has no punctuation at all.
             if best_break is not None and best_break < len(current) - 1:
@@ -303,7 +325,12 @@ def _group_words(words: list[TimedWord]) -> list[list[TimedWord]]:
     return groups
 
 
-def _merge_short_groups(groups: list[list[TimedWord]]) -> list[list[TimedWord]]:
+def _merge_short_groups(
+    groups: list[list[TimedWord]],
+    *,
+    max_visible_chars: int = MAX_CUE_VISIBLE_CHARS,
+    max_seconds: float = MAX_CUE_SECONDS,
+) -> list[list[TimedWord]]:
     """Fold away cues too brief to read, when the merge still fits the budget.
 
     A sub-second cue is a flash. Merging forward is preferred (the following cue
@@ -330,8 +357,8 @@ def _merge_short_groups(groups: list[list[TimedWord]]) -> list[list[TimedWord]]:
         combined_duration = combined[-1].end - combined[0].start
 
         if (
-            visible_length(text) <= MAX_CUE_VISIBLE_CHARS
-            and combined_duration <= MAX_CUE_SECONDS
+            visible_length(text) <= max_visible_chars
+            and combined_duration <= max_seconds
         ):
             merged.append(combined)
             index += 2
@@ -347,7 +374,11 @@ def _merge_short_groups(groups: list[list[TimedWord]]) -> list[list[TimedWord]]:
         if (last[-1].end - last[0].start) < MIN_CUE_SECONDS:
             combined = merged[-2] + last
             text = " ".join(w.text for w in combined)
-            if visible_length(text) <= MAX_CUE_VISIBLE_CHARS:
+            combined_duration = combined[-1].end - combined[0].start
+            if (
+                visible_length(text) <= max_visible_chars
+                and combined_duration <= max_seconds
+            ):
                 merged = merged[:-2] + [combined]
 
     return merged

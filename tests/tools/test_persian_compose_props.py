@@ -33,7 +33,7 @@ from tools.video.persian_compose import PersianCompose
 
 #: Keys that paint something and therefore must never be inheritable. A key here that
 #: the tool omits gets whatever the composition's `defaultProps` says.
-PAINTING_KEYS = ("shots", "moments", "typographicBeats")
+PAINTING_KEYS = ("shots", "moments", "typographicBeats", "captions")
 
 #: Keys from the retired caption/hook design. Present in edit decisions means the edit
 #: stage was not updated, which must fail loudly rather than render without text.

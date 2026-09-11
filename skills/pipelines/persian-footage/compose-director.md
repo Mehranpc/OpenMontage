@@ -150,10 +150,15 @@ Defaults worth knowing:
   half-scale render validates layout honestly, and `lib/persian_verify.py` scales every
   geometric check with the frame. Ship at 1.0.
 
-It also writes a sidecar `.srt` beside the MP4 when `audio.wordTimings` is present, and
-returns its path plus any readability advisories. Those are advisories on purpose: an
-over-speed subtitle is a property of how fast the narrator spoke, and the honest remedy
-is a shorter script, not a blocked delivery.
+Caption output follows `persian.captionMode`, after approved-script alignment succeeds:
+`sidecar_only` writes the SRT only, `burned_captions` paints caption pixels only, and
+`hybrid` does both. Burned/hybrid caption props are generated at runtime from the same
+approved-script + ASR-clock alignment as the SRT; authored `cues[]` remain refused.
+The burned track is limited to one or two lines in the conservative platform-safe band,
+and its component returns nothing whenever an editorial moment is active. The watermark
+planner reserves that band as text geometry. Inspect actual caption frames in
+burned/hybrid mode; schema-valid props are not evidence that a phone-sized caption is
+comfortable to read.
 
 ### Iterating cheaply
 
@@ -804,6 +809,8 @@ Film Type refusal by falling back to Legacy.
   "height": 1920,
   "moment_count": 9,
   "text_coverage": 0.48,
+  "caption_mode": "hybrid",
+  "burned_caption_count": 18,
   "subtitle_path": "renders/final.srt",
   "persian_text_verified": true,
   "verification_frames": ["renders/frames/moment-01.png"],

@@ -610,6 +610,28 @@
           "exclusiveMinimum": 0,
           "description": "Authoritative total duration. calculateMetadata uses it directly rather than deriving it from the shot list."
         },
+        "platformTarget": {
+          "type": "string",
+          "enum": [
+            "youtube",
+            "instagram",
+            "instagram-reels",
+            "tiktok",
+            "linkedin",
+            "generic"
+          ],
+          "description": "Delivery surface copied from the production profile. Instagram and Instagram Reels default to hybrid captions when captionMode is omitted; new Persian productions still persist captionMode explicitly."
+        },
+        "captionMode": {
+          "type": "string",
+          "enum": [
+            "sidecar_only",
+            "burned_captions",
+            "hybrid"
+          ],
+          "default": "sidecar_only",
+          "description": "Persian caption delivery policy. New Instagram Reels productions use hybrid unless explicitly overridden; legacy artifacts omit the key and retain sidecar-only behavior. Burned caption pixels are runtime-derived from metadata.persianSubtitleScript plus audio.wordTimings and are never authored as cues[]."
+        },
         "shots": {
           "type": "array",
           "minItems": 1,
@@ -992,7 +1014,7 @@
             },
             "wordTimings": {
               "type": "array",
-              "description": "Narration word timings. persian_compose turns these into a sidecar .srt beside the MP4 — real, toggleable, indexable subtitles rather than burned-in pixels. Omitted in silent mode, where there is no speech to subtitle.",
+              "description": "Narration word timings used only as timing evidence. The registered persian_compose aligns approved script text against them; depending on captionMode the aligned copy becomes a sidecar SRT, burned captions, or both. Omitted in silent mode.",
               "items": {
                 "type": "object",
                 "required": [

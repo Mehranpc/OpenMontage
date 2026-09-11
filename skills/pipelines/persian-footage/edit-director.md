@@ -76,59 +76,52 @@ Film Type strict copy uses one ASCII space between words; leading, trailing, rep
 or line-break whitespace is rejected rather than repaired. Any drift or stale hash is
 a preflight failure.
 
-## Moments, not captions
+## Moments and captions have different jobs
 
-The composition paints an ordered list of `moments`. There is no running subtitle and
-no on-screen transcript — the narration carries the words, and the type carries what
-the ear cannot hold: a number, a term, a claim worth stopping on.
+`moments` remain selective editorial typography. They are not transcript chunks and
+keep the existing density, coverage, reading-floor, and inter-moment gap gates. A
+moment exists to stop attention on a figure, term, hook, or claim; captions exist so
+the approved narration remains understandable when sound is off. Do not turn captions
+into moments or moments into captions.
 
-This is the whole reason the pipeline exists. A Persian video whose every sentence is
-also on screen is a reels-video with different footage: the viewer reads instead of
-watching, the footage becomes wallpaper behind a text box, and the design has nothing
-to do because every frame is the same frame.
+The production profile declares `caption_mode` and edit decisions persist it as
+`persian.captionMode`:
 
-So the rule is **selective, not continuous**:
+- `sidecar_only` — approved-script SRT, no caption pixels. Kept for explicit override
+  and old checkpoints.
+- `burned_captions` — approved-script caption pixels, no SRT.
+- `hybrid` — both surfaces from the same approved-script alignment. This is the
+  code-owned default for Instagram / Instagram Reels new production.
 
-- **7–9 moments in a 60-second video.** Roughly one every seven or eight seconds.
-- **Text covers at most 55% of the runtime.** Enforced, not advised —
-  `audit_moments` refuses a set above it, because that is the one rule a
-  well-behaved caption track cannot satisfy.
-- **At least 0.9s of empty frame between moments.** Also enforced. Two moments a
-  quarter-second apart are a caption track whatever they are called, and the gap is
-  what makes the footage readable as footage.
+Burned captions are **runtime-derived**. Never author `cues[]`; that retired key remains
+a hard error. `metadata.persianSubtitleScript` owns every delivered character and
+`audio.wordTimings` is ASR timing evidence only. `lib.persian_srt_alignment` aligns the
+approved tokens to the clock, then `lib.persian_captions` regroups those same timed
+approved words under a tighter display ceiling. The renderer therefore never needs to
+copy Whisper spelling, invent wording, shrink type below a floor, or paint a third line.
 
-These three are profile-independent. `audit_moments` runs from
-`tools/video/persian_compose.py:801` before any render, Film Type included, and it
-has no profile branch.
+Interaction is structural, not a convention:
 
-The old density target was 12–15 per minute. That target is now impossible, and this
-is worth internalising: a moment is a **phrase** with a reading floor of 2.4s plus
-fixation time, and 13 such moments in 64s is 55% coverage with **zero** seconds left
-for the gap. The remedy is not thinner moments — it is fewer, richer ones. If you
-find yourself with a moment per sentence, you are writing captions. Delete half of
-them and make the survivors say whole sentences.
+- burned captions are one or two lines, never karaoke;
+- captions live inside the platform safe area;
+- while any editorial moment is active, the caption component paints nothing;
+- the caption band is reserved during watermark planning, so the brand does not park
+  on top of running captions;
+- moments remain above captions in the layer order.
 
-### Accessibility is not the reason to burn text in
+So `audit_moments` still enforces selective editorial text (7–9/60s, <=55% coverage,
+>=0.9s gaps), while caption density is governed by narration alignment/readability. The
+55% moment ceiling does not count caption pixels; treating it as a caption ceiling would
+defeat hybrid mode.
 
-`persian_compose` writes a sidecar `.srt` from the narration's word timings — real
-subtitles, in a real format, that a viewer can turn on and a platform can index. That
-is strictly better for accessibility than burned-in text, which cannot be turned off,
-cannot be translated, and cannot be read by anything but a human eye.
+### Approved-script authority
 
-Pass `audio.wordTimings` and the file appears beside the MP4. You do not build cues
-by hand and you do not put them in the props; `persian_compose` refuses a `cues` key
-outright.
-
-Both halves of this are **profile-independent**. `_write_subtitles`
-(`tools/video/persian_compose.py:896`, called from `:444`) contains no `v2` /
-`profile` / `film` / `legacy` branch, and neither does `lib/persian_srt.py`; the
-`cues` / `hookText` refusal in `_build_moments` (`:754–772`) sits *before* that
-function's only `v2` branch (`:799`). So the sidecar is written, and the retired
-block-level keys are refused, on Film Type exactly as on Legacy — there is no
-separate Film Type subtitle path to look for. Test coverage: cue construction is
-covered by `TestCueConstruction` in `tests/lib/test_persian_gates.py:93+`, but
-`_write_subtitles` itself and the compose-level `cues` refusal have **no test** —
-treat both as unguarded when editing that code.
+Read `subtitle-alignment.md`. The same authority boundary feeds both SRT and burned
+caption surfaces. Under `matchPolicy: exact`, joined delivered cue text must be
+byte-for-byte equal to the approved script; under `normalized`, only the repository's
+Persian canonicalization is allowed. Any uncertain alignment blocks before Remotion.
+An ASR typo is never a caption typo: ASR contributes timestamps and is discarded as
+delivery copy.
 
 ## The moment model: one phrase, one emphasis
 
