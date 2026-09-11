@@ -271,7 +271,7 @@ class SyncAudit:
                     "authoredStart": round(binding.authored_start, 3),
                     "authoredEnd": round(binding.authored_end, 3),
                 }
-                for binding in bindings
+                for binding in self.bindings
             ],
         }
 

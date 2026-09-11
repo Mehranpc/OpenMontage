@@ -1585,6 +1585,15 @@ class TestSyncAudit:
         assert audit.problems == []
         assert audit.bindings[0].matched_words[0] == "مطالعهٔ"
 
+    def test_sync_audit_to_dict_serializes_its_own_bindings(self, words) -> None:
+        moments = build_moments([self._anchored_figure()])
+        audit = audit_sync(moments, words)
+        payload = audit.to_dict()
+        assert payload["passed"] is True
+        assert payload["problems"] == []
+        assert payload["bindings"][0]["momentId"] == moments[0].id
+        assert payload["bindings"][0]["matched"][0] == "مطالعهٔ"
+
     def test_derived_start_back_leads_the_first_anchor_word(self, words) -> None:
         moments = build_moments([self._anchored_figure()])
         bindings = audit_sync(moments, words).bindings
