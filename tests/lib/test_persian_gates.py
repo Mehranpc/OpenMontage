@@ -52,6 +52,7 @@ from lib.persian_music import (
 from lib.persian_scenes import (
     BANNED_QUERY_TERMS,
     MIN_SUBJECT_FRACTION,
+    audit_opening_semantic_shots,
     audit_scene_plan,
 )
 from lib.persian_srt import (
@@ -600,6 +601,41 @@ class TestAssetAudit:
         """Both stock licences require attribution."""
         problems = audit_asset_manifest({"assets": [self._asset(**{field: None})]})
         assert any(field in problem for problem in problems)
+
+    def test_reward_opening_asset_requires_direction_match_and_dense_frame_review(self) -> None:
+        scene_plan = self._explicit_scene_plan(
+            narrative_role="hook", semantic_role="reward_problem_hook",
+            semantic_direction="child_resistance",
+        )
+        asset = self._asset(
+            visual_event_id="b1-e1", semantic_role="reward_problem_hook",
+            semantic_direction="child_resistance", opening_semantic_match=True,
+            frame_review={
+                "start": True, "middle": True, "midpoint_before_1_5": True,
+                "at_3_seconds": True, "end": True,
+                "observed": "کودک در حضور والد از انجام کار مقاومت نشان می‌دهد",
+            },
+        )
+        assert audit_asset_manifest({"assets": [asset]}, scene_plan) == []
+        asset["semantic_direction"] = "child_to_parent_gift"
+        problems = audit_asset_manifest({"assets": [asset]}, scene_plan)
+        assert any("semantic_direction must preserve" in problem for problem in problems)
+
+    def test_reward_opening_asset_rejects_missing_three_second_sample(self) -> None:
+        scene_plan = self._explicit_scene_plan(
+            narrative_role="hook", semantic_role="reward_problem_hook",
+            semantic_direction="child_distress",
+        )
+        asset = self._asset(
+            visual_event_id="b1-e1", semantic_role="reward_problem_hook",
+            semantic_direction="child_distress", opening_semantic_match=True,
+            frame_review={
+                "start": True, "middle": True, "midpoint_before_1_5": True,
+                "end": True, "observed": "کودک ناراحت و والد در قاب است",
+            },
+        )
+        problems = audit_asset_manifest({"assets": [asset]}, scene_plan)
+        assert any("frame_review.at_3_seconds" in problem for problem in problems)
 
     def test_public_path_is_not_required(self) -> None:
         """It was required, and nothing read it.
@@ -2007,6 +2043,40 @@ class TestSceneAudit:
         assert audit["problems"] == []
         assert any("usually benefits from human presence" in item for item in audit["advisories"])
 
+    def test_reward_opening_event_requires_semantic_role_and_direction(self) -> None:
+        event = self._event(
+            1, duration_seconds=5.0, narrative_role="hook",
+            semantic_role="reward_problem_hook", semantic_direction="child_to_parent_gift",
+        )
+        beat = {"id": "beat-1", "duration_seconds": 5.0, "visual_events": [event]}
+        problems = audit_scene_plan(self._plan([beat]))["problems"]
+        assert any("reward_problem_hook semantic_direction" in problem for problem in problems)
+
+    def test_reward_opening_event_accepts_allowed_direction(self) -> None:
+        event = self._event(
+            1, duration_seconds=5.0, narrative_role="hook",
+            semantic_role="reward_problem_hook", semantic_direction="child_resistance",
+        )
+        beat = {"id": "beat-1", "duration_seconds": 5.0, "visual_events": [event]}
+        problems = audit_scene_plan(self._plan([beat]))["problems"]
+        assert not any("reward_problem_hook" in problem for problem in problems)
+
+    def test_final_opening_shot_requires_selection_evidence(self) -> None:
+        shot = {
+            "id": "s1", "visualEventId": "beat-1-event-1",
+            "narrativeRole": "hook", "startSeconds": 0.0, "endSeconds": 3.0,
+            "semanticRole": "reward_problem_hook", "semanticDirection": "parent_to_child_reward",
+            "showsSubject": True, "humanPresence": True,
+        }
+        problems = audit_opening_semantic_shots([shot])
+        assert any("openingSemanticMatch" in problem for problem in problems)
+        assert any("selectionReason" in problem for problem in problems)
+        shot.update({
+            "openingSemanticMatch": True,
+            "selectionReason": "والد در قاب جایزه را به کودک می‌دهد",
+        })
+        assert audit_opening_semantic_shots([shot]) == []
+
     def test_beats_are_read_from_either_shape(self) -> None:
         """Both shapes are in use, and a plan whose beats are invisible to the gate
         would report a clean audit of nothing — the worst possible failure mode."""
@@ -2604,6 +2674,54 @@ class TestClaimQualifierHook:
             "past the first moment" in problem
             for problem in audit_moments(moments, duration_seconds=64.0).problems
         )
+
+    def test_pattern_interrupt_rejects_automatic_one_token_hook(self) -> None:
+        moments = build_moments([
+            {
+                "id": "opening", "kind": "hook",
+                "purpose": "hook-pattern-interrupt",
+                "startSeconds": 0.1, "endSeconds": 3.0,
+                "presentation": {"emphasis": "inline"},
+                "segments": [{"role": "hero", "text": "جایزه؟", "accentWords": ["جایزه؟"]}],
+            }
+        ])
+        problems = audit_moments(moments, duration_seconds=12.0).problems
+        assert any("Automatic one-word/fragment fallback is forbidden" in p for p in problems)
+        assert any("one-token hook may not manufacture impact" in p for p in problems)
+
+    def test_explicit_user_authored_short_hook_round_trips(self) -> None:
+        authored = {
+            "id": "opening", "kind": "hook",
+            "purpose": "hook-pattern-interrupt",
+            "userAuthoredShortHook": True,
+            "startSeconds": 0.1, "endSeconds": 3.0,
+            "presentation": {"emphasis": "none"},
+            "segments": [{"role": "hero", "text": "جایزه؟", "accentWords": ["جایزه؟"]}],
+        }
+        (moment,) = build_moments([authored])
+        props = moment.to_props()
+        assert props["purpose"] == "hook-pattern-interrupt"
+        assert props["userAuthoredShortHook"] is True
+        assert props["presentation"] == {"emphasis": "none"}
+        rebuilt = build_moments([props])[0]
+        assert rebuilt.user_authored_short_hook is True
+        assert not any("Automatic one-word/fragment" in p for p in audit_moments([rebuilt], duration_seconds=12.0).problems)
+
+    def test_pattern_interrupt_clause_passes_short_hook_gate(self) -> None:
+        moments = build_moments([
+            {
+                "id": "opening", "kind": "hook",
+                "purpose": "hook-pattern-interrupt",
+                "startSeconds": 0.1, "endSeconds": 4.5,
+                "presentation": {"emphasis": "none"},
+                "segments": [
+                    {"role": "hero", "text": "به هر کار خوبی"},
+                    {"role": "tail", "text": "جایزه می‌دی؟"},
+                ],
+            }
+        ])
+        problems = audit_moments(moments, duration_seconds=12.0).problems
+        assert not any("hook-pattern-interrupt has only" in p for p in problems)
 
     def test_the_silhouette_band_is_a_band(self) -> None:
         """Round numbers passing the reference (0.62) and c4 (0.647) and

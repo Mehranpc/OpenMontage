@@ -244,6 +244,73 @@ def test_summary_can_carry_retention_audit_without_media_copies():
     assert result["mediaCopies"] == 0
 
 
+def test_summary_reports_film_type_213_opening_caption_and_watermark_evidence():
+    props = {
+        "format": "vertical", "durationSeconds": 40.0, "captionMode": "hybrid",
+        "design": {
+            "profileVersion": "2.13.0",
+            "resolved": {
+                "layoutVersion": 13,
+                "formats": {"vertical": {"safeArea": {"top": .14, "bottom": .35, "left": .08, "right": .16}}},
+                "watermark": {
+                    "introDelaySeconds": 5, "minCoverageRatio": .7, "targetCoverageRatio": .8,
+                    "minDwellSeconds": 6, "maxRelocations": 5,
+                    "longFormThresholdSeconds": 30, "minLongFormRelocations": 2,
+                },
+            },
+        },
+        "shots": [{
+            "id": "s1", "narrativeRole": "hook", "startSeconds": 0.0, "endSeconds": 4.0,
+            "semanticRole": "reward_problem_hook", "semanticDirection": "child_resistance",
+            "openingSemanticMatch": True, "selectionReason": "کودک در حضور والد مقاومت می‌کند",
+            "showsSubject": True, "humanPresence": True,
+        }],
+        "moments": [{
+            "id": "m1", "kind": "hook", "purpose": "hook-pattern-interrupt",
+            "segments": [{"role": "hero", "text": "به هر کار خوبی"}, {"role": "tail", "text": "جایزه می‌دی؟"}],
+        }],
+        "captions": [{
+            "id": "c1", "text": "این یک کپشن سالم است.", "startSeconds": 0.0, "endSeconds": 2.0,
+        }],
+        "watermarkPlan": [
+            {"zone": "lower-left", "startSeconds": 5.0, "endSeconds": 20.0},
+            {"zone": "lower-right", "startSeconds": 20.0, "endSeconds": 40.0},
+        ],
+    }
+    result = summarize(props, [])
+    assert result["openingSemanticMatch"] is True
+    assert result["openingHookTokenCount"] >= 3
+    assert result["openingHookSingleTokenFallback"] is False
+    assert result["captionBandCenterX"] == .5
+    assert result["captionBandSymmetric"] is True
+    assert result["subtitleHardBoundariesPassed"] is True
+    watermark = result["watermarkEvidence"]
+    assert watermark["noEarlyWatermark"] is True
+    assert watermark["coverageRatio"] == .875
+    assert watermark["coverageFloorPassed"] is True
+    assert watermark["coverageTargetReached"] is True
+    assert watermark["relocationCount"] == 1
+    assert watermark["relocationTarget"] == 2
+    assert watermark["relocationTargetReached"] is False
+    assert watermark["distinctZones"] == ["lower-left", "lower-right"]
+    assert watermark["distinctZoneCount"] == 2
+
+
+def test_summary_detects_caption_hard_boundary_crossing():
+    props = {
+        "format": "vertical", "durationSeconds": 10.0, "captionMode": "hybrid",
+        "design": {"profileVersion": "2.13.0", "resolved": {
+            "formats": {"vertical": {"safeArea": {"top": .14, "bottom": .35, "left": .08, "right": .16}}},
+            "watermark": {},
+        }},
+        "moments": [], "shots": [], "watermarkPlan": [],
+        "captions": [{"id": "c1", "text": "تمام شد. جملهٔ بعد", "startSeconds": 0.0, "endSeconds": 2.0}],
+    }
+    result = summarize(props, [])
+    assert result["subtitleHardBoundariesPassed"] is False
+    assert result["subtitleHardBoundaryProblems"]
+
+
 def test_protocol_is_required_and_bounded():
     manifest = (ROOT / "pipeline_defs/persian-footage.yaml").read_text()
     protocol = (ROOT / "skills/pipelines/persian-footage/final-candidate-protocol.md").read_text()

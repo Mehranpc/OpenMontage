@@ -679,6 +679,27 @@
                 "type": "boolean",
                 "description": "Whether a human is visibly present in the selected shot. Preserved from asset review so resolution QA can prefer a relatable human ending without pretending to infer it from pixels."
               },
+              "showsSubject": {
+                "type": "boolean",
+                "description": "Whether the selected opening/visual-event window visibly carries the declared subject."
+              },
+              "semanticRole": {
+                "type": "string",
+                "description": "Generic semantic job of the selected visual event; reward_problem_hook is validated more strictly without becoming a global default."
+              },
+              "semanticDirection": {
+                "type": "string",
+                "description": "Direction of the visible semantic action, e.g. parent_to_child_reward or child_resistance."
+              },
+              "openingSemanticMatch": {
+                "type": "boolean",
+                "description": "True only after the selected opening window itself was reviewed and matches its authored semantic role/direction."
+              },
+              "selectionReason": {
+                "type": "string",
+                "minLength": 1,
+                "description": "What is visibly in frame and why this exact selected window was chosen."
+              },
               "source": {
                 "type": "string",
                 "description": "Clip path; staged under remotion-composer/public/ at render time and resolved through staticFile()."
@@ -842,6 +863,10 @@
               },
               "purpose": {
                 "type": "string"
+              },
+              "userAuthoredShortHook": {
+                "type": "boolean",
+                "description": "True only when the user explicitly authored a deliberately short opening hook. Automatic fitting/collapse must never set this flag."
               },
               "presentation": {
                 "type": "object",

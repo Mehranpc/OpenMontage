@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-from lib.persian_scenes import FALLBACK_LEVELS
+from lib.persian_scenes import FALLBACK_LEVELS, REWARD_OPENING_DIRECTIONS
 
 #: Extensions that are unambiguously still images. Checked in addition to a
 #: declared `kind`, because an entry can carry `kind: "video"` and a `.jpg` path
@@ -94,6 +94,16 @@ def _quality_metadata_problems(
         if not str(entry.get(field) or "").strip():
             problems.append(f"{label}: missing {field}; selected footage needs inspectable reasoning")
 
+    if str(requirement.get("narrative_role") or "").strip() == "hook":
+        expected_role = str(requirement.get("semantic_role") or "").strip()
+        expected_direction = str(requirement.get("semantic_direction") or "").strip()
+        if str(entry.get("semantic_role") or "").strip() != expected_role:
+            problems.append(f"{label}: semantic_role must preserve the opening event's authored role")
+        if str(entry.get("semantic_direction") or "").strip() != expected_direction:
+            problems.append(f"{label}: semantic_direction must preserve the opening event's authored direction")
+        if entry.get("opening_semantic_match") is not True:
+            problems.append(f"{label}: opening_semantic_match must be true after inspecting the selected window")
+
     if not isinstance(entry.get("affect_match"), bool):
         problems.append(f"{label}: affect_match must be true or false")
     elif not entry.get("affect_match"):
@@ -140,8 +150,21 @@ def _quality_metadata_problems(
         for key in ("start", "middle", "end"):
             if frame_review.get(key) is not True:
                 problems.append(f"{label}: frame_review.{key} must be true after inspecting the clip")
+        if str(requirement.get("semantic_role") or "").strip() == "reward_problem_hook":
+            for key in ("midpoint_before_1_5", "at_3_seconds"):
+                if frame_review.get(key) is not True:
+                    problems.append(f"{label}: frame_review.{key} must be true for reward_problem_hook opening review")
         if not str(frame_review.get("observed") or "").strip():
             problems.append(f"{label}: frame_review.observed must state what was actually seen")
+
+    if str(requirement.get("semantic_role") or "").strip() == "reward_problem_hook":
+        direction = str(entry.get("semantic_direction") or "").strip()
+        if direction not in REWARD_OPENING_DIRECTIONS:
+            problems.append(f"{label}: reward_problem_hook has an invalid semantic_direction")
+        if entry.get("shows_subject") is not True:
+            problems.append(f"{label}: reward_problem_hook must visibly show the subject")
+        if entry.get("human_presence") is not True:
+            problems.append(f"{label}: reward_problem_hook requires visible human presence")
 
     return problems
 
@@ -183,6 +206,9 @@ def _scene_asset_requirements(
                         "desired_affect": event.get("desired_affect"),
                         "human_presence": event.get("human_presence"),
                         "shows_subject": event.get("shows_subject"),
+                        "narrative_role": event.get("narrative_role"),
+                        "semantic_role": event.get("semantic_role"),
+                        "semantic_direction": event.get("semantic_direction"),
                         "fallback_level": event.get("fallback_level"),
                         "importance": event.get("importance"),
                     }

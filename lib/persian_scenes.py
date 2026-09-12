@@ -75,6 +75,53 @@ FALLBACK_LEVELS = (
     "abstract",
 )
 
+REWARD_OPENING_DIRECTIONS = frozenset({
+    "parent_to_child_reward", "child_resistance", "parent_child_conflict", "child_distress",
+})
+
+
+def audit_opening_semantic_shots(shots: list[dict[str, Any]]) -> list[str]:
+    """Validate explicit opening-hook evidence carried to the final shot boundary.
+
+    The contract activates only when a shot explicitly declares narrativeRole=hook;
+    historical edits without that new visual-event metadata remain reproducible.
+    """
+    opening = sorted(
+        (shot for shot in shots if shot.get("narrativeRole") == "hook"
+         and float(shot.get("startSeconds", 0.0)) < 3.0),
+        key=lambda shot: float(shot.get("startSeconds", 0.0)),
+    )
+    if not opening:
+        return []
+    shot = opening[0]
+    label = str(shot.get("visualEventId") or shot.get("id") or "opening shot")
+    problems: list[str] = []
+    role = str(shot.get("semanticRole") or "").strip()
+    direction = str(shot.get("semanticDirection") or "").strip()
+    if not role:
+        problems.append(f"{label}: opening hook requires semanticRole")
+    if not direction:
+        problems.append(f"{label}: opening hook requires semanticDirection")
+    if shot.get("openingSemanticMatch") is not True:
+        problems.append(f"{label}: openingSemanticMatch must be true after reviewing the selected window")
+    if not str(shot.get("selectionReason") or "").strip():
+        problems.append(f"{label}: opening hook requires selectionReason describing what is visibly in frame")
+    if not isinstance(shot.get("showsSubject"), bool):
+        problems.append(f"{label}: showsSubject must be true or false")
+    if not isinstance(shot.get("humanPresence"), bool):
+        problems.append(f"{label}: humanPresence must be true or false")
+    if role == "reward_problem_hook":
+        if direction not in REWARD_OPENING_DIRECTIONS:
+            problems.append(
+                f"{label}: reward_problem_hook semanticDirection must be one of "
+                + ", ".join(sorted(REWARD_OPENING_DIRECTIONS))
+            )
+        if shot.get("showsSubject") is not True:
+            problems.append(f"{label}: reward_problem_hook must visibly show the subject")
+        if shot.get("humanPresence") is not True:
+            problems.append(f"{label}: reward_problem_hook requires visible human presence")
+    return problems
+
 #: Affects where a human read usually carries more meaning than an object-only stock shot.
 #: The gate surfaces absence as an advisory rather than pretending every emotional idea
 #: can only be shown with a face.
@@ -192,6 +239,24 @@ def _footage_units(
                 problems.append(
                     f'{event_id or beat.get("id")}: human_presence must be true or false'
                 )
+
+            if str(event.get("narrative_role") or "").strip() == "hook":
+                semantic_role = str(event.get("semantic_role") or "").strip()
+                semantic_direction = str(event.get("semantic_direction") or "").strip()
+                if not semantic_role:
+                    problems.append(f'{event_id or beat.get("id")}: opening hook requires semantic_role')
+                if not semantic_direction:
+                    problems.append(f'{event_id or beat.get("id")}: opening hook requires semantic_direction')
+                if semantic_role == "reward_problem_hook":
+                    if semantic_direction not in REWARD_OPENING_DIRECTIONS:
+                        problems.append(
+                            f'{event_id or beat.get("id")}: reward_problem_hook semantic_direction must be one of '
+                            + ", ".join(sorted(REWARD_OPENING_DIRECTIONS))
+                        )
+                    if event.get("shows_subject") is not True:
+                        problems.append(f'{event_id or beat.get("id")}: reward_problem_hook must show_subject')
+                    if event.get("human_presence") is not True:
+                        problems.append(f'{event_id or beat.get("id")}: reward_problem_hook requires human_presence')
 
             fallback_level = str(event.get("fallback_level") or "").strip()
             if fallback_level not in FALLBACK_LEVELS:

@@ -34,12 +34,20 @@ class ReelsSafeAreaContracts(unittest.TestCase):
     def test_burned_caption_band_stays_inside_reels_safe_area(self):
         p=resolve_design({'version':2,'profile':'film-type','seed':'test'})['resolved']
         safe=p['formats']['vertical']['safeArea']
-        band=caption_band_rect('vertical',safe_area=safe,start_seconds=0,end_seconds=60)
+        band=caption_band_rect('vertical',safe_area=safe,profile_version=p['profileVersion'],start_seconds=0,end_seconds=60)
         self.assertGreaterEqual(band['x'],safe['left'])
         self.assertGreaterEqual(band['y'],safe['top'])
         self.assertLessEqual(band['x']+band['w'],1-safe['right']+1e-9)
         self.assertLessEqual(band['y']+band['h'],1-safe['bottom']+1e-9)
         self.assertGreater(band['h'],0)
+        self.assertAlmostEqual(band['x'] + band['w'] / 2, .5, places=9)
+
+    def test_pinned_212_caption_band_keeps_historical_asymmetry(self):
+        old=json.loads((ROOT/'styles/persian-footage/film-type-2.12.0.json').read_text())
+        safe=old['formats']['vertical']['safeArea']
+        band=caption_band_rect('vertical',safe_area=safe,profile_version='2.12.0',start_seconds=0,end_seconds=60)
+        self.assertNotAlmostEqual(band['x'] + band['w'] / 2, .5, places=6)
+        self.assertAlmostEqual(band['x'], safe['left'] + .015, places=9)
 
     def test_landscape_geometry_unchanged(self):
         p=resolve_design({'version':2,'profile':'film-type','seed':'test'})['resolved']

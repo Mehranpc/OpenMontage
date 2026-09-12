@@ -158,6 +158,8 @@ export interface PersianMoment {
   /** The phrase, in reading order, top to bottom. */
   readonly segments: readonly PersianSegment[];
   readonly purpose?: string;
+  /** Explicit exception for a user-authored micro-hook; never set by auto-layout. */
+  readonly userAuthoredShortHook?: boolean;
   readonly presentation?: PersianPresentation;
   /**
    * The narration words this moment is bound to.
@@ -205,6 +207,14 @@ export interface PersianShot {
   readonly semanticBeatId?: string;
   /** Shot-level visual event within the semantic beat. */
   readonly visualEventId?: string;
+  readonly changeType?: "establish" | "action" | "reaction" | "detail" | "scale_change" | "punch_in";
+  readonly narrativeRole?: "hook" | "exposition" | "conflict" | "turn" | "resolution";
+  readonly humanPresence?: boolean;
+  readonly showsSubject?: boolean;
+  readonly semanticRole?: string;
+  readonly semanticDirection?: string;
+  readonly openingSemanticMatch?: boolean;
+  readonly selectionReason?: string;
   /** Executable edit grammar. Persian currently renders hard cuts only. */
   readonly transitionIn?: "cut";
   /** Path relative to the composition's public dir. */

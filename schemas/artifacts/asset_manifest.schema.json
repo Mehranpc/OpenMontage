@@ -68,6 +68,18 @@
             "type": "string",
             "description": "Shot-level visual event this asset fills inside its semantic beat. Required by the Persian visual-event contract whenever scene_plan metadata.beats[].visual_events is present; omitted only for legacy one-asset-per-beat plans."
           },
+          "semantic_role": {
+            "type": "string",
+            "description": "Authored semantic job preserved from an explicit visual event."
+          },
+          "semantic_direction": {
+            "type": "string",
+            "description": "Authored direction of the visible semantic action."
+          },
+          "opening_semantic_match": {
+            "type": "boolean",
+            "description": "True only after the selected opening window was inspected and matches its semantic role/direction."
+          },
           "public_path": {
             "type": "string",
             "description": "Optional path relative to remotion-composer/public/, for pipelines that pre-stage their media. persian-footage does not: persian_compose copies each shot's source into public/persian/<run-id>/ at render time and deletes it afterwards, so it reads `path` and never this field. Recording it is harmless; relying on it is not."
@@ -137,6 +149,8 @@
             "properties": {
               "start": { "type": "boolean" },
               "middle": { "type": "boolean" },
+              "midpoint_before_1_5": { "type": "boolean" },
+              "at_3_seconds": { "type": "boolean" },
               "end": { "type": "boolean" },
               "observed": { "type": "string", "minLength": 1 }
             },

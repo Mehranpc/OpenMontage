@@ -242,6 +242,20 @@ def test_persian_visual_event_shot_declares_edit_grammar_fields() -> None:
     assert not _errors("edit_decisions", _edit_decisions(persian))
 
 
+def test_persian_opening_shot_declares_semantic_evidence_fields() -> None:
+    persian = _minimal_persian_block()
+    shot = persian["shots"][0]
+    shot.update({
+        "visualEventId": "beat-1-event-1", "narrativeRole": "hook",
+        "humanPresence": True, "showsSubject": True,
+        "semanticRole": "reward_problem_hook",
+        "semanticDirection": "parent_to_child_reward",
+        "openingSemanticMatch": True,
+        "selectionReason": "والد در قاب پاداش را به کودک می‌دهد",
+    })
+    assert not _errors("edit_decisions", _edit_decisions(persian))
+
+
 def test_persian_shot_rejects_unknown_change_type() -> None:
     persian = _minimal_persian_block()
     persian["shots"][0]["changeType"] = "montage_magic"
@@ -726,9 +740,13 @@ def test_visual_event_asset_quality_fields_are_declared() -> None:
         "candidate_rank", "selection_reason", "relevance_reason", "affect_match",
         "staged_stock_risk", "human_presence", "shows_subject", "source_in_seconds",
         "duration_seconds", "fallback_level", "fallback_reason", "frame_review",
+        "semantic_role", "semantic_direction", "opening_semantic_match",
     ):
         assert field in asset
     assert asset["fallback_level"]["enum"] == [
         "exact_literal", "emotional_human", "adjacent_metaphor", "abstract"
     ]
     assert asset["staged_stock_risk"]["enum"] == ["low", "medium", "high"]
+    review = asset["frame_review"]["properties"]
+    assert "midpoint_before_1_5" in review
+    assert "at_3_seconds" in review

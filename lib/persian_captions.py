@@ -88,6 +88,7 @@ def caption_band_rect(
     video_format: str,
     *,
     safe_area: dict[str, Any] | None = None,
+    profile_version: str | None = None,
     start_seconds: float = 0.0,
     end_seconds: float = 0.0,
 ) -> dict[str, float]:
@@ -108,8 +109,16 @@ def caption_band_rect(
     right = float(raw.get("right", side))
     line_box = CAPTION_FONT_PX[video_format] * CAPTION_LINE_HEIGHT
     h = (2 * line_box + 2 * CAPTION_VERTICAL_PADDING_PX) / height
-    x = left + CAPTION_EDGE_GAP_FRACTION
-    w = max(0.0, 1 - left - right - 2 * CAPTION_EDGE_GAP_FRACTION)
+    if profile_version == "2.13.0":
+        # Renderer 2.13 uses the larger safe-side inset on both sides so the
+        # physical caption band, not merely its safe-area remainder, centers at x=.5.
+        caption_side = max(left, right)
+        x = caption_side + CAPTION_EDGE_GAP_FRACTION
+        w = max(0.0, 1 - 2 * x)
+    else:
+        # Pinned 2.12 and callers without a profile retain historical geometry.
+        x = left + CAPTION_EDGE_GAP_FRACTION
+        w = max(0.0, 1 - left - right - 2 * CAPTION_EDGE_GAP_FRACTION)
     y = max(top, 1 - bottom - CAPTION_EDGE_GAP_FRACTION - h)
     return {
         "x": x, "y": y, "w": w, "h": h,

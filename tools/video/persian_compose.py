@@ -57,6 +57,7 @@ from typing import Any, Optional
 from lib.persian_brand import resolve_watermark
 from lib.persian_design import derive_lockup_size, prepare_v2, resolve_watermark_plan
 from lib.persian_film_type import prepare_film_type_props
+from lib.persian_scenes import audit_opening_semantic_shots
 from lib.persian_moments import (
     HOOK_SILHOUETTE_MAX_RATIO,
     HOOK_SILHOUETTE_MIN_RATIO,
@@ -634,6 +635,14 @@ class PersianCompose(BaseTool):
                     "id": str(shot.get("id") or f"shot-{index + 1}"),
                     **({"semanticBeatId": str(shot["semanticBeatId"])} if shot.get("semanticBeatId") else {}),
                     **({"visualEventId": str(shot["visualEventId"])} if shot.get("visualEventId") else {}),
+                    **({"changeType": str(shot["changeType"])} if shot.get("changeType") else {}),
+                    **({"narrativeRole": str(shot["narrativeRole"])} if shot.get("narrativeRole") else {}),
+                    **({"humanPresence": shot["humanPresence"]} if isinstance(shot.get("humanPresence"), bool) else {}),
+                    **({"showsSubject": shot["showsSubject"]} if isinstance(shot.get("showsSubject"), bool) else {}),
+                    **({"semanticRole": str(shot["semanticRole"])} if shot.get("semanticRole") else {}),
+                    **({"semanticDirection": str(shot["semanticDirection"])} if shot.get("semanticDirection") else {}),
+                    **({"openingSemanticMatch": shot["openingSemanticMatch"]} if isinstance(shot.get("openingSemanticMatch"), bool) else {}),
+                    **({"selectionReason": str(shot["selectionReason"])} if shot.get("selectionReason") else {}),
                     "transitionIn": str(shot.get("transitionIn") or "cut"),
                     "source": staged,
                     "startSeconds": float(shot["startSeconds"]),
@@ -644,6 +653,14 @@ class PersianCompose(BaseTool):
                     **({"avoidRegions": shot["avoidRegions"]} if shot.get("avoidRegions") or (film_type and "avoidRegions" in shot) else {}),
                 }
             )
+
+        if film_type and design_snapshot.get("profileVersion") == "2.13.0":
+            opening_problems = audit_opening_semantic_shots(shots)
+            if opening_problems:
+                raise ValueError(
+                    "Film Type 2.13 opening semantic contract refused:\n  - "
+                    + "\n  - ".join(opening_problems)
+                )
 
         audio_props: dict[str, Any] = {}
         audio = persian.get("audio") or {}
@@ -801,6 +818,7 @@ class PersianCompose(BaseTool):
                     text_rects.append(
                         caption_band_rect(
                             props["format"], safe_area=safe_cfg,
+                            profile_version=str(design_snapshot.get("profileVersion") or ""),
                             start_seconds=float(caption["startSeconds"]),
                             end_seconds=float(caption["endSeconds"]),
                         )
@@ -887,13 +905,8 @@ class PersianCompose(BaseTool):
             return []
 
         built = build_moments(authored)
-        # Carry authored presentation into fitted moments before browser measurement.
-        for built_moment, authored_moment in zip(built, authored):
-            setattr(built_moment, "presentation", authored_moment.get("presentation") or {})
-        # Carry the authored placement into the browser fitter so its single
-        # resolved geometry is identical for planner and renderer.
-        for built_moment, authored_moment in zip(built, authored):
-            setattr(built_moment, "presentation", authored_moment.get("presentation") or {})
+        # Presentation is parsed as first-class moment metadata; no post-parse
+        # mutation is needed before browser measurement.
         # Try to attach fitted stackHeightPx for verifier plateau scoping. This
         # requires canvas text measurement (Estedad + node-canvas). When available
         # (node-canvas installed) we compute the real stack via layout.ts;

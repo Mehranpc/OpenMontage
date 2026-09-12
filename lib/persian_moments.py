@@ -261,6 +261,9 @@ class PersianMoment:
     start_seconds: float
     end_seconds: float
     segments: list[PersianSegment]
+    purpose: str = ""
+    user_authored_short_hook: bool = False
+    presentation: dict[str, Any] = field(default_factory=dict)
     anchor_text: str = ""
     # Present only for copy that must survive artifact/props transport byte-for-byte.
     exact_text: dict[str, str] | None = None
@@ -419,6 +422,12 @@ class PersianMoment:
                 for segment in self.segments
             ],
         }
+        if self.purpose:
+            props["purpose"] = self.purpose
+        if self.user_authored_short_hook:
+            props["userAuthoredShortHook"] = True
+        if self.presentation:
+            props["presentation"] = dict(self.presentation)
         if self.anchor_text:
             props["anchorText"] = self.anchor_text
         if self.exact_text is not None:
@@ -634,6 +643,13 @@ def build_moments(
                 "start/end"
             )
 
+        raw_short = raw.get("userAuthoredShortHook", False)
+        if not isinstance(raw_short, bool):
+            raise ValueError(f"{where} userAuthoredShortHook must be true or false")
+        raw_presentation = raw.get("presentation") or {}
+        if not isinstance(raw_presentation, dict):
+            raise ValueError(f"{where} presentation must be an object")
+
         moments.append(
             PersianMoment(
                 id=str(raw.get("id") or f"{id_prefix}-{index + 1}"),
@@ -641,6 +657,9 @@ def build_moments(
                 start_seconds=float(start),
                 end_seconds=float(end),
                 segments=segments,
+                purpose=_clean(raw.get("purpose"), persian_digits=False),
+                user_authored_short_hook=raw_short,
+                presentation=dict(raw_presentation),
                 anchor_text=_clean(raw.get("anchorText"), persian_digits=False),
                 exact_text=exact_text,
             )
@@ -847,6 +866,31 @@ def _audit_one(moment: PersianMoment) -> list[str]:
             "accentWords). A hook that matches no hook style silently loses "
             "every hook-scoped token — declare the style in the structure."
         )
+    # Opening pattern-interrupts must remain clause-level copy. This gate is
+    # purpose-scoped so historical/ordinary hooks keep their pinned behaviour.
+    # A deliberately authored micro-hook is allowed only when the input says so
+    # explicitly; automatic layout pressure may never collapse a hook to a noun.
+    if moment.kind == "hook" and moment.purpose == "hook-pattern-interrupt":
+        lexical = [
+            word for segment in moment.segments if segment.role != "source"
+            for word in split_words(segment.text) if word != "\n"
+        ]
+        if len(lexical) < 3 and not moment.user_authored_short_hook:
+            problems.append(
+                f"{moment.id}: hook-pattern-interrupt has only {len(lexical)} lexical "
+                "token(s). Automatic one-word/fragment fallback is forbidden; keep a "
+                "meaningful clause (normally at least 3 tokens), or change placement, "
+                "crop/window, or shot. Set userAuthoredShortHook only when the user "
+                "explicitly authored the short hook."
+            )
+        accented_tokens = sum(len(segment.accent_words) for segment in moment.segments)
+        if len(lexical) <= 1 and accented_tokens and not moment.user_authored_short_hook:
+            problems.append(
+                f"{moment.id}: a one-token hook may not manufacture impact with "
+                "accentWords/inline emphasis. Use clause-level copy or re-edit the "
+                "shot/crop instead of underlining a fallback word."
+            )
+
     if is_claim_qualifier_hook(moment) and any(
         segment.role == "source" for segment in moment.segments
     ):
