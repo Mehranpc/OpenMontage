@@ -16,12 +16,26 @@ from lib.persian_text import visible_length
 CAPTION_MODES = frozenset({"sidecar_only", "burned_captions", "hybrid"})
 BURNED_CAPTION_MODES = frozenset({"burned_captions", "hybrid"})
 BURNED_CAPTION_MAX_VISIBLE_CHARS = 56
+BURNED_CAPTION_213_MAX_VISIBLE_CHARS = 50
 BURNED_CAPTION_MAX_LINE_VISIBLE_CHARS = 30
 CAPTION_FONT_PX = {"vertical": 48, "landscape": 40}
 CAPTION_LINE_HEIGHT = 1.38
 CAPTION_VERTICAL_PADDING_PX = 12
 CAPTION_EDGE_GAP_FRACTION = 0.015
 FRAME_DIMENSIONS = {"vertical": (1080, 1920), "landscape": (1920, 1080)}
+
+
+def burned_caption_max_visible_chars(profile_version: str | None = None) -> int:
+    """Return the cue-grouping budget for the resolved caption geometry.
+
+    Film Type 2.13 mirrors the larger horizontal safe inset on both sides, so its
+    physically centered caption band is narrower than pinned 2.12.  Grouping uses a
+    tighter conservative ceiling before Chromium performs the authoritative pixel-fit
+    check; this is a grouping heuristic, never permission to shrink type.
+    """
+    if str(profile_version or "") == "2.13.0":
+        return BURNED_CAPTION_213_MAX_VISIBLE_CHARS
+    return BURNED_CAPTION_MAX_VISIBLE_CHARS
 
 
 def default_caption_mode(platform_target: Any = None) -> str:
@@ -147,7 +161,9 @@ __all__ = [
     "CAPTION_MODES",
     "BURNED_CAPTION_MODES",
     "BURNED_CAPTION_MAX_VISIBLE_CHARS",
+    "BURNED_CAPTION_213_MAX_VISIBLE_CHARS",
     "BURNED_CAPTION_MAX_LINE_VISIBLE_CHARS",
+    "burned_caption_max_visible_chars",
     "default_caption_mode",
     "resolve_caption_mode",
     "layout_caption_lines",

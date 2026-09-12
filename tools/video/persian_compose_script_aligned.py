@@ -20,11 +20,12 @@ from typing import Any
 
 from lib.persian_srt import render_srt
 from lib.persian_captions import (
-    BURNED_CAPTION_MAX_VISIBLE_CHARS,
     BURNED_CAPTION_MODES,
     build_burned_caption_props,
+    burned_caption_max_visible_chars,
     resolve_caption_mode,
 )
+from lib.persian_design import resolve_design
 from lib.persian_srt_alignment import (
     SubtitleAlignmentError,
     build_script_aligned_cues,
@@ -89,9 +90,15 @@ class ScriptAlignedPersianCompose(PersianCompose):
             persian.get("captionMode"), platform_target=persian.get("platformTarget")
         )
         if mode in BURNED_CAPTION_MODES:
+            profile_version = None
+            raw_design = persian.get("design")
+            if isinstance(raw_design, dict) and raw_design.get("profile") == "film-type":
+                resolved_design = resolve_design(raw_design)
+                if resolved_design is not None:
+                    profile_version = str(resolved_design.get("profileVersion") or "")
             burned = self._aligned_subtitle_cues(
                 persian,
-                max_visible_chars=BURNED_CAPTION_MAX_VISIBLE_CHARS,
+                max_visible_chars=burned_caption_max_visible_chars(profile_version),
                 id_prefix="caption",
                 require_words=True,
             )

@@ -257,6 +257,22 @@ def test_hybrid_mode_keeps_sidecar_approved_copy(tmp_path) -> None:
     assert script in (tmp_path / "final.srt").read_text(encoding="utf-8-sig")
 
 
+def test_film_type_213_regroups_real_width_risk_before_browser_fit() -> None:
+    script = "پژوهش‌ها نشون می‌دن وقتی آدم‌ها برای انجام یک کار پاداش می‌گیرن،"
+    persian = {
+        "design": {"version": 2, "profile": "film-type", "seed": "caption-213-width"},
+        "platformTarget": "instagram-reels",
+        "captionMode": "hybrid",
+        "_approvedSubtitleScript": approved(script),
+        "audio": {"wordTimings": timed(script.split())},
+    }
+    mode, captions = ScriptAlignedPersianCompose()._build_caption_props(persian)
+    assert mode == "hybrid"
+    assert " ".join(caption["text"] for caption in captions) == script
+    assert len(captions) == 2
+    assert captions[0]["text"].endswith("انجام یک کار")
+    assert captions[1]["text"] == "پاداش می‌گیرن،"
+
 def test_hybrid_build_props_creates_burned_approved_copy(tmp_path) -> None:
     script = "درخواست کردن درست است."
     clip = tmp_path / "clip.mp4"

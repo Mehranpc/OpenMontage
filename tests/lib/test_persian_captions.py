@@ -4,7 +4,10 @@ import pytest
 
 from lib.persian_captions import (
     BURNED_CAPTION_MAX_LINE_VISIBLE_CHARS,
+    BURNED_CAPTION_MAX_VISIBLE_CHARS,
+    BURNED_CAPTION_213_MAX_VISIBLE_CHARS,
     build_burned_caption_props,
+    burned_caption_max_visible_chars,
     default_caption_mode,
     layout_caption_lines,
     resolve_caption_mode,
@@ -35,6 +38,11 @@ def test_unknown_caption_mode_is_refused() -> None:
     with pytest.raises(ValueError, match="captionMode"):
         resolve_caption_mode("karaoke")
 
+
+def test_213_uses_tighter_grouping_budget_for_centered_caption_band() -> None:
+    assert burned_caption_max_visible_chars("2.13.0") == BURNED_CAPTION_213_MAX_VISIBLE_CHARS
+    assert burned_caption_max_visible_chars("2.12.0") == BURNED_CAPTION_MAX_VISIBLE_CHARS
+    assert BURNED_CAPTION_213_MAX_VISIBLE_CHARS < BURNED_CAPTION_MAX_VISIBLE_CHARS
 
 def test_short_caption_stays_one_line() -> None:
     assert layout_caption_lines("این یک کپشن کوتاه است.") == ["این یک کپشن کوتاه است."]
