@@ -35,8 +35,9 @@ reasoning for each is worth stating because they conflict:
   paragraph regardless of how it is drawn.
 
 * **Minimum on-screen time** (`MIN_CUE_SECONDS`). Below roughly a second, a cue
-  registers as a flash rather than text. Two short clauses are merged rather than
-  shown as two cues.
+  registers as a flash rather than text. Short clauses may be merged when they share
+  a sentence, but a completed sentence/question/exclamation remains a hard semantic
+  boundary even when that leaves an unavoidable short cue.
 
 **Reading speed** (`MAX_CPS`, 21 visible chars/second) is enforced differently — by
 `audit_cues`, after the fact, rather than during grouping. The reason is that density
@@ -351,9 +352,10 @@ def _merge_short_groups(
 ) -> list[list[TimedWord]]:
     """Fold away cues too brief to read, when the merge still fits the budget.
 
-    A sub-second cue is a flash. Merging forward is preferred (the following cue
-    has not been seen yet, so extending into it is invisible to the viewer);
-    merging backward is the fallback for a short final cue.
+    A sub-second cue is a flash. Merging forward is preferred when it stays inside
+    the same sentence; merging backward is the fallback for a short final cue. A
+    completed sentence/question/exclamation is never crossed just to satisfy the
+    duration preference.
     """
     if len(groups) <= 1:
         return groups
@@ -421,8 +423,9 @@ def _rebalance_short_groups(
 
     Prefer borrowing the smallest suffix from the previous cue, then the smallest
     prefix from the next cue.  The donor must remain at least ``MIN_CUE_SECONDS`` and
-    both resulting groups must stay inside the same character/duration budgets.  No
-    timing or wording is invented; only the cue boundary moves.
+    both resulting groups must stay inside the same character/duration budgets.
+    Strong sentence/question/exclamation boundaries are immutable. No timing or
+    wording is invented; only a semantically legal cue boundary moves.
     """
     if len(groups) <= 1:
         return groups
@@ -492,6 +495,12 @@ def audit_cues(cues: list[PersianCue]) -> list[str]:
     """
     problems: list[str] = []
     for cue in cues:
+        tokens = cue.text.split()
+        if any(_terminator_rank(token) == 3 for token in tokens[:-1]):
+            problems.append(
+                f"{cue.id}: cue crosses a hard sentence boundary; preserve the "
+                "sentence/question break instead of repairing across it"
+            )
         if cue.cps > MAX_CPS:
             problems.append(
                 f"{cue.id}: {cue.cps:.1f} chars/sec exceeds the {MAX_CPS} ceiling "

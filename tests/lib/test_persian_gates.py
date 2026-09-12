@@ -316,6 +316,18 @@ class TestCueAudit:
         problems = audit_cues([cue])
         assert any("chars/sec" in problem for problem in problems)
 
+    def test_audit_reports_internal_hard_sentence_boundary(self) -> None:
+        from lib.persian_srt import PersianCue
+
+        cue = PersianCue(
+            id="a",
+            text="«چی باعث شده سخت؟» شاید دلیلش ترس باشه",
+            start_seconds=0.0,
+            end_seconds=3.0,
+        )
+        problems = audit_cues([cue])
+        assert any("hard sentence boundary" in problem for problem in problems)
+
     def test_audit_catches_overlapping_cues(self) -> None:
         """SRT consumers disagree about overlaps, so the file stops being portable."""
         from lib.persian_srt import PersianCue
