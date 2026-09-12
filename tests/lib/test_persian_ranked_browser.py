@@ -148,6 +148,15 @@ class RankedBrowserContracts(unittest.TestCase):
         for slot in plan:
             with self.subTest(slot=slot['zone']):
                 self.assertFalse(self._overlaps(slot['rect'],region))
+    def test_212_suppresses_brand_when_subject_regions_leave_no_legal_dwell(self):
+        p=self.props();p['moments']=[]
+        p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':20,
+                     'avoidRegions':[{'x':0,'y':0,'w':1,'h':1}]}]
+        p['watermark']={'persianText':'طریقت تسلیم','latinText':'Pathway_of_Surrender'}
+        q=self.prepare(p)
+        self.assertEqual(q['watermarkPlan'],[])
+        self.assertTrue(any('watermark-suppressed-for-text-clearance' in w for w in q['filmType']['warnings']))
+
     def test_212_suppresses_brand_instead_of_grouping_it_with_m5(self):
         p=self.props();p['durationSeconds']=47
         p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':47,

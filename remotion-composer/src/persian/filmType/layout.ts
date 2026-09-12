@@ -426,16 +426,16 @@ function seededOffset(seed: string, n: number) {
   for (let i=0;i<seed.length;i++) value=Math.imul(value^seed.charCodeAt(i),16777619);
   return (value>>>0)%n;
 }
-function suppressTextCloseSlots(
+function suppressCloseSlots(
   plan: NonNullable<PersianVideoProps["watermarkPlan"]>,
-  textRects: TimedRect[], clearancePx: number, dims: {width:number;height:number},
-  transitionSeconds: number, minDwellSeconds: number,
+  blockedRects: TimedRect[], clearancePx: number, dims: {width:number;height:number},
+  transitionSeconds: number, minDwellSeconds: number, label: string,
 ): NonNullable<PersianVideoProps["watermarkPlan"]> {
   const result: Array<NonNullable<PersianVideoProps["watermarkPlan"]>[number]> = [];
   for (const slot of plan) {
     let spans: Array<[number,number]> = [[slot.startSeconds,slot.endSeconds]];
     const envelope=expand(slot.rect,clearancePx/dims.width,clearancePx/dims.height);
-    const blocked=textRects
+    const blocked=blockedRects
       .filter(rect=>intersects(envelope,rect) && rect.startSeconds<slot.endSeconds && rect.endSeconds>slot.startSeconds)
       .map(rect=>[Math.max(slot.startSeconds,rect.startSeconds-transitionSeconds),Math.min(slot.endSeconds,rect.endSeconds+transitionSeconds)] as [number,number])
       .filter(([start,end])=>end>start)
@@ -453,11 +453,12 @@ function suppressTextCloseSlots(
       if(end-start+1e-8<minDwellSeconds)continue;
       result.push({...slot,startSeconds:start,endSeconds:end,
         transition:start>slot.startSeconds+1e-8?"fade-in":slot.transition,
-        reason:"Measured brand-to-moment clearance; brand is explicitly suppressed where no legal separated slot exists"});
+        reason:`Measured ${label} clearance; brand is explicitly suppressed where no legal separated slot exists`});
     }
   }
   return result;
 }
+
 
 function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record<string,FilmMomentLayout>, lockup: FilmLockup | null, avoid: TimedRect[]): NonNullable<PersianVideoProps["watermarkPlan"]> {
   if (!lockup) return [];
@@ -560,11 +561,23 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
       order,rects,clearance,cfg,cfg.introDelaySeconds ?? 0,()=>blockers.join("; "));
     if(p.profileVersion!=="2.12.0")return run(hardClear);
     try{return run(preferredClear);}catch(error){
-      if(!(error instanceof Error)||!error.message.startsWith("No safe moving watermark schedule"))throw error;
+      const noSchedule=(value: unknown)=>value instanceof Error&&value.message.startsWith("No safe moving watermark schedule");
+      if(!noSchedule(error))throw error;
       if(!cfg.suppressWhenNoTextClearance)throw error;
-      const trimmed=suppressTextCloseSlots(run(hardClear),textRects,visualClearancePx,dims,
-        cfg.transitionSeconds,cfg.minDwellSeconds);
-      if(!trimmed.length)throw new Error("No visible Film Type watermark dwell remains after enforcing measured text clearance; change the edit or explicitly author an empty watermark.");
+      let base: NonNullable<PersianVideoProps["watermarkPlan"]>;
+      try{base=run(hardClear);}catch(hardError){
+        if(!noSchedule(hardError))throw hardError;
+        const safeAndText=(r:Rect,start:number,end:number)=>inWatermarkSafe(r,safe)
+          && clearText(r,start,end,l.collisionMarginPx);
+        try{base=run(safeAndText);}catch(textError){
+          if(!noSchedule(textError))throw textError;
+          base=run((r:Rect)=>inWatermarkSafe(r,safe));
+        }
+      }
+      let trimmed=suppressCloseSlots(base,subjectAvoid,l.collisionMarginPx,dims,
+        cfg.transitionSeconds,cfg.minDwellSeconds,"subject-region");
+      trimmed=suppressCloseSlots(trimmed,textRects,visualClearancePx,dims,
+        cfg.transitionSeconds,cfg.minDwellSeconds,"brand-to-text");
       return trimmed;
     }
   }
@@ -651,12 +664,12 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
   const lockup=measureLockup(props,profile);
   const filmType: FilmTypeLayout={version:profile.layoutVersion,inputHash,moments:layouts,lockup,warnings};
   const watermarkPlan=planWatermark(props,profile,layouts,lockup,avoid);
-  if(profile.profileVersion==="2.12.0"&&lockup&&watermarkPlan.length){
+  if(profile.profileVersion==="2.12.0"&&lockup){
     const slots=[...watermarkPlan].sort((a,b)=>a.startSeconds-b.startSeconds),gaps:string[]=[];
     let cursor=profile.watermark.introDelaySeconds??0;
     for(const slot of slots){if(slot.startSeconds>cursor+1e-6)gaps.push(`${cursor.toFixed(2)}-${slot.startSeconds.toFixed(2)}s`);cursor=Math.max(cursor,slot.endSeconds);}
     if(cursor<props.durationSeconds-1e-6)gaps.push(`${cursor.toFixed(2)}-${props.durationSeconds.toFixed(2)}s`);
-    if(gaps.length)warnings.push(`watermark-suppressed-for-text-clearance: ${gaps.join(", ")}; the brand is intentionally absent rather than grouped with moment text.`);
+    if(gaps.length)warnings.push(`watermark-suppressed-for-text-clearance-or-subject-region: ${gaps.join(", ")}; the brand is intentionally absent rather than grouped with text or parked on a reviewed subject.`);
   }
   if((profile.profileVersion === "2.4.0" || (profile.profileVersion === "2.5.0" || (profile.profileVersion === "2.6.0" || (profile.profileVersion === "2.7.0" || profile.profileVersion === "2.8.0" || profile.profileVersion === "2.9.0" || profile.profileVersion === "2.10.0" || (profile.profileVersion === "2.11.0" || profile.profileVersion === "2.12.0"))))) && watermarkPlan.length &&
       !["left","right"].every(side=>watermarkPlan.some(slot=>slot.zone.endsWith(side))))
