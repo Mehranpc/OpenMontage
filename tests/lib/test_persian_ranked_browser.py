@@ -22,7 +22,7 @@ class RankedBrowserContracts(unittest.TestCase):
         return {'format':format, 'durationSeconds':20,
                 'design':design or resolve_design({'version':2,'profile':'film-type','seed':'regression'}),
                 'watermark':{'persianText':'','latinText':''},
-                'typographicBeats':[],
+                'typographicBeats':[], 'captionMode':'sidecar_only', 'captions':[],
                 'shots':[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':20,'avoidRegions':[]}],
                 'moments':[{'id':'m','kind':'statement','startSeconds':0,'endSeconds':15,
                             'presentation':{'placement':'auto'},
@@ -91,6 +91,18 @@ class RankedBrowserContracts(unittest.TestCase):
         layout=self.prepare(p)['filmType']['moments']['m']
         self.assertEqual(layout['subjectSafety'],'checked-against-supplied-regions')
         self.assertFalse(self._overlaps(layout['rect'],region))
+    def test_212_allows_typography_only_moment_without_fake_shot_review(self):
+        p=self.props(text='نیاز به توجه')
+        p['durationSeconds']=20
+        p['captionMode']='sidecar_only'; p['captions']=[]
+        p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':14,'avoidRegions':[]}]
+        p['moments']=[{'id':'ending','kind':'statement','startSeconds':14,'endSeconds':20,'presentation':{'placement':'auto'},'segments':[{'role':'hero','text':'نیاز به توجه'}]}]
+        p['typographicBeats']=[{'id':'end','startSeconds':14,'endSeconds':20}]
+        q=self.prepare(p)
+        layout=q['filmType']['moments']['ending']
+        self.assertEqual(layout['subjectSafety'],'not-checked')
+        self.assertTrue(layout['rows'])
+
     def test_default_profile_refuses_the_reviewed_m1_face_collision(self):
         p=self.props();p['moments'][0]['presentation']['placement']='upper-right'
         p['shots'][0]['avoidRegions']=[{'x':0.27,'y':0.28,'w':0.39,'h':0.21}]

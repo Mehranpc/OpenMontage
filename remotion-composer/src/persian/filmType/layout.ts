@@ -287,7 +287,8 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
   const fmt = props.format, dims = FORMAT_DIMENSIONS[fmt], cfg = p.formats[fmt], l = p.layout;
   const authored = moment.presentation?.placement ?? "auto";
   const overlapping = props.shots.filter(s => s.startSeconds < moment.endSeconds && s.endSeconds > moment.startSeconds);
-  const reviewed = overlapping.length > 0 && overlapping.every(s => Array.isArray(s.avoidRegions));
+  const coveredByTypography = (props.typographicBeats ?? []).some(beat => beat.startSeconds <= moment.startSeconds + 1e-6 && beat.endSeconds >= moment.endSeconds - 1e-6);
+  const reviewed = overlapping.length > 0 ? overlapping.every(s => Array.isArray(s.avoidRegions)) : coveredByTypography;
   // Film Type 2.9/2.10 keep the ONLY hard requirement: typography must stay
   // inside the platform safe area. Subject/region review stays available for
   // older pinned profiles, but these versions never demand it and never use
@@ -345,7 +346,7 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
         if(clearFeather === undefined) continue;
         fieldFeatherPx = clearFeather;
       }
-      const layout: FilmMomentLayout = {...fitted,rect,placement:zone,subjectSafety:(reviewed && enforceSubject) ? "checked-against-supplied-regions" : "not-checked",contrastMode,strength};
+      const layout: FilmMomentLayout = {...fitted,rect,placement:zone,subjectSafety:(overlapping.length > 0 && reviewed && enforceSubject) ? "checked-against-supplied-regions" : "not-checked",contrastMode,strength};
       if (!ranked) return layout;
       if(diffuse) {
         const cfg=p.contrast.diffuseField!, radii=diffuseRadii(fitted.widthPx,fitted.heightPx,cfg);
