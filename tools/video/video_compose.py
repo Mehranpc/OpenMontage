@@ -2165,14 +2165,16 @@ class VideoCompose(BaseTool):
 
     @classmethod
     def _tokenize(cls, text: str) -> list[str]:
-        """Split text into comparable word tokens (lowercased, punctuation
-        stripped, numeric-word-aware). Empty tokens dropped."""
+        """Split text into comparable Unicode word tokens.
+
+        Python word-character matching is Unicode-aware, so Persian/Arabic and other scripts are
+        retained instead of being erased by an ASCII-only character class. ZWNJ and
+        punctuation remain boundaries; hyphenated/apostrophe words stay intact.
+        """
         import re
 
-        # Preserve hyphenated words as single tokens ("many-worlds" -> "many-worlds").
-        # Drop everything except letters, digits, hyphens, apostrophes.
-        cleaned = re.sub(r"[^A-Za-z0-9\-' ]+", " ", text.lower())
-        return [t for t in cleaned.split() if t and t != "-"]
+        word = r"[^\W_]+"
+        return re.findall(rf"{word}(?:[-']{word})*", text.lower(), flags=re.UNICODE)
 
     @classmethod
     def _compare_transcript_to_script(
@@ -2224,8 +2226,13 @@ class VideoCompose(BaseTool):
             result["issues"].append(f"transcript_comparison could not parse transcript: {e}")
             return result
 
+        raw_words = list(transcript_data.get("word_timestamps") or [])
+        if not raw_words:
+            for segment in transcript_data.get("segments") or []:
+                if isinstance(segment, dict):
+                    raw_words.extend(segment.get("words") or [])
         transcript_words = [
-            w.get("word", "").strip() for w in transcript_data.get("word_timestamps", [])
+            w.get("word", "").strip() for w in raw_words if isinstance(w, dict)
         ]
         transcript_tokens = cls._tokenize(" ".join(transcript_words))
         script_tokens = cls._tokenize(script_text)
