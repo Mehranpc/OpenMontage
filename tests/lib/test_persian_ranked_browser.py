@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import unittest
 from lib.persian_brand import exact_text_record
-from lib.persian_design import resolve_design, SUPPORTED_FILM_TYPE_28_HASH, SUPPORTED_FILM_TYPE_211_HASH
+from lib.persian_design import resolve_design, SUPPORTED_FILM_TYPE_28_HASH, SUPPORTED_FILM_TYPE_211_HASH, SUPPORTED_FILM_TYPE_212_HASH
 from lib.persian_film_type import prepare_film_type_props
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,6 +37,10 @@ class RankedBrowserContracts(unittest.TestCase):
         profile=json.loads((ROOT/'styles/persian-footage/film-type-2.11.0.json').read_text(encoding='utf-8'))
         return {'version':2,'profile':'film-type','seed':'regression','profileVersion':'2.11.0',
                 'contentHash':SUPPORTED_FILM_TYPE_211_HASH,'resolved':profile}
+    def pinned_212(self):
+        profile=json.loads((ROOT/'styles/persian-footage/film-type-2.12.0.json').read_text(encoding='utf-8'))
+        return {'version':2,'profile':'film-type','seed':'regression','profileVersion':'2.12.0',
+                'contentHash':SUPPORTED_FILM_TYPE_212_HASH,'resolved':profile}
     def prepare(self, p):
         return prepare_film_type_props(p, ROOT/'remotion-composer')
     def test_ranked_long_copy_preserves_content_and_frozen_geometry(self):
@@ -148,8 +152,8 @@ class RankedBrowserContracts(unittest.TestCase):
         for slot in plan:
             with self.subTest(slot=slot['zone']):
                 self.assertFalse(self._overlaps(slot['rect'],region))
-    def test_212_suppresses_brand_when_subject_regions_leave_no_legal_dwell(self):
-        p=self.props();p['moments']=[]
+    def test_212_pin_suppresses_brand_when_subject_regions_leave_no_legal_dwell(self):
+        p=self.props(design=self.pinned_212());p['moments']=[]
         p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':20,
                      'avoidRegions':[{'x':0,'y':0,'w':1,'h':1}]}]
         p['watermark']={'persianText':'طریقت تسلیم','latinText':'Pathway_of_Surrender'}
@@ -157,8 +161,8 @@ class RankedBrowserContracts(unittest.TestCase):
         self.assertEqual(q['watermarkPlan'],[])
         self.assertTrue(any('watermark-suppressed-for-text-clearance' in w for w in q['filmType']['warnings']))
 
-    def test_212_suppresses_brand_instead_of_grouping_it_with_m5(self):
-        p=self.props();p['durationSeconds']=47
+    def test_212_pin_suppresses_brand_instead_of_grouping_it_with_m5(self):
+        p=self.props(design=self.pinned_212());p['durationSeconds']=47
         p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':47,
                      'avoidRegions':[{'x':0.05,'y':0.10,'w':0.90,'h':0.20}]}]
         p['moments']=[{'id':'m5','kind':'statement','startSeconds':42.47,'endSeconds':46.97,
@@ -176,6 +180,26 @@ class RankedBrowserContracts(unittest.TestCase):
                 self.assertFalse(self._overlaps(expanded,layout['rect']))
         self.assertFalse(any(s['startSeconds']<46.97 and s['endSeconds']>42.47 for s in q['watermarkPlan']))
         self.assertTrue(any('watermark-suppressed-for-text-clearance' in w for w in q['filmType']['warnings']))
+
+    def test_213_long_form_brand_meets_coverage_and_relocation_floor(self):
+        p=self.props();p['durationSeconds']=47;p['moments']=[]
+        p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':47,'avoidRegions':[]}]
+        p['watermark']={'persianText':'طریقت تسلیم','latinText':'Pathway_of_Surrender'}
+        q=self.prepare(p);plan=q['watermarkPlan']
+        coverage=sum(slot['endSeconds']-slot['startSeconds'] for slot in plan)/47
+        moves=sum(a['zone']!=b['zone'] for a,b in zip(plan,plan[1:]))
+        self.assertGreaterEqual(coverage,.8)
+        self.assertGreaterEqual(moves,2)
+        self.assertGreaterEqual(plan[0]['startSeconds'],5)
+
+    def test_213_refuses_an_isolated_eight_second_brand_dwell(self):
+        p=self.props();p['durationSeconds']=47;p['moments']=[]
+        p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':47,
+                     'avoidRegions':[{'x':0,'y':0,'w':1,'h':1,'startSeconds':0,'endSeconds':10},
+                                     {'x':0,'y':0,'w':1,'h':1,'startSeconds':18,'endSeconds':47}]}]
+        p['watermark']={'persianText':'طریقت تسلیم','latinText':'Pathway_of_Surrender'}
+        with self.assertRaisesRegex(ValueError,'coverage'):self.prepare(p)
+
     def test_strict_rows_preserve_arabic_codepoints_quotes_and_zwnj(self):
         exact="مي‌روم؛ “همین”"
         p=self.props();p['moments']=[{

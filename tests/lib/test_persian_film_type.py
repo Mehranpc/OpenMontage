@@ -15,7 +15,7 @@ import unittest
 from unittest.mock import patch
 
 from lib.persian_brand import canonical_watermark
-from lib.persian_design import resolve_design, prepare_v2, SUPPORTED_FILM_TYPE_29_HASH, SUPPORTED_FILM_TYPE_28_HASH, SUPPORTED_FILM_TYPE_27_HASH, SUPPORTED_FILM_TYPE_26_HASH, SUPPORTED_FILM_TYPE_25_HASH, SUPPORTED_FILM_TYPE_210_HASH, SUPPORTED_FILM_TYPE_211_HASH, SUPPORTED_FILM_TYPE_HASH, SUPPORTED_FILM_TYPE_MOTION_HASH, SUPPORTED_FILM_TYPE_LEGACY_HASH, SUPPORTED_FILM_TYPE_POLISH_HASH, SUPPORTED_FILM_TYPE_REPAIR_HASH
+from lib.persian_design import resolve_design, prepare_v2, SUPPORTED_FILM_TYPE_29_HASH, SUPPORTED_FILM_TYPE_28_HASH, SUPPORTED_FILM_TYPE_27_HASH, SUPPORTED_FILM_TYPE_26_HASH, SUPPORTED_FILM_TYPE_25_HASH, SUPPORTED_FILM_TYPE_210_HASH, SUPPORTED_FILM_TYPE_211_HASH, SUPPORTED_FILM_TYPE_212_HASH, SUPPORTED_FILM_TYPE_HASH, SUPPORTED_FILM_TYPE_MOTION_HASH, SUPPORTED_FILM_TYPE_LEGACY_HASH, SUPPORTED_FILM_TYPE_POLISH_HASH, SUPPORTED_FILM_TYPE_REPAIR_HASH
 from lib.persian_film_type import prepare_film_type_props
 from tools.video.persian_compose import PersianCompose
 
@@ -101,14 +101,15 @@ class FilmTypeContracts(unittest.TestCase):
                                         ('2.9.0','film-type-2.9.0.json',SUPPORTED_FILM_TYPE_29_HASH),
                                         ('2.10.0','film-type-2.10.0.json',SUPPORTED_FILM_TYPE_210_HASH),
                                         ('2.11.0','film-type-2.11.0.json',SUPPORTED_FILM_TYPE_211_HASH),
-                                        ('2.12.0','film-type.json',SUPPORTED_FILM_TYPE_HASH)]:
+                                        ('2.12.0','film-type-2.12.0.json',SUPPORTED_FILM_TYPE_212_HASH),
+                                        ('2.13.0','film-type.json',SUPPORTED_FILM_TYPE_HASH)]:
             with self.subTest(version=version):
                 profile=json.loads((ROOT/'styles/persian-footage'/filename).read_text())
                 pin={**self.raw,'profileVersion':version,'contentHash':digest,'resolved':profile}
                 self.assertEqual(resolve_design(pin),pin)
                 self.assertEqual(self._bridge(design=pin)['filmType']['version'],profile['layoutVersion'])
     def test_bridge_refuses_wrong_layout_version(self):
-        for wrong in [1,2,3,4,5,6,7,8,9,10,11,True,False,'12',13,None]:
+        for wrong in [1,2,3,4,5,6,7,8,9,10,11,12,True,False,'13',14,None]:
             with self.subTest(wrong=wrong),self.assertRaisesRegex(ValueError,'provenance'):
                 self._bridge(lambda p:p['filmType'].update(version=wrong))
     def test_repair_tokens_restore_scale_and_real_watermark_policy(self):
@@ -140,7 +141,7 @@ class FilmTypeContracts(unittest.TestCase):
         self.assertLessEqual(new['contrast']['strengths']['standard'],.6)
     def test_ranked_tokens_are_registry_default(self):
         new=resolve_design(self.raw)['resolved']
-        self.assertEqual(new['profileVersion'],'2.12.0');self.assertEqual(new['layoutVersion'],12)
+        self.assertEqual(new['profileVersion'],'2.13.0');self.assertEqual(new['layoutVersion'],13)
         self.assertEqual(new['layout']['aestheticPolicy'],'ranked-v1')
         self.assertEqual(new['contrast']['darkField'],'#191919')
         self.assertEqual(new['contrast']['strengths'],{'soft':.24,'standard':.34,'strong':.4})
@@ -150,8 +151,22 @@ class FilmTypeContracts(unittest.TestCase):
         self.assertTrue(new['layout']['autoRequiresReviewedAvoidRegions'])
         self.assertEqual(new['watermark']['minTextClearancePx'],64)
         self.assertTrue(new['watermark']['suppressWhenNoTextClearance'])
+        self.assertEqual(new['watermark']['minCoverageRatio'],.7)
+        self.assertEqual(new['watermark']['targetCoverageRatio'],.8)
+        self.assertEqual(new['watermark']['longFormThresholdSeconds'],30)
+        self.assertEqual(new['watermark']['minLongFormRelocations'],2)
         self.assertEqual(new['formats']['vertical']['safeArea'],{'top':.14,'bottom':.35,'side':.08,'left':.08,'right':.16})
         self.assertEqual(new['watermark']['safeAreas']['vertical'],{'top':.14,'bottom':.35,'left':.08,'right':.16})
+    def test_213_only_adds_coverage_policy_to_the_archived_212_profile(self):
+        old=json.loads((ROOT/'styles/persian-footage/film-type-2.12.0.json').read_text())
+        new=json.loads((ROOT/'styles/persian-footage/film-type.json').read_text())
+        self.assertEqual(old['profileVersion'],'2.12.0');self.assertEqual(old['layoutVersion'],12)
+        self.assertEqual(new['profileVersion'],'2.13.0');self.assertEqual(new['layoutVersion'],13)
+        for key in old:
+            if key not in {'profileVersion','layoutVersion','watermark'}:self.assertEqual(new[key],old[key])
+        added={'minCoverageRatio','targetCoverageRatio','longFormThresholdSeconds','minLongFormRelocations'}
+        self.assertEqual({k:v for k,v in new['watermark'].items() if k not in added},old['watermark'])
+        self.assertEqual({k:new['watermark'][k] for k in added},{'minCoverageRatio':.7,'targetCoverageRatio':.8,'longFormThresholdSeconds':30,'minLongFormRelocations':2})
     def test_28_pin_keeps_region_review_requirement(self):
         old=json.loads((ROOT/'styles/persian-footage/film-type-2.8.0.json').read_text())
         pin={**self.raw,'profileVersion':'2.8.0','contentHash':SUPPORTED_FILM_TYPE_28_HASH,'resolved':old}

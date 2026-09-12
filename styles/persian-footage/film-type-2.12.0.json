@@ -1,7 +1,7 @@
 {
   "profile": "film-type",
-  "profileVersion": "2.13.0",
-  "layoutVersion": 13,
+  "profileVersion": "2.12.0",
+  "layoutVersion": 12,
   "name": "Pathway Film Type",
   "scope": "persian-footage",
   "rollout": "opt-in",
@@ -192,10 +192,6 @@
     "targetDwellSeconds": 12,
     "introDelaySeconds": 5,
     "minTextClearancePx": 64,
-    "suppressWhenNoTextClearance": true,
-    "minCoverageRatio": 0.7,
-    "targetCoverageRatio": 0.8,
-    "longFormThresholdSeconds": 30,
-    "minLongFormRelocations": 2
+    "suppressWhenNoTextClearance": true
   }
 }

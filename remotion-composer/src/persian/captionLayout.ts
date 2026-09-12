@@ -43,11 +43,18 @@ export function captionBandRect(
   const lineBox = CAPTION_FONT_PX[format] * CAPTION_LINE_HEIGHT;
   const heightPx = 2 * lineBox + 2 * CAPTION_VERTICAL_PADDING_PX;
   const h = heightPx / dims.height;
-  const x = safe.left + CAPTION_EDGE_GAP_FRACTION;
-  const w = Math.max(
-    0,
-    1 - safe.left - safe.right - 2 * CAPTION_EDGE_GAP_FRACTION,
-  );
+  // Film Type 2.13 physically centres the burned-caption panel in the frame.
+  // The vertical safe area is intentionally asymmetric (more room reserved on the
+  // right for Reels UI), so centring within the raw safe-area span would leave the
+  // panel visibly left-shifted. Use the stricter side inset symmetrically; older
+  // pinned profiles keep their exact historical rectangle.
+  const physicallyCentered = design?.profile === "film-type" && design.profileVersion === "2.13.0";
+  const x = physicallyCentered
+    ? Math.max(safe.left, safe.right) + CAPTION_EDGE_GAP_FRACTION
+    : safe.left + CAPTION_EDGE_GAP_FRACTION;
+  const w = physicallyCentered
+    ? Math.max(0, 1 - 2 * x)
+    : Math.max(0, 1 - safe.left - safe.right - 2 * CAPTION_EDGE_GAP_FRACTION);
   const y = Math.max(
     safe.top,
     1 - safe.bottom - CAPTION_EDGE_GAP_FRACTION - h,
