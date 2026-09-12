@@ -58,6 +58,9 @@ from lib.persian_srt import (
     MAX_CUE_SECONDS,
     MAX_CUE_VISIBLE_CHARS,
     MIN_CUE_SECONDS,
+    TimedWord as SrtTimedWord,
+    _merge_short_groups,
+    _rebalance_short_groups,
     audit_cues,
     build_cues,
     render_srt,
@@ -149,10 +152,48 @@ class TestCueConstruction:
 
     def test_short_cues_are_merged_away(self) -> None:
         """A sub-second cue is a flash, not text."""
-        cues = build_cues(_words("بله. خیر. شاید. حتماً. البته."))
+        cues = build_cues(_words("بله، خیر، شاید، حتماً، البته."))
         # Every cue except possibly a forced final one clears the minimum.
         below = [c for c in cues if c.duration < MIN_CUE_SECONDS]
         assert not below, [(c.id, c.duration, c.text) for c in below]
+
+    def test_quoted_question_hard_boundary_survives_short_cue_repair(self) -> None:
+        words = [
+            {"word": "«چی", "start": 0.0, "end": 0.2},
+            {"word": "باعث", "start": 0.2, "end": 0.4},
+            {"word": "شده", "start": 0.4, "end": 0.6},
+            {"word": "سخت؟»", "start": 0.6, "end": 0.8},
+            {"word": "شاید", "start": 0.8, "end": 1.15},
+            {"word": "دلیلش", "start": 1.15, "end": 1.55},
+            {"word": "ترس", "start": 1.55, "end": 1.9},
+            {"word": "باشه.", "start": 1.9, "end": 2.3},
+        ]
+        cues = build_cues(words, persian_digits=False, max_visible_chars=56)
+        assert " ".join(cue.text for cue in cues) == " ".join(word["word"] for word in words)
+        assert cues[0].text.endswith("سخت؟»")
+        assert cues[1].text.startswith("شاید دلیلش")
+        assert cues[0].duration < MIN_CUE_SECONDS
+
+    def test_rebalance_does_not_borrow_across_a_strong_boundary(self) -> None:
+        groups = [
+            [
+                SrtTimedWord("اول", 0.0, 1.3),
+                SrtTimedWord("باشه؟", 1.3, 1.6),
+            ],
+            [
+                SrtTimedWord("شاید", 1.6, 2.0),
+                SrtTimedWord("دلیلش", 2.0, 2.4),
+            ],
+        ]
+        repaired = _rebalance_short_groups(groups, max_visible_chars=56)
+        assert repaired == groups
+
+    def test_merge_does_not_cross_a_quoted_strong_boundary(self) -> None:
+        groups = [
+            [SrtTimedWord("باشه؟»", 0.0, 0.8)],
+            [SrtTimedWord("شاید", 0.8, 1.4), SrtTimedWord("دلیلش", 1.4, 2.0)],
+        ]
+        assert _merge_short_groups(groups, max_visible_chars=56) == groups
 
     def test_tight_caption_budget_rebalances_boundary_instead_of_flashing(self) -> None:
         """A near-full neighbour should lend a word instead of forcing a 0.96s cue."""
@@ -189,7 +230,9 @@ class TestCueConstruction:
         assert " ".join(cue.text for cue in cues) == " ".join(word["word"] for word in words)
         assert all(cue.duration >= MIN_CUE_SECONDS for cue in cues)
         assert all(visible_length(cue.text) <= 56 for cue in cues)
-        assert any("انجامش می‌دن. از طرفی،" in cue.text for cue in cues)
+        assert not any("انجامش می‌دن. از طرفی،" in cue.text for cue in cues)
+        boundary = next(i for i, cue in enumerate(cues) if cue.text.endswith("می‌دن."))
+        assert cues[boundary + 1].text.startswith("از طرفی،")
 
     def test_zwnj_is_preserved_through_cue_construction(self) -> None:
         """The orthography must survive the grouping.

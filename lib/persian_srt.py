@@ -91,6 +91,7 @@ MAX_CUE_VISIBLE_CHARS = 84
 #: available inside its budget.
 _STRONG_TERMINATORS = (".", "؟", "!", "…")
 _WEAK_TERMINATORS = ("،", "؛", ":")
+_TRAILING_CLOSERS = ("\"", "\x27", "»", "”", "’", ")", "]", "}", "）", "】", "〕", "〉", "》")
 
 #: Gap between consecutive cues, seconds.
 #:
@@ -135,14 +136,27 @@ class PersianCue:
         return visible_length(self.text) / self.duration
 
 
+def _boundary_text(word: str) -> str:
+    """Normalize a word and ignore trailing closing quotes/brackets for punctuation."""
+    stripped = normalize(word).rstrip()
+    while stripped.endswith(_TRAILING_CLOSERS):
+        stripped = stripped[:-1].rstrip()
+    return stripped
+
+
 def _terminator_rank(word: str) -> int:
     """3 for a strong clause end, 2 for a weak one, 0 otherwise."""
-    stripped = normalize(word).rstrip()
+    stripped = _boundary_text(word)
     if stripped.endswith(_STRONG_TERMINATORS):
         return 3
     if stripped.endswith(_WEAK_TERMINATORS):
         return 2
     return 0
+
+
+def _ends_with_hard_boundary(word: TimedWord) -> bool:
+    """Whether automatic cue repair must preserve the boundary after this word."""
+    return _terminator_rank(word.text) == 3
 
 
 def _fits(
@@ -314,9 +328,10 @@ def _group_words(
             best_rank = rank
             best_break = len(current) - 1
 
-        # A strong terminator that already satisfies the minimum duration is the
-        # natural end of a cue — take it rather than packing more in.
-        if rank == 3 and (current[-1].end - current[0].start) >= MIN_CUE_SECONDS:
+        # A strong terminator is a semantic hard boundary. Preserve it even when
+        # the resulting cue is short: a reported flash is less misleading than
+        # joining a complete sentence/question to the next thought.
+        if rank == 3:
             groups.append(current)
             current = []
             best_break = None
@@ -360,7 +375,8 @@ def _merge_short_groups(
         combined_duration = combined[-1].end - combined[0].start
 
         if (
-            visible_length(text) <= max_visible_chars
+            not _ends_with_hard_boundary(group[-1])
+            and visible_length(text) <= max_visible_chars
             and combined_duration <= max_seconds
         ):
             merged.append(combined)
@@ -379,7 +395,8 @@ def _merge_short_groups(
             text = " ".join(w.text for w in combined)
             combined_duration = combined[-1].end - combined[0].start
             if (
-                visible_length(text) <= max_visible_chars
+                not _ends_with_hard_boundary(merged[-2][-1])
+                and visible_length(text) <= max_visible_chars
                 and combined_duration <= max_seconds
             ):
                 merged = merged[:-2] + [combined]
@@ -430,6 +447,8 @@ def _rebalance_short_groups(
 
         if index > 0:
             previous = result[index - 1]
+            if _ends_with_hard_boundary(previous[-1]):
+                previous = []
             for moved in range(1, len(previous)):
                 donor = previous[:-moved]
                 repaired = previous[-moved:] + group
@@ -447,7 +466,7 @@ def _rebalance_short_groups(
         if duration(group) >= MIN_CUE_SECONDS:
             continue
 
-        if index + 1 < len(result):
+        if index + 1 < len(result) and not _ends_with_hard_boundary(group[-1]):
             following = result[index + 1]
             for moved in range(1, len(following)):
                 repaired = group + following[:moved]
