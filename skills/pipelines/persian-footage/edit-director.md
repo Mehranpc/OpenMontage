@@ -121,7 +121,9 @@ caption surfaces. Under `matchPolicy: exact`, joined delivered cue text must be
 byte-for-byte equal to the approved script; under `normalized`, only the repository's
 Persian canonicalization is allowed. Any uncertain alignment blocks before Remotion.
 An ASR typo is never a caption typo: ASR contributes timestamps and is discarded as
-delivery copy.
+delivery copy. Automatic cue repair preserves completed sentence/question/exclamation
+boundaries even when a terminator is followed by a closing quote (`؟»`). Do not merge
+across that boundary merely to satisfy the minimum cue duration; keep the short cue.
 
 ## The moment model: one phrase, one emphasis
 
@@ -352,7 +354,7 @@ common right edge and no single band, so do not describe the layout to a reviewe
 a spine.
 
 What holds in both: the position is computed, never authored for aesthetic reasons.
-On Film Type 2.12 explicit placement is binding but not a review bypass: missing
+Film Type 2.12 introduced binding explicit placement; current 2.13 retains it. Missing
 reviewed avoid regions is a refusal, and a blocked authored zone is a refusal.
 
 Contrast is profile-specific. The `5.6:1` floor is Legacy (`lib/persian_verify.py:193`);
@@ -414,6 +416,14 @@ video itself answers — and the test is always whether the video makes the clai
 loud the hook asks.
 
 A hook is declared with its own `kind: "hook"` — never inferred from its shape.
+For production pattern-interrupt openings, also set `purpose: "hook-pattern-interrupt"`.
+That purpose is a semantic guard: automation must keep clause-level copy (normally at
+least three lexical tokens) and may not shrink the hook to a noun/label because a crop
+or placement is difficult. `userAuthoredShortHook: true` is reserved for a micro-hook
+the user explicitly wrote; never set it as an automatic escape hatch. A one-token
+automatic hook may not add `accentWords`/inline emphasis to simulate meaning it lost.
+Change the crop, shot, window, placement, or clause-level copy instead.
+
 The default style is claim + qualifier: the `hero` carries the claim and
 the `tail` completes it, set larger relative to the hero than
 an ordinary lead (the ratio lives in `tokens.ts`, scoped to hooks so ordinary
@@ -597,13 +607,22 @@ Human presence in the resolution is preferred and surfaced as an advisory, not f
 into an absolute requirement. Three identical change types in a row are a rhythm
 advisory: vary action/reaction/detail/scale/punch-in when the footage honestly supports it.
 
+For an opening visual event (`narrativeRole: hook`), record the semantic role and
+semantic direction before sourcing and carry the reviewed match into the selected shot.
+A `reward_problem_hook` specifically means the parent/reward problem is visually present:
+parent-to-child reward, child resistance/distress, or parent-child conflict are valid
+directions; child giving a gift to the parent reverses the meaning and is a rejection,
+not a near match. The selected opening must keep a real selection reason plus reviewed
+subject/human-presence evidence. Inspect multiple points in the selected opening window;
+do not certify semantics from a single thumbnail.
+
 `attribution` is required — `persian_compose` refuses to render a shot without one.
 
 ### Place moments against the footage, not against the script
 
 A moment lands on a shot. Prefer a shot whose subject is low or left in frame, or
-whose motion has settled. Neither profile detects subjects. Film Type 2.12 requires conservative machine-estimated
-`avoidRegions` on every overlapping shot (use `[]` only after the agent checks the
+whose motion has settled. Neither profile detects subjects. Film Type 2.12 introduced conservative machine-estimated
+`avoidRegions` on every overlapping shot and current 2.13 retains that requirement (use `[]` only after the agent checks the
 whole crop/camera move) and rejects intersecting candidates. Human approval applies
 to the complete rendered candidate. A wide
 block over a centre-framed face therefore goes back to the edit for shorter copy, a

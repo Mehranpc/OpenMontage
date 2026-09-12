@@ -70,6 +70,25 @@ coverage and caption guarantees for production review:
 4. **Burned captions are physically centered in 2.13.** The larger horizontal
    safe-side inset is mirrored so the caption band center is exactly 0.5. Pinned
    2.12 keeps its historical asymmetric geometry.
+5. **Opening hooks keep semantic content under layout pressure.** A moment authored
+   as `kind: hook` + `purpose: hook-pattern-interrupt` must remain clause-level copy;
+   automatic fallback below three lexical tokens is refused. A deliberately short
+   user-authored hook is the only exception, recorded by `userAuthoredShortHook: true`.
+   Automatic one-word copy cannot manufacture impact with `accentWords` or inline
+   emphasis. Re-edit placement, crop/window, shot, or copy instead.
+6. **Opening footage carries explicit semantic evidence.** A visual event declared
+   `narrativeRole: hook` preserves its semantic role/direction and selected-window
+   evidence through asset review, edit decisions, compose props, and preflight. The
+   production `reward_problem_hook` role accepts only parent-to-child reward,
+   child resistance/distress, or parent-child conflict directions and requires the
+   reviewed subject plus visible human presence; reversed gift direction is not an
+   equivalent opening.
+7. **Caption boundaries and preflight evidence are machine-checkable.** Automatic cue
+   repair never crosses a completed sentence/question/exclamation, including a
+   terminator followed by a closing quote such as `؟»`. Preflight reports opening
+   semantic/hook evidence, physical caption centering, hard-boundary status, and the
+   watermark union coverage, floor/target, gaps, slots, relocations, and zones. These
+   measurements are evidence only; final candidates still stop at `awaiting_human`.
 
 2.12 is archived unchanged at `styles/persian-footage/film-type-2.12.0.json` and
 remains pinnable. Reproduce it with `docs/persian-film-type-2.12-patch.md`; read

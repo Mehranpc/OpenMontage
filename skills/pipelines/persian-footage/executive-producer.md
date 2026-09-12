@@ -62,7 +62,9 @@ Real stock footage carrying **designed typographic moments**, plus platform-nati
 - **7–9 moments in a 60-second video**, each a figure, a term, a claim, or a hook —
   the opening moment declares `kind: "hook"` and is the video's opening. The default
   hook style is claim+qualifier; a flat one-size style exists for an unsplittable
-  single clause but currently cannot pass the silhouette gate. The selection rule,
+  single clause. Production pattern-interrupt hooks preserve clause-level meaning
+  under layout pressure; automatic one-word fallbacks are refused unless the user
+  explicitly authored a micro-hook. The selection rule,
   the style definitions, and every sizing value live in the hook section of
   `skills/pipelines/persian-footage/edit-director.md` and in
   `remotion-composer/src/persian/tokens.ts` — read them there, not here. Empty frame
@@ -77,9 +79,15 @@ Real stock footage carrying **designed typographic moments**, plus platform-nati
   `lib/persian_verify.py` and must not be applied to Film Type.
 - **Script-authoritative captions.** `sidecar_only`, `burned_captions`, or `hybrid`;
   Instagram / Instagram Reels defaults to hybrid. ASR supplies timing only. Burned
-  captions are one/two lines, yield to moments, and share the platform-safe layout.
-- **A moving brand watermark** planned by `planMovingBrand`.
-  `WATERMARK_TOP_FRACTION` is a Legacy model, not the Film Type watermark model.
+  captions are one/two lines, yield to moments, preserve hard sentence/question
+  boundaries, and use the active profile's platform-safe layout.
+- **A semantic opening contract.** Hook footage carries reviewed semantic direction,
+  subject/human presence, and selected-window evidence; a visually reversed action is
+  rejected rather than accepted as generic emotional stock.
+- **A coverage-aware moving brand watermark.** Safety geometry is authoritative;
+  unsafe intervals may remain blank and long-form relocation remains a target rather
+  than permission to violate text/subject clearance. `WATERMARK_TOP_FRACTION` is a
+  Legacy model, not the Film Type watermark model.
 - **Motion** from a defined grammar: four spring weights, arrival/exit verbs, and
   a living-hold that never transforms settled glyphs.
 
