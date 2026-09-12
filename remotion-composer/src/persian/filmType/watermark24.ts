@@ -72,8 +72,10 @@ export function planCoverageAwareBrand(duration:number,boundaries:number[],order
  introDelay=0,diagnostics?:()=>string){
  const min=cfg.minDwellSeconds,target=cfg.targetDwellSeconds??12,delay=Math.max(0,introDelay);
  if(delay>0&&delay>=duration)throw new Error("Film Type watermark intro delay covers the whole film; shorten it or author an empty watermark.");
+ const visibleDuration=duration-delay;
+ const minDwell=duration<20?Math.min(min,visibleDuration):min;
  const events=new Set<number>([delay,duration,...boundaries.filter(t=>Number.isFinite(t)&&t>=delay&&t<=duration)]);
- for(let t=delay+min;t<duration;t+=min)events.add(t);
+ for(let t=delay+minDwell;t<duration;t+=minDwell)events.add(t);
  const times=[...events].sort((a,b)=>a-b);if(times.length>512)throw new Error("Film Type coverage-aware watermark timeline exceeds 512 boundaries; split the review explicitly.");
  const maxRelocations=Math.max(0,cfg.maxRelocations),maxSlots=1+maxRelocations;
  const requiredMoves=duration>=(cfg.longFormThresholdSeconds??Infinity)
@@ -91,7 +93,7 @@ export function planCoverageAwareBrand(duration:number,boundaries:number[],order
    if(state.slots.length>=maxSlots)continue;
    for(let j=i+1;j<times.length;j++){
     const start=times[i],end=times[j],dwell=end-start;
-    if(dwell+1e-8<min)continue;
+    if(dwell+1e-8<minDwell)continue;
     for(const [z,zone] of order.entries()){
      const ck=`${i}:${j}:${z}`;
      if(!valid.has(ck))valid.set(ck,clear(rects[zone],start,end));

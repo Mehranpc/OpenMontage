@@ -316,4 +316,14 @@ as a containment pass. Await prepared metadata before mounting a raw Player.
 2.11 lowered mid placements, added 20px safe-area padding, strengthened the
 brand-only shadow, and used reviewed regions to steer the brand while text
 remained unenforced. Reproduce it only with the archived profile and read
-`docs/persian-film-type-2.11-patch.md`; the current contract is 2.12.
+`docs/persian-film-type-2.11-patch.md`.
+
+## Film Type 2.12.0 — archived
+
+2.12 required truthful reviewed `avoidRegions` for overlapping shots, enforced
+those regions for typography, and measured watermark/text separation using the
+complete browser-measured lockup. Where no legal full-dwell slot remained it
+suppressed the brand rather than weakening subject or text safety. Reproduce it
+only with `styles/persian-footage/film-type-2.12.0.json` and
+`docs/persian-film-type-2.12-patch.md`. The active contract lives only in
+`skills/pipelines/persian-footage/film-type.md`.

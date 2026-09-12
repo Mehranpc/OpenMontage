@@ -702,13 +702,16 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
     const cfg=profile.watermark,intro=Math.min(props.durationSeconds,cfg.introDelaySeconds??0);
     const possibleRatio=Math.max(0,(props.durationSeconds-intro)/props.durationSeconds);
     const coverage=watermarkCoveredSeconds(watermarkPlan)/props.durationSeconds;
-    const minimum=Math.min(cfg.minCoverageRatio!,possibleRatio),target=Math.min(cfg.targetCoverageRatio!,possibleRatio);
+    const minimum=props.durationSeconds<20
+      ? Math.min(cfg.minCoverageRatio!,possibleRatio)
+      : cfg.minCoverageRatio!;
+    const target=cfg.targetCoverageRatio!;
     if(coverage+1e-6<minimum) throw new Error(`Film Type 2.13 watermark coverage ${(coverage*100).toFixed(1)}% is below the required ${(minimum*100).toFixed(1)}%. Re-edit text/subject timing or footage so the brand can occupy legal slots; do not ship a brief isolated watermark dwell.`);
     if(coverage+1e-6<target) warnings.push(`watermark-coverage-below-target: ${(coverage*100).toFixed(1)}% visible vs ${(target*100).toFixed(1)}% target; minimum coverage still passes.`);
     if(props.durationSeconds>=(cfg.longFormThresholdSeconds??Infinity)){
       const capacity=Math.max(0,Math.floor((props.durationSeconds-intro)/cfg.minDwellSeconds)-1);
       const requiredMoves=Math.min(cfg.minLongFormRelocations??0,capacity),moves=watermarkRelocations(watermarkPlan);
-      if(moves<requiredMoves) throw new Error(`Film Type 2.13 long-form watermark needs at least ${requiredMoves} relocations but the safe plan has ${moves}. Re-edit blockers or footage; do not leave one isolated brand position for most of the video.`);
+      if(moves<requiredMoves) warnings.push(`watermark-relocations-below-target: ${moves} relocation(s) vs ${requiredMoves} target; measured safety and coverage remain authoritative.`);
     }
   }
   if((profile.profileVersion === "2.4.0" || (profile.profileVersion === "2.5.0" || (profile.profileVersion === "2.6.0" || (profile.profileVersion === "2.7.0" || profile.profileVersion === "2.8.0" || profile.profileVersion === "2.9.0" || profile.profileVersion === "2.10.0" || (profile.profileVersion === "2.11.0" || profile.profileVersion === "2.12.0" || profile.profileVersion === "2.13.0"))))) && watermarkPlan.length &&

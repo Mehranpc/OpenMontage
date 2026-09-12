@@ -1,18 +1,18 @@
-# Film Type — current default: 2.12.0 / layout 12
+# Film Type — current default: 2.13.0 / layout 13
 
 This is a visual profile for the Persian footage pipeline. It is not a new
 pipeline, runtime, narration mode, or approval.
 
 **One current default.** Every unpinned `persian-footage` run resolves to
-`2.12.0` / `layoutVersion 12`. If any other document, comment, or memory tells
+`2.13.0` / `layoutVersion 13`. If any other document, comment, or memory tells
 you a different version is current, it is stale and this file wins.
 
 **Read before composing:**
 
 | Purpose | File |
 | --- | --- |
-| What 2.11 changed and why | `docs/persian-film-type-2.12-patch.md` |
-| Archived 2.5–2.11 guidance (reproducing old pins only) | `skills/pipelines/persian-footage/film-type-history.md` |
+| What 2.13 changed and why | `docs/persian-film-type-2.13-patch.md` |
+| Archived 2.5–2.12 guidance (reproducing old pins only) | `skills/pipelines/persian-footage/film-type-history.md` |
 | How to audit a render's geometry | `docs/film-type-visual-regression.md` |
 
 `film-type-history.md` is an archive. It contains sentences such as "current
@@ -40,37 +40,40 @@ the rest of the props. All three fields (`resolved`, `contentHash`,
 `profileVersion`) are required together. A changed snapshot, a wrong hash, or an
 unsupported version is refused.
 
-Supported pairs are `2.1.0`/layout 1 through `2.11.0`/layout 11, each with its
-exact canonical hash. The 2.12 hash is
-`3580543858c134902cf1539fccf6d66e31f870d88a0b39a41ed1a28603f7aa5a`.
+Supported pairs are `2.1.0`/layout 1 through `2.13.0`/layout 13, each with its
+exact canonical hash. The archived 2.12 hash is
+`3580543858c134902cf1539fccf6d66e31f870d88a0b39a41ed1a28603f7aa5a`; the
+current 2.13 hash is
+`c742b5f13b71e504f40c3dda03625aafee4d533f1c66464045d82b21fecc683a`.
 
 Older pins keep their own versioned behaviour. Never relabel a snapshot, edit a
 frozen hash or sidecar by hand, or migrate projects in bulk. Migration means
 resolving a fresh unpinned design and rerunning preparation.
 
-## What 2.12 changed
+## What 2.13 changed
 
-2.12 turns the two rejected review frames into hard, versioned behaviour:
+2.13 keeps 2.12 subject-region and measured brand-separation safety, then adds
+coverage and caption guarantees for production review:
 
-1. **Every overlapping shot must carry truthful `avoidRegions`**, including
-   `[]` only after the agent inspected the whole cropped window and camera move.
-   Regions may be machine-estimated; human approval occurs after the full candidate.
-   Both `auto` and explicit placement are refused without region evidence.
-2. **Reviewed regions reject text placements.** A block that cannot clear the
-   supplied subject/action envelope fails and goes back to the edit: shorten the
-   copy, reframe, or change the shot. The contrast field remains at full strength;
-   regions never weaken it.
-3. **Brand/text separation is measured edge-to-edge.** The clearance is
-   `max(watermark.minTextClearancePx, measured lockup height)` — 77px for the
-   default two-line lockup, instead of the old 12px collision-only margin.
-4. **No-slot cases suppress the brand explicitly.** If safe area, reviewed
-   regions, and text clearance leave no legal full-dwell slot, the planner removes
-   the brand for that interval (including its fade envelope), records a warning,
-   and keeps every remaining visible dwell at least 6s. It never groups the brand
-   with moment text or parks it on a reviewed subject.
+1. **Watermark coverage is measured over the whole film.** The first 5 seconds
+   stay clean. For videos at least 20 seconds long, visible coverage below 70%
+   is refused and 80% is the target; 70–80% produces an advisory. For shorter
+   videos, the floor is bounded by the post-intro time that can physically exist.
+2. **Coverage planning may leave unsafe gaps.** The planner searches timeline
+   intervals and alternate zones; it never weakens supplied subject/text geometry
+   just to keep the brand visible. Normal dwells remain at least 6s. If a video
+   under 20s has less than 6s available after the intro, its one legal dwell may
+   use that entire remaining window.
+3. **Long-form relocation is a target, not a safety gate.** At 30s and above the
+   planner prefers multiple safe zones and at least two relocations when geometry
+   permits. Missing that target is advisory when measured safety and coverage pass.
+4. **Burned captions are physically centered in 2.13.** The larger horizontal
+   safe-side inset is mirrored so the caption band center is exactly 0.5. Pinned
+   2.12 keeps its historical asymmetric geometry.
 
-2.11 is archived unchanged at `styles/persian-footage/film-type-2.11.0.json` and
-its behaviour remains pinnable. See `docs/persian-film-type-2.12-patch.md`.
+2.12 is archived unchanged at `styles/persian-footage/film-type-2.12.0.json` and
+remains pinnable. Reproduce it with `docs/persian-film-type-2.12-patch.md`; read
+`docs/persian-film-type-2.13-patch.md` for the current patch.
 
 ## Subject safety: supplied geometry, never detection
 
