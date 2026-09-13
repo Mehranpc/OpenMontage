@@ -85,8 +85,11 @@ def preflight_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
     return report
 
 
-def promote_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
-    draft, report_path, canonical = _paths(project_dir, attempt_id)
+def load_promotable_edit_draft(
+    project_dir: Path, attempt_id: str
+) -> tuple[dict[str, Any], dict[str, Any], str]:
+    """Load the exact passing draft/report pair without mutating canonical state."""
+    draft, report_path, _ = _paths(project_dir, attempt_id)
     if not draft.is_file() or not report_path.is_file():
         raise PersianEditWorkspaceError("promotion requires both the staged draft and its persisted preflight report")
     edit = json.loads(draft.read_text(encoding="utf-8"))
@@ -96,6 +99,12 @@ def promote_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
         raise PersianEditWorkspaceError("refusing promotion: preflight report did not pass")
     if report.get("artifactSha256") != digest:
         raise PersianEditWorkspaceError("refusing promotion: draft digest differs from the passing preflight report")
+    return edit, report, digest
+
+
+def promote_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
+    draft, _, canonical = _paths(project_dir, attempt_id)
+    edit, _, digest = load_promotable_edit_draft(project_dir, attempt_id)
 
     canonical.parent.mkdir(parents=True, exist_ok=True)
     if canonical.exists():

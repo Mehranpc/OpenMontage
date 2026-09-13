@@ -58,7 +58,10 @@ def _persian_schema() -> dict[str, Any]:
 
 
 def _schema_diagnostics(edit: dict[str, Any]) -> list[ContractDiagnostic]:
-    full = all(key in edit for key in ("version", "cuts", "render_runtime"))
+    full = any(
+        key in edit
+        for key in ("version", "cuts", "render_runtime", "renderer_family", "composition_mode")
+    )
     schema = load_schema("edit_decisions") if full else _persian_schema()
     instance: Any = edit if full else edit.get("persian")
     base = [] if full else ["persian"]

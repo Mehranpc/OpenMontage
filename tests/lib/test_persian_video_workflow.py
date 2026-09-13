@@ -973,15 +973,9 @@ def test_front_door_edit_promotion_writes_checkpoint_after_workspace_promotion(t
     _bootstrap(tmp_path)
     _advance_to(tmp_path, "no_copy_preflight")
     project = tmp_path / "run"
-    edit = {"version": "1.0", "render_runtime": "remotion", "cuts": []}
-    canonical = project / "artifacts" / "edit_decisions.json"
-    canonical.parent.mkdir(parents=True, exist_ok=True)
-    canonical.write_text(json.dumps(edit), encoding="utf-8")
-    digest = workflow.artifact_sha256(edit)
-    monkeypatch.setattr(workflow, "promote_edit_draft", lambda *args, **kwargs: {
-        "promoted": True, "idempotent": False, "canonicalPath": str(canonical),
-        "artifactSha256": digest,
-    })
+    edit = _cutless_persian_edit("checkpoint")
+    staged = _persist_passing_edit_attempt(project, "a1", edit)
+    digest = staged["artifactSha256"]
     captured = {}
     def fake_write_checkpoint(pipeline_dir, project_id, stage, status, artifacts, **kwargs):
         captured.update({
@@ -1045,3 +1039,77 @@ def test_parser_exposes_edit_workspace_and_durable_job_commands():
     ])
     assert args.argv == ["python", "-V"]
     assert parser.parse_args(["job-status", "abc-1", "job-1"]).command == "job-status"
+
+
+def _cutless_persian_edit(tag: str) -> dict:
+    return {
+        "version": "1.0",
+        "render_runtime": "remotion",
+        "renderer_family": "persian-footage",
+        "composition_mode": "templated",
+        "persian": {
+            "format": "vertical",
+            "durationSeconds": 1.0,
+            "shots": [{
+                "id": f"shot-{tag}", "source": f"{tag}.mp4",
+                "startSeconds": 0.0, "endSeconds": 1.0,
+                "attribution": "Video by Test on Pexels",
+            }],
+            "moments": [],
+        },
+    }
+
+
+def _persist_passing_edit_attempt(project: Path, attempt_id: str, edit: dict) -> dict:
+    staged = workflow.stage_edit_draft(project, attempt_id, edit)
+    report = project / ".preflight" / "edit" / attempt_id / "preflight_report.json"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(json.dumps({
+        "ok": True, "artifactSha256": staged["artifactSha256"], "attemptId": attempt_id,
+    }), encoding="utf-8")
+    return staged
+
+
+def test_front_door_promotion_failure_restores_previous_canonical(tmp_path, monkeypatch):
+    _bootstrap(tmp_path)
+    _advance_to(tmp_path, "no_copy_preflight")
+    project = tmp_path / "run"
+    canonical = project / "artifacts" / "edit_decisions.json"
+    canonical.parent.mkdir(parents=True, exist_ok=True)
+    old = _cutless_persian_edit("old")
+    canonical.write_text(json.dumps(old, sort_keys=True), encoding="utf-8")
+    before = canonical.read_bytes()
+    _persist_passing_edit_attempt(project, "atomic-a1", _cutless_persian_edit("new"))
+
+    def fail_checkpoint(*args, **kwargs):
+        raise workflow.CheckpointValidationError("forced checkpoint validation failure")
+
+    monkeypatch.setattr(workflow, "write_checkpoint", fail_checkpoint)
+    with pytest.raises(workflow.CheckpointValidationError, match="forced checkpoint"):
+        workflow.promote_workflow_edit_draft("run", "atomic-a1", pipeline_dir=tmp_path)
+    assert canonical.read_bytes() == before
+
+
+def test_successful_promotion_binds_draft_report_canonical_and_checkpoint_digest(tmp_path, monkeypatch):
+    _bootstrap(tmp_path)
+    _advance_to(tmp_path, "no_copy_preflight")
+    project = tmp_path / "run"
+    edit = _cutless_persian_edit("same")
+    staged = _persist_passing_edit_attempt(project, "digest-a1", edit)
+    captured = {}
+
+    def fake_checkpoint(pipeline_dir, project_id, stage, status, artifacts, **kwargs):
+        captured["edit"] = artifacts["edit_decisions"]
+        path = project / "checkpoint_edit.json"
+        path.write_text(json.dumps({"artifacts": artifacts}), encoding="utf-8")
+        return path
+
+    monkeypatch.setattr(workflow, "write_checkpoint", fake_checkpoint)
+    result = workflow.promote_workflow_edit_draft("run", "digest-a1", pipeline_dir=tmp_path)
+    report = json.loads((project / ".preflight" / "edit" / "digest-a1" / "preflight_report.json").read_text())
+    canonical = json.loads((project / "artifacts" / "edit_decisions.json").read_text())
+    digests = {
+        staged["artifactSha256"], report["artifactSha256"], result["artifactSha256"],
+        workflow.artifact_sha256(canonical), workflow.artifact_sha256(captured["edit"]),
+    }
+    assert len(digests) == 1

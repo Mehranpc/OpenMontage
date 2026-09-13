@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 
 from lib.persian_edit_contract import PersianEditContractError
+import lib.persian_preflight as preflight
+from lib.checkpoint import validate_checkpoint
 from lib.persian_preflight import NoCopyPersianCompose, preflight_edit_decisions
 
 
@@ -110,3 +112,38 @@ def test_cli_persists_refusal_report(tmp_path: Path, monkeypatch) -> None:
     report = __import__("json").loads(report_path.read_text(encoding="utf-8"))
     assert report["ok"] is False
     assert report["blockingIssues"]
+
+
+def test_cutless_persian_bytes_pass_preflight_contract_and_checkpoint_schema(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"fixture")
+    payload = {
+        "version": "1.0",
+        "render_runtime": "remotion",
+        "renderer_family": "persian-footage",
+        "composition_mode": "templated",
+        **_payload(str(source)),
+    }
+    monkeypatch.setattr(preflight, "audit_persian_retention", lambda _: {"problems": []})
+    monkeypatch.setattr(
+        preflight, "preflight_edit_decisions",
+        lambda edit, base_dir=None: {"warnings": [], "watermarkDiagnostics": None},
+    )
+    report = preflight.aggregate_preflight_edit_decisions(payload, base_dir=tmp_path)
+    assert report["ok"] is True, report
+
+    checkpoint = {
+        "version": "1.0",
+        "project_id": "run",
+        "pipeline_type": "persian-footage",
+        "stage": "edit",
+        "status": "completed",
+        "timestamp": "2026-09-14T00:00:00+00:00",
+        "checkpoint_policy": "guided",
+        "human_approval_required": False,
+        "human_approved": False,
+        "artifacts": {"edit_decisions": payload},
+    }
+    validate_checkpoint(checkpoint)

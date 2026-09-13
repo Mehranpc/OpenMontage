@@ -25,7 +25,7 @@ from lib.pipeline_loader import load_pipeline_readonly
 from lib.persian_film_type_docs import active_film_type_version, film_type_contract_paths
 from lib.persian_durable_job import DurableJobError, reconcile_job, start_job
 from lib.persian_edit_workspace import (
-    PersianEditWorkspaceError, artifact_sha256, preflight_edit_draft, promote_edit_draft, stage_edit_draft,
+    PersianEditWorkspaceError, artifact_sha256, load_promotable_edit_draft, preflight_edit_draft, promote_edit_draft, stage_edit_draft,
 )
 from schemas.artifacts import validate_artifact
 from jsonschema.exceptions import ValidationError
@@ -1325,15 +1325,38 @@ def promote_workflow_edit_draft(
         raise PersianVideoWorkflowError(
             f"edit promotion is only valid during no_copy_preflight; next phase is {state.get('next_phase')!r}"
         )
-    result = promote_edit_draft(_project_root(state), attempt_id)
-    canonical = Path(result["canonicalPath"])
-    edit = json.loads(canonical.read_text(encoding="utf-8"))
+
+    project_root = _project_root(state)
+    edit, _, digest = load_promotable_edit_draft(project_root, attempt_id)
+    try:
+        validate_artifact("edit_decisions", edit)
+    except Exception as exc:
+        raise CheckpointValidationError(
+            f"Artifact 'edit_decisions' failed schema validation before promotion: {exc}"
+        ) from exc
+
+    canonical = project_root / "artifacts" / "edit_decisions.json"
+    previous_exists = canonical.is_file()
+    previous_bytes = canonical.read_bytes() if previous_exists else None
     projects_root = Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve()
-    checkpoint_path = write_checkpoint(
-        projects_root, project_id, "edit", "completed", {"edit_decisions": edit},
-        pipeline_type="persian-footage", human_approval_required=False, human_approved=False,
-        metadata={"preflight_attempt_id": attempt_id, "artifact_sha256": result["artifactSha256"]},
-    )
+    try:
+        result = promote_edit_draft(project_root, attempt_id)
+        checkpoint_path = write_checkpoint(
+            projects_root, project_id, "edit", "completed", {"edit_decisions": edit},
+            pipeline_type="persian-footage", human_approval_required=False, human_approved=False,
+            metadata={"preflight_attempt_id": attempt_id, "artifact_sha256": digest},
+        )
+    except Exception:
+        # Promotion and checkpoint persistence form one workflow-level transaction:
+        # a validation/write failure must never leave canonical edit bytes advanced.
+        if previous_exists and previous_bytes is not None:
+            canonical.parent.mkdir(parents=True, exist_ok=True)
+            rollback = canonical.with_suffix(canonical.suffix + ".rollback.tmp")
+            rollback.write_bytes(previous_bytes)
+            rollback.replace(canonical)
+        elif canonical.exists():
+            canonical.unlink()
+        raise
     return {**result, "checkpointPath": str(checkpoint_path)}
 
 
