@@ -16,6 +16,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from lib.persian_scenes import FALLBACK_LEVELS, REWARD_OPENING_DIRECTIONS
+
 #: Extensions that are unambiguously still images. Checked in addition to a
 #: declared `kind`, because an entry can carry `kind: "video"` and a `.jpg` path
 #: when a manifest was assembled by hand or copied from another pipeline.
@@ -49,6 +51,177 @@ _PERSIAN_VIDEO_PROVIDER_ALIASES = {
     "pixabay_video": "pixabay_video",
 }
 ALLOWED_PERSIAN_VIDEO_PROVIDERS = frozenset({"pexels", "pixabay_video"})
+STAGED_STOCK_RISKS = frozenset({"low", "medium", "high"})
+
+
+def _quality_metadata_problems(
+    entry: dict[str, Any], requirement: dict[str, Any]
+) -> list[str]:
+    """Validate new visual-event selection evidence without breaking legacy manifests."""
+    event_id = str(requirement.get("visual_event_id") or "")
+    if not event_id:
+        return []
+    label = event_id
+    problems: list[str] = []
+
+    semantic_beat_id = str(entry.get("semantic_beat_id") or "").strip()
+    if semantic_beat_id != str(requirement.get("beat_id") or ""):
+        problems.append(
+            f"{label}: semantic_beat_id must equal {requirement.get('beat_id')!r}"
+        )
+
+    narration_span = str(entry.get("narration_span") or "").strip()
+    if narration_span != str(requirement.get("narration_span") or "").strip():
+        problems.append(
+            f"{label}: narration_span must preserve the visual event's source span exactly"
+        )
+
+    query = str(entry.get("query") or "").strip()
+    if not query:
+        problems.append(f"{label}: missing query used to acquire the selected candidate")
+    elif query not in [str(q) for q in requirement.get("queries") or []]:
+        problems.append(f"{label}: selected query {query!r} is not one of the authored event queries")
+
+    rank = entry.get("candidate_rank")
+    if isinstance(rank, bool) or not isinstance(rank, int) or rank < 1:
+        problems.append(f"{label}: candidate_rank must be an integer >= 1")
+
+    for field in ("source_in_seconds", "duration_seconds"):
+        if field not in entry:
+            problems.append(f"{label}: missing {field}; selected window timing must be explicit")
+
+    for field in ("selection_reason", "relevance_reason"):
+        if not str(entry.get(field) or "").strip():
+            problems.append(f"{label}: missing {field}; selected footage needs inspectable reasoning")
+
+    if str(requirement.get("narrative_role") or "").strip() == "hook":
+        expected_role = str(requirement.get("semantic_role") or "").strip()
+        expected_direction = str(requirement.get("semantic_direction") or "").strip()
+        if str(entry.get("semantic_role") or "").strip() != expected_role:
+            problems.append(f"{label}: semantic_role must preserve the opening event's authored role")
+        if str(entry.get("semantic_direction") or "").strip() != expected_direction:
+            problems.append(f"{label}: semantic_direction must preserve the opening event's authored direction")
+        if entry.get("opening_semantic_match") is not True:
+            problems.append(f"{label}: opening_semantic_match must be true after inspecting the selected window")
+
+    if not isinstance(entry.get("affect_match"), bool):
+        problems.append(f"{label}: affect_match must be true or false")
+    elif not entry.get("affect_match"):
+        problems.append(
+            f"{label}: affect_match is false; a selected clip may not contradict desired_affect "
+            f"{requirement.get('desired_affect')!r}"
+        )
+
+    risk = str(entry.get("staged_stock_risk") or "").strip().lower()
+    if risk not in STAGED_STOCK_RISKS:
+        problems.append(f"{label}: staged_stock_risk must be low, medium, or high")
+    elif risk == "high":
+        problems.append(f"{label}: staged_stock_risk is high; reject the generic/staged candidate")
+
+    if not isinstance(entry.get("human_presence"), bool):
+        problems.append(f"{label}: human_presence must be true or false")
+    elif requirement.get("human_presence") and not entry.get("human_presence"):
+        problems.append(f"{label}: scene plan requires human presence but the selected clip has none")
+
+    if not isinstance(entry.get("shows_subject"), bool):
+        problems.append(f"{label}: shows_subject must be true or false on the inspected clip")
+    elif requirement.get("shows_subject") and not entry.get("shows_subject"):
+        problems.append(f"{label}: subject continuity was lost during asset selection")
+
+    fallback = str(entry.get("fallback_level") or "").strip()
+    expected_fallback = str(requirement.get("fallback_level") or "").strip()
+    if fallback not in FALLBACK_LEVELS:
+        problems.append(f"{label}: asset fallback_level must be one of {', '.join(FALLBACK_LEVELS)}")
+    elif fallback != expected_fallback:
+        problems.append(
+            f"{label}: asset fallback_level {fallback!r} does not match planned level {expected_fallback!r}"
+        )
+    if fallback and fallback != "exact_literal" and not str(entry.get("fallback_reason") or "").strip():
+        problems.append(
+            f"{label}: non-literal fallback requires fallback_reason documenting why earlier levels failed"
+        )
+    if fallback == "emotional_human" and entry.get("human_presence") is False:
+        problems.append(f"{label}: emotional_human fallback cannot select a clip with no human presence")
+
+    frame_review = entry.get("frame_review")
+    if not isinstance(frame_review, dict):
+        problems.append(f"{label}: missing frame_review evidence for start/middle/end inspection")
+    else:
+        for key in ("start", "middle", "end"):
+            if frame_review.get(key) is not True:
+                problems.append(f"{label}: frame_review.{key} must be true after inspecting the clip")
+        if str(requirement.get("semantic_role") or "").strip() == "reward_problem_hook":
+            for key in ("midpoint_before_1_5", "at_3_seconds"):
+                if frame_review.get(key) is not True:
+                    problems.append(f"{label}: frame_review.{key} must be true for reward_problem_hook opening review")
+        if not str(frame_review.get("observed") or "").strip():
+            problems.append(f"{label}: frame_review.observed must state what was actually seen")
+
+    if str(requirement.get("semantic_role") or "").strip() == "reward_problem_hook":
+        direction = str(entry.get("semantic_direction") or "").strip()
+        if direction not in REWARD_OPENING_DIRECTIONS:
+            problems.append(f"{label}: reward_problem_hook has an invalid semantic_direction")
+        if entry.get("shows_subject") is not True:
+            problems.append(f"{label}: reward_problem_hook must visibly show the subject")
+        if entry.get("human_presence") is not True:
+            problems.append(f"{label}: reward_problem_hook requires visible human presence")
+
+    return problems
+
+
+def _scene_asset_requirements(
+    scene_plan: dict[str, Any],
+) -> tuple[list[dict[str, Any]], set[str], set[str]]:
+    """Return the footage units an asset manifest must satisfy.
+
+    A semantic beat may now contain multiple ``visual_events``.  Each explicit
+    event is independently sourced and therefore independently requires one video
+    asset.  Plans without that field keep the historical one-asset-per-beat shape.
+    """
+    beats = scene_plan.get("beats")
+    if beats is None:
+        beats = (scene_plan.get("metadata") or {}).get("beats", [])
+
+    requirements: list[dict[str, Any]] = []
+    typographic_ids: set[str] = set()
+    explicit_event_beats: set[str] = set()
+    for beat in beats or []:
+        beat_id = str(beat.get("id") or "")
+        if beat.get("typographic"):
+            typographic_ids.add(beat_id)
+            continue
+        events = beat.get("visual_events")
+        if isinstance(events, list) and events:
+            explicit_event_beats.add(beat_id)
+            for event in events:
+                if not isinstance(event, dict):
+                    continue
+                requirements.append(
+                    {
+                        "beat_id": beat_id,
+                        "visual_event_id": str(event.get("id") or ""),
+                        "duration_seconds": event.get("duration_seconds"),
+                        "narration_span": event.get("narration_span"),
+                        "queries": list(event.get("queries") or []),
+                        "desired_affect": event.get("desired_affect"),
+                        "human_presence": event.get("human_presence"),
+                        "shows_subject": event.get("shows_subject"),
+                        "narrative_role": event.get("narrative_role"),
+                        "semantic_role": event.get("semantic_role"),
+                        "semantic_direction": event.get("semantic_direction"),
+                        "fallback_level": event.get("fallback_level"),
+                        "importance": event.get("importance"),
+                    }
+                )
+        else:
+            requirements.append(
+                {
+                    "beat_id": beat_id,
+                    "visual_event_id": None,
+                    "duration_seconds": beat.get("duration_seconds"),
+                }
+            )
+    return requirements, typographic_ids, explicit_event_beats
 
 
 class ImageFootageRejected(ValueError):
@@ -209,42 +382,69 @@ def audit_asset_manifest(
             seen_paths[str(path)] = str(label)
 
     if scene_plan is not None:
-        beats = scene_plan.get("beats")
-        if beats is None:
-            beats = (scene_plan.get("metadata") or {}).get("beats", [])
-        beats = list(beats or [])
+        requirements, typographic_ids, explicit_event_beats = _scene_asset_requirements(
+            scene_plan
+        )
 
-        by_beat: dict[str, list[dict]] = {}
+        by_beat: dict[str, list[dict[str, Any]]] = {}
+        by_event: dict[str, list[dict[str, Any]]] = {}
         for entry in assets:
-            by_beat.setdefault(str(entry.get("beat_id")), []).append(entry)
+            beat_id = str(entry.get("beat_id") or "")
+            by_beat.setdefault(beat_id, []).append(entry)
+            event_id = str(entry.get("visual_event_id") or "").strip()
+            if event_id:
+                by_event.setdefault(event_id, []).append(entry)
+            elif beat_id in explicit_event_beats:
+                problems.append(
+                    f"{beat_id}: asset {entry.get('path')!r} is missing visual_event_id; "
+                    "this semantic beat contains multiple independently sourced events"
+                )
 
-        for beat in beats:
-            beat_id = str(beat.get("id"))
-            if beat.get("typographic"):
-                if by_beat.get(beat_id):
-                    problems.append(
-                        f"{beat_id}: marked typographic but has footage assigned — "
-                        "one of the two decisions is stale"
-                    )
-                continue
+        for beat_id in typographic_ids:
+            if by_beat.get(beat_id):
+                problems.append(
+                    f"{beat_id}: marked typographic but has footage assigned — "
+                    "one of the two decisions is stale"
+                )
 
-            entries = by_beat.get(beat_id, [])
+        expected_event_ids = {
+            str(req["visual_event_id"])
+            for req in requirements
+            if req.get("visual_event_id")
+        }
+        for event_id, entries in by_event.items():
+            if event_id not in expected_event_ids:
+                problems.append(
+                    f"visual_event_id {event_id!r} is not present in the scene plan"
+                )
+
+        for requirement in requirements:
+            beat_id = str(requirement["beat_id"])
+            event_id = requirement.get("visual_event_id")
+            label = str(event_id or beat_id)
+            entries = by_event.get(str(event_id), []) if event_id else by_beat.get(beat_id, [])
             if len(entries) == 0:
-                problems.append(f"{beat_id}: no asset")
+                problems.append(f"{label}: no asset")
                 continue
             if len(entries) > 1:
-                problems.append(f"{beat_id}: {len(entries)} assets, expected exactly 1")
+                problems.append(f"{label}: {len(entries)} assets, expected exactly 1")
 
-            beat_duration = float(beat.get("duration_seconds") or 0.0)
             for entry in entries:
+                if event_id and str(entry.get("beat_id") or "") != beat_id:
+                    problems.append(
+                        f"{label}: asset beat_id {entry.get('beat_id')!r} does not match "
+                        f"its semantic beat {beat_id!r}"
+                    )
                 source_duration = float(entry.get("duration_seconds") or 0.0)
                 source_in = float(entry.get("source_in_seconds") or 0.0)
                 usable = source_duration - source_in
-                if beat_duration > 0 and usable > 0 and usable < beat_duration:
+                needed = float(requirement.get("duration_seconds") or 0.0)
+                if needed > 0 and usable > 0 and usable < needed:
                     problems.append(
-                        f"{beat_id}: clip provides {usable:.2f}s from its in-point but "
-                        f"the beat needs {beat_duration:.2f}s — the tail renders black"
+                        f"{label}: clip provides {usable:.2f}s from its in-point but "
+                        f"the visual unit needs {needed:.2f}s — the tail renders black"
                     )
+                problems.extend(_quality_metadata_problems(entry, requirement))
 
     return problems
 
@@ -285,6 +485,7 @@ def assert_orientation(manifest: dict[str, Any], video_format: str) -> list[str]
 
 __all__ = [
     "ALLOWED_PERSIAN_VIDEO_PROVIDERS",
+    "STAGED_STOCK_RISKS",
     "ImageFootageRejected",
     "assert_video_only",
     "audit_asset_manifest",

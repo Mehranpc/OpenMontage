@@ -60,6 +60,26 @@
             "type": "string",
             "description": "Beat this asset fills, for beat-structured pipelines. Distinct from scene_id, which groups beats."
           },
+          "semantic_beat_id": {
+            "type": "string",
+            "description": "Explicit semantic-beat identity copied from the Persian scene plan. New visual-event assets keep this alongside beat_id so the meaning/shot relationship is inspectable rather than inferred."
+          },
+          "visual_event_id": {
+            "type": "string",
+            "description": "Shot-level visual event this asset fills inside its semantic beat. Required by the Persian visual-event contract whenever scene_plan metadata.beats[].visual_events is present; omitted only for legacy one-asset-per-beat plans."
+          },
+          "semantic_role": {
+            "type": "string",
+            "description": "Authored semantic job preserved from an explicit visual event."
+          },
+          "semantic_direction": {
+            "type": "string",
+            "description": "Authored direction of the visible semantic action."
+          },
+          "opening_semantic_match": {
+            "type": "boolean",
+            "description": "True only after the selected opening window was inspected and matches its semantic role/direction."
+          },
           "public_path": {
             "type": "string",
             "description": "Optional path relative to remotion-composer/public/, for pipelines that pre-stage their media. persian-footage does not: persian_compose copies each shot's source into public/persian/<run-id>/ at render time and deletes it afterwards, so it reads `path` and never this field. Recording it is harmless; relying on it is not."
@@ -82,6 +102,59 @@
           "selection_reason": {
             "type": "string",
             "description": "One line naming what is IN FRAME, in the project's language. 'best match' is not a reason: a manifest recording twelve chosen clips and nothing about what any showed makes 'waist measurement' and 'coffee cup' look identical at the checkpoint."
+          },
+          "narration_span": {
+            "type": "string",
+            "description": "Exact approved-script span this visual event serves. New Persian visual-event assets copy it from the scene plan; ASR text is not authoritative here."
+          },
+          "query": {
+            "type": "string",
+            "description": "The authored English visual-event query that actually produced the selected candidate."
+          },
+          "candidate_rank": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rank of the selected candidate within the inspected results for its query."
+          },
+          "relevance_reason": {
+            "type": "string",
+            "description": "Why the inspected clip means the semantic beat, distinct from selection_reason which states what is visibly in frame."
+          },
+          "affect_match": {
+            "type": "boolean",
+            "description": "Whether the inspected clip produces the visual event's desired_affect. False is not shippable for a selected Persian visual-event asset."
+          },
+          "staged_stock_risk": {
+            "type": "string",
+            "enum": ["low", "medium", "high"],
+            "description": "Risk that the candidate reads as generic or obviously staged stock. High-risk candidates are rejected by the Persian asset gate."
+          },
+          "human_presence": {
+            "type": "boolean",
+            "description": "Whether a legible person is actually present in the inspected clip; used to preserve emotional-human visual intent through selection."
+          },
+          "fallback_level": {
+            "type": "string",
+            "enum": ["exact_literal", "emotional_human", "adjacent_metaphor", "abstract"],
+            "description": "Footage fallback level reached for this event. Typography is terminal beat-level fallback and therefore is not a video-asset value."
+          },
+          "fallback_reason": {
+            "type": "string",
+            "description": "Required by the Persian gate when fallback_level is not exact_literal; records why earlier hierarchy levels failed rather than silently widening to generic stock."
+          },
+          "frame_review": {
+            "type": "object",
+            "description": "Evidence that the selected crop/window was inspected at start, middle, and end rather than accepted from filename or provider metadata.",
+            "required": ["start", "middle", "end", "observed"],
+            "properties": {
+              "start": { "type": "boolean" },
+              "middle": { "type": "boolean" },
+              "midpoint_before_1_5": { "type": "boolean" },
+              "at_3_seconds": { "type": "boolean" },
+              "end": { "type": "boolean" },
+              "observed": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false
@@ -95,7 +168,7 @@
     },
     "word_timings": {
       "type": "array",
-      "description": "Word-level narration timings from transcription, as the transcriber emitted them (snake_case). persian-footage turns these into a sidecar .srt; nothing on screen is locked to a word, so sub-tenth-second drift is cosmetic. Distinct from edit_decisions.persian.audio.wordTimings (camelCase), which is the same word list restated at the compose boundary where persian_compose reads it — the manifest records what transcription produced, the edit decisions carry what compose consumes.",
+      "description": "Word-level narration timings from transcription, as the transcriber emitted them (snake_case). They are timing evidence only: approved script text is aligned against them for sidecar SRT, burned/hybrid captions, and narration-anchored moments. Distinct from edit_decisions.persian.audio.wordTimings (camelCase), which is the same clock restated at the compose boundary where persian_compose reads it — the manifest records what transcription produced, the edit decisions carry what compose consumes.",
       "items": {
         "type": "object",
         "required": ["word", "start", "end"],

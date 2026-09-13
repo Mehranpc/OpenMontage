@@ -57,6 +57,7 @@ from typing import Any, Optional
 from lib.persian_brand import resolve_watermark
 from lib.persian_design import derive_lockup_size, prepare_v2, resolve_watermark_plan
 from lib.persian_film_type import prepare_film_type_props
+from lib.persian_scenes import audit_opening_semantic_shots
 from lib.persian_moments import (
     HOOK_SILHOUETTE_MAX_RATIO,
     HOOK_SILHOUETTE_MIN_RATIO,
@@ -70,8 +71,14 @@ from lib.persian_render_qa import (
     audit_render_luminance,
     find_coverage_gaps,
 )
+from lib.persian_motion_qa import audit_render_motion
 from lib.persian_music import audit_music, audio_props_with_music, build_music_track
 from lib.persian_srt import audit_cues, build_cues, render_srt
+from lib.persian_captions import (
+    BURNED_CAPTION_MODES,
+    caption_band_rect,
+    resolve_caption_mode,
+)
 from lib.persian_sync import TimedWord, audit_sync
 from tools.base_tool import (
     BaseTool,
@@ -197,6 +204,8 @@ class PersianCompose(BaseTool):
             "text_coverage": {"type": "number"},
             "subtitle_path": {"type": "string"},
             "subtitle_advisories": {"type": "array"},
+            "caption_mode": {"type": "string"},
+            "burned_caption_count": {"type": "integer"},
             "attributions": {"type": "array"},
             "persian_text_verified": {"type": "boolean"},
         },
@@ -223,6 +232,7 @@ class PersianCompose(BaseTool):
         "Extract a frame and confirm Persian text renders right-to-left with no empty boxes",
         "Confirm every line of every moment shares one right edge",
         "Confirm the footage is visible with nothing over it between moments",
+        "In burned/hybrid mode, confirm captions stay inside the safe area, use at most two lines, and yield to moments",
         "Confirm the watermark is legible and reaches its resting corner",
     ]
 
@@ -442,6 +452,54 @@ class PersianCompose(BaseTool):
                     ),
                 )
 
+            try:
+                motion_qa = audit_render_motion(output_path)
+            except RuntimeError as exc:
+                return ToolResult(
+                    success=False,
+                    data={
+                        "output_path": str(output_path),
+                        "luminance_qa": qa.to_dict(),
+                    },
+                    artifacts=[str(output_path)],
+                    error=(
+                        "The render finished but its post-render motion could not be "
+                        f"measured, so anti-slideshow QA refuses blind delivery: {exc}"
+                    ),
+                )
+            if motion_qa.warn_runs:
+                ranges = ", ".join(
+                    f"{run.start_seconds:.1f}-{run.end_seconds:.1f}s "
+                    f"(mean pixel delta {run.mean_abs_delta:.2f})"
+                    for run in motion_qa.warn_runs
+                )
+                logging.getLogger(__name__).warning(
+                    "Near-static post-render stretch in %s: %s. This is a retention "
+                    "risk advisory; inspect the actual candidate rather than inventing motion.",
+                    output_path,
+                    ranges,
+                )
+            if not motion_qa.passed:
+                ranges = ", ".join(
+                    f"{run.start_seconds:.1f}-{run.end_seconds:.1f}s "
+                    f"(mean pixel delta {run.mean_abs_delta:.2f})"
+                    for run in motion_qa.fail_runs
+                )
+                return ToolResult(
+                    success=False,
+                    data={
+                        "output_path": str(output_path),
+                        "luminance_qa": qa.to_dict(),
+                        "post_render_motion_qa": motion_qa.to_dict(),
+                    },
+                    artifacts=[str(output_path)],
+                    error=(
+                        "The rendered MP4 contains a long near-frozen stretch and fails "
+                        "the anti-slideshow gate: " + ranges + ". Revise the visual event, "
+                        "shot choice, or honest camera treatment and re-render."
+                    ),
+                )
+
             subtitle_path, subtitle_advisories = self._write_subtitles(
                 persian, output_path
             )
@@ -470,9 +528,12 @@ class PersianCompose(BaseTool):
                     "text_coverage": round(covered / props["durationSeconds"], 4),
                     "subtitle_path": subtitle_path,
                     "subtitle_advisories": subtitle_advisories,
+                    "caption_mode": str(props.get("captionMode") or "sidecar_only"),
+                    "burned_caption_count": len(props.get("captions") or []),
                     "attributions": attributions,
                     "persian_text_verified": False,  # Set by the reviewer, not here.
                     "luminance_qa": qa.to_dict(),
+                    "post_render_motion_qa": motion_qa.to_dict(),
                     **({"staged_assets_retained": True, "staged_assets_directory": str(staging_dir)} if inputs.get("keep_staged_assets") is True else {}),
                 },
                 artifacts=artifacts,
@@ -486,6 +547,21 @@ class PersianCompose(BaseTool):
             # Explicit retention makes new review props reopenable after rendering.
             # Props and digest are permanent render provenance artifacts.
             pass
+
+    def _build_caption_props(
+        self, persian: dict[str, Any]
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """Return runtime caption mode/props before any browser layout prepass.
+
+        The registered script-aligned subclass overrides this hook. Keeping the hook
+        in the base class makes Film Type preparation see the exact caption track that
+        Remotion will paint, rather than an empty placeholder populated after geometry
+        was frozen.
+        """
+        mode = resolve_caption_mode(
+            persian.get("captionMode"), platform_target=persian.get("platformTarget")
+        )
+        return mode, []
 
     def _build_props(
         self,
@@ -501,6 +577,7 @@ class PersianCompose(BaseTool):
                 black beat that nobody notices until review costs a whole render.
             ValueError: when required timing data is missing.
         """
+        caption_mode, captions = self._build_caption_props(persian)
         watermark = resolve_watermark(persian.get("watermark"))
         staging_dir.mkdir(parents=True, exist_ok=True)
         attributions: list[str] = []
@@ -556,6 +633,17 @@ class PersianCompose(BaseTool):
             shots.append(
                 {
                     "id": str(shot.get("id") or f"shot-{index + 1}"),
+                    **({"semanticBeatId": str(shot["semanticBeatId"])} if shot.get("semanticBeatId") else {}),
+                    **({"visualEventId": str(shot["visualEventId"])} if shot.get("visualEventId") else {}),
+                    **({"changeType": str(shot["changeType"])} if shot.get("changeType") else {}),
+                    **({"narrativeRole": str(shot["narrativeRole"])} if shot.get("narrativeRole") else {}),
+                    **({"humanPresence": shot["humanPresence"]} if isinstance(shot.get("humanPresence"), bool) else {}),
+                    **({"showsSubject": shot["showsSubject"]} if isinstance(shot.get("showsSubject"), bool) else {}),
+                    **({"semanticRole": str(shot["semanticRole"])} if shot.get("semanticRole") else {}),
+                    **({"semanticDirection": str(shot["semanticDirection"])} if shot.get("semanticDirection") else {}),
+                    **({"openingSemanticMatch": shot["openingSemanticMatch"]} if isinstance(shot.get("openingSemanticMatch"), bool) else {}),
+                    **({"selectionReason": str(shot["selectionReason"])} if shot.get("selectionReason") else {}),
+                    "transitionIn": str(shot.get("transitionIn") or "cut"),
                     "source": staged,
                     "startSeconds": float(shot["startSeconds"]),
                     "endSeconds": float(shot["endSeconds"]),
@@ -565,6 +653,14 @@ class PersianCompose(BaseTool):
                     **({"avoidRegions": shot["avoidRegions"]} if shot.get("avoidRegions") or (film_type and "avoidRegions" in shot) else {}),
                 }
             )
+
+        if film_type and design_snapshot.get("profileVersion") in {"2.13.0", "2.14.0"}:
+            opening_problems = audit_opening_semantic_shots(shots)
+            if opening_problems:
+                raise ValueError(
+                    "Film Type 2.13 opening semantic contract refused:\n  - "
+                    + "\n  - ".join(opening_problems)
+                )
 
         audio_props: dict[str, Any] = {}
         audio = persian.get("audio") or {}
@@ -579,6 +675,26 @@ class PersianCompose(BaseTool):
         ):
             if audio.get(key) is not None:
                 audio_props[key] = float(audio[key])
+
+        # Renderer ducking follows the narration clock, never captions or editorial
+        # moments. Merge nearby word timings into speech windows so the music can
+        # move smoothly around real pauses without exposing ASR spelling downstream.
+        raw_words = audio.get("wordTimings") or []
+        intervals: list[list[float]] = []
+        for word in raw_words:
+            if not isinstance(word, dict) or word.get("start") is None or word.get("end") is None:
+                continue
+            start, end = float(word["start"]), float(word["end"])
+            if end <= start:
+                continue
+            if intervals and start - intervals[-1][1] <= 0.38:
+                intervals[-1][1] = max(intervals[-1][1], end)
+            else:
+                intervals.append([start, end])
+        if intervals:
+            audio_props["speechIntervals"] = [
+                {"startSeconds": start, "endSeconds": end} for start, end in intervals
+            ]
 
         # Music gate. A narrated project with no bed was the shipped defect: the
         # video was delivered with silence under the voice's pauses and the
@@ -620,6 +736,23 @@ class PersianCompose(BaseTool):
         resolved_persian = {**persian, "watermark": watermark}
         moments = (self._build_moments(resolved_persian, duration_seconds, v2=True, measure_layout=False) if film_type
                    else self._build_moments(resolved_persian, duration_seconds, v2=design_snapshot is not None))
+        # Film Type 2.14 adds one explicit pattern-interrupt shape: lead + hero +
+        # tail, so a small context word can sit above the claim without shrinking
+        # the whole hook. Older pins remain exact and refuse that new authored shape.
+        if design_snapshot is not None:
+            profile_version = str(design_snapshot.get("profileVersion") or "")
+            for moment in moments:
+                roles = [seg.get("role") for seg in moment.get("segments", []) if seg.get("role") != "source"]
+                contextual_hook = (
+                    moment.get("kind") == "hook"
+                    and moment.get("purpose") == "hook-pattern-interrupt"
+                    and roles == ["lead", "hero", "tail"]
+                )
+                if contextual_hook and profile_version != "2.14.0":
+                    raise ValueError(
+                        "context+claim+qualifier hooks require Film Type 2.14.0; "
+                        "pinned older profiles keep their historical hook contract"
+                    )
         # The browser bridge returns the exact lockup geometry used by the V2 planner.
         # Query it independently of moment fitting so an empty moment list cannot
         # accidentally erase the required watermark measurement.
@@ -659,6 +792,12 @@ class PersianCompose(BaseTool):
             # The windows are derived from the moments' spans (see
             # `_derive_beat_windows`); the authored numbers are never trusted.
             "typographicBeats": typographic_beats,
+            # Runtime caption props are always explicit because Remotion shallow-merges
+            # caller props over defaultProps. The registered subclass builds approved
+            # caption lines before this point, so the browser prepass validates the exact
+            # track that the render will paint.
+            "captionMode": caption_mode,
+            "captions": captions,
         }
         if design_snapshot is not None:
             props["design"] = design_snapshot
@@ -705,6 +844,22 @@ class PersianCompose(BaseTool):
                 text_rects.append({"x": max(0, x), "y": max(0, y), "w": w, "h": h,
                                    "startSeconds": float(moment.get("startSeconds", 0)),
                                    "endSeconds": float(moment.get("endSeconds", duration_seconds))})
+            if caption_mode in BURNED_CAPTION_MODES:
+                safe_cfg = (
+                    design_snapshot.get("resolved", {})
+                    .get("formats", {})
+                    .get(props["format"], {})
+                    .get("safeArea", {})
+                )
+                for caption in captions:
+                    text_rects.append(
+                        caption_band_rect(
+                            props["format"], safe_area=safe_cfg,
+                            profile_version=str(design_snapshot.get("profileVersion") or ""),
+                            start_seconds=float(caption["startSeconds"]),
+                            end_seconds=float(caption["endSeconds"]),
+                        )
+                    )
             avoid_regions = [r for shot in shots for r in (shot.get("avoidRegions") or [])]
             if lockup_measurement is None:
                 raise ValueError("V2 watermark requires loaded-font lockup measurement")
@@ -787,13 +942,8 @@ class PersianCompose(BaseTool):
             return []
 
         built = build_moments(authored)
-        # Carry authored presentation into fitted moments before browser measurement.
-        for built_moment, authored_moment in zip(built, authored):
-            setattr(built_moment, "presentation", authored_moment.get("presentation") or {})
-        # Carry the authored placement into the browser fitter so its single
-        # resolved geometry is identical for planner and renderer.
-        for built_moment, authored_moment in zip(built, authored):
-            setattr(built_moment, "presentation", authored_moment.get("presentation") or {})
+        # Presentation is parsed as first-class moment metadata; no post-parse
+        # mutation is needed before browser measurement.
         # Try to attach fitted stackHeightPx for verifier plateau scoping. This
         # requires canvas text measurement (Estedad + node-canvas). When available
         # (node-canvas installed) we compute the real stack via layout.ts;

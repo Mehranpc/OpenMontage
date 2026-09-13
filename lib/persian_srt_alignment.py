@@ -436,8 +436,17 @@ def _audit_aligned_cues(
     cues: list[PersianCue],
     script: ApprovedScript,
     asr: list[_AsrWord],
+    *,
+    max_visible_chars: int | None = None,
 ) -> list[str]:
     problems = list(audit_cues(cues))
+    if max_visible_chars is not None:
+        for cue in cues:
+            if visible_length(cue.text) > max_visible_chars:
+                problems.append(
+                    f"{cue.id}: {visible_length(cue.text)} visible chars exceeds "
+                    f"the requested {max_visible_chars}-character display ceiling"
+                )
     joined = " ".join(cue.text for cue in cues)
 
     if script.match_policy == "exact":
@@ -490,13 +499,18 @@ def _audit_aligned_cues(
 def build_script_aligned_cues(
     approved_script: Mapping[str, Any] | None,
     words: Iterable[Mapping[str, Any]],
+    *,
+    max_visible_chars: int | None = None,
+    id_prefix: str = "cue",
+    min_connector_words: int = 0,
 ) -> list[PersianCue]:
     """Build delivery-safe cues from approved copy plus raw ASR timing words.
 
     `approved_script` must contain `text`, `sha256`, and `matchPolicy` (`exact` or
     `normalized`). `maxCps` may lower, but never raise, the repository's reading-
-    speed ceiling. The returned cue text comes only from the approved script; ASR
-    strings are discarded after their timing spans have been aligned.
+    speed ceiling. `max_visible_chars` may additionally tighten grouping for a
+    burned display without changing the sidecar policy. The returned cue text comes
+    only from the approved script; ASR strings are discarded after timing alignment.
 
     Raises:
         SubtitleAlignmentError: for any uncertainty or delivery-policy violation.
@@ -512,11 +526,18 @@ def build_script_aligned_cues(
             for word in timed_words
         ],
         persian_digits=False,
+        id_prefix=id_prefix,
+        max_visible_chars=(
+            max_visible_chars if max_visible_chars is not None else 84
+        ),
+        min_connector_words=min_connector_words,
     )
     if not cues:
         _fail(["alignment produced no subtitle cues"])
 
-    problems = _audit_aligned_cues(cues, script_record, asr_words)
+    problems = _audit_aligned_cues(
+        cues, script_record, asr_words, max_visible_chars=max_visible_chars
+    )
     if problems:
         _fail(problems)
     return cues

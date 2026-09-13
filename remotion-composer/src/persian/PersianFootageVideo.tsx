@@ -5,8 +5,9 @@
  *
  *   1. **Footage or typographic plate** — one per shot, sequenced.
  *   2. **Audio** — narration at full level, music ducked beneath it.
- *   3. **Moments** — the typographic layer.
- *   4. **Watermark** — always on top, never covered.
+ *   3. **Captions** — approved-script burned captions when enabled.
+ *   4. **Moments** — higher-priority editorial typography.
+ *   5. **Watermark** — always on top, never covered.
  *
  * ## Why the layer order is fixed rather than data-driven
  *
@@ -16,20 +17,14 @@
  * but below text or it dims the text along with the picture. Making the order
  * configurable would only create ways to get it wrong.
  *
- * ## What is deliberately absent
+ * ## Caption / moment interaction
  *
- * There is no hook layer and no caption layer. Both existed and both were removed
- * in the same change, for the same reason: they overlapped in time and neither
- * knew about the other, so the opening seconds painted a red hook line at 18% of
- * frame height *and* the identical sentence as a caption at 61%, simultaneously.
- * Nothing suppressed one during the other, because they were independent fields in
- * the props with no interaction rule between them.
- *
- * The fix is structural rather than a suppression rule. The typographic layer is
- * now a single ordered list of moments with an enforced minimum gap, so "two kinds
- * of text at once" is not a state the props can express. A rule that says "hide
- * the caption while the hook is up" would have fixed this instance and left the
- * shape that produced it intact.
+ * Burned captions are now allowed, but they are never authored independently. They
+ * are derived from the same approved-script alignment that writes the sidecar SRT.
+ * A caption component checks the absolute timeline against `moments` and paints
+ * nothing while a moment is active. That makes two competing text layers impossible
+ * on a frame even when their source timing windows overlap. The retired authored
+ * `cues` and `hookText` shapes remain invalid.
  *
  * ## Timing
  *
@@ -52,6 +47,8 @@ import {
 } from "remotion";
 
 import { PersianFootageLayer } from "./components/PersianFootageLayer";
+import { PersianCaptionBlock } from "./components/PersianCaptionBlock";
+import { assertCaptionsFit } from "./captionLayout";
 import { PersianMomentBlock } from "./components/PersianMomentBlock";
 import { PersianV2MomentBlock } from "./v2/PersianV2MomentBlock";
 import { isFilmType, prepareFilmTypeProps } from "./filmType/layout";
@@ -163,6 +160,12 @@ export const calculatePersianMetadata: CalculateMetadataFunction<
   // against a fallback face even on the very first frame Remotion renders — which
   // during a still or a thumbnail may not be frame 0.
   await estedadReady;
+  assertCaptionsFit(
+    props.format ?? "vertical",
+    props.captions ?? [],
+    props.durationSeconds,
+    props.design,
+  );
 
   return {
     durationInFrames: Math.max(1, Math.round(props.durationSeconds * PERSIAN_FPS)),
@@ -178,6 +181,8 @@ export const PersianFootageVideo: React.FC<PersianVideoProps> = ({
   shots,
   moments,
   typographicBeats,
+  captionMode,
+  captions,
   audio,
   watermark = DEFAULT_WATERMARK,
   design,
@@ -198,6 +203,9 @@ export const PersianFootageVideo: React.FC<PersianVideoProps> = ({
   );
 
   assertMomentsArePaced(moments, fps);
+  if (captionMode === "sidecar_only" && captions.length > 0) {
+    throw new Error("sidecar_only captionMode cannot paint burned captions");
+  }
 
   const musicVolume = React.useMemo(() => {
     const levels = {
@@ -210,15 +218,32 @@ export const PersianFootageVideo: React.FC<PersianVideoProps> = ({
     // slightly lower level — a bed mixed for speech sounds thin without it.
     if (!audio?.narration) return () => levels.flat;
 
-    // With narration present, the bed sits at its base level throughout. It is
-    // deliberately *not* ducked against the moments: a moment is a typographic
-    // event, not a speech event, so ducking to it would dip the music at moments
-    // where nobody is talking and hold it up during narration that has no moment
-    // on screen — audible pumping uncorrelated with the voice. The predecessor
-    // ducked against the caption list, which worked only because captions covered
-    // every spoken word; that coupling is gone with the captions.
-    return () => levels.base;
-  }, [audio]);
+    // Duck only against real narration timing. Captions and editorial moments are
+    // visual systems and must never drive the mix. Short attack/release ramps avoid
+    // audible pumping while still letting the bed breathe in genuine speech pauses.
+    const intervals = audio?.speechIntervals ?? [];
+    const attack = 0.18, release = 0.28;
+    return (frame: number) => {
+      const seconds = frame / fps;
+      let level = levels.base;
+      for (const interval of intervals) {
+        const start = interval.startSeconds, end = interval.endSeconds;
+        if (seconds >= start && seconds <= end) level = Math.min(level, levels.duck);
+        else if (seconds >= start - attack && seconds < start) {
+          const t = (seconds - (start - attack)) / attack;
+          level = Math.min(level, levels.base + (levels.duck - levels.base) * t);
+        } else if (seconds > end && seconds <= end + release) {
+          const t = (seconds - end) / release;
+          level = Math.min(level, levels.duck + (levels.base - levels.duck) * t);
+        }
+      }
+      const fadeSeconds = audio?.musicFadeSeconds ?? DEFAULT_AUDIO_LEVELS.musicFadeSeconds;
+      const totalSeconds = durationInFrames / fps;
+      const head = fadeSeconds > 0 ? Math.min(1, seconds / fadeSeconds) : 1;
+      const tail = fadeSeconds > 0 ? Math.min(1, Math.max(0, totalSeconds - seconds) / fadeSeconds) : 1;
+      return level * Math.min(head, tail);
+    };
+  }, [audio, fps, durationInFrames]);
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000000" }}>
@@ -258,7 +283,32 @@ export const PersianFootageVideo: React.FC<PersianVideoProps> = ({
         <Audio src={resolveSrc(audio.music)} loop volume={musicVolume} />
       ) : null}
 
-      {/* 3. Moments. `layout="none"` so the sequence introduces no positioned
+      {/* 3. Burned captions. They are runtime-derived from approved script text,
+          never from ASR spelling. PersianCaptionBlock suppresses itself whenever an
+          editorial moment owns the frame, so the two text systems cannot compete. */}
+      {captionMode !== "sidecar_only"
+        ? captions.map((caption) => {
+            const from = toFrames(caption.startSeconds);
+            const duration = Math.max(1, toFrames(caption.endSeconds) - from);
+            return (
+              <Sequence
+                key={caption.id}
+                from={from}
+                durationInFrames={duration}
+                layout="none"
+              >
+                <PersianCaptionBlock
+                  caption={caption}
+                  format={format}
+                  moments={moments}
+                  design={design}
+                />
+              </Sequence>
+            );
+          })
+        : null}
+
+      {/* 4. Moments. `layout="none"` so the sequence introduces no positioned
              wrapper — each moment positions itself against the frame. */}
       {moments.map((moment) => {
         const from = toFrames(moment.startSeconds);
@@ -283,7 +333,7 @@ export const PersianFootageVideo: React.FC<PersianVideoProps> = ({
         );
       })}
 
-      {/* 4. Watermark, above everything. */}
+      {/* 5. Watermark, above everything. */}
       {filmTypeEnabled ? (
         <PersianFilmTypeWatermark format={format} design={design!} lockup={filmType!.lockup} plan={watermarkPlan} />
       ) : <PersianWatermarkMark format={format} watermark={watermark} plan={design?.version === 2 ? watermarkPlan : undefined} measurement={design?.version === 2 ? watermarkMeasurement : undefined} color={v2WatermarkColor} />}

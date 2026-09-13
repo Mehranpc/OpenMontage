@@ -146,7 +146,7 @@ class PexelsSource:
             rend = _pick_video_rendition(
                 v.get("video_files", []) or [],
                 min_width=filters.min_width or 0,
-                max_width=1920,
+                max_width=min(filters.max_width or 1920, 1920),
             )
             if rend is None:
                 continue

@@ -545,7 +545,16 @@
                   "minLength": 1
                 },
                 "profileVersion": {
-                  "enum": ["2.1.0", "2.2.0", "2.3.0", "2.4.0", "2.5.0", "2.6.0", "2.7.0", "2.8.0"]
+                  "enum": [
+                    "2.1.0",
+                    "2.2.0",
+                    "2.3.0",
+                    "2.4.0",
+                    "2.5.0",
+                    "2.6.0",
+                    "2.7.0",
+                    "2.8.0"
+                  ]
                 },
                 "contentHash": {
                   "type": "string",
@@ -601,6 +610,28 @@
           "exclusiveMinimum": 0,
           "description": "Authoritative total duration. calculateMetadata uses it directly rather than deriving it from the shot list."
         },
+        "platformTarget": {
+          "type": "string",
+          "enum": [
+            "youtube",
+            "instagram",
+            "instagram-reels",
+            "tiktok",
+            "linkedin",
+            "generic"
+          ],
+          "description": "Delivery surface copied from the production profile. Instagram and Instagram Reels default to hybrid captions when captionMode is omitted; new Persian productions still persist captionMode explicitly."
+        },
+        "captionMode": {
+          "type": "string",
+          "enum": [
+            "sidecar_only",
+            "burned_captions",
+            "hybrid"
+          ],
+          "default": "sidecar_only",
+          "description": "Persian caption delivery policy. New Instagram Reels productions use hybrid unless explicitly overridden; legacy artifacts omit the key and retain sidecar-only behavior. Burned caption pixels are runtime-derived from metadata.persianSubtitleScript plus audio.wordTimings and are never authored as cues[]."
+        },
         "shots": {
           "type": "array",
           "minItems": 1,
@@ -617,6 +648,57 @@
             "properties": {
               "id": {
                 "type": "string"
+              },
+              "semanticBeatId": {
+                "type": "string",
+                "description": "Semantic narration beat this shot serves; provenance only, not a timing source."
+              },
+              "visualEventId": {
+                "type": "string",
+                "description": "Shot-level visual event inside semanticBeatId. New Persian plans use this to preserve semantic beat != visual event through compose."
+              },
+              "transitionIn": {
+                "type": "string",
+                "enum": [
+                  "cut"
+                ],
+                "default": "cut",
+                "description": "Executable transition entering this Persian shot. The current renderer supports hard cuts only; do not claim dissolve until a real crossfade implementation exists."
+              },
+              "changeType": {
+                "type": "string",
+                "enum": ["establish", "action", "reaction", "detail", "scale_change", "punch_in"],
+                "description": "Why this hard cut changes the viewer's visual information. New visual-event edits state one of the executable cut-grammar roles; this is editorial metadata, not a transition effect."
+              },
+              "narrativeRole": {
+                "type": "string",
+                "enum": ["hook", "exposition", "conflict", "turn", "resolution"],
+                "description": "Narrative job of this visual event. The retention gate requires a visible hook in the first 3 seconds and a resolution event in the final quarter for new visual-event edits."
+              },
+              "humanPresence": {
+                "type": "boolean",
+                "description": "Whether a human is visibly present in the selected shot. Preserved from asset review so resolution QA can prefer a relatable human ending without pretending to infer it from pixels."
+              },
+              "showsSubject": {
+                "type": "boolean",
+                "description": "Whether the selected opening/visual-event window visibly carries the declared subject."
+              },
+              "semanticRole": {
+                "type": "string",
+                "description": "Generic semantic job of the selected visual event; reward_problem_hook is validated more strictly without becoming a global default."
+              },
+              "semanticDirection": {
+                "type": "string",
+                "description": "Direction of the visible semantic action, e.g. parent_to_child_reward or child_resistance."
+              },
+              "openingSemanticMatch": {
+                "type": "boolean",
+                "description": "True only after the selected opening window itself was reviewed and matches its authored semantic role/direction."
+              },
+              "selectionReason": {
+                "type": "string",
+                "minLength": 1,
+                "description": "What is visibly in frame and why this exact selected window was chosen."
               },
               "source": {
                 "type": "string",
@@ -781,6 +863,10 @@
               },
               "purpose": {
                 "type": "string"
+              },
+              "userAuthoredShortHook": {
+                "type": "boolean",
+                "description": "True only when the user explicitly authored a deliberately short opening hook. Automatic fitting/collapse must never set this flag."
               },
               "presentation": {
                 "type": "object",
@@ -967,7 +1053,7 @@
             },
             "wordTimings": {
               "type": "array",
-              "description": "Narration word timings. persian_compose turns these into a sidecar .srt beside the MP4 — real, toggleable, indexable subtitles rather than burned-in pixels. Omitted in silent mode, where there is no speech to subtitle.",
+              "description": "Narration word timings used only as timing evidence. The registered persian_compose aligns approved script text against them; depending on captionMode the aligned copy becomes a sidecar SRT, burned captions, or both. Omitted in silent mode.",
               "items": {
                 "type": "object",
                 "required": [

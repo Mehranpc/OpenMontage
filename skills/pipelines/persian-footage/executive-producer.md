@@ -1,9 +1,9 @@
 ## Film Type is the active visual profile
 
-Film Type 2.12.0 / layout 12 is the default for every persian-footage run.
+Film Type 2.14.0 / layout 14 is the default for every persian-footage run.
 **This file does not restate the profile's rules.** Read
 `skills/pipelines/persian-footage/film-type.md` for the active contract, and
-`docs/persian-film-type-2.12-patch.md` for what the current version changed.
+`docs/persian-film-type-2.14-patch.md` for what the current version changed.
 Guidance for older pins lives in
 `skills/pipelines/persian-footage/film-type-history.md` — archive only.
 
@@ -56,13 +56,15 @@ available and are the better fit there.
 
 ## What this pipeline produces
 
-Real stock footage carrying **designed typographic moments** — not a subtitled video.
+Real stock footage carrying **designed typographic moments**, plus platform-native caption delivery when the production profile calls for it. Moments and captions are separate systems.
 
 - **Estedad** at real vendored weights (500/700/900) — never a synthesized bold.
 - **7–9 moments in a 60-second video**, each a figure, a term, a claim, or a hook —
   the opening moment declares `kind: "hook"` and is the video's opening. The default
   hook style is claim+qualifier; a flat one-size style exists for an unsplittable
-  single clause but currently cannot pass the silhouette gate. The selection rule,
+  single clause. Production pattern-interrupt hooks preserve clause-level meaning
+  under layout pressure; automatic one-word fallbacks are refused unless the user
+  explicitly authored a micro-hook. The selection rule,
   the style definitions, and every sizing value live in the hook section of
   `skills/pipelines/persian-footage/edit-director.md` and in
   `remotion-composer/src/persian/tokens.ts` — read them there, not here. Empty frame
@@ -75,10 +77,17 @@ Real stock footage carrying **designed typographic moments** — not a subtitled
   a `4.5:1` contrast floor in `lib/persian_film_verify.py`. Legacy's
   `SCRIM.peakAlpha` `0.72` and `5.6:1` floor live in `tokens.ts` and
   `lib/persian_verify.py` and must not be applied to Film Type.
-- **A sidecar `.srt`** built from the narration's word timings. Real, toggleable,
-  indexable subtitles instead of burned-in text.
-- **A moving brand watermark** planned by `planMovingBrand`.
-  `WATERMARK_TOP_FRACTION` is a Legacy model, not the Film Type watermark model.
+- **Script-authoritative captions.** `sidecar_only`, `burned_captions`, or `hybrid`;
+  Instagram / Instagram Reels defaults to hybrid. ASR supplies timing only. Burned
+  captions are one/two lines, yield to moments, preserve hard sentence/question
+  boundaries, and use the active profile's platform-safe layout.
+- **A semantic opening contract.** Hook footage carries reviewed semantic direction,
+  subject/human presence, and selected-window evidence; a visually reversed action is
+  rejected rather than accepted as generic emotional stock.
+- **A coverage-aware moving brand watermark.** Safety geometry is authoritative;
+  unsafe intervals may remain blank and long-form relocation remains a target rather
+  than permission to violate text/subject clearance. `WATERMARK_TOP_FRACTION` is a
+  Legacy model, not the Film Type watermark model.
 - **Motion** from a defined grammar: four spring weights, arrival/exit verbs, and
   a living-hold that never transforms settled glyphs.
 
@@ -87,17 +96,13 @@ components serve both, with type scales set per format rather than scaled from o
 
 ### What it deliberately does not produce
 
-A running transcript on screen. That was the first version and it was wrong: with a
-caption under every sentence the viewer reads instead of watching, the footage becomes
-wallpaper behind a text box, and the result is a reels-video with different clips. The
-moment model exists to make the difference structural rather than a matter of taste —
-`audit_moments` refuses a set whose text covers more than the ceiling in
-`lib/persian_moments.py` (`MAX_TEXT_COVERAGE`), and
-`persian_compose` refuses a `cues` key outright.
-
-Karaoke emphasis went with it. It needed word-for-word on-screen text to highlight, and
-there is none. Accessibility is better served by the sidecar `.srt` than it ever was by
-burned-in words.
+An authored wall-to-wall `cues[]` layer or karaoke track. The old system made transcript
+copy a second independent design layer and allowed it to collide with hooks/moments.
+That shape remains refused. The current burned-caption path is different: it is derived
+from approved narration at render time, has a bounded one/two-line layout, yields to an
+active moment, and cannot carry independent copy. Sidecar SRT remains available for
+accessibility/indexing; hybrid adds pixels for muted-feed comprehension rather than
+pretending burned text replaces the sidecar.
 
 ## Legacy renderer geometry — NOT Film Type
 
@@ -181,10 +186,10 @@ so it must not be inferred later.
 ### `narrated` (default)
 
 The user supplies Persian narration audio. Word timings come from transcribing that
-audio and produce the sidecar `.srt`.
-
-Timing accuracy matters less than it once did: nothing on screen is locked to a word, so
-a tenth of a second of drift is cosmetic rather than a visible bug.
+audio, but ASR wording is discarded as delivery copy. The approved script is aligned to
+those timings and feeds the selected caption mode: SRT, burned pixels, or both. Because
+burned/hybrid captions are timed to the narration, alignment accuracy is again visible
+and is a hard pre-render gate rather than a cosmetic detail.
 
 Only when narration audio is missing, hand the narration text to the user and wait
 for audio as an input dependency. If final narration audio is already supplied,

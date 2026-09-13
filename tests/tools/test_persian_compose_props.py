@@ -33,7 +33,7 @@ from tools.video.persian_compose import PersianCompose
 
 #: Keys that paint something and therefore must never be inheritable. A key here that
 #: the tool omits gets whatever the composition's `defaultProps` says.
-PAINTING_KEYS = ("shots", "moments", "typographicBeats")
+PAINTING_KEYS = ("shots", "moments", "typographicBeats", "captions")
 
 #: Keys from the retired caption/hook design. Present in edit decisions means the edit
 #: stage was not updated, which must fail loudly rather than render without text.
@@ -100,6 +100,18 @@ def _build(persian: dict, staging: Path) -> tuple[dict, list[str]]:
     return PersianCompose()._build_props(persian, staging, "run-test")
 
 
+def test_shots_state_hard_cut_grammar_by_default(clip: Path, staging: Path) -> None:
+    props, _ = _build(_persian(clip), staging)
+    assert props["shots"][0]["transitionIn"] == "cut"
+
+
+def test_explicit_hard_cut_survives_compose_boundary(clip: Path, staging: Path) -> None:
+    persian = _persian(clip)
+    persian["shots"][0]["transitionIn"] = "cut"
+    props, _ = _build(persian, staging)
+    assert props["shots"][0]["transitionIn"] == "cut"
+
+
 class TestNoKeyIsInheritable:
     @pytest.mark.parametrize("key", PAINTING_KEYS)
     def test_every_painting_key_is_stated_even_when_unused(
@@ -117,6 +129,16 @@ class TestNoKeyIsInheritable:
             "composition's defaultProps. An inherited painting key covers the render "
             "without failing it."
         )
+
+    def test_shot_semantic_and_visual_event_ids_survive_props_build(
+        self, clip: Path, staging: Path
+    ) -> None:
+        persian = _persian(clip)
+        persian["shots"][0]["semanticBeatId"] = "beat-1"
+        persian["shots"][0]["visualEventId"] = "beat-1-event-2"
+        props, _ = _build(persian, staging)
+        assert props["shots"][0]["semanticBeatId"] == "beat-1"
+        assert props["shots"][0]["visualEventId"] == "beat-1-event-2"
 
     def test_absent_typographic_beats_become_an_empty_list(
         self, clip: Path, staging: Path
@@ -494,6 +516,22 @@ class TestAudioProps:
         assert props["audio"]["musicBaseVolume"] == pytest.approx(0.6)
         assert props["audio"]["musicDuckVolume"] == pytest.approx(0.36)
         assert props["audio"]["musicFlatVolume"] == pytest.approx(0.5)
+
+    def test_word_timings_become_merged_speech_intervals_for_music_ducking(
+        self, clip: Path, staging: Path
+    ) -> None:
+        props, _ = _build(
+            _persian(clip, audio={"wordTimings": [
+                {"word": "سلام", "start": 0.4, "end": 0.6},
+                {"word": "دنیا", "start": 0.7, "end": 0.9},
+                {"word": "بعد", "start": 1.5, "end": 1.8},
+            ]}),
+            staging,
+        )
+        assert props["audio"]["speechIntervals"] == [
+            {"startSeconds": 0.4, "endSeconds": 0.9},
+            {"startSeconds": 1.5, "endSeconds": 1.8},
+        ]
 
 
 class TestFormatAndDuration:

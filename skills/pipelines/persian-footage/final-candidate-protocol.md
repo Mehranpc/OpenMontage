@@ -59,7 +59,11 @@ python -m lib.persian_preflight path/to/checkpoint_edit.json
 ```
 
 It runs the real audits and Film Type browser measurement while validating media
-paths without copying them. It writes no checkpoint and leaves no persistent staging.
+paths without copying them. It also runs `lib.persian_retention.audit_persian_retention`:
+the first three seconds need a second visual event or pattern interrupt, uncovered visual
+intervals are refused, long uninterrupted events and long text-only endings are reported,
+and cut grammar is recorded. The numeric ~8-10s long-shot range is a retention-risk
+warning, not misrepresented as a universal law. It writes no checkpoint and leaves no persistent staging.
 Never call `PersianCompose._build_props` directly from an agent script and never use
 `renders/.prep` for probes. Run `persian_compose` once for the accepted edit; normal
 render staging must be cleaned on every exit unless explicit debug retention was
@@ -69,5 +73,18 @@ requested.
 
 Present the complete MP4 and its sha256 plus entry/stable/exit frames for every
 moment, both sides of crossed cuts, warnings for geometry/contrast/watermark/luminance/
-subtitles, and an optional separate debug sheet with region boxes. The user reviews
-once. On rejection, revise only named scenes and produce a new candidate.
+captions/subtitles (including burned-caption entry/mid/exit samples when enabled), and an optional separate debug sheet with region boxes. The non-human review
+package also carries the measured retention audit plus `post_render_motion_qa`, muted-viewer
+comprehension, cut rhythm, caption readability, strongest scene, weakest scene, hook
+strength, and resolution strength. Timeline code measures authored cadence; the motion QA
+samples the actual MP4 at 2fps after a tiny grayscale downscale and measures consecutive
+pixel deltas. A roughly eight-second near-frozen stretch is an advisory; a roughly ten-second
+near-frozen stretch blocks delivery. These thresholds are deliberately conservative and do
+not pretend to score subtle creative motion. The reviewer states semantic judgements instead
+of pretending they were inferred from timestamps. Persist a schema-valid `final_review`
+artifact inside the project and link it from `render_report.final_review_ref`; the workflow
+rehashes that review artifact and the MP4 before entering `awaiting_human`. Burned/hybrid
+captions retain at least entry/mid/exit frame paths in
+`render_report.caption_verification_frames`, and the generic visual spotcheck retains at
+least four real frame paths. The user reviews once. On rejection, revise only named scenes
+and produce a new candidate.

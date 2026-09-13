@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import unittest
 from lib.persian_design import resolve_design, SUPPORTED_FILM_TYPE_27_HASH
+from lib.persian_captions import caption_band_rect
 ROOT=Path(__file__).resolve().parents[2]
 class ReelsSafeAreaContracts(unittest.TestCase):
     def test_default_strong_keeps_soft_field_no_darker_than_baseline(self):
@@ -30,6 +31,24 @@ class ReelsSafeAreaContracts(unittest.TestCase):
         text=p['formats']['vertical']['safeArea'];brand=p['watermark']['safeAreas']['vertical']
         for key,value in {'top':.14,'bottom':.35,'left':.08,'right':.16}.items():
             self.assertEqual(text[key],value);self.assertEqual(brand[key],value)
+    def test_burned_caption_band_stays_inside_reels_safe_area(self):
+        p=resolve_design({'version':2,'profile':'film-type','seed':'test'})['resolved']
+        safe=p['formats']['vertical']['safeArea']
+        band=caption_band_rect('vertical',safe_area=safe,profile_version=p['profileVersion'],start_seconds=0,end_seconds=60)
+        self.assertGreaterEqual(band['x'],safe['left'])
+        self.assertGreaterEqual(band['y'],safe['top'])
+        self.assertLessEqual(band['x']+band['w'],1-safe['right']+1e-9)
+        self.assertLessEqual(band['y']+band['h'],1-safe['bottom']+1e-9)
+        self.assertGreater(band['h'],0)
+        self.assertAlmostEqual(band['x'] + band['w'] / 2, .5, places=9)
+
+    def test_pinned_212_caption_band_keeps_historical_asymmetry(self):
+        old=json.loads((ROOT/'styles/persian-footage/film-type-2.12.0.json').read_text())
+        safe=old['formats']['vertical']['safeArea']
+        band=caption_band_rect('vertical',safe_area=safe,profile_version='2.12.0',start_seconds=0,end_seconds=60)
+        self.assertNotAlmostEqual(band['x'] + band['w'] / 2, .5, places=6)
+        self.assertAlmostEqual(band['x'], safe['left'] + .015, places=9)
+
     def test_landscape_geometry_unchanged(self):
         p=resolve_design({'version':2,'profile':'film-type','seed':'test'})['resolved']
         old=json.loads((ROOT/'styles/persian-footage/film-type-2.7.0.json').read_text())

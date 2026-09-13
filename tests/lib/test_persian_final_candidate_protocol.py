@@ -11,7 +11,7 @@ from lib.checkpoint import (
     init_project,
     write_checkpoint,
 )
-from lib.persian_preflight import NoCopyPersianCompose, extract_edit_decisions, summarize
+from lib.persian_preflight import (NoCopyPersianCompose, extract_edit_decisions, preflight_edit_decisions, summarize)
 from schemas.artifacts import validate_artifact
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -222,6 +222,93 @@ def test_no_copy_stage_and_helpers(tmp_path):
         "x": .1, "y": .2, "w": .3, "h": .4,
     }
     assert result["moments"][0]["geometry"]["placement"] == "upper-left"
+
+
+def test_preflight_refuses_a_weak_single_event_opening_before_render_work():
+    payload = {
+        "persian": {
+            "durationSeconds": 12.0,
+            "shots": [{"id": "s1", "startSeconds": 0.0, "endSeconds": 12.0}],
+            "moments": [],
+            "typographicBeats": [],
+        }
+    }
+    with pytest.raises(ValueError, match="first 3 seconds"):
+        preflight_edit_decisions(payload)
+
+
+def test_summary_can_carry_retention_audit_without_media_copies():
+    retention = {"problems": [], "first3Seconds": {"eventCount": 2}}
+    result = summarize({"moments": [], "watermarkPlan": []}, [], retention)
+    assert result["retentionAudit"] is retention
+    assert result["mediaCopies"] == 0
+
+
+def test_summary_reports_film_type_213_opening_caption_and_watermark_evidence():
+    props = {
+        "format": "vertical", "durationSeconds": 40.0, "captionMode": "hybrid",
+        "design": {
+            "profileVersion": "2.13.0",
+            "resolved": {
+                "layoutVersion": 13,
+                "formats": {"vertical": {"safeArea": {"top": .14, "bottom": .35, "left": .08, "right": .16}}},
+                "watermark": {
+                    "introDelaySeconds": 5, "minCoverageRatio": .7, "targetCoverageRatio": .8,
+                    "minDwellSeconds": 6, "maxRelocations": 5,
+                    "longFormThresholdSeconds": 30, "minLongFormRelocations": 2,
+                },
+            },
+        },
+        "shots": [{
+            "id": "s1", "narrativeRole": "hook", "startSeconds": 0.0, "endSeconds": 4.0,
+            "semanticRole": "reward_problem_hook", "semanticDirection": "child_resistance",
+            "openingSemanticMatch": True, "selectionReason": "کودک در حضور والد مقاومت می‌کند",
+            "showsSubject": True, "humanPresence": True,
+        }],
+        "moments": [{
+            "id": "m1", "kind": "hook", "purpose": "hook-pattern-interrupt",
+            "segments": [{"role": "hero", "text": "به هر کار خوبی"}, {"role": "tail", "text": "جایزه می‌دی؟"}],
+        }],
+        "captions": [{
+            "id": "c1", "text": "این یک کپشن سالم است.", "startSeconds": 0.0, "endSeconds": 2.0,
+        }],
+        "watermarkPlan": [
+            {"zone": "lower-left", "startSeconds": 5.0, "endSeconds": 20.0},
+            {"zone": "lower-right", "startSeconds": 20.0, "endSeconds": 40.0},
+        ],
+    }
+    result = summarize(props, [])
+    assert result["openingSemanticMatch"] is True
+    assert result["openingHookTokenCount"] >= 3
+    assert result["openingHookSingleTokenFallback"] is False
+    assert result["captionBandCenterX"] == .5
+    assert result["captionBandSymmetric"] is True
+    assert result["subtitleHardBoundariesPassed"] is True
+    watermark = result["watermarkEvidence"]
+    assert watermark["noEarlyWatermark"] is True
+    assert watermark["coverageRatio"] == .875
+    assert watermark["coverageFloorPassed"] is True
+    assert watermark["coverageTargetReached"] is True
+    assert watermark["relocationCount"] == 1
+    assert watermark["relocationTarget"] == 2
+    assert watermark["relocationTargetReached"] is False
+    assert watermark["distinctZones"] == ["lower-left", "lower-right"]
+    assert watermark["distinctZoneCount"] == 2
+
+
+def test_summary_detects_caption_hard_boundary_crossing():
+    props = {
+        "format": "vertical", "durationSeconds": 10.0, "captionMode": "hybrid",
+        "design": {"profileVersion": "2.13.0", "resolved": {
+            "formats": {"vertical": {"safeArea": {"top": .14, "bottom": .35, "left": .08, "right": .16}}},
+            "watermark": {},
+        }},
+        "moments": [], "shots": [], "watermarkPlan": [],
+        "captions": [{"id": "c1", "text": "تمام شد. جملهٔ بعد", "startSeconds": 0.0, "endSeconds": 2.0}],
+    }
+    result = summarize(props, [])
+    assert result["subtitleHardBoundariesPassed"] is False
+    assert result["subtitleHardBoundaryProblems"]
 
 
 def test_protocol_is_required_and_bounded():

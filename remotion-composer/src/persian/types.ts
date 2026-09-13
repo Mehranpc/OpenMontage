@@ -158,6 +158,8 @@ export interface PersianMoment {
   /** The phrase, in reading order, top to bottom. */
   readonly segments: readonly PersianSegment[];
   readonly purpose?: string;
+  /** Explicit exception for a user-authored micro-hook; never set by auto-layout. */
+  readonly userAuthoredShortHook?: boolean;
   readonly presentation?: PersianPresentation;
   /**
    * The narration words this moment is bound to.
@@ -201,6 +203,20 @@ export interface PersianMoment {
  */
 export interface PersianShot {
   readonly id: string;
+  /** Parent semantic narration beat; metadata only, never inferred from timing. */
+  readonly semanticBeatId?: string;
+  /** Shot-level visual event within the semantic beat. */
+  readonly visualEventId?: string;
+  readonly changeType?: "establish" | "action" | "reaction" | "detail" | "scale_change" | "punch_in";
+  readonly narrativeRole?: "hook" | "exposition" | "conflict" | "turn" | "resolution";
+  readonly humanPresence?: boolean;
+  readonly showsSubject?: boolean;
+  readonly semanticRole?: string;
+  readonly semanticDirection?: string;
+  readonly openingSemanticMatch?: boolean;
+  readonly selectionReason?: string;
+  /** Executable edit grammar. Persian currently renders hard cuts only. */
+  readonly transitionIn?: "cut";
   /** Path relative to the composition's public dir. */
   readonly source: string;
   /** Timeline position, seconds. */
@@ -235,6 +251,19 @@ export interface PersianTypographicBeat {
   readonly endSeconds: number;
 }
 
+
+export type PersianCaptionMode = "sidecar_only" | "burned_captions" | "hybrid";
+
+export interface PersianCaption {
+  readonly id: string;
+  /** Approved-script text; ASR wording is never allowed here. */
+  readonly text: string;
+  /** One or two pre-broken lines; the renderer never invents a third line. */
+  readonly lines: readonly string[];
+  readonly startSeconds: number;
+  readonly endSeconds: number;
+}
+
 export interface PersianAudio {
   /** Narration path relative to the public dir, if any. */
   readonly narration?: string;
@@ -246,6 +275,8 @@ export interface PersianAudio {
   readonly musicBaseVolume?: number;
   /** Music level while narration speaks. */
   readonly musicDuckVolume?: number;
+  /** Derived speech windows from narration word timings; never authored copy. */
+  readonly speechIntervals?: readonly {startSeconds: number; endSeconds: number}[];
   /**
    * Seconds of fade at the head and tail of the music bed.
    *
@@ -302,6 +333,9 @@ export type PersianVideoProps = {
   readonly shots: readonly PersianShot[];
   readonly moments: readonly PersianMoment[];
   readonly typographicBeats?: readonly PersianTypographicBeat[];
+  /** Delivery policy. Burned/hybrid captions are runtime-derived from approved copy. */
+  readonly captionMode: PersianCaptionMode;
+  readonly captions: readonly PersianCaption[];
   readonly audio?: PersianAudio;
   readonly watermark?: PersianWatermark;
   readonly watermarkPlan?: readonly { zone: string; startSeconds: number; endSeconds: number; rect: { x: number; y: number; w: number; h: number }; transition: string; reason?: string; }[];

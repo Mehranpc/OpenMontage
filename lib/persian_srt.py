@@ -35,8 +35,9 @@ reasoning for each is worth stating because they conflict:
   paragraph regardless of how it is drawn.
 
 * **Minimum on-screen time** (`MIN_CUE_SECONDS`). Below roughly a second, a cue
-  registers as a flash rather than text. Two short clauses are merged rather than
-  shown as two cues.
+  registers as a flash rather than text. Short clauses may be merged when they share
+  a sentence, but a completed sentence/question/exclamation remains a hard semantic
+  boundary even when that leaves an unavoidable short cue.
 
 **Reading speed** (`MAX_CPS`, 21 visible chars/second) is enforced differently — by
 `audit_cues`, after the fact, rather than during grouping. The reason is that density
@@ -91,6 +92,7 @@ MAX_CUE_VISIBLE_CHARS = 84
 #: available inside its budget.
 _STRONG_TERMINATORS = (".", "؟", "!", "…")
 _WEAK_TERMINATORS = ("،", "؛", ":")
+_TRAILING_CLOSERS = ("\"", "\x27", "»", "”", "’", ")", "]", "}", "）", "】", "〕", "〉", "》")
 
 #: Gap between consecutive cues, seconds.
 #:
@@ -135,9 +137,17 @@ class PersianCue:
         return visible_length(self.text) / self.duration
 
 
+def _boundary_text(word: str) -> str:
+    """Normalize a word and ignore trailing closing quotes/brackets for punctuation."""
+    stripped = normalize(word).rstrip()
+    while stripped.endswith(_TRAILING_CLOSERS):
+        stripped = stripped[:-1].rstrip()
+    return stripped
+
+
 def _terminator_rank(word: str) -> int:
     """3 for a strong clause end, 2 for a weak one, 0 otherwise."""
-    stripped = normalize(word).rstrip()
+    stripped = _boundary_text(word)
     if stripped.endswith(_STRONG_TERMINATORS):
         return 3
     if stripped.endswith(_WEAK_TERMINATORS):
@@ -145,7 +155,18 @@ def _terminator_rank(word: str) -> int:
     return 0
 
 
-def _fits(words: list[TimedWord], extra: TimedWord) -> bool:
+def _ends_with_hard_boundary(word: TimedWord) -> bool:
+    """Whether automatic cue repair must preserve the boundary after this word."""
+    return _terminator_rank(word.text) == 3
+
+
+def _fits(
+    words: list[TimedWord],
+    extra: TimedWord,
+    *,
+    max_visible_chars: int = MAX_CUE_VISIBLE_CHARS,
+    max_seconds: float = MAX_CUE_SECONDS,
+) -> bool:
     """Whether `extra` can join `words` without breaking an actionable limit.
 
     Only the two limits that **grouping can actually influence** are checked here:
@@ -170,9 +191,9 @@ def _fits(words: list[TimedWord], extra: TimedWord) -> bool:
     text = " ".join(w.text for w in candidate)
     duration = candidate[-1].end - candidate[0].start
 
-    if duration > MAX_CUE_SECONDS:
+    if duration > max_seconds:
         return False
-    if visible_length(text) > MAX_CUE_VISIBLE_CHARS:
+    if visible_length(text) > max_visible_chars:
         return False
     return True
 
@@ -182,6 +203,9 @@ def build_cues(
     *,
     persian_digits: bool = True,
     id_prefix: str = "cue",
+    max_visible_chars: int = MAX_CUE_VISIBLE_CHARS,
+    max_seconds: float = MAX_CUE_SECONDS,
+    min_connector_words: int = 0,
 ) -> list[PersianCue]:
     """Group timed words into readable Persian cues.
 
@@ -193,6 +217,9 @@ def build_cues(
             On by default: a Persian caption showing Western digits looks unfinished,
             and the conversion is safe because only digit glyphs are substituted.
         id_prefix: Prefix for generated cue IDs.
+        max_visible_chars: Grouping ceiling. Burned captions may lower this while
+            sidecar SRT keeps the repository default.
+        max_seconds: Maximum cue extent; defaults to the SRT policy.
 
     Returns:
         Cues in timeline order. Never overlapping, never shorter than
@@ -224,8 +251,19 @@ def build_cues(
     if not parsed:
         return []
 
-    groups = _group_words(parsed)
-    groups = _merge_short_groups(groups)
+    groups = _group_words(
+        parsed, max_visible_chars=max_visible_chars, max_seconds=max_seconds
+    )
+    groups = _repair_connector_fragments(
+        groups, max_visible_chars=max_visible_chars, max_seconds=max_seconds,
+        min_connector_words=min_connector_words,
+    )
+    groups = _merge_short_groups(
+        groups, max_visible_chars=max_visible_chars, max_seconds=max_seconds
+    )
+    groups = _rebalance_short_groups(
+        groups, max_visible_chars=max_visible_chars, max_seconds=max_seconds
+    )
 
     cues: list[PersianCue] = []
     for index, group in enumerate(groups):
@@ -247,7 +285,12 @@ def build_cues(
     return cues
 
 
-def _group_words(words: list[TimedWord]) -> list[list[TimedWord]]:
+def _group_words(
+    words: list[TimedWord],
+    *,
+    max_visible_chars: int = MAX_CUE_VISIBLE_CHARS,
+    max_seconds: float = MAX_CUE_SECONDS,
+) -> list[list[TimedWord]]:
     """Greedily accumulate words, breaking at the best boundary in budget.
 
     Greedy rather than a global optimization, because cue boundaries have to
@@ -262,7 +305,9 @@ def _group_words(words: list[TimedWord]) -> list[list[TimedWord]]:
     best_rank = 0
 
     for word in words:
-        if current and not _fits(current, word):
+        if current and not _fits(
+            current, word, max_visible_chars=max_visible_chars, max_seconds=max_seconds
+        ):
             # Over budget. Break at the strongest clause boundary found, or at the
             # last word if the whole span has no punctuation at all.
             if best_break is not None and best_break < len(current) - 1:
@@ -289,9 +334,10 @@ def _group_words(words: list[TimedWord]) -> list[list[TimedWord]]:
             best_rank = rank
             best_break = len(current) - 1
 
-        # A strong terminator that already satisfies the minimum duration is the
-        # natural end of a cue — take it rather than packing more in.
-        if rank == 3 and (current[-1].end - current[0].start) >= MIN_CUE_SECONDS:
+        # A strong terminator is a semantic hard boundary. Preserve it even when
+        # the resulting cue is short: a reported flash is less misleading than
+        # joining a complete sentence/question to the next thought.
+        if rank == 3:
             groups.append(current)
             current = []
             best_break = None
@@ -303,12 +349,78 @@ def _group_words(words: list[TimedWord]) -> list[list[TimedWord]]:
     return groups
 
 
-def _merge_short_groups(groups: list[list[TimedWord]]) -> list[list[TimedWord]]:
+_DISCOURSE_CONNECTOR_PREFIXES = (
+    ("از", "طرفی،"), ("از", "طرفی"), ("از", "طرف", "دیگر،"),
+    ("از", "طرف", "دیگر"), ("از", "سوی", "دیگر،"), ("از", "سوی", "دیگر"),
+    ("با", "این", "حال،"), ("با", "این", "حال"), ("در", "عوض،"),
+    ("در", "عوض"), ("در", "نتیجه،"), ("در", "نتیجه"), ("برای", "همین،"),
+    ("برای", "همین"), ("به", "همین", "دلیل،"), ("به", "همین", "دلیل"),
+)
+
+def _repair_connector_fragments(
+    groups: list[list[TimedWord]], *, max_visible_chars: int, max_seconds: float,
+    min_connector_words: int = 0,
+) -> list[list[TimedWord]]:
+    """Prevent discourse openers from becoming semantically empty caption chips."""
+    if min_connector_words <= 0 or len(groups) <= 1:
+        return groups
+    result = [list(group) for group in groups]
+    index = 0
+    while index < len(result) - 1:
+        group = result[index]
+        words = tuple(word.text for word in group)
+        connector = any(words[:len(prefix)] == prefix for prefix in _DISCOURSE_CONNECTOR_PREFIXES)
+        if not connector or len(group) >= min_connector_words:
+            index += 1
+            continue
+        following = result[index + 1]
+        combined = group + following
+        combined_text = " ".join(word.text for word in combined)
+        combined_duration = combined[-1].end - combined[0].start
+        if visible_length(combined_text) <= max_visible_chars and combined_duration <= max_seconds:
+            result[index] = combined
+            del result[index + 1]
+            index += 1
+            continue
+        needed = min_connector_words - len(group)
+        if needed <= 0 or len(following) <= needed:
+            index += 1
+            continue
+        repaired = group + following[:needed]
+        donor = following[needed:]
+        repaired_text = " ".join(word.text for word in repaired)
+        if (visible_length(repaired_text) > max_visible_chars
+                or repaired[-1].end - repaired[0].start > max_seconds):
+            index += 1
+            continue
+        result[index] = repaired
+        result[index + 1] = donor
+        # A donor created by this repair often begins with «و برای…». If its full
+        # continuation fits, join it immediately rather than creating a second
+        # syntactically dependent fragment.
+        if index + 2 < len(result):
+            donor_plus_next = donor + result[index + 2]
+            donor_text = " ".join(word.text for word in donor_plus_next)
+            donor_duration = donor_plus_next[-1].end - donor_plus_next[0].start
+            if visible_length(donor_text) <= max_visible_chars and donor_duration <= max_seconds:
+                result[index + 1] = donor_plus_next
+                del result[index + 2]
+        index += 1
+    return result
+
+
+def _merge_short_groups(
+    groups: list[list[TimedWord]],
+    *,
+    max_visible_chars: int = MAX_CUE_VISIBLE_CHARS,
+    max_seconds: float = MAX_CUE_SECONDS,
+) -> list[list[TimedWord]]:
     """Fold away cues too brief to read, when the merge still fits the budget.
 
-    A sub-second cue is a flash. Merging forward is preferred (the following cue
-    has not been seen yet, so extending into it is invisible to the viewer);
-    merging backward is the fallback for a short final cue.
+    A sub-second cue is a flash. Merging forward is preferred when it stays inside
+    the same sentence; merging backward is the fallback for a short final cue. A
+    completed sentence/question/exclamation is never crossed just to satisfy the
+    duration preference.
     """
     if len(groups) <= 1:
         return groups
@@ -330,8 +442,9 @@ def _merge_short_groups(groups: list[list[TimedWord]]) -> list[list[TimedWord]]:
         combined_duration = combined[-1].end - combined[0].start
 
         if (
-            visible_length(text) <= MAX_CUE_VISIBLE_CHARS
-            and combined_duration <= MAX_CUE_SECONDS
+            not _ends_with_hard_boundary(group[-1])
+            and visible_length(text) <= max_visible_chars
+            and combined_duration <= max_seconds
         ):
             merged.append(combined)
             index += 2
@@ -347,10 +460,96 @@ def _merge_short_groups(groups: list[list[TimedWord]]) -> list[list[TimedWord]]:
         if (last[-1].end - last[0].start) < MIN_CUE_SECONDS:
             combined = merged[-2] + last
             text = " ".join(w.text for w in combined)
-            if visible_length(text) <= MAX_CUE_VISIBLE_CHARS:
+            combined_duration = combined[-1].end - combined[0].start
+            if (
+                not _ends_with_hard_boundary(merged[-2][-1])
+                and visible_length(text) <= max_visible_chars
+                and combined_duration <= max_seconds
+            ):
                 merged = merged[:-2] + [combined]
 
     return merged
+
+
+def _rebalance_short_groups(
+    groups: list[list[TimedWord]],
+    *,
+    max_visible_chars: int = MAX_CUE_VISIBLE_CHARS,
+    max_seconds: float = MAX_CUE_SECONDS,
+) -> list[list[TimedWord]]:
+    """Repair a remaining short cue by moving the nearest boundary when possible.
+
+    ``_merge_short_groups`` handles the common case where a whole short group can be
+    folded into a neighbour.  A tighter burned-caption character ceiling can leave a
+    different shape: both neighbours are already near the ceiling, but moving just one
+    boundary word would make the short cue readable without making either neighbour
+    invalid.  Keeping the flash merely because a *whole* merge does not fit is an
+    avoidable grouping failure.
+
+    Prefer borrowing the smallest suffix from the previous cue, then the smallest
+    prefix from the next cue.  The donor must remain at least ``MIN_CUE_SECONDS`` and
+    both resulting groups must stay inside the same character/duration budgets.
+    Strong sentence/question/exclamation boundaries are immutable. No timing or
+    wording is invented; only a semantically legal cue boundary moves.
+    """
+    if len(groups) <= 1:
+        return groups
+
+    result = [list(group) for group in groups]
+
+    def duration(group: list[TimedWord]) -> float:
+        return group[-1].end - group[0].start
+
+    def fits(group: list[TimedWord]) -> bool:
+        if not group:
+            return False
+        return (
+            visible_length(" ".join(word.text for word in group)) <= max_visible_chars
+            and duration(group) <= max_seconds
+        )
+
+    for index in range(len(result)):
+        group = result[index]
+        if duration(group) >= MIN_CUE_SECONDS:
+            continue
+
+        if index > 0:
+            previous = result[index - 1]
+            if _ends_with_hard_boundary(previous[-1]):
+                previous = []
+            for moved in range(1, len(previous)):
+                donor = previous[:-moved]
+                repaired = previous[-moved:] + group
+                if (
+                    duration(donor) >= MIN_CUE_SECONDS
+                    and duration(repaired) >= MIN_CUE_SECONDS
+                    and fits(donor)
+                    and fits(repaired)
+                ):
+                    result[index - 1] = donor
+                    result[index] = repaired
+                    group = repaired
+                    break
+
+        if duration(group) >= MIN_CUE_SECONDS:
+            continue
+
+        if index + 1 < len(result) and not _ends_with_hard_boundary(group[-1]):
+            following = result[index + 1]
+            for moved in range(1, len(following)):
+                repaired = group + following[:moved]
+                donor = following[moved:]
+                if (
+                    duration(repaired) >= MIN_CUE_SECONDS
+                    and duration(donor) >= MIN_CUE_SECONDS
+                    and fits(repaired)
+                    and fits(donor)
+                ):
+                    result[index] = repaired
+                    result[index + 1] = donor
+                    break
+
+    return result
 
 
 def audit_cues(cues: list[PersianCue]) -> list[str]:
@@ -361,6 +560,12 @@ def audit_cues(cues: list[PersianCue]) -> list[str]:
     """
     problems: list[str] = []
     for cue in cues:
+        tokens = cue.text.split()
+        if any(_terminator_rank(token) == 3 for token in tokens[:-1]):
+            problems.append(
+                f"{cue.id}: cue crosses a hard sentence boundary; preserve the "
+                "sentence/question break instead of repairing across it"
+            )
         if cue.cps > MAX_CPS:
             problems.append(
                 f"{cue.id}: {cue.cps:.1f} chars/sec exceeds the {MAX_CPS} ceiling "

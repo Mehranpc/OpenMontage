@@ -1,31 +1,26 @@
 name: persian-footage
 version: "1.0"
 description: >
-  Persian (Farsi) video production over real stock footage. Reads a source (an
-  article, a topic, or a supplied script), writes a Persian script, sources
-  VIDEO-ONLY footage from Pexels and Pixabay, and composes a typographically
-  correct RTL result with Estedad, selective typographic moments over a gradient
-  scrim, a sidecar SRT built from narration word timings, and an animated brand
-  watermark. Renders vertical 1080x1920 by default and landscape 1920x1080 for
-  long-form YouTube.
+  Persian (Farsi) production over real video footage from approved production copy.
+  The production front door consumes an approved Persian script, narration audio, or
+  both; it validates and times that copy but does not reopen narration writing. It
+  sources VIDEO-ONLY footage from Pexels and Pixabay and composes an RTL result with
+  Estedad, selective editorial moments, platform-aware captions, and a moving brand.
+  Vertical Reels output is 1080x1920 at 30fps; landscape remains available where the
+  production profile asks for it.
 
-  The on-screen text model is SELECTIVE, not a caption track: 7-9 designed
-  moments in a 60-second video, each ONE grammatical Persian phrase with one
-  emphasised span (an ordered segments list whose order is the reading order,
-  top to bottom), with enforced empty frame between them, at most 55% text
-  coverage, and the first moment on screen within 0.6s of the start. Moments
-  anchor to the narration's own word timings — a timing set rescaled from
-  another narration is refused, not repaired. A moment may BUILD: later segments
-  join the phrase while earlier ones dim, so two facts that belong to one
-  thought accumulate instead of replacing each other. The narration carries the
-  sentences; accessibility is served by the sidecar SRT. There is no on-screen
-  transcript, no karaoke, and no separate opening hook layer — the first moment,
-  declared as a hook, is the opening, because feeds autoplay muted.
+  Two text systems have different jobs. `moments` are selective editorial emphasis
+  (7-9 in a 60-second video, bounded coverage and enforced gaps). Captions are
+  delivery/accessibility text derived only from the approved script plus narration
+  timings. `sidecar_only`, `burned_captions`, and `hybrid` are explicit modes; new
+  Instagram/Instagram Reels productions default to `hybrid`. Burned captions use at
+  most two lines, no karaoke, and yield the frame while an editorial moment is active.
+  Authored `cues[]` remain retired and are refused.
 
-  Two things this pipeline treats as non-negotiable, because default Persian
-  output fails at both: readability (correct ZWNJ, RTL, Persian digits, and line
-  breaks that never strand a proclitic or enclitic) and beauty (a considered
-  motion grammar rather than CSS defaults).
+  Semantic beats and visual events are distinct: a 4-6 second meaning unit may contain
+  several shorter shot-level events. Retention QA is a separate gate from technical
+  correctness, and the final candidate does not reach human review until both pass.
+
 category: hybrid
 stability: beta
 default_checkpoint_policy: guided
@@ -77,8 +72,9 @@ production_modes:
   - name: narrated
     description: >
       The user supplies (or records) Persian narration audio. Word-level timings
-      are transcribed from that audio, become a sidecar SRT beside the MP4, and
-      ANCHOR the moments: each moment names its words and its timing is re-derived
+      are transcribed from that audio and used only as a clock: approved script copy
+      becomes a sidecar SRT, burned captions, or both according to caption_mode. They
+      also ANCHOR the moments: each moment names its words and its timing is re-derived
       from them, so a set of timings authored against another narration is
       refused by the compose gate rather than shipped drifting. Music is REQUIRED
       in this mode — a narrated deliverable with silence under the voice's pauses
@@ -118,7 +114,9 @@ stages:
     checkpoint_required: true
     human_approval_default: false
     review_focus:
-      - production_mode is chosen and recorded (narrated or silent) — NOT inferred later
+      - production_mode / narration_mode is chosen and recorded (narrated or silent) — NOT inferred later
+      - platform_target, format/aspect_ratio, target_duration_seconds, caption_mode, and hook_visual_strategy are explicit production-profile fields
+      - "Instagram/Instagram Reels defaults to caption_mode: hybrid. sidecar_only or burned_captions requires an explicit override; never infer it from an old checkpoint."
       - format is chosen and recorded (vertical or landscape)
       - Target duration is concrete, in seconds
       - The one idea the video delivers is a single Persian sentence
@@ -130,8 +128,12 @@ stages:
     success_criteria:
       - Schema-valid brief artifact
       - metadata.production_mode is "narrated" or "silent"
-      - metadata.format is "vertical" or "landscape"
+      - metadata.narration_mode present and agrees with production_mode
+      - metadata.platform_target present
+      - metadata.format is "vertical" or "landscape" and metadata.aspect_ratio is present
       - metadata.target_duration_seconds present
+      - metadata.caption_mode is one of sidecar_only, burned_captions, hybrid; Instagram/Instagram Reels uses hybrid unless explicitly overridden
+      - metadata.hook_visual_strategy present
       - metadata.visual_subject present and concrete
       - metadata.typographic_beat_budget present and <= 2
 
@@ -170,20 +172,23 @@ stages:
     checkpoint_required: true
     human_approval_default: false
     review_focus:
-      - Every beat has 2 ENGLISH search queries (Pexels/Pixabay do not index Persian)
+      - Every footage visual event has 2 ENGLISH search queries (Pexels/Pixabay do not index Persian); semantic beats may contain multiple visual_events
       - Queries name concrete visual nouns, not the abstract idea they represent
-      - "SUBJECT ANCHOR QUOTA: the first footage beat, the last footage beat, and at least 40% of all footage beats show the brief's visual_subject literally, each marked shows_subject: true. Without this quota a video about coffee becomes a video about a medical check-up, one defensible query at a time."
+      - "SUBJECT ANCHOR QUOTA: the first footage visual event, the last footage visual event, and at least 40% of footage visual events show the brief's visual_subject literally, each marked shows_subject: true. Legacy one-shot-per-beat plans are treated as one implicit event per beat."
       - "Beats about something else use CO-PRESENCE, not substitution: 'coffee cup beside blood sugar monitor', never 'glucose meter check'. Both things in one frame carries the beat AND keeps the subject on screen."
-      - "No query uses stock-medical vocabulary the script does not name: doctor examining patient, blood test vials, DNA strand, laboratory researchers, test tubes, scientist microscope, hospital, medical chart, stethoscope, pills, capsules, measuring waist, measuring tape, weighing scale, blood pressure cuff, syringe, nurse, clinic. When the script genuinely names one, set names_banned_term: true on that beat and pair the term with the subject in one frame."
-      - Every beat declares a camera move, or "none" deliberately
-      - "No two adjacent beats share BOTH shot_scale and environment. Variety comes from how the subject is shot, not from replacing it — the old rule forbade repeating the subject, which is incompatible with the anchor quota."
+      - "No query uses stock-medical vocabulary the script does not name: doctor examining patient, blood test vials, DNA strand, laboratory researchers, test tubes, scientist microscope, hospital, medical chart, stethoscope, pills, capsules, measuring waist, measuring tape, weighing scale, blood pressure cuff, syringe, nurse, clinic. When the script genuinely names one, set names_banned_term: true on that visual event and pair the term with the subject in one frame."
+      - Every footage visual event declares narration_span, intent, subject, action, desired_affect, motif, visual_search_brief, shot_composition, human_presence, importance (1-3), conflict_visibility, fallback_level, and a camera move (or "none" deliberately)
+      - "FALLBACK HIERARCHY is ordered: exact_literal -> emotional_human -> adjacent_metaphor -> abstract -> typography. Typography is beat-level only. Fear/conflict/embarrassment/distraction/stress/relief prefer human presence; an object-only plan is an explicit advisory, not a silent default."
+      - "IMPORTANCE WEIGHTS RETRIES, NOT BUDGET: audit_scene_plan.sourcing_order gives importance-3 events first use of the one bounded alternate-query pass. Candidate and byte ceilings do not increase."
+      - "No two adjacent visual events share BOTH shot_scale and environment. Variety comes from how the subject is shot, not from replacing it — the old rule forbade repeating the subject, which is incompatible with the anchor quota."
       - Beats that no honest footage can serve are marked typographic, within the declared budget
       - Sum of beat durations is within 10% of the target duration
       - "RUN THE GATE, do not self-assess: lib.persian_scenes.audit_scene_plan(scene_plan, typographic_budget=N) enforces every rule above. It exists because the rewritten prose was read and a banned query still shipped — the beat felt like the exception the rule allows for."
     success_criteria:
       - Schema-valid scene_plan artifact
       - metadata.subject present, matching brief.metadata.visual_subject
-      - metadata.beats[] present, each with queries[], camera, shows_subject, shot_scale, environment
+      - metadata.beats[] present; every new non-typographic beat carries visual_events[] whose durations sum to the beat and whose entries carry narration_span, intent, subject, action, desired_affect, motif, visual_search_brief, shot_composition, human_presence, importance, conflict_visibility, fallback_level, queries[], camera, shows_subject, shot_scale, environment
+      - "audit_scene_plan.sourcing_order is retained for the bounded asset retry pass"
       - "lib.persian_scenes.audit_scene_plan reports no problems, and every advisory it reports has been read and answered in the checkpoint metadata"
 
   - name: assets
@@ -218,22 +223,23 @@ stages:
       - "EVERY asset is a VIDEO. A still image in the manifest is a CRITICAL violation — this pipeline forbids photo footage outright."
       - Every clip is at least as long as the beat it fills
       - Provenance (provider, original_url, license, attribution) present on every asset
-      - No clip_id fills two beats
+      - No clip_id fills two visual events
       - Clip orientation matches the chosen format
-      - "Acquisition uses only sources [pexels, pixabay_video], clips_per_query 1, one primary query per footage beat, and at most one retry pass with the authored alternate query. No smoke-* provider probing is allowed inside a production project."
+      - "Acquisition uses only sources [pexels, pixabay_video], clips_per_query 1, one primary query per footage visual event, and at most one retry pass with the authored alternate query, ordered by audit_scene_plan.sourcing_order (importance 3 -> 2 -> 1). No smoke-* provider probing is allowed inside a production project."
       - "Every direct_clip_search call sets max_candidates_total, max_bytes_per_clip, and max_total_download_bytes. Quota exhaustion is a blocker; the agent may not raise a limit without explicit user approval."
       - "filters.min_width is 1080. _pick_video_rendition takes the largest rendition at or below 1920px WIDE, and for a portrait clip width is the short edge — so without a floor, vertical clips arrive at 1440x2732, tens of MB each, for a 1080-wide render."
       - "The tool's post-download ffprobe values, not provider claims, satisfy duration and orientation. A mismatch or unknown probe is deleted immediately and never enters the manifest."
-      - "SUBJECT SURVIVED SELECTION: the anchor quota the scene plan declared still holds in the chosen clips. Selection is where it gets lost, because the beat whose subject clip was unusable is exactly the beat where a generic one is tempting."
-      - "Every asset records a selection_reason naming what is IN FRAME. 'best match' is not a reason — the coffee run's manifest recorded twelve chosen clips and nothing about what any showed, so 'waist measurement' and 'coffee cup' looked identical at the checkpoint."
+      - "SUBJECT/HUMAN INTENT SURVIVED SELECTION: required subject and human presence in the scene plan still exist in the inspected clip; a blurred/background presence does not count."
+      - "Every new visual-event asset records semantic_beat_id, visual_event_id, narration_span, authored query, candidate_rank, selection_reason (what is in frame), relevance_reason (why it serves the beat), affect_match, staged_stock_risk, human_presence, shows_subject, source_in_seconds, duration_seconds, fallback_level/reason, and frame_review evidence for start/middle/end."
+      - "High staged_stock_risk or affect_match:false is a rejection. Non-literal fallback without a reason is a rejection. The one retry pass follows scene audit sourcing_order; limits never rise automatically."
       - "In narrated mode: word-level timings exist and cover the narration duration"
     success_criteria:
       - Schema-valid asset_manifest artifact
-      - Every non-typographic beat has exactly one video asset
+      - Every footage visual event has exactly one video asset; assets in explicit visual-event plans carry visual_event_id
       - Zero assets with kind "image"
       - Every asset is at most 1920px on its long edge
-      - Every asset carries shows_subject and a selection_reason naming what is in frame
-      - First and last footage beats' assets show the subject; at least 40% of footage beats' assets do
+      - "Every new visual-event asset passes audit_asset_manifest semantic/quality evidence: approved query, rank, relevance/selection reasons, affect match, staged-stock risk, human/subject continuity, fallback provenance, and start/middle/end frame review"
+      - First and last footage visual events' assets show the subject; at least 40% of footage visual events' assets do
       - "In narrated mode: metadata.word_timings present"
 
   - name: edit
@@ -266,9 +272,13 @@ stages:
       - "In narrated mode: a music record is present (musicTrack with licence name, URL, download date, and contentIdRisk) or omitMusicReason is recorded. Music is required in narrated mode; Pixabay Content License permits monetized Instagram use, and third-party Content-ID risk is recorded honestly — 'low', never 'guaranteed zero'."
       - "NO retired keys: no cues[], no hookText, and no moment-level text/label/kicker/unit. persian_compose refuses all of them. The slots produced three type sizes on three different left edges with no sentence anywhere."
       - Every moment's text passes the Persian orthography gate
-      - "In narrated mode: audio.wordTimings is present so persian_compose writes the sidecar SRT"
+      - "In narrated mode: audio.wordTimings is present and metadata.persianSubtitleScript is authoritative. edit_decisions.persian.captionMode is copied from the production profile; Instagram Reels defaults to hybrid."
+      - "Burned/hybrid captions are runtime-derived, one or two lines only, and never authored as cues[]. Moments have temporal priority: an active moment suppresses the caption for those frames."
       - Watermark text is present
       - "Every typographic beat carries typography across its whole window: the plate window is derived from the type span, a beat with no type fails compose, and a beat second with no type on screen is dead screen, not coverage"
+      - "RETENTION PREFLIGHT: lib.persian_retention.audit_persian_retention reports no problems. The first 3s contain a second visual event or typographic pattern interrupt; timeline coverage has no empty interval; long >8s visual events and >2s text-only endings are surfaced as retention-risk advisories rather than hidden."
+      - "CUT GRAMMAR: every new Persian shot states transitionIn: cut. Hard cuts are the current executable default; do not claim a dissolve until the Persian renderer implements a real crossfade."
+      - "Every new visual-event shot states changeType (establish/action/reaction/detail/scale_change/punch_in), narrativeRole (hook/exposition/conflict/turn/resolution), and humanPresence. The first 3s contain a visible hook role or hook moment; the final quarter contains a resolution role. Repeated identical change types and a non-human resolution are advisories, not fabricated hard failures."
     success_criteria:
       - Schema-valid edit_decisions artifact
       - edit_decisions.persian.moments[] present and audit-clean
@@ -277,6 +287,8 @@ stages:
       - "In narrated mode: audit_sync reports no problems and every moment carries anchorText"
       - "In narrated mode: musicTrack with a complete licence record, or omitMusicReason"
       - Timeline duration within 10% of brief.metadata.target_duration_seconds
+      - "Retention preflight reports no blocking problems and its metrics/advisories are retained for final review"
+      - "New visual-event edits preserve structured cut grammar: hook visible in the opening, resolution in the final quarter, and every visual-event shot has changeType/narrativeRole/humanPresence"
 
   - name: compose
     skill: pipelines/persian-footage/compose-director
@@ -301,6 +313,7 @@ stages:
       - Output dimensions match the chosen format exactly
       - "Frames are MEASURED with lib.persian_verify, not eyeballed: verify_frames for ink, per-line right-edge anchor offset, text column, zone occupancy, and contrast. Frames are sampled at each MOMENT's midpoint, not at fixed intervals — text covers at most 55% of the runtime by design, so a blindly chosen window probably contains no type. Hand-rolled brightness or contrast detectors do not work over footage; the compose-director records twelve approaches that footage or the codec defeated."
       - "Post-render luminance gate: persian_compose refuses success when any contiguous run of >= 1.0s averages below YAVG 22, and warns on runs below 30 — a legitimately dark shot measures ~28 and stays legal. Coverage by an opaque plate is not evidence the screen is alive."
+      - "POST-RENDER ANTI-SLIDESHOW: persian_compose samples the finished MP4 at 2fps after a 64x36 grayscale downscale. Consecutive mean pixel delta <= 1.0 is treated as near-frozen; a measured ~7s run warns (roughly the spec's ~8s risk after sample under-measurement) and a measured ~9s run blocks delivery (roughly ~10s visible). This is deliberately conservative: it catches frozen output, not every slow artistic shot."
       - "GAPS ARE MEASURED WITH check_gap_is_empty, NOT verify_frames. A gap has no scrim by design, so ink_mask reads the footage — 31-99% 'ink' — and the moment instrument reported a confident scrim failure on a correctly empty frame. check_gap_is_empty uses accent colour separation, which needs nothing behind it. Sample the middle of EVERY gap, including the head and the tail."
       - "State the remaining pixel limit honestly: every moment now paints an accent hero, so check_gap_is_empty detects an overrun of any kind into a gap — statement gaps included. Intra-word glyph order is the one thing still not verified in pixels. Record it in verification_notes."
       - "THE ANCHOR CHECK IS THE IMPORTANT ONE: every line of every moment shares one right edge, and a line short of it means a flex row centred instead of anchoring. Centred text is still inside the width budget and still inside the zone, so a width-only check passes it. Offsets are reported PER LINE — a block maximum is satisfied by one correct line beside several that drifted."
@@ -312,8 +325,9 @@ stages:
       - "Vertical rhythm is measured with measure_stack_rhythm on moments with three or more bands: the visible gap between blocks must sit at the designed stack gap, not at line-box height. The shipped render carried 133px of half-leading masquerading as a 26px gap — the «فاصله مسخره» complaint — and the gap tokens were correct the whole time."
       - "The watermark is located with find_watermark against a no-watermark reference render, and its expected position comes from WATERMARK_TOP_FRACTION rather than a literal — the resting position differs per format."
       - "Music ducking is measured from the decoded audio, not inferred from the presence of a stream. The duck follows the NARRATION, so sample a speaking window against a silent one — a moment's timing says nothing about either."
-      - "In narrated mode: the sidecar SRT exists beside the MP4, and its readability advisories are reported rather than suppressed. An over-speed subtitle is a property of how fast the narrator spoke; the honest remedy is a shorter script, not a blocked delivery."
+      - "Caption QA follows caption_mode: sidecar_only/hybrid require an approved-script SRT; burned_captions/hybrid require painted captions inside the platform safe area, at most two lines, with no caption visible while an editorial moment is active. The watermark planner reserves the caption band."
       - Attribution for every clip is recorded in the render report
+      - "Final non-human review records retention_audit, silent_watch_audit, cut_rhythm, caption_readability, strongest_scene, weakest_scene, hook_strength, and resolution_strength; muted comprehension is judged by watching muted, never inferred from metadata."
       - Output duration matches the planned duration within 1 second
     success_criteria:
       - Schema-valid render_report artifact
@@ -322,6 +336,10 @@ stages:
       - "Only explicit approval of that exact path and sha256 completes compose with human_approved true; metadata.approval_record identifies the user response, delivery_status is approved, and the two verification booleans may become true"
       - "render_report.verification_notes carries measured numbers rather than adjectives: anchor offsets, contrast range, line counts, watermark rows — and names what was NOT verified (intra-word glyph order)"
       - render_report.moment_count and render_report.text_coverage are recorded
-      - "In narrated mode: render_report.subtitle_path points at an existing SRT"
+      - "caption_mode is recorded in render_report. sidecar_only/hybrid => subtitle_path points at an existing approved-script SRT; burned_captions => no sidecar is required; burned_captions/hybrid => burned_caption_count > 0"
       - render_report.attributions[] covers every clip used
+      - "render_report.retention_audit.problems is empty; muted main point/hook direction/conclusion are understood; hook/resolution are at least acceptable; and the report carries cut-rhythm, caption-readability, strongest/weakest-scene evidence before awaiting_human"
+      - "A schema-valid in-project final_review artifact passes technical/visual/audio/promise/subtitle checks, points at the same digest-bound MP4, is linked by render_report.final_review_ref, and is re-hashed by the workflow before awaiting_human"
+      - "burned_captions/hybrid retain at least entry/mid/exit post-render caption frame paths in render_report.caption_verification_frames"
       - "Post-render luminance gate holds: no contiguous run of >= 1.0s averages below YAVG 22; runs below 30 are warnings, not failures"
+      - "render_report.post_render_motion_qa.passed is true and failRuns is empty; warnRuns are retained as anti-slideshow advisories for final review"

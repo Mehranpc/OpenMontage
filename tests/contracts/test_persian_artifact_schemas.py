@@ -204,6 +204,72 @@ def test_a_complete_persian_edit_decision_validates() -> None:
     assert not problems, problems
 
 
+def test_persian_platform_target_accepts_instagram_reels() -> None:
+    persian = _minimal_persian_block()
+    persian["platformTarget"] = "instagram-reels"
+    assert not _errors("edit_decisions", _edit_decisions(persian))
+
+
+def test_persian_caption_mode_is_schema_declared() -> None:
+    for mode in ("sidecar_only", "burned_captions", "hybrid"):
+        persian = _minimal_persian_block()
+        persian["captionMode"] = mode
+        assert not _errors("edit_decisions", _edit_decisions(persian))
+
+
+def test_unknown_persian_caption_mode_is_rejected() -> None:
+    persian = _minimal_persian_block()
+    persian["captionMode"] = "karaoke"
+    problems = _errors("edit_decisions", _edit_decisions(persian))
+    assert any("karaoke" in problem for problem in problems), problems
+
+
+def test_persian_shot_can_state_the_executable_hard_cut() -> None:
+    persian = _minimal_persian_block()
+    persian["shots"][0]["transitionIn"] = "cut"
+    assert not _errors("edit_decisions", _edit_decisions(persian))
+
+
+def test_persian_visual_event_shot_declares_edit_grammar_fields() -> None:
+    persian = _minimal_persian_block()
+    shot = persian["shots"][0]
+    shot.update({
+        "visualEventId": "beat-1-event-1",
+        "changeType": "reaction",
+        "narrativeRole": "resolution",
+        "humanPresence": True,
+    })
+    assert not _errors("edit_decisions", _edit_decisions(persian))
+
+
+def test_persian_opening_shot_declares_semantic_evidence_fields() -> None:
+    persian = _minimal_persian_block()
+    shot = persian["shots"][0]
+    shot.update({
+        "visualEventId": "beat-1-event-1", "narrativeRole": "hook",
+        "humanPresence": True, "showsSubject": True,
+        "semanticRole": "reward_problem_hook",
+        "semanticDirection": "parent_to_child_reward",
+        "openingSemanticMatch": True,
+        "selectionReason": "والد در قاب پاداش را به کودک می‌دهد",
+    })
+    assert not _errors("edit_decisions", _edit_decisions(persian))
+
+
+def test_persian_shot_rejects_unknown_change_type() -> None:
+    persian = _minimal_persian_block()
+    persian["shots"][0]["changeType"] = "montage_magic"
+    problems = _errors("edit_decisions", _edit_decisions(persian))
+    assert any("montage_magic" in problem for problem in problems), problems
+
+
+def test_persian_shot_cannot_claim_an_unimplemented_dissolve() -> None:
+    persian = _minimal_persian_block()
+    persian["shots"][0]["transitionIn"] = "dissolve"
+    problems = _errors("edit_decisions", _edit_decisions(persian))
+    assert any("dissolve" in problem for problem in problems), problems
+
+
 @pytest.mark.parametrize("kind", ["figure", "term", "statement", "hook"])
 def test_every_moment_kind_validates(kind: str) -> None:
     """All four kinds are declared, not just the one the last render happened to use.
@@ -507,6 +573,56 @@ def test_a_persian_render_report_validates() -> None:
     assert not problems, problems
 
 
+def test_render_report_can_carry_retention_and_silent_watch_evidence() -> None:
+    report = {
+        "version": "1.0",
+        "outputs": [{
+            "path": "a.mp4", "format": "mp4", "resolution": "1080x1920",
+            "duration_seconds": 12.0,
+        }],
+        "post_render_motion_qa": {
+            "passed": True, "sampleFps": 2.0, "nearStaticDeltaMax": 1.0,
+            "warningRunSeconds": 7.0, "failRunSeconds": 9.0,
+            "deltas": [{"atSeconds": 0.5, "meanAbsDelta": 4.2}],
+            "warnRuns": [], "failRuns": [], "elapsedSeconds": 0.2,
+        },
+        "retention_audit": {
+            "problems": [], "advisories": [],
+            "first3Seconds": {"eventCount": 2, "events": []},
+            "averageVisualEventSeconds": 3.0,
+            "longestVisualEvent": {"id": "s2", "seconds": 4.0},
+            "meaningfulChangesPer15Seconds": [], "weakEmptyIntervals": [],
+            "textOnlySeconds": 0.0, "endingTextOnlySeconds": 0.0,
+            "cutGrammar": {"transitions": ["cut"], "nonCutCount": 0},
+            "judgementRequired": ["silent_watch_main_point"],
+        },
+        "silent_watch_audit": {
+            "main_point_understood": True, "hook_direction_understood": True,
+            "conclusion_understood": True, "notes": ["Muted review preserves the main point."],
+        },
+        "caption_verification_frames": ["entry.png", "mid.png", "exit.png"],
+        "cut_rhythm": "Hard cuts feel intentional; no repeated dissolve grammar.",
+        "caption_readability": "Sidecar captions are readable when enabled.",
+        "strongest_scene": "opening", "weakest_scene": "middle exposition",
+        "hook_strength": "strong", "resolution_strength": "acceptable",
+    }
+    problems = _errors("render_report", report)
+    assert not problems, problems
+
+
+
+def test_render_report_declares_post_render_motion_qa() -> None:
+    props = _schema("render_report")["properties"]
+    motion = props["post_render_motion_qa"]
+    assert motion["properties"]["passed"]["type"] == "boolean"
+    assert "failRuns" in motion["required"]
+
+def test_render_report_declares_caption_verification_frames() -> None:
+    props = _schema("render_report")["properties"]
+    assert "caption_verification_frames" in props
+    assert props["caption_verification_frames"]["items"]["type"] == "string"
+
+
 def test_text_coverage_is_bounded_to_a_fraction() -> None:
     """It is a fraction, and a percentage written into it would read as 41x the runtime.
 
@@ -615,3 +731,22 @@ def test_the_subject_quota_fields_are_declared() -> None:
     asset = _schema("asset_manifest")["properties"]["assets"]["items"]["properties"]
     assert "shows_subject" in asset
     assert "selection_reason" in asset
+
+
+def test_visual_event_asset_quality_fields_are_declared() -> None:
+    asset = _schema("asset_manifest")["properties"]["assets"]["items"]["properties"]
+    for field in (
+        "semantic_beat_id", "visual_event_id", "narration_span", "query",
+        "candidate_rank", "selection_reason", "relevance_reason", "affect_match",
+        "staged_stock_risk", "human_presence", "shows_subject", "source_in_seconds",
+        "duration_seconds", "fallback_level", "fallback_reason", "frame_review",
+        "semantic_role", "semantic_direction", "opening_semantic_match",
+    ):
+        assert field in asset
+    assert asset["fallback_level"]["enum"] == [
+        "exact_literal", "emotional_human", "adjacent_metaphor", "abstract"
+    ]
+    assert asset["staged_stock_risk"]["enum"] == ["low", "medium", "high"]
+    review = asset["frame_review"]["properties"]
+    assert "midpoint_before_1_5" in review
+    assert "at_3_seconds" in review

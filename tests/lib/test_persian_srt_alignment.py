@@ -179,6 +179,21 @@ def test_execute_injects_schema_valid_metadata_without_mutating_artifact(
     assert "_approvedSubtitleScript" not in inputs["edit_decisions"]["persian"]
 
 
+def test_runtime_persian_helper_is_shared_authority_without_mutation() -> None:
+    script = "متن تصویب‌شده است."
+    record = approved(script)
+    edit = {
+        "metadata": {"persianSubtitleScript": record},
+        "persian": {"captionMode": "hybrid", "audio": {}},
+    }
+    runtime = ScriptAlignedPersianCompose._runtime_persian(edit)
+    assert runtime is not None
+    assert runtime["_approvedSubtitleScript"] == record
+    assert runtime["captionMode"] == "hybrid"
+    assert "_approvedSubtitleScript" not in edit["persian"]
+
+
+
 def test_compose_writes_only_approved_copy(tmp_path) -> None:
     script = "درخواست کردن درست است."
     persian = {
@@ -204,10 +219,142 @@ def test_registry_discovers_the_stricter_existing_tool_name() -> None:
     registry.discover("tools.video")
     selected = registry.get("persian_compose")
     assert isinstance(selected, ScriptAlignedPersianCompose)
-    assert selected.version == "0.3.0"
+    assert selected.version == "0.4.0"
 
 
 def test_registered_tool_name_and_version_are_preserved() -> None:
     assert issubclass(ScriptAlignedPersianCompose, PersianCompose)
     assert ScriptAlignedPersianCompose.name == "persian_compose"
-    assert ScriptAlignedPersianCompose.version == "0.3.0"
+    assert ScriptAlignedPersianCompose.version == "0.4.0"
+
+
+def test_burned_only_mode_writes_no_sidecar(tmp_path) -> None:
+    script = "متن تاییدشده روی تصویر می‌آید."
+    persian = {
+        "captionMode": "burned_captions",
+        "_approvedSubtitleScript": approved(script),
+        "audio": {"wordTimings": timed(script.split())},
+    }
+    path, advisories = ScriptAlignedPersianCompose._write_subtitles(
+        persian, tmp_path / "final.mp4"
+    )
+    assert path is None
+    assert advisories == []
+    assert not (tmp_path / "final.srt").exists()
+
+
+def test_hybrid_mode_keeps_sidecar_approved_copy(tmp_path) -> None:
+    script = "متن تاییدشده هم روی تصویر و هم کنار فایل می‌آید."
+    persian = {
+        "captionMode": "hybrid",
+        "_approvedSubtitleScript": approved(script),
+        "audio": {"wordTimings": timed(script.split())},
+    }
+    path, _ = ScriptAlignedPersianCompose._write_subtitles(
+        persian, tmp_path / "final.mp4"
+    )
+    assert path == str(tmp_path / "final.srt")
+    assert script in (tmp_path / "final.srt").read_text(encoding="utf-8-sig")
+
+
+def test_film_type_213_regroups_real_width_risk_before_browser_fit() -> None:
+    script = "پژوهش‌ها نشون می‌دن وقتی آدم‌ها برای انجام یک کار پاداش می‌گیرن،"
+    persian = {
+        "design": {"version": 2, "profile": "film-type", "seed": "caption-213-width"},
+        "platformTarget": "instagram-reels",
+        "captionMode": "hybrid",
+        "_approvedSubtitleScript": approved(script),
+        "audio": {"wordTimings": timed(script.split())},
+    }
+    mode, captions = ScriptAlignedPersianCompose()._build_caption_props(persian)
+    assert mode == "hybrid"
+    assert " ".join(caption["text"] for caption in captions) == script
+    assert len(captions) == 2
+    assert captions[0]["text"].endswith("انجام یک کار")
+    assert captions[1]["text"] == "پاداش می‌گیرن،"
+
+def test_film_type_214_repairs_stranded_discourse_connector() -> None:
+    script = (
+        "از طرفی، بچه ممکنه به پاداش عادت کنه و برای گرفتن همون نتیجه، "
+        "کم‌کم جایزهٔ بیشتری لازم باشه."
+    )
+    persian = {
+        "design": {"version": 2, "profile": "film-type", "seed": "caption-214-connector"},
+        "platformTarget": "instagram-reels",
+        "captionMode": "hybrid",
+        "_approvedSubtitleScript": approved(script),
+        "audio": {"wordTimings": timed(script.split(), start=27.82, duration=.42, gap=.02)},
+    }
+    mode, captions = ScriptAlignedPersianCompose()._build_caption_props(persian)
+    assert mode == "hybrid"
+    assert " ".join(caption["text"] for caption in captions) == script
+    assert captions[0]["text"] == "از طرفی، بچه ممکنه به پاداش عادت کنه"
+    assert captions[1]["text"].startswith("و برای گرفتن همون نتیجه،")
+    assert all(caption["text"] != "از طرفی، بچه" for caption in captions)
+
+
+def test_hybrid_build_props_creates_burned_approved_copy(tmp_path) -> None:
+    script = "درخواست کردن درست است."
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"x" * 64)
+    persian = {
+        "design": {"version": 2, "profile": "legacy"},
+        "format": "vertical",
+        "durationSeconds": 12.0,
+        "platformTarget": "instagram-reels",
+        "captionMode": "hybrid",
+        "_approvedSubtitleScript": approved(script),
+        "shots": [{
+            "id": "s1", "source": str(clip), "startSeconds": 0.0,
+            "endSeconds": 12.0, "camera": "none",
+            "attribution": "Video by Someone on Pexels",
+        }],
+        "moments": [{
+            "id": "m1", "kind": "statement", "startSeconds": 0.4,
+            "endSeconds": 4.4, "anchorText": "درخواست کردن",
+            "segments": [{"role": "hero", "text": "درخواست کردن درست است"}],
+        }],
+        "audio": {
+            "wordTimings": timed(["درخواست", "گردن", "درست", "است."]),
+        },
+    }
+    props, _ = ScriptAlignedPersianCompose()._build_props(
+        persian, tmp_path / "stage", "hybrid-test"
+    )
+    assert props["captionMode"] == "hybrid"
+    assert props["captions"]
+    burned = " ".join(caption["text"] for caption in props["captions"])
+    assert burned == script
+    assert "گردن" not in burned
+    assert all(1 <= len(caption["lines"]) <= 2 for caption in props["captions"])
+
+
+def test_short_hybrid_film_type_keeps_watermark_after_intro_delay(tmp_path) -> None:
+    script = "شروع روشن است."
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"x" * 64)
+    persian = {
+        "design": {"version": 2, "profile": "film-type", "seed": "short-hybrid-watermark"},
+        "format": "vertical",
+        "durationSeconds": 10.5,
+        "platformTarget": "instagram-reels",
+        "captionMode": "hybrid",
+        "_approvedSubtitleScript": approved(script),
+        "shots": [{
+            "id": "s1", "source": str(clip), "startSeconds": 0.0,
+            "endSeconds": 10.5, "camera": "none",
+            "attribution": "Fixture attribution",
+        }],
+        "moments": [],
+        "typographicBeats": [],
+        "audio": {"wordTimings": timed(script.split())},
+    }
+    props, _ = ScriptAlignedPersianCompose()._build_props(
+        persian, tmp_path / "stage", "short-hybrid"
+    )
+    assert props["captionMode"] == "hybrid"
+    assert props["captions"]
+    assert props["captions"][-1]["endSeconds"] < props["durationSeconds"]
+    assert props["watermarkPlan"]
+    assert props["watermarkPlan"][0]["startSeconds"] >= 5.0
+    assert props["watermarkPlan"][-1]["endSeconds"] == pytest.approx(10.5)

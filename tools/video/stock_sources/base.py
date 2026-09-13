@@ -95,6 +95,7 @@ class SearchFilters:
     max_duration: Optional[float] = None    # seconds; None = no ceiling
     orientation: Optional[str] = None       # "landscape" | "portrait" | "square"
     min_width: Optional[int] = None         # resolution floor in pixels
+    max_width: Optional[int] = None         # resolution ceiling in pixels
     per_page: int = 20
     page: int = 1
 

@@ -4,7 +4,7 @@
 
 The active skill is `skills/pipelines/persian-footage/film-type.md`. It describes
 the current default only. This file preserves the historical guidance for Film
-Type 2.5 through 2.10 verbatim, so that an existing pinned project can still be
+Type 2.5 through 2.13, so that an existing pinned project can still be
 understood and reproduced.
 
 Read this file only when you need to:
@@ -25,6 +25,14 @@ project in bulk. Migration means resolving a fresh unpinned design and rerunning
 preparation.
 
 ---
+
+## Film Type 2.13 archived default
+
+Film Type 2.13.0 / layout 13 introduced measured watermark coverage, the 5-second
+clean intro, physical caption centering, opening semantic/hook evidence, and hard
+subtitle-boundary audit. It is frozen at
+`styles/persian-footage/film-type-2.13.0.json`; see
+`docs/persian-film-type-2.13-patch.md` when reproducing a 2.13 pin.
 
 ## Film Type 2.8 current default
 
@@ -316,4 +324,14 @@ as a containment pass. Await prepared metadata before mounting a raw Player.
 2.11 lowered mid placements, added 20px safe-area padding, strengthened the
 brand-only shadow, and used reviewed regions to steer the brand while text
 remained unenforced. Reproduce it only with the archived profile and read
-`docs/persian-film-type-2.11-patch.md`; the current contract is 2.12.
+`docs/persian-film-type-2.11-patch.md`.
+
+## Film Type 2.12.0 — archived
+
+2.12 required truthful reviewed `avoidRegions` for overlapping shots, enforced
+those regions for typography, and measured watermark/text separation using the
+complete browser-measured lockup. Where no legal full-dwell slot remained it
+suppressed the brand rather than weakening subject or text safety. Reproduce it
+only with `styles/persian-footage/film-type-2.12.0.json` and
+`docs/persian-film-type-2.12-patch.md`. The active contract lives only in
+`skills/pipelines/persian-footage/film-type.md`.

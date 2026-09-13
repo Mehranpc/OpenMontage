@@ -1,12 +1,12 @@
-# Script-aligned Persian SRT
+# Script-aligned Persian captions
 
-Use this contract whenever narrated `persian-footage` writes a sidecar subtitle.
+Use this contract for every narrated `persian-footage` caption surface: sidecar SRT, burned captions, or hybrid.
 
 ## Authority boundary
 
 - `edit_decisions.metadata.persianSubtitleScript` is the authoritative delivery copy.
 - `edit_decisions.persian.audio.wordTimings` is raw ASR/Whisper timing evidence only.
-- Never copy ASR spelling into the SRT, even when alignment is fuzzy.
+- Never copy ASR spelling into either SRT or burned pixels, even when alignment is fuzzy.
 
 The approved-script record is:
 
@@ -39,12 +39,24 @@ raw ASR words, including one-to-many and many-to-one splits such as `می‌کن
 3. ordered, non-overlapping ASR word windows;
 4. alignment confidence and the fraction of unmatched ASR insertions;
 5. cue ordering, extent, minimum duration, and configured reading speed;
-6. coverage of every timed spoken word, including the head and tail.
+6. coverage of every timed spoken word, including the head and tail;
+7. for burned/hybrid mode, a tighter grouping ceiling that can be laid out in at most two conservative lines without changing approved words.
 
 Any failure blocks before Remotion renders. The remedy is to correct the approved
 script, supply the matching narration timing set, shorten an over-speed script, or
 record a slower delivery. Never suppress the gate, hand-time three sentences into one
-short cue, or substitute raw Whisper text.
+short cue, or substitute raw Whisper text. Sidecar grouping may be looser because the
+platform owns line layout; burned grouping is deliberately tighter because OpenMontage
+owns the pixels. Both are re-derived from the same aligned approved timed words.
+
+## Caption modes and priority
+
+`sidecar_only`, `burned_captions`, and `hybrid` are the only modes. Instagram /
+Instagram Reels defaults to `hybrid` for new production; a missing platform on a legacy
+artifact retains sidecar-only behavior. Burned captions are never authored props: the
+registered `persian_compose` builds them at runtime. An editorial moment owns the frame
+while it is active, so its overlapping caption is suppressed. The caption safe-area
+band is also reserved from the moving watermark planner.
 
 ## Silent mode
 

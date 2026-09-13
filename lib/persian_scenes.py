@@ -66,6 +66,69 @@ MIN_SUBJECT_FRACTION = 0.4
 #: first run wrote three per beat and downloaded 36 clips to use 12.
 QUERIES_PER_BEAT = 2
 
+#: Ordered fallback ladder from the production spec. Typography is the terminal
+#: beat-level escape hatch and therefore is not a valid footage-event level.
+FALLBACK_LEVELS = (
+    "exact_literal",
+    "emotional_human",
+    "adjacent_metaphor",
+    "abstract",
+)
+
+REWARD_OPENING_DIRECTIONS = frozenset({
+    "parent_to_child_reward", "child_resistance", "parent_child_conflict", "child_distress",
+})
+
+
+def audit_opening_semantic_shots(shots: list[dict[str, Any]]) -> list[str]:
+    """Validate explicit opening-hook evidence carried to the final shot boundary.
+
+    The contract activates only when a shot explicitly declares narrativeRole=hook;
+    historical edits without that new visual-event metadata remain reproducible.
+    """
+    opening = sorted(
+        (shot for shot in shots if shot.get("narrativeRole") == "hook"
+         and float(shot.get("startSeconds", 0.0)) < 3.0),
+        key=lambda shot: float(shot.get("startSeconds", 0.0)),
+    )
+    if not opening:
+        return []
+    shot = opening[0]
+    label = str(shot.get("visualEventId") or shot.get("id") or "opening shot")
+    problems: list[str] = []
+    role = str(shot.get("semanticRole") or "").strip()
+    direction = str(shot.get("semanticDirection") or "").strip()
+    if not role:
+        problems.append(f"{label}: opening hook requires semanticRole")
+    if not direction:
+        problems.append(f"{label}: opening hook requires semanticDirection")
+    if shot.get("openingSemanticMatch") is not True:
+        problems.append(f"{label}: openingSemanticMatch must be true after reviewing the selected window")
+    if not str(shot.get("selectionReason") or "").strip():
+        problems.append(f"{label}: opening hook requires selectionReason describing what is visibly in frame")
+    if not isinstance(shot.get("showsSubject"), bool):
+        problems.append(f"{label}: showsSubject must be true or false")
+    if not isinstance(shot.get("humanPresence"), bool):
+        problems.append(f"{label}: humanPresence must be true or false")
+    if role == "reward_problem_hook":
+        if direction not in REWARD_OPENING_DIRECTIONS:
+            problems.append(
+                f"{label}: reward_problem_hook semanticDirection must be one of "
+                + ", ".join(sorted(REWARD_OPENING_DIRECTIONS))
+            )
+        if shot.get("showsSubject") is not True:
+            problems.append(f"{label}: reward_problem_hook must visibly show the subject")
+        if shot.get("humanPresence") is not True:
+            problems.append(f"{label}: reward_problem_hook requires visible human presence")
+    return problems
+
+#: Affects where a human read usually carries more meaning than an object-only stock shot.
+#: The gate surfaces absence as an advisory rather than pretending every emotional idea
+#: can only be shown with a face.
+EMOTIONAL_AFFECTS = frozenset({
+    "fear", "conflict", "embarrassment", "distraction", "stress", "relief",
+})
+
 
 def _beats(scene_plan: dict[str, Any]) -> list[dict[str, Any]]:
     """The beat list, from wherever this plan keeps it.
@@ -91,6 +154,138 @@ def _subject(scene_plan: dict[str, Any]) -> str | None:
 
 def _footage_beats(beats: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [beat for beat in beats if not beat.get("typographic")]
+
+
+def _footage_units(
+    beats: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str], bool]:
+    """Expand semantic beats into the visual events the viewer actually sees.
+
+    Older plans used one footage beat as both the semantic unit and the shot unit.
+    New plans may declare ``visual_events`` inside a beat.  Once that list exists,
+    its entries own shot-level search/affect fields and the semantic beat no longer
+    has to collapse to one clip.  Legacy plans remain readable as one implicit event
+    per footage beat so existing checkpoints can still be audited.
+    """
+    units: list[dict[str, Any]] = []
+    problems: list[str] = []
+    seen_ids: set[str] = set()
+    has_explicit_events = False
+
+    for beat in beats:
+        if beat.get("typographic"):
+            if beat.get("visual_events"):
+                problems.append(
+                    f'{beat.get("id")}: typographic beats cannot also declare visual_events'
+                )
+            continue
+
+        raw_events = beat.get("visual_events")
+        if raw_events is None:
+            unit = dict(beat)
+            unit["semantic_beat_id"] = str(beat.get("id") or "")
+            unit["visual_event_id"] = None
+            units.append(unit)
+            continue
+
+        has_explicit_events = True
+        if not isinstance(raw_events, list) or not raw_events:
+            problems.append(
+                f'{beat.get("id")}: visual_events must be a non-empty list for a footage beat'
+            )
+            continue
+
+        total_duration = 0.0
+        for index, raw_event in enumerate(raw_events):
+            if not isinstance(raw_event, dict):
+                problems.append(
+                    f'{beat.get("id")}: visual_event[{index}] must be an object'
+                )
+                continue
+            event = dict(raw_event)
+            event_id = str(event.get("id") or "").strip()
+            if not event_id:
+                problems.append(f'{beat.get("id")}: visual_event[{index}] has no id')
+            elif event_id in seen_ids:
+                problems.append(f'duplicate visual_event id {event_id!r}')
+            else:
+                seen_ids.add(event_id)
+
+            try:
+                duration = float(event.get("duration_seconds") or 0.0)
+            except (TypeError, ValueError):
+                duration = 0.0
+            if duration <= 0:
+                problems.append(
+                    f'{event_id or beat.get("id")}: visual event duration_seconds must be > 0'
+                )
+            total_duration += max(0.0, duration)
+
+            if not str(event.get("desired_affect") or "").strip():
+                problems.append(
+                    f'{event_id or beat.get("id")}: explicit visual events require desired_affect'
+                )
+
+            for field in (
+                "narration_span", "intent", "subject", "action", "motif",
+                "visual_search_brief", "shot_composition", "conflict_visibility",
+            ):
+                if not str(event.get(field) or "").strip():
+                    problems.append(
+                        f'{event_id or beat.get("id")}: explicit visual events require {field}'
+                    )
+
+            if not isinstance(event.get("human_presence"), bool):
+                problems.append(
+                    f'{event_id or beat.get("id")}: human_presence must be true or false'
+                )
+
+            if str(event.get("narrative_role") or "").strip() == "hook":
+                semantic_role = str(event.get("semantic_role") or "").strip()
+                semantic_direction = str(event.get("semantic_direction") or "").strip()
+                if not semantic_role:
+                    problems.append(f'{event_id or beat.get("id")}: opening hook requires semantic_role')
+                if not semantic_direction:
+                    problems.append(f'{event_id or beat.get("id")}: opening hook requires semantic_direction')
+                if semantic_role == "reward_problem_hook":
+                    if semantic_direction not in REWARD_OPENING_DIRECTIONS:
+                        problems.append(
+                            f'{event_id or beat.get("id")}: reward_problem_hook semantic_direction must be one of '
+                            + ", ".join(sorted(REWARD_OPENING_DIRECTIONS))
+                        )
+                    if event.get("shows_subject") is not True:
+                        problems.append(f'{event_id or beat.get("id")}: reward_problem_hook must show_subject')
+                    if event.get("human_presence") is not True:
+                        problems.append(f'{event_id or beat.get("id")}: reward_problem_hook requires human_presence')
+
+            fallback_level = str(event.get("fallback_level") or "").strip()
+            if fallback_level not in FALLBACK_LEVELS:
+                problems.append(
+                    f'{event_id or beat.get("id")}: fallback_level must be one of '
+                    + ", ".join(FALLBACK_LEVELS)
+                )
+
+            importance = event.get("importance")
+            if isinstance(importance, bool) or not isinstance(importance, int) or not 1 <= importance <= 3:
+                problems.append(
+                    f'{event_id or beat.get("id")}: importance must be integer 1, 2, or 3'
+                )
+
+            event["semantic_beat_id"] = str(beat.get("id") or "")
+            event["visual_event_id"] = event_id or None
+            units.append(event)
+
+        try:
+            beat_duration = float(beat.get("duration_seconds") or 0.0)
+        except (TypeError, ValueError):
+            beat_duration = 0.0
+        if beat_duration > 0 and abs(total_duration - beat_duration) > 0.05:
+            problems.append(
+                f'{beat.get("id")}: visual_events total {total_duration:.2f}s does not match '
+                f'semantic beat duration {beat_duration:.2f}s'
+            )
+
+    return units, problems, has_explicit_events
 
 
 def audit_scene_plan(
@@ -127,7 +322,10 @@ def audit_scene_plan(
             "advisories": [],
             "subject_fraction": 0.0,
             "footage_beats": 0,
+            "visual_events": 0,
+            "uses_visual_events": False,
             "queries_total": 0,
+            "sourcing_order": [],
         }
 
     subject = subject or _subject(scene_plan)
@@ -138,20 +336,51 @@ def audit_scene_plan(
             "twelve defensible queries become a video about something else."
         )
 
-    footage = _footage_beats(beats)
-    queries_total = sum(len(beat.get("queries") or []) for beat in footage)
+    footage_beats = _footage_beats(beats)
+    footage, visual_event_problems, has_explicit_events = _footage_units(beats)
+    problems.extend(visual_event_problems)
+    queries_total = sum(len(unit.get("queries") or []) for unit in footage)
+
+    # Importance changes retry order, not the global download ceiling. High-value
+    # events consume the bounded alternate-query pass first; ordinary events do not
+    # get starved by an unbounded search escalation. Legacy implicit events default to 1.
+    def importance_rank(unit: dict[str, Any]) -> int:
+        value = unit.get("importance")
+        return value if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 3 else 1
+
+    sourcing_order = [
+        str(unit.get("visual_event_id") or unit.get("id") or "")
+        for unit in sorted(footage, key=importance_rank, reverse=True)
+    ]
+
+    for unit in footage:
+        if not unit.get("visual_event_id"):
+            continue
+        affect = str(unit.get("desired_affect") or "").strip().lower()
+        if affect in EMOTIONAL_AFFECTS and not unit.get("human_presence"):
+            advisories.append(
+                f'{unit.get("id")}: desired_affect {affect!r} usually benefits from '
+                "human presence. Confirm an object-only choice is intentional rather "
+                "than generic stock avoidance failing silently."
+            )
+        if importance_rank(unit) == 3 and unit.get("fallback_level") == "abstract":
+            advisories.append(
+                f'{unit.get("id")}: importance 3 has fallen to abstract footage. '
+                "Re-check literal, emotional-human, and adjacent-metaphor candidates "
+                "before accepting the weakest footage fallback."
+            )
 
     # --- Anchor quota -----------------------------------------------------------------
     if footage:
         if not footage[0].get("shows_subject"):
             problems.append(
-                f'{footage[0].get("id")}: the first footage beat must show the subject. '
+                f'{footage[0].get("id")}: the first footage beat/event must show the subject. '
                 "It is the frame that sets what the video is about, and a video opening "
                 "on a laboratory is a video about medicine whatever the narration says."
             )
         if not footage[-1].get("shows_subject"):
             problems.append(
-                f'{footage[-1].get("id")}: the last footage beat must show the subject. '
+                f'{footage[-1].get("id")}: the last footage beat/event must show the subject. '
                 "It is the frame the viewer remembers."
             )
 
@@ -159,7 +388,7 @@ def audit_scene_plan(
         fraction = showing / len(footage)
         if fraction < MIN_SUBJECT_FRACTION:
             problems.append(
-                f"only {showing} of {len(footage)} footage beats show the subject "
+                f"only {showing} of {len(footage)} footage units show the subject "
                 f"({fraction:.0%}), against {MIN_SUBJECT_FRACTION:.0%} required. The "
                 "remaining beats have real work to do, so this is a floor on "
                 "recognisability rather than a ceiling on variety."
@@ -225,11 +454,11 @@ def audit_scene_plan(
             problems.append(
                 f'{earlier.get("id")} and {later.get("id")} share both shot_scale '
                 f'({earlier.get("shot_scale")!r}) and environment '
-                f'({earlier.get("environment")!r}) — two adjacent beats that look like '
+                f'({earlier.get("environment")!r}) — two adjacent visual events that look like '
                 "one long shot. Change one of the two."
             )
 
-    # --- Per-beat completeness ---------------------------------------------------------
+    # --- Per-visual-event completeness ------------------------------------------------
     for beat in footage:
         label = beat.get("id") or "beat"
         queries = beat.get("queries") or []
@@ -269,8 +498,11 @@ def audit_scene_plan(
         "problems": problems,
         "advisories": advisories,
         "subject_fraction": round(fraction, 4),
-        "footage_beats": len(footage),
+        "footage_beats": len(footage_beats),
+        "visual_events": len(footage),
+        "uses_visual_events": has_explicit_events,
         "queries_total": queries_total,
+        "sourcing_order": sourcing_order,
     }
 
 
@@ -278,5 +510,7 @@ __all__ = [
     "BANNED_QUERY_TERMS",
     "MIN_SUBJECT_FRACTION",
     "QUERIES_PER_BEAT",
+    "FALLBACK_LEVELS",
+    "EMOTIONAL_AFFECTS",
     "audit_scene_plan",
 ]

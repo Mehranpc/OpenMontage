@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import unittest
 from lib.persian_brand import exact_text_record
-from lib.persian_design import resolve_design, SUPPORTED_FILM_TYPE_28_HASH, SUPPORTED_FILM_TYPE_211_HASH
+from lib.persian_design import resolve_design, SUPPORTED_FILM_TYPE_28_HASH, SUPPORTED_FILM_TYPE_211_HASH, SUPPORTED_FILM_TYPE_212_HASH
 from lib.persian_film_type import prepare_film_type_props
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -22,7 +22,7 @@ class RankedBrowserContracts(unittest.TestCase):
         return {'format':format, 'durationSeconds':20,
                 'design':design or resolve_design({'version':2,'profile':'film-type','seed':'regression'}),
                 'watermark':{'persianText':'','latinText':''},
-                'typographicBeats':[],
+                'typographicBeats':[], 'captionMode':'sidecar_only', 'captions':[],
                 'shots':[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':20,'avoidRegions':[]}],
                 'moments':[{'id':'m','kind':'statement','startSeconds':0,'endSeconds':15,
                             'presentation':{'placement':'auto'},
@@ -37,6 +37,10 @@ class RankedBrowserContracts(unittest.TestCase):
         profile=json.loads((ROOT/'styles/persian-footage/film-type-2.11.0.json').read_text(encoding='utf-8'))
         return {'version':2,'profile':'film-type','seed':'regression','profileVersion':'2.11.0',
                 'contentHash':SUPPORTED_FILM_TYPE_211_HASH,'resolved':profile}
+    def pinned_212(self):
+        profile=json.loads((ROOT/'styles/persian-footage/film-type-2.12.0.json').read_text(encoding='utf-8'))
+        return {'version':2,'profile':'film-type','seed':'regression','profileVersion':'2.12.0',
+                'contentHash':SUPPORTED_FILM_TYPE_212_HASH,'resolved':profile}
     def prepare(self, p):
         return prepare_film_type_props(p, ROOT/'remotion-composer')
     def test_ranked_long_copy_preserves_content_and_frozen_geometry(self):
@@ -91,6 +95,18 @@ class RankedBrowserContracts(unittest.TestCase):
         layout=self.prepare(p)['filmType']['moments']['m']
         self.assertEqual(layout['subjectSafety'],'checked-against-supplied-regions')
         self.assertFalse(self._overlaps(layout['rect'],region))
+    def test_212_allows_typography_only_moment_without_fake_shot_review(self):
+        p=self.props(text='نیاز به توجه')
+        p['durationSeconds']=20
+        p['captionMode']='sidecar_only'; p['captions']=[]
+        p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':14,'avoidRegions':[]}]
+        p['moments']=[{'id':'ending','kind':'statement','startSeconds':14,'endSeconds':20,'presentation':{'placement':'auto'},'segments':[{'role':'hero','text':'نیاز به توجه'}]}]
+        p['typographicBeats']=[{'id':'end','startSeconds':14,'endSeconds':20}]
+        q=self.prepare(p)
+        layout=q['filmType']['moments']['ending']
+        self.assertEqual(layout['subjectSafety'],'not-checked')
+        self.assertTrue(layout['rows'])
+
     def test_default_profile_refuses_the_reviewed_m1_face_collision(self):
         p=self.props();p['moments'][0]['presentation']['placement']='upper-right'
         p['shots'][0]['avoidRegions']=[{'x':0.27,'y':0.28,'w':0.39,'h':0.21}]
@@ -136,8 +152,17 @@ class RankedBrowserContracts(unittest.TestCase):
         for slot in plan:
             with self.subTest(slot=slot['zone']):
                 self.assertFalse(self._overlaps(slot['rect'],region))
-    def test_212_suppresses_brand_instead_of_grouping_it_with_m5(self):
-        p=self.props();p['durationSeconds']=47
+    def test_212_pin_suppresses_brand_when_subject_regions_leave_no_legal_dwell(self):
+        p=self.props(design=self.pinned_212());p['moments']=[]
+        p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':20,
+                     'avoidRegions':[{'x':0,'y':0,'w':1,'h':1}]}]
+        p['watermark']={'persianText':'طریقت تسلیم','latinText':'Pathway_of_Surrender'}
+        q=self.prepare(p)
+        self.assertEqual(q['watermarkPlan'],[])
+        self.assertTrue(any('watermark-suppressed-for-text-clearance' in w for w in q['filmType']['warnings']))
+
+    def test_212_pin_suppresses_brand_instead_of_grouping_it_with_m5(self):
+        p=self.props(design=self.pinned_212());p['durationSeconds']=47
         p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':47,
                      'avoidRegions':[{'x':0.05,'y':0.10,'w':0.90,'h':0.20}]}]
         p['moments']=[{'id':'m5','kind':'statement','startSeconds':42.47,'endSeconds':46.97,
@@ -155,6 +180,58 @@ class RankedBrowserContracts(unittest.TestCase):
                 self.assertFalse(self._overlaps(expanded,layout['rect']))
         self.assertFalse(any(s['startSeconds']<46.97 and s['endSeconds']>42.47 for s in q['watermarkPlan']))
         self.assertTrue(any('watermark-suppressed-for-text-clearance' in w for w in q['filmType']['warnings']))
+
+    def test_214_context_hook_can_use_upper_center_negative_space(self):
+        p=self.props();p['durationSeconds']=20
+        p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':20,
+                     'avoidRegions':[{'x':0.0,'y':0.36,'w':0.4,'h':0.52},
+                                     {'x':0.76,'y':0.4,'w':0.24,'h':0.55}]}]
+        p['moments']=[{'id':'hook','kind':'hook','purpose':'hook-pattern-interrupt',
+                       'startSeconds':0,'endSeconds':4.15,
+                       'presentation':{'placement':'auto','motion':'cut-in','treatment':'editorial'},
+                       'segments':[{'role':'lead','text':'برای'},
+                                   {'role':'hero','text':'هر کار خوبی'},
+                                   {'role':'tail','text':'جایزه می‌دی؟'}]}]
+        q=self.prepare(p)
+        self.assertEqual(q['filmType']['moments']['hook']['placement'],'upper-center')
+        self.assertEqual(q['filmType']['moments']['hook']['fieldPeakAlpha'],.46)
+
+    def test_214_vertical_diversity_may_use_one_shorter_safe_dwell(self):
+        p=self.props();p['durationSeconds']=47;p['moments']=[]
+        blocker={'x':0,'y':0.35,'w':1,'h':0.65}
+        p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':47,
+                     'avoidRegions':[{**blocker,'startSeconds':0,'endSeconds':23},
+                                     {**blocker,'startSeconds':28,'endSeconds':47}]}]
+        p['watermark']={'persianText':'طریقت تسلیم','latinText':'Pathway_of_Surrender'}
+        plan=self.prepare(p)['watermarkPlan']
+        bands={slot['zone'].split('-',1)[0] for slot in plan}
+        self.assertGreaterEqual(len(bands),2)
+        short=[slot for slot in plan if slot['endSeconds']-slot['startSeconds']<6]
+        self.assertEqual(len(short),1)
+        self.assertGreaterEqual(short[0]['endSeconds']-short[0]['startSeconds'],4)
+        self.assertFalse(short[0]['zone'].startswith('upper'))
+
+    def test_214_long_form_brand_meets_coverage_relocation_and_vertical_diversity(self):
+        p=self.props();p['durationSeconds']=47;p['moments']=[]
+        p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':47,'avoidRegions':[]}]
+        p['watermark']={'persianText':'طریقت تسلیم','latinText':'Pathway_of_Surrender'}
+        q=self.prepare(p);plan=q['watermarkPlan']
+        coverage=sum(slot['endSeconds']-slot['startSeconds'] for slot in plan)/47
+        moves=sum(a['zone']!=b['zone'] for a,b in zip(plan,plan[1:]))
+        bands={slot['zone'].split('-',1)[0] for slot in plan}
+        self.assertGreaterEqual(coverage,.8)
+        self.assertGreaterEqual(moves,2)
+        self.assertGreaterEqual(len(bands),2)
+        self.assertGreaterEqual(plan[0]['startSeconds'],5)
+
+    def test_214_refuses_an_isolated_eight_second_brand_dwell(self):
+        p=self.props();p['durationSeconds']=47;p['moments']=[]
+        p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':47,
+                     'avoidRegions':[{'x':0,'y':0,'w':1,'h':1,'startSeconds':0,'endSeconds':10},
+                                     {'x':0,'y':0,'w':1,'h':1,'startSeconds':18,'endSeconds':47}]}]
+        p['watermark']={'persianText':'طریقت تسلیم','latinText':'Pathway_of_Surrender'}
+        with self.assertRaisesRegex(ValueError,'coverage'):self.prepare(p)
+
     def test_strict_rows_preserve_arabic_codepoints_quotes_and_zwnj(self):
         exact="مي‌روم؛ “همین”"
         p=self.props();p['moments']=[{

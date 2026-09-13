@@ -75,21 +75,57 @@ def _advance_to(tmp_path: Path, target: str, *, project_id: str = "run") -> dict
     return state
 
 
-def _report(candidate: Path, *, digest: str | None = None, fmt: str = "mp4") -> dict:
+def _report(
+    candidate: Path, *, digest: str | None = None, fmt: str = "mp4", review_ref: str | None = None
+) -> dict:
+    review_ref = review_ref or str(candidate.parent.parent / "artifacts" / "final_review.json")
     return {
+        "version": "1.0",
         "delivery_status": "final_candidate",
         "human_visual_approval": False,
         "persian_text_verified": False,
-        "outputs": [{"path": str(candidate), "format": fmt, "sha256": digest or hashlib.sha256(candidate.read_bytes()).hexdigest()}],
+        "outputs": [{
+            "path": str(candidate), "format": fmt, "resolution": "1080x1920",
+            "duration_seconds": 12.0,
+            "sha256": digest or hashlib.sha256(candidate.read_bytes()).hexdigest(),
+        }],
+        "final_review_ref": review_ref,
+        "caption_mode": "sidecar_only",
+        "post_render_motion_qa": {
+            "passed": True, "sampleFps": 2.0, "nearStaticDeltaMax": 1.0,
+            "warningRunSeconds": 7.0, "failRunSeconds": 9.0,
+            "deltas": [], "warnRuns": [], "failRuns": [], "elapsedSeconds": 0.1,
+        },
+        "retention_audit": {
+            "problems": [], "advisories": [],
+            "first3Seconds": {"eventCount": 2, "events": []},
+            "averageVisualEventSeconds": 3.0,
+            "longestVisualEvent": {"id": "s1", "seconds": 4.0},
+            "meaningfulChangesPer15Seconds": [], "weakEmptyIntervals": [],
+            "textOnlySeconds": 0.0, "endingTextOnlySeconds": 0.0,
+            "cutGrammar": {"transitions": ["cut"], "nonCutCount": 0},
+            "judgementRequired": ["silent_watch_main_point"],
+        },
+        "silent_watch_audit": {
+            "main_point_understood": True, "hook_direction_understood": True,
+            "conclusion_understood": True, "notes": ["Muted review preserves the main point."],
+        },
+        "cut_rhythm": "Purposeful hard-cut rhythm.",
+        "caption_readability": "Readable without competing with moments.",
+        "strongest_scene": "opening hook", "weakest_scene": "middle exposition",
+        "hook_strength": "strong", "resolution_strength": "acceptable",
     }
 
 
 def _checkpoint(report: dict, **overrides) -> dict:
     value = {
+        "version": "1.0",
         "project_id": "run",
         "pipeline_type": "persian-footage",
         "stage": "compose",
         "status": "awaiting_human",
+        "timestamp": "2026-09-11T12:00:00+00:00",
+        "checkpoint_policy": "guided",
         "human_approval_required": True,
         "human_approved": False,
         "artifacts": {"render_report": report},
@@ -459,6 +495,53 @@ def test_asset_result_is_bound_to_issued_request_and_remaining_budget(tmp_path):
         bounded_asset_search_request("run", {}, retry_pass=2, pipeline_dir=tmp_path, now=BASE)
 
 
+def test_second_asset_pass_is_sorted_by_scene_importance_order(tmp_path):
+    _bootstrap(tmp_path)
+    _advance_to(tmp_path, "plan_scenes_moments")
+    record_phase_attempt("run", "plan_scenes_moments", pipeline_dir=tmp_path, now=BASE)
+    complete_phase(
+        "run", "plan_scenes_moments",
+        evidence={"sourcing_order": ["event-high", "event-low"]},
+        pipeline_dir=tmp_path, now=BASE,
+    )
+
+    first = bounded_asset_search_request("run", {}, retry_pass=0, pipeline_dir=tmp_path, now=BASE)
+    record_asset_search_result(
+        "run", retry_pass=0,
+        result_data=_asset_result(first, candidates=0, downloaded_bytes=0),
+        pipeline_dir=tmp_path, now=BASE,
+    )
+    second = bounded_asset_search_request(
+        "run",
+        {"queries": [
+            {"query": "low alternate", "slot_id": "event-low", "kind": "video"},
+            {"query": "high alternate", "slot_id": "event-high", "kind": "video"},
+        ]},
+        retry_pass=1, pipeline_dir=tmp_path, now=BASE,
+    )
+    assert [query["slot_id"] for query in second["queries"]] == ["event-high", "event-low"]
+
+
+def test_second_asset_pass_rejects_slots_outside_scene_importance_order(tmp_path):
+    _bootstrap(tmp_path)
+    _advance_to(tmp_path, "plan_scenes_moments")
+    record_phase_attempt("run", "plan_scenes_moments", pipeline_dir=tmp_path, now=BASE)
+    complete_phase(
+        "run", "plan_scenes_moments", evidence={"sourcing_order": ["event-1"]},
+        pipeline_dir=tmp_path, now=BASE,
+    )
+    first = bounded_asset_search_request("run", {}, retry_pass=0, pipeline_dir=tmp_path, now=BASE)
+    record_asset_search_result(
+        "run", retry_pass=0, result_data=_asset_result(first, candidates=0, downloaded_bytes=0),
+        pipeline_dir=tmp_path, now=BASE,
+    )
+    with pytest.raises(PersianVideoWorkflowError, match="absent from the scene sourcing_order"):
+        bounded_asset_search_request(
+            "run", {"queries": [{"query": "x", "slot_id": "other", "kind": "video"}]},
+            retry_pass=1, pipeline_dir=tmp_path, now=BASE,
+        )
+
+
 def test_asset_actions_and_send_back_obey_session_wall_time(tmp_path):
     _bootstrap_to_assets(tmp_path)
     expired = BASE + timedelta(minutes=46)
@@ -470,12 +553,179 @@ def test_asset_actions_and_send_back_obey_session_wall_time(tmp_path):
         )
 
 
-def _terminal_project(tmp_path: Path) -> tuple[dict, Path]:
+def _write_final_review(project: Path, candidate: Path) -> Path:
+    frame_dir = project / "artifacts" / "final-review-frames"
+    frame_dir.mkdir(parents=True, exist_ok=True)
+    frames = []
+    for index in range(4):
+        frame = frame_dir / f"frame-{index}.jpg"
+        frame.write_bytes(b"frame")
+        frames.append(str(frame))
+    review = {
+        "version": "1.0", "output_path": str(candidate), "status": "pass",
+        "checks": {
+            "technical_probe": {
+                "valid_container": True, "duration_seconds": 12.0, "resolution": "1080x1920",
+                "fps": 30.0, "has_audio": True, "codec": "h264",
+                "file_size_bytes": candidate.stat().st_size, "issues": [],
+            },
+            "visual_spotcheck": {
+                "frames_sampled": 4, "frame_paths": frames, "black_frames_detected": False,
+                "broken_overlays": False, "missing_assets": False, "unreadable_text": False,
+                "issues": [],
+            },
+            "audio_spotcheck": {
+                "narration_present": True, "music_present": True, "unexpected_silence": False,
+                "clipping_detected": False, "mix_intelligible": True, "issues": [],
+            },
+            "promise_preservation": {
+                "delivery_promise_honored": True, "renderer_family_used": "persian-footage",
+                "render_runtime_used": "remotion", "runtime_swap_detected": False,
+                "runtime_swap_check": "ok — remotion", "motion_ratio_actual": 1.0,
+                "silent_downgrade_detected": False, "issues": [],
+            },
+            "subtitle_check": {
+                "subtitles_expected": False, "subtitles_present": False, "coverage_ratio": 0.0,
+                "timing_drift_detected": False, "issues": [],
+            },
+        },
+        "issues_found": [], "recommended_action": "present_to_user",
+    }
+    path = project / "artifacts" / "final_review.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(review), encoding="utf-8")
+    return path
+
+
+def _review_ready_project(tmp_path: Path) -> tuple[dict, Path, Path, dict]:
     _bootstrap(tmp_path)
-    state = _advance_to(tmp_path, "awaiting_human")
-    candidate = tmp_path / "run" / "renders" / "candidate.mp4"
+    state = _advance_to(tmp_path, "final_review")
+    project = tmp_path / "run"
+    candidate = project / "renders" / "candidate.mp4"
+    candidate.parent.mkdir(parents=True, exist_ok=True)
     candidate.write_bytes(b"candidate")
+    review_path = _write_final_review(project, candidate)
+    report = _report(candidate, review_ref=str(review_path))
+    (project / "checkpoint_compose.json").write_text(
+        json.dumps(_checkpoint(report)), encoding="utf-8"
+    )
+    state = record_phase_attempt("run", "final_review", pipeline_dir=tmp_path, now=BASE)
+    return state, candidate, review_path, report
+
+
+def _terminal_project(tmp_path: Path) -> tuple[dict, Path]:
+    _, candidate, review_path, _ = _review_ready_project(tmp_path)
+    state = complete_phase(
+        "run", "final_review", evidence={"final_review_path": str(review_path)},
+        pipeline_dir=tmp_path, now=BASE,
+    )
     return state, candidate
+
+
+def test_final_review_phase_requires_a_passing_artifact_and_semantic_review(tmp_path):
+    _, candidate, review_path, report = _review_ready_project(tmp_path)
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["status"] = "revise"
+    review["recommended_action"] = "revise_edit"
+    review_path.write_text(json.dumps(review), encoding="utf-8")
+    with pytest.raises(PersianVideoWorkflowError, match="must pass"):
+        complete_phase(
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
+        )
+
+    review["status"] = "pass"
+    review["recommended_action"] = "present_to_user"
+    review_path.write_text(json.dumps(review), encoding="utf-8")
+    report["silent_watch_audit"]["conclusion_understood"] = False
+    (tmp_path / "run" / "checkpoint_compose.json").write_text(
+        json.dumps(_checkpoint(report)), encoding="utf-8"
+    )
+    with pytest.raises(PersianVideoWorkflowError, match="conclusion_understood"):
+        complete_phase(
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
+        )
+
+
+def test_final_review_rejects_retention_problems_and_weak_hook(tmp_path):
+    _, _, review_path, report = _review_ready_project(tmp_path)
+    report["retention_audit"]["problems"] = ["weak opening"]
+    (tmp_path / "run" / "checkpoint_compose.json").write_text(
+        json.dumps(_checkpoint(report)), encoding="utf-8"
+    )
+    with pytest.raises(PersianVideoWorkflowError, match="blocking problems"):
+        complete_phase(
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
+        )
+
+    report["retention_audit"]["problems"] = []
+    report["hook_strength"] = "weak"
+    (tmp_path / "run" / "checkpoint_compose.json").write_text(
+        json.dumps(_checkpoint(report)), encoding="utf-8"
+    )
+    with pytest.raises(PersianVideoWorkflowError, match="hook_strength"):
+        complete_phase(
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
+        )
+
+
+
+def test_final_review_rejects_failed_post_render_motion_gate(tmp_path):
+    _, _, review_path, report = _review_ready_project(tmp_path)
+    report["post_render_motion_qa"]["passed"] = False
+    report["post_render_motion_qa"]["failRuns"] = [{
+        "startSeconds": 4.0, "endSeconds": 14.0,
+        "durationSeconds": 10.0, "meanAbsDelta": 0.1,
+    }]
+    (tmp_path / "run" / "checkpoint_compose.json").write_text(
+        json.dumps(_checkpoint(report)), encoding="utf-8"
+    )
+    with pytest.raises(PersianVideoWorkflowError, match="anti-slideshow"):
+        complete_phase(
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
+        )
+
+def test_burned_caption_review_requires_real_entry_mid_exit_frames(tmp_path):
+    _, _, review_path, report = _review_ready_project(tmp_path)
+    report["caption_mode"] = "hybrid"
+    report["caption_verification_frames"] = []
+    (tmp_path / "run" / "checkpoint_compose.json").write_text(
+        json.dumps(_checkpoint(report)), encoding="utf-8"
+    )
+    with pytest.raises(PersianVideoWorkflowError, match="caption_verification_frames"):
+        complete_phase(
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
+        )
+
+    frames = []
+    for name in ("caption-entry.jpg", "caption-mid.jpg", "caption-exit.jpg"):
+        frame = tmp_path / "run" / "artifacts" / name
+        frame.write_bytes(b"caption")
+        frames.append(str(frame))
+    report["caption_verification_frames"] = frames
+    (tmp_path / "run" / "checkpoint_compose.json").write_text(
+        json.dumps(_checkpoint(report)), encoding="utf-8"
+    )
+    state = complete_phase(
+        "run", "final_review", evidence={"final_review_path": str(review_path)},
+        pipeline_dir=tmp_path, now=BASE,
+    )
+    assert state["next_phase"] == "awaiting_human"
+
+
+def test_awaiting_human_refuses_review_artifact_changed_after_validation(tmp_path):
+    state, candidate = _terminal_project(tmp_path)
+    review_path = Path(state["evidence"]["final_review"]["final_review_path"])
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["issues_found"] = ["mutated after validation"]
+    review_path.write_text(json.dumps(review), encoding="utf-8")
+    with pytest.raises(PersianVideoWorkflowError, match="changed after"):
+        complete_phase("run", "awaiting_human", pipeline_dir=tmp_path, now=BASE)
 
 
 def test_terminal_rejects_missing_or_non_compose_checkpoint(tmp_path, monkeypatch):

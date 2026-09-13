@@ -38,6 +38,8 @@ export const persianDemoFixture: PersianVideoProps = {
   format: "vertical",
   durationSeconds: 20,
   shots: [],
+  captionMode: "sidecar_only",
+  captions: [],
   typographicBeats: [
     { id: "beat-1", startSeconds: 0, endSeconds: 10 },
     { id: "beat-2", startSeconds: 10, endSeconds: 20 },
@@ -131,6 +133,8 @@ export const persianEmptyFixture: PersianVideoProps = {
   shots: [],
   moments: [],
   typographicBeats: [],
+  captionMode: "sidecar_only",
+  captions: [],
   watermark: DEFAULT_WATERMARK,
 };
 

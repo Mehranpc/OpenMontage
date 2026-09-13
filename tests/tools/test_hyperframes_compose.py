@@ -801,6 +801,55 @@ def test_transcript_comparison_passes_clean_audio(tmp_path):
     assert not any("tts punctuation leak" in i.lower() for i in result["issues"])
 
 
+def test_transcript_comparison_supports_persian_unicode_and_zwnj(tmp_path):
+    """Persian transcript comparison must not collapse non-ASCII words to zero tokens."""
+    import json
+
+    script_text = "اگه برای هر کار خوبی جایزه می‌دی، شاید انگیزه کمتر بشه."
+    transcript_data = {
+        "word_timestamps": [
+            {"word": word, "start": i * 0.2, "end": (i + 1) * 0.2}
+            for i, word in enumerate(
+                ["اگه", "برای", "هر", "کار", "خوبی", "جایزه", "می", "دی",
+                 "شاید", "انگیزه", "کمتر", "بشه"]
+            )
+        ]
+    }
+    transcript_path = tmp_path / "persian-transcript.json"
+    transcript_path.write_text(json.dumps(transcript_data, ensure_ascii=False), encoding="utf-8")
+
+    result = VideoCompose._compare_transcript_to_script(transcript_path, script_text)
+    assert result["script_word_count"] == 12
+    assert result["transcript_word_count"] == 12
+    assert result["word_accuracy"] == 1.0
+    assert result["transcript_matches_script"] is True
+    assert result["issues"] == []
+
+
+def test_transcript_comparison_accepts_segment_nested_words(tmp_path):
+    """MLX transcript files may store word timestamps under segments[].words."""
+    import json
+
+    script_text = "این یک تست فارسی ساده است."
+    transcript_data = {
+        "segments": [{
+            "text": script_text,
+            "words": [
+                {"word": word, "start": i * 0.2, "end": (i + 1) * 0.2}
+                for i, word in enumerate(["این", "یک", "تست", "فارسی", "ساده", "است"])
+            ],
+        }]
+    }
+    transcript_path = tmp_path / "mlx-transcript.json"
+    transcript_path.write_text(json.dumps(transcript_data, ensure_ascii=False), encoding="utf-8")
+
+    result = VideoCompose._compare_transcript_to_script(transcript_path, script_text)
+    assert result["transcript_word_count"] == 6
+    assert result["word_accuracy"] == 1.0
+    assert result["transcript_matches_script"] is True
+    assert result["issues"] == []
+
+
 def test_transcript_comparison_graceful_when_inputs_missing(tmp_path):
     """When transcript or script is unavailable, the check should NOT
     crash — it should record the skip in issues so the silence is visible."""

@@ -19,6 +19,13 @@ from pathlib import Path
 from typing import Any
 
 from lib.persian_srt import render_srt
+from lib.persian_captions import (
+    BURNED_CAPTION_MODES,
+    build_burned_caption_props,
+    burned_caption_max_visible_chars,
+    resolve_caption_mode,
+)
+from lib.persian_design import resolve_design
 from lib.persian_srt_alignment import (
     SubtitleAlignmentError,
     build_script_aligned_cues,
@@ -32,22 +39,22 @@ class ScriptAlignedPersianCompose(PersianCompose):
     # Same public tool identity: registry discovery loads this module after
     # persian_compose.py and deliberately replaces the older implementation.
     name = "persian_compose"
-    version = "0.3.0"
+    version = "0.4.0"
 
-    def execute(self, inputs: dict[str, Any]):
-        """Inject the schema-valid metadata record into an internal render copy."""
-        edit_decisions = inputs.get("edit_decisions")
-        if not isinstance(edit_decisions, dict):
-            return super().execute(inputs)
+    @staticmethod
+    def _runtime_persian(edit_decisions: dict[str, Any]) -> dict[str, Any] | None:
+        """Return the internal Persian block used by render and no-copy preflight.
+
+        The persisted artifact keeps approved delivery copy in metadata so the public
+        schema stays stable. Both execution paths must inject that same record before
+        subtitle/caption alignment; duplicating the injection let preflight disagree
+        with the render it was supposed to predict.
+        """
         persian = edit_decisions.get("persian")
         if not isinstance(persian, dict):
-            return super().execute(inputs)
-
-        runtime_inputs = dict(inputs)
-        runtime_decisions = dict(edit_decisions)
+            return None
         runtime_persian = dict(persian)
         runtime_persian.pop("_approvedSubtitleScript", None)
-
         metadata = edit_decisions.get("metadata") or {}
         approved_script = (
             metadata.get("persianSubtitleScript")
@@ -58,32 +65,66 @@ class ScriptAlignedPersianCompose(PersianCompose):
             # Private runtime-only key. It is never written into render props and is
             # not part of the persisted artifact schema.
             runtime_persian["_approvedSubtitleScript"] = approved_script
+        return runtime_persian
 
+    def execute(self, inputs: dict[str, Any]):
+        """Inject the schema-valid metadata record into an internal render copy."""
+        edit_decisions = inputs.get("edit_decisions")
+        if not isinstance(edit_decisions, dict):
+            return super().execute(inputs)
+        runtime_persian = self._runtime_persian(edit_decisions)
+        if runtime_persian is None:
+            return super().execute(inputs)
+
+        runtime_inputs = dict(inputs)
+        runtime_decisions = dict(edit_decisions)
         runtime_decisions["persian"] = runtime_persian
         runtime_inputs["edit_decisions"] = runtime_decisions
         return super().execute(runtime_inputs)
 
-    def _build_props(
-        self,
-        persian: dict[str, Any],
-        staging_dir: Path,
-        run_id: str,
-    ) -> tuple[dict[str, Any], list[str]]:
-        props, attributions = super()._build_props(persian, staging_dir, run_id)
-        # Validate before Remotion starts. The helper is deterministic and is called
-        # again when the SRT is written so the bytes come from the same audited path.
+    def _build_caption_props(
+        self, persian: dict[str, Any]
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """Build approved-script captions before Film Type freezes layout."""
+        mode = resolve_caption_mode(
+            persian.get("captionMode"), platform_target=persian.get("platformTarget")
+        )
+        if mode in BURNED_CAPTION_MODES:
+            profile_version = None
+            raw_design = persian.get("design")
+            if isinstance(raw_design, dict) and raw_design.get("profile") == "film-type":
+                resolved_design = resolve_design(raw_design)
+                if resolved_design is not None:
+                    profile_version = str(resolved_design.get("profileVersion") or "")
+            burned = self._aligned_subtitle_cues(
+                persian,
+                max_visible_chars=burned_caption_max_visible_chars(profile_version),
+                id_prefix="caption",
+                require_words=True,
+                min_connector_words=8 if profile_version == "2.14.0" else 0,
+            )
+            return mode, build_burned_caption_props(burned)
+
+        # Sidecar-only still validates approved-script alignment before browser work.
         self._aligned_subtitle_cues(persian)
-        return props, attributions
+        return mode, []
 
     @staticmethod
-    def _aligned_subtitle_cues(persian: dict[str, Any]) -> list[Any]:
+    def _aligned_subtitle_cues(
+        persian: dict[str, Any],
+        *,
+        max_visible_chars: int | None = None,
+        id_prefix: str = "cue",
+        require_words: bool = False,
+        min_connector_words: int = 0,
+    ) -> list[Any]:
         audio = persian.get("audio") or {}
         word_timings = audio.get("wordTimings")
         if not word_timings:
-            if audio.get("narration"):
+            if audio.get("narration") or require_words:
                 raise ValueError(
-                    "narrated Persian delivery requires audio.wordTimings so the "
-                    "approved script can be aligned to the spoken audio"
+                    "narrated/burned Persian captions require audio.wordTimings so "
+                    "approved script text can be aligned to the spoken audio"
                 )
             return []
 
@@ -91,6 +132,9 @@ class ScriptAlignedPersianCompose(PersianCompose):
             return build_script_aligned_cues(
                 persian.get("_approvedSubtitleScript"),
                 word_timings,
+                max_visible_chars=max_visible_chars,
+                id_prefix=id_prefix,
+                min_connector_words=min_connector_words,
             )
         except SubtitleAlignmentError as exc:
             raise ValueError(
@@ -103,6 +147,12 @@ class ScriptAlignedPersianCompose(PersianCompose):
     def _write_subtitles(
         persian: dict[str, Any], output_path: Path
     ) -> tuple[str | None, list[str]]:
+        mode = resolve_caption_mode(
+            persian.get("captionMode"), platform_target=persian.get("platformTarget")
+        )
+        if mode == "burned_captions":
+            return None, []
+
         cues = ScriptAlignedPersianCompose._aligned_subtitle_cues(persian)
         if not cues:
             return None, []

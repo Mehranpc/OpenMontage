@@ -22,6 +22,8 @@ from backlot.__main__ import cmd_open as open_backlot
 from lib.checkpoint import CheckpointValidationError, init_project, read_checkpoint
 from lib.paths import PROJECTS_DIR, REPO_ROOT
 from lib.pipeline_loader import load_pipeline_readonly
+from schemas.artifacts import validate_artifact
+from jsonschema.exceptions import ValidationError
 
 WORKFLOW_VERSION = "2.0"
 STATE_FILENAME = "persian-video-workflow.json"
@@ -516,6 +518,20 @@ def complete_phase(
     phase_evidence = dict(evidence or {})
     if phase == "prepare_inputs":
         phase_evidence.update(_validate_prepare_inputs_completion(state, phase_evidence))
+    if phase == "plan_scenes_moments" and "sourcing_order" in phase_evidence:
+        raw_order = phase_evidence.get("sourcing_order")
+        if not isinstance(raw_order, list) or not raw_order:
+            raise PersianVideoWorkflowError(
+                "plan_scenes_moments sourcing_order must be a non-empty list when provided"
+            )
+        sourcing_order = [str(item).strip() for item in raw_order]
+        if any(not item for item in sourcing_order) or len(set(sourcing_order)) != len(sourcing_order):
+            raise PersianVideoWorkflowError(
+                "plan_scenes_moments sourcing_order requires unique non-empty visual-event ids"
+            )
+        phase_evidence["sourcing_order"] = sourcing_order
+    if phase == "final_review":
+        phase_evidence.update(_validate_final_review_completion(state, phase_evidence))
     if phase == "acquire_assets" and (state.get("asset_usage") or {}).get("pending_pass") is not None:
         raise PersianVideoWorkflowError(
             "asset search result accounting must complete before acquire_assets can complete"
@@ -625,6 +641,29 @@ def bounded_asset_search_request(
         )
 
     bounded = dict(request)
+    if retry_pass == 1:
+        sourcing_order = list(
+            ((state.get("evidence") or {}).get("plan_scenes_moments") or {}).get("sourcing_order") or []
+        )
+        queries = bounded.get("queries")
+        if sourcing_order and isinstance(queries, list) and queries:
+            priority = {event_id: index for index, event_id in enumerate(sourcing_order)}
+            normalized_queries = []
+            for index, query in enumerate(queries):
+                if not isinstance(query, Mapping):
+                    raise PersianVideoWorkflowError("asset retry queries must be objects")
+                slot_id = str(query.get("slot_id") or "").strip()
+                if not slot_id:
+                    raise PersianVideoWorkflowError(
+                        "importance-weighted asset retry requires slot_id on every query"
+                    )
+                if slot_id not in priority:
+                    raise PersianVideoWorkflowError(
+                        f"asset retry slot_id {slot_id!r} is absent from the scene sourcing_order"
+                    )
+                normalized_queries.append((priority[slot_id], index, dict(query)))
+            normalized_queries.sort(key=lambda item: (item[0], item[1]))
+            bounded["queries"] = [query for _, _, query in normalized_queries]
     project_root = _project_root(state)
     raw_output_dir = str(bounded.get("output_dir") or "").strip()
     if raw_output_dir:
@@ -815,7 +854,152 @@ def _candidate_path(project_root: Path, reported: str) -> Path:
     return path
 
 
-def _validate_awaiting_human_candidate(state: Mapping[str, Any]) -> dict[str, Any]:
+def _project_file(state: Mapping[str, Any], reported: object, *, label: str) -> Path:
+    raw = Path(str(reported or "").strip()).expanduser()
+    if not str(reported or "").strip():
+        raise PersianVideoWorkflowError(f"{label} path is required")
+    project_root = _project_root(state)
+    path = raw.resolve() if raw.is_absolute() else (project_root / raw).resolve()
+    if not _is_within(path, project_root):
+        raise PersianVideoWorkflowError(f"{label} must live inside its own project: {path}")
+    if not path.is_file():
+        raise PersianVideoWorkflowError(f"{label} file does not exist: {path}")
+    return path
+
+
+def _render_report_review_fields(report: Mapping[str, Any]) -> None:
+    retention = report.get("retention_audit")
+    if not isinstance(retention, Mapping):
+        raise PersianVideoWorkflowError("final review requires render_report.retention_audit")
+    problems = retention.get("problems")
+    if not isinstance(problems, list):
+        raise PersianVideoWorkflowError("retention_audit.problems must be a list")
+    if problems:
+        raise PersianVideoWorkflowError("retention_audit has blocking problems; revise before human review")
+
+    motion = report.get("post_render_motion_qa")
+    if not isinstance(motion, Mapping):
+        raise PersianVideoWorkflowError("final review requires render_report.post_render_motion_qa")
+    if motion.get("passed") is not True or list(motion.get("failRuns") or []):
+        raise PersianVideoWorkflowError(
+            "post_render_motion_qa failed the anti-slideshow gate; revise before human review"
+        )
+
+    silent = report.get("silent_watch_audit")
+    if not isinstance(silent, Mapping):
+        raise PersianVideoWorkflowError("final review requires render_report.silent_watch_audit")
+    for field in ("main_point_understood", "hook_direction_understood", "conclusion_understood"):
+        if silent.get(field) is not True:
+            raise PersianVideoWorkflowError(
+                f"silent_watch_audit.{field} must be true after watching the rendered candidate muted"
+            )
+    if not list(silent.get("notes") or []):
+        raise PersianVideoWorkflowError("silent_watch_audit.notes must record what was understood while muted")
+
+    for field in ("cut_rhythm", "caption_readability", "strongest_scene", "weakest_scene"):
+        if not str(report.get(field) or "").strip():
+            raise PersianVideoWorkflowError(f"final review requires non-empty render_report.{field}")
+    if str(report.get("strongest_scene") or "").strip() == str(report.get("weakest_scene") or "").strip():
+        raise PersianVideoWorkflowError("strongest_scene and weakest_scene must identify different review findings")
+    for field in ("hook_strength", "resolution_strength"):
+        value = str(report.get(field) or "").strip()
+        if value not in {"acceptable", "strong"}:
+            raise PersianVideoWorkflowError(
+                f"render_report.{field} must be acceptable or strong before human review"
+            )
+
+
+def _validate_final_review_completion(
+    state: Mapping[str, Any], evidence: Mapping[str, Any]
+) -> dict[str, Any]:
+    candidate = _validate_awaiting_human_candidate(state, require_final_review=False)
+    review_path = _project_file(state, evidence.get("final_review_path"), label="final_review artifact")
+    try:
+        review = json.loads(review_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PersianVideoWorkflowError("final_review artifact is unreadable JSON") from exc
+    if not isinstance(review, dict):
+        raise PersianVideoWorkflowError("final_review artifact must be a JSON object")
+    try:
+        validate_artifact("final_review", review)
+    except ValidationError as exc:
+        raise PersianVideoWorkflowError(f"final_review artifact fails schema: {exc.message}") from exc
+    if review.get("status") != "pass" or review.get("recommended_action") != "present_to_user":
+        raise PersianVideoWorkflowError(
+            "final_review must pass with recommended_action='present_to_user' before human review"
+        )
+    reviewed_output = _project_file(state, review.get("output_path"), label="final_review output")
+    if reviewed_output != Path(candidate["candidate_path"]).resolve():
+        raise PersianVideoWorkflowError("final_review output_path does not match the digest-bound candidate")
+
+    checks = review.get("checks") or {}
+    technical = checks.get("technical_probe") or {}
+    if technical.get("valid_container") is not True or list(technical.get("issues") or []):
+        raise PersianVideoWorkflowError("final_review technical_probe must pass without issues")
+    visual = checks.get("visual_spotcheck") or {}
+    if int(visual.get("frames_sampled") or 0) < 4:
+        raise PersianVideoWorkflowError("final_review visual_spotcheck requires at least four sampled frames")
+    for field in ("black_frames_detected", "broken_overlays", "missing_assets", "unreadable_text"):
+        if visual.get(field) is not False:
+            raise PersianVideoWorkflowError(f"final_review visual_spotcheck.{field} must be false")
+    if list(visual.get("issues") or []):
+        raise PersianVideoWorkflowError("final_review visual_spotcheck must pass without issues")
+    frame_paths = list(visual.get("frame_paths") or [])
+    if len(frame_paths) < 4:
+        raise PersianVideoWorkflowError("final_review must retain paths for at least four reviewed frames")
+    for frame in frame_paths:
+        _project_file(state, frame, label="final_review frame")
+
+    audio = checks.get("audio_spotcheck") or {}
+    if audio.get("unexpected_silence") is True or audio.get("clipping_detected") is True:
+        raise PersianVideoWorkflowError("final_review audio_spotcheck found silence or clipping")
+    if audio.get("mix_intelligible") is not True or list(audio.get("issues") or []):
+        raise PersianVideoWorkflowError("final_review audio_spotcheck must pass without issues")
+
+    promise = checks.get("promise_preservation") or {}
+    if promise.get("delivery_promise_honored") is not True:
+        raise PersianVideoWorkflowError("final_review delivery promise must be honored")
+    if promise.get("runtime_swap_detected") is not False or promise.get("silent_downgrade_detected") is not False:
+        raise PersianVideoWorkflowError("final_review detected a renderer/runtime downgrade")
+    if list(promise.get("issues") or []):
+        raise PersianVideoWorkflowError("final_review promise_preservation must pass without issues")
+
+    subtitle = checks.get("subtitle_check") or {}
+    if subtitle.get("subtitles_expected") is True and subtitle.get("subtitles_present") is not True:
+        raise PersianVideoWorkflowError("final_review expected subtitles/captions but did not find them")
+    if subtitle.get("timing_drift_detected") is True or list(subtitle.get("issues") or []):
+        raise PersianVideoWorkflowError("final_review subtitle/caption check has blocking issues")
+
+    project_id = str(state["project_id"])
+    projects_root = Path(str(state["projects_root"])).resolve()
+    checkpoint = read_checkpoint(projects_root, project_id, "compose")
+    report = (checkpoint.get("artifacts") or {}).get("render_report") if checkpoint else None
+    if not isinstance(report, Mapping):
+        raise PersianVideoWorkflowError("compose checkpoint is missing render_report")
+    _render_report_review_fields(report)
+    if str(report.get("caption_mode") or "") in {"burned_captions", "hybrid"}:
+        caption_frames = list(report.get("caption_verification_frames") or [])
+        if len(caption_frames) < 3:
+            raise PersianVideoWorkflowError(
+                "burned/hybrid final review requires caption_verification_frames for entry/mid/exit"
+            )
+        for frame in caption_frames:
+            _project_file(state, frame, label="caption verification frame")
+    report_ref = _project_file(state, report.get("final_review_ref"), label="render_report.final_review_ref")
+    if report_ref != review_path:
+        raise PersianVideoWorkflowError("render_report.final_review_ref does not point at the reviewed artifact")
+
+    return {
+        "final_review_path": str(review_path),
+        "final_review_sha256": _hash_file(review_path),
+        "candidate_path": candidate["candidate_path"],
+        "candidate_sha256": candidate["candidate_sha256"],
+    }
+
+
+def _validate_awaiting_human_candidate(
+    state: Mapping[str, Any], *, require_final_review: bool = True
+) -> dict[str, Any]:
     project_id = str(state["project_id"])
     projects_root = Path(str(state["projects_root"])).resolve()
     try:
@@ -868,11 +1052,25 @@ def _validate_awaiting_human_candidate(state: Mapping[str, Any]) -> dict[str, An
         raise PersianVideoWorkflowError(
             "final candidate sha256 does not match the exact MP4 bytes"
         )
-    return {
+    result = {
         "candidate_path": str(candidate),
         "candidate_sha256": actual_digest,
         "checkpoint": "checkpoint_compose.json",
     }
+    if require_final_review:
+        review_evidence = (state.get("evidence") or {}).get("final_review")
+        if not isinstance(review_evidence, Mapping):
+            raise PersianVideoWorkflowError("validated final_review evidence is required before awaiting_human")
+        verified = _validate_final_review_completion(state, review_evidence)
+        if verified["final_review_sha256"] != str(review_evidence.get("final_review_sha256") or ""):
+            raise PersianVideoWorkflowError("final_review artifact changed after the review phase completed")
+        if verified["candidate_sha256"] != actual_digest:
+            raise PersianVideoWorkflowError("final_review was performed on a different candidate digest")
+        result.update({
+            "final_review_path": verified["final_review_path"],
+            "final_review_sha256": verified["final_review_sha256"],
+        })
+    return result
 
 
 def workflow_status(

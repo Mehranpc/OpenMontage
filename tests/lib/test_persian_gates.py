@@ -52,12 +52,16 @@ from lib.persian_music import (
 from lib.persian_scenes import (
     BANNED_QUERY_TERMS,
     MIN_SUBJECT_FRACTION,
+    audit_opening_semantic_shots,
     audit_scene_plan,
 )
 from lib.persian_srt import (
     MAX_CUE_SECONDS,
     MAX_CUE_VISIBLE_CHARS,
     MIN_CUE_SECONDS,
+    TimedWord as SrtTimedWord,
+    _merge_short_groups,
+    _rebalance_short_groups,
     audit_cues,
     build_cues,
     render_srt,
@@ -149,10 +153,87 @@ class TestCueConstruction:
 
     def test_short_cues_are_merged_away(self) -> None:
         """A sub-second cue is a flash, not text."""
-        cues = build_cues(_words("بله. خیر. شاید. حتماً. البته."))
+        cues = build_cues(_words("بله، خیر، شاید، حتماً، البته."))
         # Every cue except possibly a forced final one clears the minimum.
         below = [c for c in cues if c.duration < MIN_CUE_SECONDS]
         assert not below, [(c.id, c.duration, c.text) for c in below]
+
+    def test_quoted_question_hard_boundary_survives_short_cue_repair(self) -> None:
+        words = [
+            {"word": "«چی", "start": 0.0, "end": 0.2},
+            {"word": "باعث", "start": 0.2, "end": 0.4},
+            {"word": "شده", "start": 0.4, "end": 0.6},
+            {"word": "سخت؟»", "start": 0.6, "end": 0.8},
+            {"word": "شاید", "start": 0.8, "end": 1.15},
+            {"word": "دلیلش", "start": 1.15, "end": 1.55},
+            {"word": "ترس", "start": 1.55, "end": 1.9},
+            {"word": "باشه.", "start": 1.9, "end": 2.3},
+        ]
+        cues = build_cues(words, persian_digits=False, max_visible_chars=56)
+        assert " ".join(cue.text for cue in cues) == " ".join(word["word"] for word in words)
+        assert cues[0].text.endswith("سخت؟»")
+        assert cues[1].text.startswith("شاید دلیلش")
+        assert cues[0].duration < MIN_CUE_SECONDS
+
+    def test_rebalance_does_not_borrow_across_a_strong_boundary(self) -> None:
+        groups = [
+            [
+                SrtTimedWord("اول", 0.0, 1.3),
+                SrtTimedWord("باشه؟", 1.3, 1.6),
+            ],
+            [
+                SrtTimedWord("شاید", 1.6, 2.0),
+                SrtTimedWord("دلیلش", 2.0, 2.4),
+            ],
+        ]
+        repaired = _rebalance_short_groups(groups, max_visible_chars=56)
+        assert repaired == groups
+
+    def test_merge_does_not_cross_a_quoted_strong_boundary(self) -> None:
+        groups = [
+            [SrtTimedWord("باشه؟»", 0.0, 0.8)],
+            [SrtTimedWord("شاید", 0.8, 1.4), SrtTimedWord("دلیلش", 1.4, 2.0)],
+        ]
+        assert _merge_short_groups(groups, max_visible_chars=56) == groups
+
+    def test_tight_caption_budget_rebalances_boundary_instead_of_flashing(self) -> None:
+        """A near-full neighbour should lend a word instead of forcing a 0.96s cue."""
+        words = [
+            {"word": "کم‌کم", "start": 23.42, "end": 24.30},
+            {"word": "به", "start": 24.30, "end": 24.38},
+            {"word": "چیزی", "start": 24.38, "end": 24.66},
+            {"word": "تبدیل", "start": 24.66, "end": 25.02},
+            {"word": "می‌شه", "start": 25.02, "end": 25.28},
+            {"word": "که", "start": 25.28, "end": 25.46},
+            {"word": "فقط", "start": 25.46, "end": 25.80},
+            {"word": "برای", "start": 25.80, "end": 26.16},
+            {"word": "گرفتن", "start": 26.16, "end": 26.58},
+            {"word": "جایزه", "start": 26.58, "end": 27.06},
+            {"word": "انجامش", "start": 27.06, "end": 27.44},
+            {"word": "می‌دن.", "start": 27.44, "end": 27.74},
+            {"word": "از", "start": 27.74, "end": 28.04},
+            {"word": "طرفی،", "start": 28.04, "end": 28.40},
+            {"word": "بچه", "start": 28.40, "end": 29.14},
+            {"word": "ممکنه", "start": 29.14, "end": 29.50},
+            {"word": "به", "start": 29.50, "end": 29.62},
+            {"word": "پاداش", "start": 29.62, "end": 29.94},
+            {"word": "عادت", "start": 29.94, "end": 30.30},
+            {"word": "کنه", "start": 30.30, "end": 30.62},
+            {"word": "و", "start": 30.62, "end": 30.90},
+            {"word": "برای", "start": 30.90, "end": 31.16},
+            {"word": "گرفتن", "start": 31.16, "end": 31.54},
+            {"word": "همون", "start": 31.54, "end": 31.88},
+            {"word": "نتیجه،", "start": 31.88, "end": 32.30},
+        ]
+        cues = build_cues(
+            words, persian_digits=False, max_visible_chars=56
+        )
+        assert " ".join(cue.text for cue in cues) == " ".join(word["word"] for word in words)
+        assert all(cue.duration >= MIN_CUE_SECONDS for cue in cues)
+        assert all(visible_length(cue.text) <= 56 for cue in cues)
+        assert not any("انجامش می‌دن. از طرفی،" in cue.text for cue in cues)
+        boundary = next(i for i, cue in enumerate(cues) if cue.text.endswith("می‌دن."))
+        assert cues[boundary + 1].text.startswith("از طرفی،")
 
     def test_zwnj_is_preserved_through_cue_construction(self) -> None:
         """The orthography must survive the grouping.
@@ -235,6 +316,18 @@ class TestCueAudit:
         )
         problems = audit_cues([cue])
         assert any("chars/sec" in problem for problem in problems)
+
+    def test_audit_reports_internal_hard_sentence_boundary(self) -> None:
+        from lib.persian_srt import PersianCue
+
+        cue = PersianCue(
+            id="a",
+            text="«چی باعث شده سخت؟» شاید دلیلش ترس باشه",
+            start_seconds=0.0,
+            end_seconds=3.0,
+        )
+        problems = audit_cues([cue])
+        assert any("hard sentence boundary" in problem for problem in problems)
 
     def test_audit_catches_overlapping_cues(self) -> None:
         """SRT consumers disagree about overlaps, so the file stops being portable."""
@@ -350,6 +443,7 @@ class TestAssetAudit:
     def _asset(self, **overrides) -> dict:
         base = {
             "beat_id": "b1",
+            "semantic_beat_id": "b1",
             "kind": "video",
             "path": "a.mp4",
             "duration_seconds": 12.0,
@@ -360,6 +454,20 @@ class TestAssetAudit:
             "original_url": "https://example.test/1",
             "license": "Pexels License",
             "attribution": "Video by Someone on Pexels",
+            "narration_span": "هر روز صبح قهوه",
+            "query": "coffee pour close up",
+            "candidate_rank": 1,
+            "selection_reason": "فنجان قهوه و دست در قاب دیده می‌شود",
+            "relevance_reason": "عمل ریختن قهوه مستقیماً beat را نشان می‌دهد",
+            "affect_match": True,
+            "staged_stock_risk": "low",
+            "human_presence": True,
+            "shows_subject": True,
+            "fallback_level": "exact_literal",
+            "frame_review": {
+                "start": True, "middle": True, "end": True,
+                "observed": "قهوه و دست در کل پنجرهٔ انتخابی در قاب می‌مانند",
+            },
         }
         base.update(overrides)
         return base
@@ -369,6 +477,123 @@ class TestAssetAudit:
         scene_plan = {"beats": [{"id": "b1", "duration_seconds": 5.0, "typographic": False}]}
         assert audit_asset_manifest(manifest, scene_plan) == []
 
+    def test_visual_events_are_independently_sourced_inside_one_semantic_beat(self) -> None:
+        second = self._clip.parent / "b.mp4"
+        second.write_bytes(b"\x00" * 64)
+        scene_plan = {
+            "beats": [{
+                "id": "b1",
+                "duration_seconds": 5.0,
+                "visual_events": [
+                    {
+                        "id": "b1-e1", "duration_seconds": 2.0,
+                        "narration_span": "هر روز صبح قهوه",
+                        "queries": ["coffee pour close up", "steam coffee cup"],
+                        "desired_affect": "curiosity", "human_presence": True,
+                        "shows_subject": True, "fallback_level": "exact_literal",
+                        "importance": 2,
+                    },
+                    {
+                        "id": "b1-e2", "duration_seconds": 3.0,
+                        "narration_span": "هر روز صبح قهوه",
+                        "queries": ["coffee pour close up", "hands coffee desk"],
+                        "desired_affect": "recognition", "human_presence": True,
+                        "shows_subject": True, "fallback_level": "exact_literal",
+                        "importance": 1,
+                    },
+                ],
+            }]
+        }
+        manifest = {"assets": [
+            self._asset(beat_id="b1", semantic_beat_id="b1", visual_event_id="b1-e1", path="a.mp4"),
+            self._asset(beat_id="b1", semantic_beat_id="b1", visual_event_id="b1-e2", path="b.mp4"),
+        ]}
+        assert audit_asset_manifest(manifest, scene_plan) == []
+
+    def test_explicit_visual_event_assets_must_name_the_event(self) -> None:
+        scene_plan = {
+            "beats": [{
+                "id": "b1",
+                "duration_seconds": 5.0,
+                "visual_events": [{
+                    "id": "b1-e1", "duration_seconds": 5.0,
+                    "narration_span": "هر روز صبح قهوه",
+                    "queries": ["coffee pour close up", "steam coffee cup"],
+                    "desired_affect": "curiosity", "human_presence": True,
+                    "shows_subject": True, "fallback_level": "exact_literal",
+                    "importance": 2,
+                }],
+            }]
+        }
+        problems = audit_asset_manifest({"assets": [self._asset()]}, scene_plan)
+        assert any("missing visual_event_id" in problem for problem in problems)
+        assert any("b1-e1: no asset" in problem for problem in problems)
+
+    def _explicit_scene_plan(self, **event_overrides) -> dict:
+        event = {
+            "id": "b1-e1", "duration_seconds": 5.0,
+            "narration_span": "هر روز صبح قهوه",
+            "queries": ["coffee pour close up", "steam coffee cup"],
+            "desired_affect": "curiosity", "human_presence": True,
+            "shows_subject": True, "fallback_level": "exact_literal",
+            "importance": 2,
+        }
+        event.update(event_overrides)
+        return {"beats": [{"id": "b1", "duration_seconds": 5.0, "visual_events": [event]}]}
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "semantic_beat_id", "narration_span", "query", "candidate_rank",
+            "selection_reason", "relevance_reason", "affect_match",
+            "staged_stock_risk", "human_presence", "shows_subject",
+            "source_in_seconds", "duration_seconds", "fallback_level", "frame_review",
+        ],
+    )
+    def test_explicit_visual_event_assets_require_quality_evidence(self, field: str) -> None:
+        asset = self._asset(visual_event_id="b1-e1")
+        asset.pop(field)
+        problems = audit_asset_manifest({"assets": [asset]}, self._explicit_scene_plan())
+        assert any(field.split("_")[0] in problem or field in problem for problem in problems)
+
+    def test_selected_query_must_come_from_the_event(self) -> None:
+        asset = self._asset(visual_event_id="b1-e1", query="generic happy office people")
+        problems = audit_asset_manifest({"assets": [asset]}, self._explicit_scene_plan())
+        assert any("not one of the authored event queries" in problem for problem in problems)
+
+    def test_wrong_affect_or_high_staged_stock_risk_is_rejected(self) -> None:
+        asset = self._asset(
+            visual_event_id="b1-e1", affect_match=False, staged_stock_risk="high"
+        )
+        problems = audit_asset_manifest({"assets": [asset]}, self._explicit_scene_plan())
+        assert any("affect_match is false" in problem for problem in problems)
+        assert any("staged_stock_risk is high" in problem for problem in problems)
+
+    def test_human_presence_and_subject_must_survive_selection(self) -> None:
+        asset = self._asset(
+            visual_event_id="b1-e1", human_presence=False, shows_subject=False
+        )
+        problems = audit_asset_manifest({"assets": [asset]}, self._explicit_scene_plan())
+        assert any("requires human presence" in problem for problem in problems)
+        assert any("subject continuity was lost" in problem for problem in problems)
+
+    def test_nonliteral_fallback_requires_reason_and_matches_plan(self) -> None:
+        scene_plan = self._explicit_scene_plan(fallback_level="adjacent_metaphor")
+        asset = self._asset(visual_event_id="b1-e1", fallback_level="adjacent_metaphor")
+        problems = audit_asset_manifest({"assets": [asset]}, scene_plan)
+        assert any("fallback_reason" in problem for problem in problems)
+        asset["fallback_reason"] = "literal and emotional-human candidates were unusable after inspection"
+        assert audit_asset_manifest({"assets": [asset]}, scene_plan) == []
+
+    def test_frame_review_requires_start_middle_end_and_observation(self) -> None:
+        asset = self._asset(
+            visual_event_id="b1-e1",
+            frame_review={"start": True, "middle": False, "end": True, "observed": ""},
+        )
+        problems = audit_asset_manifest({"assets": [asset]}, self._explicit_scene_plan())
+        assert any("frame_review.middle" in problem for problem in problems)
+        assert any("frame_review.observed" in problem for problem in problems)
+
     @pytest.mark.parametrize(
         "field", ["provider", "original_url", "license", "attribution"]
     )
@@ -376,6 +601,41 @@ class TestAssetAudit:
         """Both stock licences require attribution."""
         problems = audit_asset_manifest({"assets": [self._asset(**{field: None})]})
         assert any(field in problem for problem in problems)
+
+    def test_reward_opening_asset_requires_direction_match_and_dense_frame_review(self) -> None:
+        scene_plan = self._explicit_scene_plan(
+            narrative_role="hook", semantic_role="reward_problem_hook",
+            semantic_direction="child_resistance",
+        )
+        asset = self._asset(
+            visual_event_id="b1-e1", semantic_role="reward_problem_hook",
+            semantic_direction="child_resistance", opening_semantic_match=True,
+            frame_review={
+                "start": True, "middle": True, "midpoint_before_1_5": True,
+                "at_3_seconds": True, "end": True,
+                "observed": "کودک در حضور والد از انجام کار مقاومت نشان می‌دهد",
+            },
+        )
+        assert audit_asset_manifest({"assets": [asset]}, scene_plan) == []
+        asset["semantic_direction"] = "child_to_parent_gift"
+        problems = audit_asset_manifest({"assets": [asset]}, scene_plan)
+        assert any("semantic_direction must preserve" in problem for problem in problems)
+
+    def test_reward_opening_asset_rejects_missing_three_second_sample(self) -> None:
+        scene_plan = self._explicit_scene_plan(
+            narrative_role="hook", semantic_role="reward_problem_hook",
+            semantic_direction="child_distress",
+        )
+        asset = self._asset(
+            visual_event_id="b1-e1", semantic_role="reward_problem_hook",
+            semantic_direction="child_distress", opening_semantic_match=True,
+            frame_review={
+                "start": True, "middle": True, "midpoint_before_1_5": True,
+                "end": True, "observed": "کودک ناراحت و والد در قاب است",
+            },
+        )
+        problems = audit_asset_manifest({"assets": [asset]}, scene_plan)
+        assert any("frame_review.at_3_seconds" in problem for problem in problems)
 
     def test_public_path_is_not_required(self) -> None:
         """It was required, and nothing read it.
@@ -1416,6 +1676,15 @@ class TestSyncAudit:
         assert audit.problems == []
         assert audit.bindings[0].matched_words[0] == "مطالعهٔ"
 
+    def test_sync_audit_to_dict_serializes_its_own_bindings(self, words) -> None:
+        moments = build_moments([self._anchored_figure()])
+        audit = audit_sync(moments, words)
+        payload = audit.to_dict()
+        assert payload["passed"] is True
+        assert payload["problems"] == []
+        assert payload["bindings"][0]["momentId"] == moments[0].id
+        assert payload["bindings"][0]["matched"][0] == "مطالعهٔ"
+
     def test_derived_start_back_leads_the_first_anchor_word(self, words) -> None:
         moments = build_moments([self._anchored_figure()])
         bindings = audit_sync(moments, words).bindings
@@ -1655,6 +1924,31 @@ class TestSceneAudit:
         base.update(overrides)
         return base
 
+    def _event(self, index: int = 1, **overrides) -> dict:
+        base = {
+            "id": f"beat-1-event-{index}",
+            "duration_seconds": 2.5,
+            "narration_span": "هر روز صبح قهوه",
+            "intent": "make the morning ritual concrete",
+            "subject": "coffee",
+            "action": "pouring coffee",
+            "desired_affect": "curiosity",
+            "motif": "morning ritual",
+            "visual_search_brief": "real morning coffee ritual, tactile and unstaged",
+            "shot_composition": "hands and cup dominate foreground; clean negative space above",
+            "human_presence": True,
+            "shot_scale": "close up",
+            "environment": "kitchen",
+            "camera": "push-in",
+            "shows_subject": True,
+            "fallback_level": "exact_literal",
+            "importance": 1,
+            "conflict_visibility": "none",
+            "queries": ["coffee pour close up", "steam coffee cup"],
+        }
+        base.update(overrides)
+        return base
+
     def _plan(self, beats: list[dict], subject: str = "coffee") -> dict:
         return {"metadata": {"subject": subject, "beats": beats}}
 
@@ -1668,6 +1962,120 @@ class TestSceneAudit:
         assert audit["problems"] == []
         assert audit["subject_fraction"] == 1.0
         assert audit["footage_beats"] == 3
+
+    def test_one_semantic_beat_can_expand_to_multiple_visual_events(self) -> None:
+        beat = {
+            "id": "beat-1",
+            "duration_seconds": 5.0,
+            "typographic": False,
+            "visual_events": [
+                self._event(1, duration_seconds=2.0),
+                self._event(
+                    2, duration_seconds=3.0, desired_affect="recognition",
+                    camera="none", shot_scale="overhead", environment="desk",
+                    action="holding coffee beside notebook", motif="work ritual",
+                    queries=["coffee cup notebook desk", "hands coffee desk"],
+                ),
+            ],
+        }
+        audit = audit_scene_plan(self._plan([beat]))
+        assert audit["problems"] == []
+        assert audit["footage_beats"] == 1
+        assert audit["visual_events"] == 2
+        assert audit["uses_visual_events"] is True
+
+    def test_visual_event_duration_and_affect_are_contract_fields(self) -> None:
+        event = self._event(1, id="event-1", duration_seconds=4.0)
+        event.pop("desired_affect")
+        beat = {
+            "id": "beat-1",
+            "duration_seconds": 5.0,
+            "visual_events": [event],
+        }
+        problems = audit_scene_plan(self._plan([beat]))["problems"]
+        assert any("require desired_affect" in problem for problem in problems)
+        assert any("does not match semantic beat duration" in problem for problem in problems)
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "narration_span", "intent", "subject", "action", "motif",
+            "visual_search_brief", "shot_composition", "conflict_visibility",
+        ],
+    )
+    def test_visual_event_semantic_quality_fields_are_required(self, field: str) -> None:
+        event = self._event(1, duration_seconds=5.0)
+        event.pop(field)
+        beat = {"id": "beat-1", "duration_seconds": 5.0, "visual_events": [event]}
+        problems = audit_scene_plan(self._plan([beat]))["problems"]
+        assert any(f"require {field}" in problem for problem in problems)
+
+    def test_visual_event_human_fallback_and_importance_contract(self) -> None:
+        event = self._event(1, duration_seconds=5.0)
+        event["human_presence"] = "yes"
+        event["fallback_level"] = "typography"
+        event["importance"] = 4
+        beat = {"id": "beat-1", "duration_seconds": 5.0, "visual_events": [event]}
+        problems = audit_scene_plan(self._plan([beat]))["problems"]
+        assert any("human_presence must be true or false" in problem for problem in problems)
+        assert any("fallback_level must be one of" in problem for problem in problems)
+        assert any("importance must be integer 1, 2, or 3" in problem for problem in problems)
+
+    def test_importance_orders_the_bounded_retry_pass(self) -> None:
+        beat = {
+            "id": "beat-1", "duration_seconds": 5.0,
+            "visual_events": [
+                self._event(1, importance=1, duration_seconds=2.0),
+                self._event(2, importance=3, duration_seconds=3.0, shot_scale="overhead",
+                            environment="desk", action="holding coffee", motif="work",
+                            queries=["coffee cup notebook desk", "hands coffee desk"]),
+            ],
+        }
+        audit = audit_scene_plan(self._plan([beat]))
+        assert audit["problems"] == []
+        assert audit["sourcing_order"] == ["beat-1-event-2", "beat-1-event-1"]
+
+    def test_emotional_affect_without_human_presence_is_an_advisory(self) -> None:
+        event = self._event(1, duration_seconds=5.0, desired_affect="stress",
+                            human_presence=False)
+        beat = {"id": "beat-1", "duration_seconds": 5.0, "visual_events": [event]}
+        audit = audit_scene_plan(self._plan([beat]))
+        assert audit["problems"] == []
+        assert any("usually benefits from human presence" in item for item in audit["advisories"])
+
+    def test_reward_opening_event_requires_semantic_role_and_direction(self) -> None:
+        event = self._event(
+            1, duration_seconds=5.0, narrative_role="hook",
+            semantic_role="reward_problem_hook", semantic_direction="child_to_parent_gift",
+        )
+        beat = {"id": "beat-1", "duration_seconds": 5.0, "visual_events": [event]}
+        problems = audit_scene_plan(self._plan([beat]))["problems"]
+        assert any("reward_problem_hook semantic_direction" in problem for problem in problems)
+
+    def test_reward_opening_event_accepts_allowed_direction(self) -> None:
+        event = self._event(
+            1, duration_seconds=5.0, narrative_role="hook",
+            semantic_role="reward_problem_hook", semantic_direction="child_resistance",
+        )
+        beat = {"id": "beat-1", "duration_seconds": 5.0, "visual_events": [event]}
+        problems = audit_scene_plan(self._plan([beat]))["problems"]
+        assert not any("reward_problem_hook" in problem for problem in problems)
+
+    def test_final_opening_shot_requires_selection_evidence(self) -> None:
+        shot = {
+            "id": "s1", "visualEventId": "beat-1-event-1",
+            "narrativeRole": "hook", "startSeconds": 0.0, "endSeconds": 3.0,
+            "semanticRole": "reward_problem_hook", "semanticDirection": "parent_to_child_reward",
+            "showsSubject": True, "humanPresence": True,
+        }
+        problems = audit_opening_semantic_shots([shot])
+        assert any("openingSemanticMatch" in problem for problem in problems)
+        assert any("selectionReason" in problem for problem in problems)
+        shot.update({
+            "openingSemanticMatch": True,
+            "selectionReason": "والد در قاب جایزه را به کودک می‌دهد",
+        })
+        assert audit_opening_semantic_shots([shot]) == []
 
     def test_beats_are_read_from_either_shape(self) -> None:
         """Both shapes are in use, and a plan whose beats are invisible to the gate
@@ -2266,6 +2674,54 @@ class TestClaimQualifierHook:
             "past the first moment" in problem
             for problem in audit_moments(moments, duration_seconds=64.0).problems
         )
+
+    def test_pattern_interrupt_rejects_automatic_one_token_hook(self) -> None:
+        moments = build_moments([
+            {
+                "id": "opening", "kind": "hook",
+                "purpose": "hook-pattern-interrupt",
+                "startSeconds": 0.1, "endSeconds": 3.0,
+                "presentation": {"emphasis": "inline"},
+                "segments": [{"role": "hero", "text": "جایزه؟", "accentWords": ["جایزه؟"]}],
+            }
+        ])
+        problems = audit_moments(moments, duration_seconds=12.0).problems
+        assert any("Automatic one-word/fragment fallback is forbidden" in p for p in problems)
+        assert any("one-token hook may not manufacture impact" in p for p in problems)
+
+    def test_explicit_user_authored_short_hook_round_trips(self) -> None:
+        authored = {
+            "id": "opening", "kind": "hook",
+            "purpose": "hook-pattern-interrupt",
+            "userAuthoredShortHook": True,
+            "startSeconds": 0.1, "endSeconds": 3.0,
+            "presentation": {"emphasis": "none"},
+            "segments": [{"role": "hero", "text": "جایزه؟", "accentWords": ["جایزه؟"]}],
+        }
+        (moment,) = build_moments([authored])
+        props = moment.to_props()
+        assert props["purpose"] == "hook-pattern-interrupt"
+        assert props["userAuthoredShortHook"] is True
+        assert props["presentation"] == {"emphasis": "none"}
+        rebuilt = build_moments([props])[0]
+        assert rebuilt.user_authored_short_hook is True
+        assert not any("Automatic one-word/fragment" in p for p in audit_moments([rebuilt], duration_seconds=12.0).problems)
+
+    def test_pattern_interrupt_clause_passes_short_hook_gate(self) -> None:
+        moments = build_moments([
+            {
+                "id": "opening", "kind": "hook",
+                "purpose": "hook-pattern-interrupt",
+                "startSeconds": 0.1, "endSeconds": 4.5,
+                "presentation": {"emphasis": "none"},
+                "segments": [
+                    {"role": "hero", "text": "به هر کار خوبی"},
+                    {"role": "tail", "text": "جایزه می‌دی؟"},
+                ],
+            }
+        ])
+        problems = audit_moments(moments, duration_seconds=12.0).problems
+        assert not any("hook-pattern-interrupt has only" in p for p in problems)
 
     def test_the_silhouette_band_is_a_band(self) -> None:
         """Round numbers passing the reference (0.62) and c4 (0.647) and
