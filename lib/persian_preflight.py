@@ -1,6 +1,7 @@
 """Run Persian compose preparation without copying media or writing checkpoints."""
 from __future__ import annotations
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -10,7 +11,11 @@ from lib.persian_retention import audit_persian_retention
 from lib.persian_captions import caption_band_rect
 from lib.persian_srt import PersianCue, audit_cues
 from lib.persian_text import split_words
-from lib.persian_edit_contract import PersianEditContractError, validate_persian_edit_contract
+from lib.paths import REPO_ROOT
+from lib.persian_edit_contract import (
+    PersianEditContractError, collect_persian_edit_diagnostics, validate_persian_edit_contract,
+)
+from lib.persian_film_type import FilmTypePreflightError
 
 
 class NoCopyPersianCompose(ScriptAlignedPersianCompose):
@@ -19,7 +24,7 @@ class NoCopyPersianCompose(ScriptAlignedPersianCompose):
         del staging, name
         path = Path(source).expanduser()
         if not path.is_absolute():
-            path = (Path.cwd() / path).resolve()
+            path = (REPO_ROOT / path).resolve()
         if not path.is_file():
             raise FileNotFoundError(f"Persian preflight source does not exist: {path}")
         return str(path)
@@ -225,6 +230,7 @@ def summarize(
         **_caption_evidence(props),
         **_subtitle_boundary_evidence(props),
         "watermarkEvidence": _watermark_evidence(props),
+        "watermarkDiagnostics": props.get("watermarkDiagnostics"),
         **({"retentionAudit": retention_audit} if retention_audit is not None else {}),
     }
 
@@ -251,30 +257,144 @@ def preflight_edit_decisions(
     return summarize(props, attributions, retention)
 
 
+
+def _artifact_sha256(edit: dict[str, Any]) -> str:
+    encoded = json.dumps(edit, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _report(
+    *,
+    ok: bool,
+    edit: dict[str, Any] | None,
+    blocking: list[dict[str, Any]],
+    warnings: list[Any] | None = None,
+    evidence: dict[str, Any] | None = None,
+    watermark_diagnostics: dict[str, Any] | None = None,
+    next_actions: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "version": 1,
+        "ok": ok,
+        "status": "pass" if ok else "refused",
+        "artifactSha256": _artifact_sha256(edit) if edit is not None else None,
+        "blockingIssues": blocking,
+        "warnings": list(warnings or []),
+        "watermarkDiagnostics": watermark_diagnostics,
+        "nextActions": list(next_actions or []),
+        "mediaCopies": 0,
+        "evidence": evidence or {},
+    }
+
+
+def aggregate_preflight_edit_decisions(
+    payload: dict[str, Any], *, base_dir: Path | None = None
+) -> dict[str, Any]:
+    """Run every cheap gate first, then one browser pass, returning one durable report."""
+    root = (base_dir or REPO_ROOT).resolve()
+    try:
+        edit = extract_edit_decisions(payload)
+    except (ValueError, TypeError, KeyError) as exc:
+        return _report(
+            ok=False, edit=None,
+            blocking=[{"code": "INPUT_SHAPE", "message": str(exc), "recoveryClass": "EDIT_ARTIFACT"}],
+            next_actions=["Provide an edit_decisions artifact or Persian edit block."],
+        )
+
+    contract = collect_persian_edit_diagnostics(edit, base_dir=root)
+    if contract:
+        issues = [
+            {
+                "code": item.code,
+                "path": item.pointer,
+                "message": item.message,
+                "recoveryClass": "EDIT_ARTIFACT",
+                **({"hint": item.hint} if item.hint else {}),
+            }
+            for item in contract
+        ]
+        actions = [item.hint for item in contract if item.hint]
+        return _report(ok=False, edit=edit, blocking=issues, next_actions=list(dict.fromkeys(actions)))
+
+    retention = audit_persian_retention(edit["persian"])
+    if retention["problems"]:
+        return _report(
+            ok=False, edit=edit,
+            blocking=[
+                {"code": "RETENTION_GATE", "message": problem, "recoveryClass": "EDIT_ARTIFACT"}
+                for problem in retention["problems"]
+            ],
+            evidence={"retentionAudit": retention},
+            next_actions=["Revise the edit decisions; do not weaken the retention gate."],
+        )
+
+    try:
+        evidence = preflight_edit_decisions(edit, base_dir=root)
+    except FilmTypePreflightError as exc:
+        actions = [
+            "Use watermarkDiagnostics.topBlockers and suppressionGaps to re-edit timing/placement or footage.",
+            "Keep the configured coverage floor and subject-region safety unchanged.",
+        ] if exc.diagnostics else ["Resolve the Film Type browser-preflight refusal and retry."]
+        return _report(
+            ok=False, edit=edit,
+            blocking=[{
+                "code": exc.code,
+                "message": str(exc),
+                "recoveryClass": "FILM_TYPE_LAYOUT",
+                **({"details": exc.diagnostics} if exc.diagnostics else {}),
+            }],
+            evidence={"retentionAudit": retention},
+            watermark_diagnostics=exc.diagnostics or None,
+            next_actions=actions,
+        )
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        return _report(
+            ok=False, edit=edit,
+            blocking=[{"code": "PREFLIGHT_RUNTIME", "message": str(exc), "recoveryClass": "PREFLIGHT_RUNTIME"}],
+            evidence={"retentionAudit": retention},
+            next_actions=["Fix the reported preflight runtime/input failure, then rerun the same draft."],
+        )
+
+    return _report(
+        ok=True, edit=edit, blocking=[], warnings=evidence.get("warnings") or [], evidence=evidence,
+        watermark_diagnostics=evidence.get("watermarkDiagnostics"),
+    )
+
+
+def _atomic_write_report(path: Path, report: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(path.suffix + ".tmp")
+    temp.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temp.replace(path)
+
+
+def _default_report_path(input_path: Path) -> Path | None:
+    resolved = input_path.expanduser().resolve()
+    if resolved.parent.name == "artifacts":
+        return resolved.parent.parent / ".preflight" / "preflight_report.json"
+    return None
+
+
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Persian geometry preflight with zero media copies")
+    parser = argparse.ArgumentParser(description="Persian aggregate geometry/contract preflight with zero media copies")
     parser.add_argument("input", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     try:
         payload = json.loads(args.input.read_text(encoding="utf-8"))
-        result = preflight_edit_decisions(payload, base_dir=Path.cwd())
-    except PersianEditContractError as exc:
-        print(f"PREFLIGHT REFUSED:\n{exc}")
-        print(
-            "PREFLIGHT_DIAGNOSTICS="
-            + json.dumps([item.to_dict() for item in exc.diagnostics], ensure_ascii=False)
+    except (OSError, ValueError, TypeError) as exc:
+        report = _report(
+            ok=False, edit=None,
+            blocking=[{"code": "INPUT_READ", "message": str(exc), "recoveryClass": "EDIT_ARTIFACT"}],
+            next_actions=["Repair the JSON input and retry."],
         )
-        return 2
-    except (OSError, ValueError, TypeError, KeyError) as exc:
-        print(f"PREFLIGHT REFUSED:\n{exc}")
-        return 2
-    text = json.dumps(result, ensure_ascii=False, indent=2)
-    print(text)
-    if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(text + "\n", encoding="utf-8")
-    return 0
+    else:
+        report = aggregate_preflight_edit_decisions(payload, base_dir=REPO_ROOT)
+    output = args.output or _default_report_path(args.input)
+    if output is not None:
+        _atomic_write_report(output, report)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if report["ok"] else 2
 
 
 if __name__ == "__main__":

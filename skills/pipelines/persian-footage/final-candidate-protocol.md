@@ -39,8 +39,7 @@ regions block all layouts—never tighten a region because the planner wants its
 Prefer one compatible shot long enough for the moment instead of extending a fixed
 layout across incompatible cuts.
 
-Persist `edit_decisions` once, only after the entire edit passes preflight. Failed
-candidates stay in memory and never create checkpoint history.
+Persist `edit_decisions` only by promoting the exact draft whose aggregate preflight report passed. Failed candidates stay under project-local `.drafts/` and `.preflight/`; they never overwrite the canonical artifact or create a completed edit checkpoint. Promotion is SHA-256 bound to the probed draft and writes `checkpoint_edit.json` only after the same digest passes.
 
 ## Bounded work
 
@@ -52,14 +51,15 @@ one new bounded cycle but does not approve visuals.
 
 ## No-copy preflight
 
-Use:
+For front-door production use the project draft lifecycle:
 
 ```bash
-python -m lib.persian_preflight path/to/checkpoint_edit.json
+python -m lib.persian_video_workflow edit-stage <project-id> <attempt-id> --json /allowed/edit-decisions.json
+python -m lib.persian_video_workflow edit-preflight <project-id> <attempt-id>
+python -m lib.persian_video_workflow edit-promote <project-id> <attempt-id>
 ```
 
-It runs the real audits and Film Type browser measurement while validating media
-paths without copying them. It also runs `lib.persian_retention.audit_persian_retention`:
+`lib.persian_preflight` remains the lower-level diagnostic CLI when a standalone report is needed. It runs the real audits and Film Type browser measurement while validating media paths without copying them. It persists an aggregate report on both pass and refusal when `--output` is supplied. It also runs `lib.persian_retention.audit_persian_retention`:
 the first three seconds need a second visual event or pattern interrupt, uncovered visual
 intervals are refused, long uninterrupted events and long text-only endings are reported,
 and cut grammar is recorded. The numeric ~8-10s long-shot range is a retention-risk

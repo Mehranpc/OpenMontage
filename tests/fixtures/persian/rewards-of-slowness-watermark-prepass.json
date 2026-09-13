@@ -1,0 +1,796 @@
+{
+  "format": "vertical",
+  "durationSeconds": 50.49,
+  "shots": [
+    {
+      "id": "shot-beat-1-event-1",
+      "semanticBeatId": "beat-1",
+      "visualEventId": "beat-1-event-1",
+      "changeType": "detail",
+      "narrativeRole": "hook",
+      "humanPresence": true,
+      "showsSubject": true,
+      "semanticRole": "deliberate_slowness_hook",
+      "semanticDirection": "hands and notebook move deliberately in a quiet composition, visually supporting the opening claim that some actions benefit from slowing down",
+      "openingSemanticMatch": true,
+      "selectionReason": "Reviewed source window at 0.2/2.5/4.8s: notebook and hands remain in the lower half while the entire upper field stays genuinely clear for the hook; deliberate movement matches the narration without inventing urgency.",
+      "transitionIn": "cut",
+      "source": "unused.mp4",
+      "startSeconds": 0.0,
+      "endSeconds": 4.96,
+      "sourceInSeconds": 0.2,
+      "camera": "none",
+      "attribution": "Video by Pexels contributor on Pexels",
+      "avoidRegions": [
+        {
+          "x": 0.06,
+          "y": 0.44,
+          "w": 0.42,
+          "h": 0.55,
+          "startSeconds": 0.0,
+          "endSeconds": 1.65
+        },
+        {
+          "x": 0.0,
+          "y": 0.43,
+          "w": 0.82,
+          "h": 0.56,
+          "startSeconds": 1.65,
+          "endSeconds": 3.3
+        },
+        {
+          "x": 0.12,
+          "y": 0.43,
+          "w": 0.86,
+          "h": 0.56,
+          "startSeconds": 3.3,
+          "endSeconds": 4.96
+        }
+      ]
+    },
+    {
+      "id": "shot-beat-2-event-1",
+      "semanticBeatId": "beat-2",
+      "visualEventId": "beat-2-event-1",
+      "changeType": "detail",
+      "narrativeRole": "exposition",
+      "humanPresence": true,
+      "selectionReason": "Reviewed POV walking window contains only legs/steps and pavement; no phone is visible, matching the narration example.",
+      "transitionIn": "cut",
+      "source": "unused.mp4",
+      "startSeconds": 4.96,
+      "endSeconds": 9.52,
+      "sourceInSeconds": 5.0,
+      "camera": "none",
+      "attribution": "Video by Pexels contributor on Pexels",
+      "avoidRegions": [
+        {
+          "x": 0.25,
+          "y": 0.55,
+          "w": 0.5,
+          "h": 0.44,
+          "startSeconds": 4.96,
+          "endSeconds": 6.48
+        },
+        {
+          "x": 0.38,
+          "y": 0.52,
+          "w": 0.45,
+          "h": 0.47,
+          "startSeconds": 6.48,
+          "endSeconds": 8.0
+        },
+        {
+          "x": 0.42,
+          "y": 0.45,
+          "w": 0.48,
+          "h": 0.54,
+          "startSeconds": 8.0,
+          "endSeconds": 9.52
+        }
+      ]
+    },
+    {
+      "id": "shot-beat-3-event-1",
+      "semanticBeatId": "beat-3",
+      "visualEventId": "beat-3-event-1",
+      "changeType": "action",
+      "narrativeRole": "exposition",
+      "humanPresence": true,
+      "transitionIn": "cut",
+      "source": "unused.mp4",
+      "startSeconds": 9.52,
+      "endSeconds": 14.52,
+      "sourceInSeconds": 0.5,
+      "camera": "none",
+      "attribution": "Video by Pexels contributor on Pexels",
+      "avoidRegions": [
+        {
+          "x": 0.12,
+          "y": 0.1,
+          "w": 0.72,
+          "h": 0.68,
+          "startSeconds": 9.52,
+          "endSeconds": 11.19
+        },
+        {
+          "x": 0.15,
+          "y": 0.1,
+          "w": 0.7,
+          "h": 0.68,
+          "startSeconds": 11.19,
+          "endSeconds": 12.86
+        },
+        {
+          "x": 0.18,
+          "y": 0.1,
+          "w": 0.68,
+          "h": 0.68,
+          "startSeconds": 12.86,
+          "endSeconds": 14.52
+        }
+      ]
+    },
+    {
+      "id": "shot-beat-4-event-1",
+      "semanticBeatId": "beat-4",
+      "visualEventId": "beat-4-event-1",
+      "changeType": "detail",
+      "narrativeRole": "turn",
+      "humanPresence": true,
+      "transitionIn": "cut",
+      "source": "unused.mp4",
+      "startSeconds": 14.52,
+      "endSeconds": 18.9,
+      "sourceInSeconds": 4.0,
+      "camera": "push-in",
+      "attribution": "Video by Pexels contributor on Pexels",
+      "avoidRegions": [
+        {
+          "x": 0.0,
+          "y": 0.36,
+          "w": 0.65,
+          "h": 0.63,
+          "startSeconds": 14.52,
+          "endSeconds": 15.98
+        },
+        {
+          "x": 0.15,
+          "y": 0.35,
+          "w": 0.62,
+          "h": 0.64,
+          "startSeconds": 15.98,
+          "endSeconds": 17.44
+        },
+        {
+          "x": 0.62,
+          "y": 0.02,
+          "w": 0.36,
+          "h": 0.96,
+          "startSeconds": 17.44,
+          "endSeconds": 18.9
+        }
+      ]
+    },
+    {
+      "id": "shot-beat-6-event-1",
+      "semanticBeatId": "beat-6",
+      "visualEventId": "beat-6-event-1",
+      "changeType": "scale_change",
+      "narrativeRole": "exposition",
+      "humanPresence": true,
+      "transitionIn": "cut",
+      "source": "unused.mp4",
+      "startSeconds": 25.58,
+      "endSeconds": 31.48,
+      "sourceInSeconds": 2.0,
+      "camera": "none",
+      "attribution": "Video by Pexels contributor on Pexels",
+      "avoidRegions": [
+        {
+          "x": 0.0,
+          "y": 0.42,
+          "w": 0.98,
+          "h": 0.57,
+          "startSeconds": 25.58,
+          "endSeconds": 27.55
+        },
+        {
+          "x": 0.0,
+          "y": 0.4,
+          "w": 0.98,
+          "h": 0.59,
+          "startSeconds": 27.55,
+          "endSeconds": 29.52
+        },
+        {
+          "x": 0.0,
+          "y": 0.32,
+          "w": 0.98,
+          "h": 0.67,
+          "startSeconds": 29.52,
+          "endSeconds": 31.48
+        }
+      ]
+    },
+    {
+      "id": "shot-beat-7-event-1",
+      "semanticBeatId": "beat-7",
+      "visualEventId": "beat-7-event-1",
+      "changeType": "action",
+      "narrativeRole": "turn",
+      "humanPresence": true,
+      "showsSubject": true,
+      "selectionReason": "Reviewed alternative already acquired in the bounded asset pass; walking while on a call preserves the pause-before-response idea and leaves real side negative space.",
+      "transitionIn": "cut",
+      "source": "unused.mp4",
+      "startSeconds": 31.48,
+      "endSeconds": 37.98,
+      "sourceInSeconds": 0.0,
+      "camera": "none",
+      "attribution": "Video by RDNE Stock project on Pexels",
+      "avoidRegions": [
+        {
+          "x": 0.3,
+          "y": 0.18,
+          "w": 0.4,
+          "h": 0.78,
+          "startSeconds": 31.48,
+          "endSeconds": 33.65
+        },
+        {
+          "x": 0.32,
+          "y": 0.18,
+          "w": 0.38,
+          "h": 0.78,
+          "startSeconds": 33.65,
+          "endSeconds": 35.82
+        },
+        {
+          "x": 0.34,
+          "y": 0.18,
+          "w": 0.36,
+          "h": 0.76,
+          "startSeconds": 35.82,
+          "endSeconds": 37.98
+        }
+      ]
+    },
+    {
+      "id": "shot-beat-8-event-1",
+      "semanticBeatId": "beat-8",
+      "visualEventId": "beat-8-event-1",
+      "changeType": "scale_change",
+      "narrativeRole": "turn",
+      "humanPresence": true,
+      "showsSubject": true,
+      "selectionReason": "Continuation of the same reviewed walking/call clip for visual continuity and negative-space availability during reflection.",
+      "transitionIn": "cut",
+      "source": "unused.mp4",
+      "startSeconds": 37.98,
+      "endSeconds": 41.2,
+      "sourceInSeconds": 6.5,
+      "camera": "none",
+      "attribution": "Video by RDNE Stock project on Pexels",
+      "avoidRegions": [
+        {
+          "x": 0.34,
+          "y": 0.18,
+          "w": 0.36,
+          "h": 0.76,
+          "startSeconds": 37.98,
+          "endSeconds": 39.05
+        },
+        {
+          "x": 0.34,
+          "y": 0.18,
+          "w": 0.36,
+          "h": 0.76,
+          "startSeconds": 39.05,
+          "endSeconds": 40.13
+        },
+        {
+          "x": 0.34,
+          "y": 0.18,
+          "w": 0.36,
+          "h": 0.74,
+          "startSeconds": 40.13,
+          "endSeconds": 41.2
+        }
+      ]
+    },
+    {
+      "id": "shot-beat-9-event-1",
+      "semanticBeatId": "beat-9",
+      "visualEventId": "beat-9-event-1",
+      "changeType": "action",
+      "narrativeRole": "resolution",
+      "humanPresence": true,
+      "showsSubject": true,
+      "semanticRole": "slowness_resolution",
+      "semanticDirection": "walking continues with a calmer visual rhythm as the narration resolves that faster arrival can begin with slower movement",
+      "openingSemanticMatch": true,
+      "selectionReason": "A later reviewed window of the walking POV clip keeps the person in the lower half and visually resolves the narration on slowing down; reused intentionally as an opening/closing motif.",
+      "transitionIn": "cut",
+      "source": "unused.mp4",
+      "startSeconds": 41.2,
+      "endSeconds": 50.49,
+      "sourceInSeconds": 15.0,
+      "camera": "none",
+      "attribution": "Video by Pexels contributor on Pexels",
+      "avoidRegions": [
+        {
+          "x": 0.0,
+          "y": 0.55,
+          "w": 0.55,
+          "h": 0.44,
+          "startSeconds": 41.2,
+          "endSeconds": 44.3
+        },
+        {
+          "x": 0.35,
+          "y": 0.55,
+          "w": 0.5,
+          "h": 0.44,
+          "startSeconds": 44.3,
+          "endSeconds": 47.4
+        },
+        {
+          "x": 0.35,
+          "y": 0.32,
+          "w": 0.63,
+          "h": 0.67,
+          "startSeconds": 47.4,
+          "endSeconds": 50.49
+        }
+      ]
+    }
+  ],
+  "moments": [
+    {
+      "id": "moment-1",
+      "kind": "hook",
+      "startSeconds": 0.2,
+      "endSeconds": 4.45,
+      "segments": [
+        {
+          "role": "hero",
+          "text": "آهسته‌تر جلو برو",
+          "accentWords": [
+            "آهسته‌تر"
+          ]
+        }
+      ],
+      "purpose": "hook-pattern-interrupt",
+      "presentation": {
+        "placement": "upper-left"
+      },
+      "anchorText": "اگه می‌خوای"
+    },
+    {
+      "id": "moment-3",
+      "kind": "statement",
+      "startSeconds": 18.9,
+      "endSeconds": 25.58,
+      "segments": [
+        {
+          "role": "lead",
+          "text": "آهسته تمرین می‌کنی"
+        },
+        {
+          "role": "hero",
+          "text": "اشتباهت رو می‌بینی"
+        },
+        {
+          "role": "tail",
+          "text": "اصلاح و تکرار می‌کنی"
+        }
+      ],
+      "anchorText": "وقتی آهسته تمرین می‌کنی"
+    }
+  ],
+  "typographicBeats": [
+    {
+      "id": "beat-5",
+      "startSeconds": 18.9,
+      "endSeconds": 25.58
+    }
+  ],
+  "captionMode": "hybrid",
+  "captions": [
+    {
+      "id": "caption-1",
+      "text": "اگه می‌خوای سریع‌تر پیشرفت کنی،",
+      "lines": [
+        "اگه می‌خوای سریع‌تر پیشرفت کنی،"
+      ],
+      "startSeconds": 0.0,
+      "endSeconds": 1.659
+    },
+    {
+      "id": "caption-2",
+      "text": "شاید باید بعضی کارها رو عمداً آهسته‌تر انجام بدی.",
+      "lines": [
+        "شاید باید بعضی کارها رو",
+        "عمداً آهسته‌تر انجام بدی."
+      ],
+      "startSeconds": 1.66,
+      "endSeconds": 4.96
+    },
+    {
+      "id": "caption-3",
+      "text": "عجیب به نظر می‌رسه، ولی بذار مثال بزنم.",
+      "lines": [
+        "عجیب به نظر می‌رسه،",
+        "ولی بذار مثال بزنم."
+      ],
+      "startSeconds": 5.04,
+      "endSeconds": 7.64
+    },
+    {
+      "id": "caption-4",
+      "text": "وقتی بدون گوشی راه می‌ری یا غذات رو آهسته‌تر می‌خوری،",
+      "lines": [
+        "وقتی بدون گوشی راه می‌ری",
+        "یا غذات رو آهسته‌تر می‌خوری،"
+      ],
+      "startSeconds": 7.74,
+      "endSeconds": 10.9
+    },
+    {
+      "id": "caption-5",
+      "text": "چیزهایی رو متوجه می‌شی که توی عجله اصلاً نمی‌بینی.",
+      "lines": [
+        "چیزهایی رو متوجه می‌شی که",
+        "توی عجله اصلاً نمی‌بینی."
+      ],
+      "startSeconds": 11.5,
+      "endSeconds": 14.52
+    },
+    {
+      "id": "caption-6",
+      "text": "اما نکتهٔ مهم‌تر اینجاست:",
+      "lines": [
+        "اما نکتهٔ مهم‌تر اینجاست:"
+      ],
+      "startSeconds": 14.64,
+      "endSeconds": 16.62
+    },
+    {
+      "id": "caption-7",
+      "text": "برای یادگیری هم همین اتفاق می‌افته.",
+      "lines": [
+        "برای یادگیری هم",
+        "همین اتفاق می‌افته."
+      ],
+      "startSeconds": 16.76,
+      "endSeconds": 18.898999999999997
+    },
+    {
+      "id": "caption-8",
+      "text": "وقتی آهسته تمرین می‌کنی، اشتباهت رو می‌بینی،",
+      "lines": [
+        "وقتی آهسته تمرین می‌کنی،",
+        "اشتباهت رو می‌بینی،"
+      ],
+      "startSeconds": 18.9,
+      "endSeconds": 22.218999999999998
+    },
+    {
+      "id": "caption-9",
+      "text": "اصلاحش می‌کنی و حرکت درست رو تکرار می‌کنی.",
+      "lines": [
+        "اصلاحش می‌کنی و حرکت",
+        "درست رو تکرار می‌کنی."
+      ],
+      "startSeconds": 22.22,
+      "endSeconds": 25.578999999999997
+    },
+    {
+      "id": "caption-10",
+      "text": "و فقط بحث یادگیری نیست.",
+      "lines": [
+        "و فقط بحث یادگیری نیست."
+      ],
+      "startSeconds": 25.58,
+      "endSeconds": 27.12
+    },
+    {
+      "id": "caption-11",
+      "text": "حتی تجربه‌های خوب هم وقتی عجله نداری،",
+      "lines": [
+        "حتی تجربه‌های خوب",
+        "هم وقتی عجله نداری،"
+      ],
+      "startSeconds": 27.26,
+      "endSeconds": 30.179
+    },
+    {
+      "id": "caption-12",
+      "text": "بیشتر به چشمت میان.",
+      "lines": [
+        "بیشتر به چشمت میان."
+      ],
+      "startSeconds": 30.18,
+      "endSeconds": 31.48
+    },
+    {
+      "id": "caption-13",
+      "text": "ولی شاید مهم‌ترین قسمت این باشه: قبل از جواب دادن،",
+      "lines": [
+        "ولی شاید مهم‌ترین قسمت این",
+        "باشه: قبل از جواب دادن،"
+      ],
+      "startSeconds": 31.58,
+      "endSeconds": 35.479
+    },
+    {
+      "id": "caption-14",
+      "text": "تصمیم گرفتن یا واکنش احساسی،",
+      "lines": [
+        "تصمیم گرفتن یا واکنش احساسی،"
+      ],
+      "startSeconds": 35.48,
+      "endSeconds": 38.079
+    },
+    {
+      "id": "caption-15",
+      "text": "چند ثانیه فرصت پیدا می‌کنی که فکر کنی.",
+      "lines": [
+        "چند ثانیه فرصت پیدا",
+        "می‌کنی که فکر کنی."
+      ],
+      "startSeconds": 38.08,
+      "endSeconds": 41.299
+    },
+    {
+      "id": "caption-16",
+      "text": "پس دفعهٔ بعد که عجله داشتی، فقط پنج ثانیه مکث کن.",
+      "lines": [
+        "پس دفعهٔ بعد که عجله داشتی،",
+        "فقط پنج ثانیه مکث کن."
+      ],
+      "startSeconds": 41.3,
+      "endSeconds": 45.4
+    },
+    {
+      "id": "caption-17",
+      "text": "چون گاهی سریع‌تر رسیدن،",
+      "lines": [
+        "چون گاهی سریع‌تر رسیدن،"
+      ],
+      "startSeconds": 45.42,
+      "endSeconds": 47.579
+    },
+    {
+      "id": "caption-18",
+      "text": "دقیقاً از آهسته‌تر رفتن شروع می‌شه.",
+      "lines": [
+        "دقیقاً از آهسته‌تر",
+        "رفتن شروع می‌شه."
+      ],
+      "startSeconds": 47.58,
+      "endSeconds": 50.18
+    }
+  ],
+  "design": {
+    "version": 2,
+    "profile": "film-type",
+    "seed": "rewards-of-slowness-20260913-072138-698797fd-film-type-01",
+    "profileVersion": "2.14.0",
+    "contentHash": "f9a2bf8d73ed2f6cc32f7d70230008cde12ed5607af0895a485b3cb7b0378c54",
+    "resolved": {
+      "contrast": {
+        "compactField": {
+          "blend": "multiply",
+          "exponent": 3,
+          "featherCurve": 1.2,
+          "featherPx": 160,
+          "paddingPx": 4,
+          "steps": 96
+        },
+        "darkField": "#191919",
+        "defaultStrength": "strong",
+        "diffuseField": {
+          "maxSubjectAlpha": 0.12,
+          "minRadiusPx": 180,
+          "perRow": true,
+          "radiusScale": 0.85,
+          "rowPaddingPx": 26
+        },
+        "footageGrade": "none",
+        "glyphShadow": {
+          "color": "#191919",
+          "haloAlpha": 0.28,
+          "haloBlurPx": 22,
+          "nearAlpha": 0.48,
+          "nearBlurPx": 6,
+          "nearOffsetPx": 2
+        },
+        "lightField": "#FFFFFF",
+        "plateauPaddingPx": 36,
+        "plateauStop": 0.68,
+        "strengths": {
+          "soft": 0.24,
+          "standard": 0.34,
+          "strong": 0.4
+        }
+      },
+      "formats": {
+        "landscape": {
+          "columnFraction": 0.4,
+          "safeArea": {
+            "bottom": 0.08,
+            "side": 0.08,
+            "top": 0.08
+          },
+          "wideColumnFraction": 0.7
+        },
+        "vertical": {
+          "columnFraction": 0.62,
+          "safeArea": {
+            "bottom": 0.35,
+            "left": 0.08,
+            "right": 0.16,
+            "side": 0.08,
+            "top": 0.14
+          },
+          "wideColumnFraction": 0.82
+        }
+      },
+      "layout": {
+        "aestheticPolicy": "ranked-v1",
+        "autoRequiresReviewedAvoidRegions": true,
+        "collisionMarginPx": 12,
+        "contextGapPx": 22,
+        "edgeInsetPx": 10,
+        "inkPaddingPx": 12,
+        "lineGapPx": 18,
+        "maxStackFraction": 0.6,
+        "middleCentre": 0.56,
+        "motionClearancePx": 18,
+        "phraseGapPx": 20,
+        "quantityGapPx": 18,
+        "revealGroupGapPx": 34,
+        "safeAreaPaddingPx": 20,
+        "sourceGapPx": 30,
+        "upperCentre": 0.26
+      },
+      "layoutVersion": 14,
+      "motion": {
+        "cutInSeconds": 0.48,
+        "enterSeconds": 0.56,
+        "exitSeconds": 0.22,
+        "lineDelaySeconds": 0.06,
+        "scrimEnterSeconds": 0.48,
+        "travelPx": 18
+      },
+      "name": "Pathway Film Type",
+      "palette": {
+        "amber": "#FFB800",
+        "boneWhite": "#F0EDE6",
+        "charcoal": "#2C2C2C",
+        "deepViolet": "#3A1772",
+        "electricBlue": "#1789FC",
+        "electricYellow": "#FFEA00",
+        "neonGreen": "#39FF14",
+        "neonRed": "#FF2D00",
+        "obsidian": "#191919",
+        "pureWhite": "#FFFFFF",
+        "royalBlue": "#004FFF",
+        "signalRed": "#ED1C24"
+      },
+      "profile": "film-type",
+      "profileVersion": "2.14.0",
+      "rollout": "opt-in",
+      "scope": "persian-footage",
+      "typography": {
+        "accent": "#1789FC",
+        "contextPx": 44,
+        "darkInk": "#191919",
+        "decorativeRule": false,
+        "figureLadderPx": [
+          248,
+          224,
+          200,
+          176,
+          152
+        ],
+        "fontFamily": "Estedad",
+        "glow": false,
+        "heroWeight": 700,
+        "ink": "#FFFFFF",
+        "inlineEmphasis": "blue-underline-white-ink",
+        "persianLetterSpacing": 0,
+        "quantityUnitPx": 64,
+        "sourcePx": 44,
+        "statementLadderPx": [
+          112,
+          104,
+          96,
+          88,
+          80,
+          72
+        ],
+        "supportOpacity": 1,
+        "supportPx": 58,
+        "supportWeight": 500,
+        "titleLadderPx": [
+          128,
+          116,
+          104,
+          92,
+          84
+        ],
+        "titleTailRatio": 0.8
+      },
+      "watermark": {
+        "allowedZones": [
+          "mid-left",
+          "lower-left",
+          "mid-right",
+          "lower-right",
+          "upper-left",
+          "upper-right"
+        ],
+        "fieldAlpha": 0.8,
+        "fieldPaddingPx": 22,
+        "glyphShadow": {
+          "color": "#191919",
+          "haloAlpha": 0.26,
+          "haloBlurPx": 18,
+          "nearAlpha": 0.5,
+          "nearBlurPx": 5,
+          "nearOffsetPx": 2
+        },
+        "introDelaySeconds": 5,
+        "latinFontFamily": "Arial",
+        "latinFontPx": 24,
+        "latinWeight": 400,
+        "layout": "two-line",
+        "lineGapPx": 6,
+        "longFormThresholdSeconds": 30,
+        "maxRelocations": 5,
+        "minCoverageRatio": 0.7,
+        "minDwellSeconds": 6,
+        "minLongFormRelocations": 2,
+        "minLongFormVerticalBands": 2,
+        "minTextClearancePx": 64,
+        "paddingPx": 8,
+        "pairWithText": true,
+        "persianFontPx": 30,
+        "preferNonTopPosition": true,
+        "preferStablePosition": false,
+        "safeAreas": {
+          "landscape": {
+            "bottom": 0.08,
+            "left": 0.08,
+            "right": 0.08,
+            "top": 0.08
+          },
+          "vertical": {
+            "bottom": 0.35,
+            "left": 0.08,
+            "right": 0.16,
+            "top": 0.14
+          }
+        },
+        "suppressWhenNoTextClearance": true,
+        "targetCoverageRatio": 0.8,
+        "targetDwellSeconds": 12,
+        "transitionSeconds": 0.3,
+        "verticalDiversityMinDwellSeconds": 4
+      }
+    }
+  },
+  "watermark": {
+    "brandProfile": "pathway-of-surrender-v1",
+    "persianText": "طریقت تسلیم",
+    "latinText": "Pathway_of_Surrender",
+    "textHashes": {
+      "algorithm": "sha256-utf8",
+      "persianText": "2c2e0a9a76b57df83e04e712b82f6d51ec3af600b3a697b281f4d06d5331d02a",
+      "latinText": "aca253429dc44dff47a579cd23c532cb97df69771ad022c2236b66c55b1fd030"
+    }
+  }
+}

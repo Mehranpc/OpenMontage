@@ -72,6 +72,7 @@ from lib.persian_render_qa import (
     find_coverage_gaps,
 )
 from lib.persian_motion_qa import audit_render_motion
+from lib.paths import REPO_ROOT
 from lib.persian_music import audit_music, audio_props_with_music, build_music_track
 from lib.persian_srt import audit_cues, build_cues, render_srt
 from lib.persian_captions import (
@@ -1075,7 +1076,7 @@ class PersianCompose(BaseTool):
         """Copy one media file into the staging dir; return its staticFile path."""
         resolved = source.expanduser()
         if not resolved.is_absolute():
-            resolved = (Path.cwd() / resolved).resolve()
+            resolved = (REPO_ROOT / resolved).resolve()
         if not resolved.exists():
             raise FileNotFoundError(
                 f"Media file not found: {source}. A missing file renders as a silent "

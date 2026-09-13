@@ -47,3 +47,11 @@ def test_missing_version_patch_fails_closed(tmp_path: Path) -> None:
     )
     with pytest.raises(FilmTypeDocumentationError, match="no matching patch document"):
         film_type_patch_path(repo_root=tmp_path)
+
+
+def test_edit_director_uses_canonical_music_track_shape() -> None:
+    text = (ROOT / "skills" / "pipelines" / "persian-footage" / "edit-director.md").read_text(encoding="utf-8")
+    assert '"musicTrack": {' in text
+    assert '"audio": {\n    "narration"' in text
+    assert '"audio": {\n    "narration": "assets/audio/voiceover.mp3",\n    "music":' not in text
+    assert "persian.acknowledgeUnknownMusicRisk" in text

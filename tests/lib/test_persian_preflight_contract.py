@@ -76,3 +76,37 @@ def test_missing_asset_is_aggregate_preflight_failure_before_browser(
         item.code == "path.missing" and item.pointer == "/persian/shots/0/source"
         for item in caught.value.diagnostics
     )
+
+
+def test_aggregate_report_preserves_structured_film_type_failure(monkeypatch, tmp_path: Path) -> None:
+    from lib.persian_film_type import FilmTypePreflightError
+    from lib.persian_preflight import aggregate_preflight_edit_decisions
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"fixture")
+    payload = _payload("clip.mp4")
+
+    def refuse(*args, **kwargs):
+        raise FilmTypePreflightError(
+            "coverage refused", code="WATERMARK_COVERAGE",
+            diagnostics={"coverageRatio": 0.52, "coverageFloor": 0.7, "topBlockers": [{"shotId": "shot-9"}]},
+        )
+
+    monkeypatch.setattr(NoCopyPersianCompose, "_build_props", refuse)
+    report = aggregate_preflight_edit_decisions(payload, base_dir=tmp_path)
+    assert report["ok"] is False
+    assert report["blockingIssues"][0]["code"] == "WATERMARK_COVERAGE"
+    assert report["watermarkDiagnostics"]["coverageRatio"] == 0.52
+    assert report["watermarkDiagnostics"]["topBlockers"][0]["shotId"] == "shot-9"
+    assert report["mediaCopies"] == 0
+
+
+def test_cli_persists_refusal_report(tmp_path: Path, monkeypatch) -> None:
+    from lib.persian_preflight import main
+    source = tmp_path / "edit.json"
+    report_path = tmp_path / "preflight_report.json"
+    source.write_text('{"persian": {"shots": [{"width": 1}]}}', encoding="utf-8")
+    code = main([str(source), "--output", str(report_path)])
+    assert code == 2
+    report = __import__("json").loads(report_path.read_text(encoding="utf-8"))
+    assert report["ok"] is False
+    assert report["blockingIssues"]

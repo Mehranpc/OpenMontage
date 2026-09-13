@@ -521,21 +521,22 @@ A narrated video ships **with a music bed**. Delivering one silent and asking
 afterwards «می‌خوای موزیک هم بهش اضافه کنم؟» is the exact failure the user named:
 the question belongs before the render, not after it.
 
-The `audio` block carries `music` plus a `musicTrack` record:
+`persian.musicTrack` is the single authored owner of the music bed. The `audio`
+block contains narration/timing only; `persian_compose` derives the staged runtime
+`audio.music` path from `musicTrack.path`. Never author both owners.
 
 ```json
 {
   "audio": {
     "narration": "assets/audio/voiceover.mp3",
-    "music": "assets/music/track.mp3",
-    "wordTimings": [ … ],
-    "musicTrack": {
-      "path": "assets/music/track.mp3",
-      "source": "pixabay",
-      "license": { "name": "Pixabay Content License", "url": "https://pixabay.com/service/license-summary/", "downloadedAt": "2026-09-02" },
-      "attribution": "—",
-      "contentIdRisk": { "level": "low", "reason": "Pixabay Content License permits commercial use; no attribution required" }
-    }
+    "wordTimings": [ … ]
+  },
+  "musicTrack": {
+    "path": "assets/music/track.mp3",
+    "source": "pixabay_music",
+    "license": { "name": "Pixabay Content License", "url": "https://pixabay.com/service/license-summary/", "downloadedAt": "2026-09-02" },
+    "attribution": "—",
+    "contentIdRisk": { "level": "low", "reason": "Pixabay Content License permits commercial use; no attribution required" }
   }
 }
 ```
@@ -546,7 +547,7 @@ The `audio` block carries `music` plus a `musicTrack` record:
 - `low` must cite a known licence name — Pixabay's Content License (the
   `pixabay_music` tool needs no API key) is the default path and is documented as
   free for commercial use, no attribution required, no standalone redistribution.
-- `unknown` passes only with `acknowledgeUnknownMusicRisk: true` in the block — a
+- `unknown` passes only with top-level `persian.acknowledgeUnknownMusicRisk: true` — a
   human-visibility stamp, not a rubber stamp.
 - Deliberate silence is legitimate but must say why: `omitMusicReason: "…"`.
 
@@ -647,10 +648,9 @@ frames before a cut does not, because it is gone before it is read.
     "typographicBeats": [ { "id": "beat-7", "startSeconds": 30.0, "endSeconds": 34.0 } ],
     "audio": {
       "narration": "assets/audio/voiceover.mp3",
-      "music": "assets/music/track.mp3",
-      "wordTimings": [ { "word": "قهوه", "start": 0.2, "end": 0.6 } ],
-      "musicTrack": { … }
+      "wordTimings": [ { "word": "قهوه", "start": 0.2, "end": 0.6 } ]
     },
+    "musicTrack": { … },
     "watermark": { "persianText": "طریقت تسلیم", "latinText": "Pathway_of_Surrender" }
   }
 }
@@ -792,7 +792,7 @@ sometimes, which is exactly why a machine cannot decide it.
 - No segment over its ceiling: hero 30, lead/tail 42, source 40 visible characters.
 - No retired keys anywhere: `text`, `label`, `kicker`, `unit`, `highlight` on
   moments; `cues`, `hookText` in the block.
-- Narrated mode: `music` + audited `musicTrack` (or an explicit `omitMusicReason`);
+- Narrated mode: canonical `persian.musicTrack` (or an explicit `omitMusicReason`); compose derives runtime `audio.music`;
   `wordTimings` present for the `.srt` and the sync audit.
 - Shots tile the timeline exactly; coverage matches the duration within 0.5s.
 - Every shot has an attribution.

@@ -9,7 +9,7 @@ from pathlib import Path
 import unittest
 from lib.persian_brand import exact_text_record
 from lib.persian_design import resolve_design, SUPPORTED_FILM_TYPE_28_HASH, SUPPORTED_FILM_TYPE_211_HASH, SUPPORTED_FILM_TYPE_212_HASH
-from lib.persian_film_type import prepare_film_type_props
+from lib.persian_film_type import FilmTypePreflightError, prepare_film_type_props
 
 ROOT = Path(__file__).resolve().parents[2]
 FRAME = {'vertical': (1080, 1920), 'landscape': (1920, 1080)}
@@ -210,6 +210,33 @@ class RankedBrowserContracts(unittest.TestCase):
         self.assertEqual(len(short),1)
         self.assertGreaterEqual(short[0]['endSeconds']-short[0]['startSeconds'],4)
         self.assertFalse(short[0]['zone'].startswith('upper'))
+
+    def test_rewards_of_slowness_fixture_keeps_coverage_failure_actionable(self):
+        fixture = json.loads(
+            (ROOT / "tests" / "fixtures" / "persian" / "rewards-of-slowness-watermark-prepass.json")
+            .read_text(encoding="utf-8")
+        )
+        with self.assertRaises(FilmTypePreflightError) as caught:
+            self.prepare(fixture)
+        error = caught.exception
+        self.assertEqual(error.code, "WATERMARK_COVERAGE")
+        diagnostics = error.diagnostics
+        self.assertAlmostEqual(diagnostics["coverageRatio"], 0.52, places=3)
+        self.assertAlmostEqual(diagnostics["coverageFloor"], 0.70, places=3)
+        self.assertEqual(
+            diagnostics["suppressionGaps"],
+            [
+                {"startSeconds": 5, "endSeconds": 14.52},
+                {"startSeconds": 31.48, "endSeconds": 41.2},
+            ],
+        )
+        self.assertTrue(
+            any(
+                blocker.get("shotId") == "shot-beat-9-event-1"
+                and blocker.get("regionIndex") == 2
+                for blocker in diagnostics["topBlockers"]
+            )
+        )
 
     def test_214_long_form_brand_meets_coverage_relocation_and_vertical_diversity(self):
         p=self.props();p['durationSeconds']=47;p['moments']=[]

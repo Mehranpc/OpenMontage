@@ -126,3 +126,19 @@ def test_existing_media_path_passes_path_contract(tmp_path: Path) -> None:
     (tmp_path / "clip.mp4").write_bytes(b"fixture")
     diagnostics = collect_persian_edit_diagnostics(_edit(), base_dir=tmp_path)
     assert not [item for item in diagnostics if item.code == "path.missing"]
+
+
+def test_nested_unknown_music_ack_names_top_level_location() -> None:
+    edit = _edit()
+    edit["persian"]["musicTrack"] = {
+        "path": "bed.mp3", "source": "local_original",
+        "license": {"name": "Original", "url": "local://generated", "downloadedAt": "2026-09-13"},
+        "contentIdRisk": {"level": "unknown"}, "acknowledgeUnknownMusicRisk": True,
+    }
+    diagnostics = collect_persian_edit_diagnostics(edit)
+    assert any(
+        item.code == "music.stale_ack_location"
+        and item.pointer == "/persian/musicTrack/acknowledgeUnknownMusicRisk"
+        and "/persian/acknowledgeUnknownMusicRisk" in (item.hint or "")
+        for item in diagnostics
+    )

@@ -13,6 +13,7 @@ from typing import Any, Iterable
 import jsonschema
 
 from schemas.artifacts import load_schema
+from lib.paths import REPO_ROOT
 
 
 @dataclass(frozen=True)
@@ -169,10 +170,22 @@ def _music_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnostic]:
                 "move the complete record to /persian/musicTrack",
             )
         )
+    if isinstance(persian.get("musicTrack"), dict) and "acknowledgeUnknownMusicRisk" in persian["musicTrack"]:
+        diagnostics.append(
+            ContractDiagnostic(
+                "music.stale_ack_location",
+                "/persian/musicTrack/acknowledgeUnknownMusicRisk",
+                "acknowledgeUnknownMusicRisk is not part of the musicTrack record",
+                "move it to /persian/acknowledgeUnknownMusicRisk",
+            )
+        )
     return diagnostics
 
 
 def _path_diagnostics(persian: dict[str, Any], *, base_dir: Path | None) -> list[ContractDiagnostic]:
+    # Pure contract validation may be used without filesystem context. Production
+    # preflight always passes REPO_ROOT, making authored relative paths repository-
+    # relative and independent of the caller's cwd. Absolute paths stay readable.
     if base_dir is None:
         return []
     root = base_dir.expanduser().resolve()

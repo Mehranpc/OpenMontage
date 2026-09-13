@@ -19,9 +19,14 @@ from typing import Any, Callable, Mapping, Sequence
 from uuid import uuid4
 
 from backlot.__main__ import cmd_open as open_backlot
-from lib.checkpoint import CheckpointValidationError, init_project, read_checkpoint
+from lib.checkpoint import CheckpointValidationError, init_project, read_checkpoint, write_checkpoint
 from lib.paths import PROJECTS_DIR, REPO_ROOT
 from lib.pipeline_loader import load_pipeline_readonly
+from lib.persian_film_type_docs import active_film_type_version, film_type_contract_paths
+from lib.persian_durable_job import DurableJobError, reconcile_job, start_job
+from lib.persian_edit_workspace import (
+    PersianEditWorkspaceError, artifact_sha256, preflight_edit_draft, promote_edit_draft, stage_edit_draft,
+)
 from schemas.artifacts import validate_artifact
 from jsonschema.exceptions import ValidationError
 
@@ -41,6 +46,26 @@ PHASES = (
     "final_review",
     "awaiting_human",
 )
+
+# A workflow phase may only be considered durable once the corresponding
+# canonical checkpoint exists. These mappings reconcile the lightweight front
+# door with the project checkpoint protocol without fabricating state.
+_PHASE_CHECKPOINT = {
+    "align_script_timing": "script",
+    "plan_scenes_moments": "scene_plan",
+    "acquire_assets": "assets",
+    "no_copy_preflight": "edit",
+}
+_REWIND_INVALIDATES = {
+    "prepare_inputs": ("script", "scene_plan", "assets", "edit", "compose"),
+    "align_script_timing": ("script", "scene_plan", "assets", "edit", "compose"),
+    "plan_scenes_moments": ("scene_plan", "assets", "edit", "compose"),
+    "acquire_assets": ("assets", "edit", "compose"),
+    "review_subject_regions": ("edit", "compose"),
+    "no_copy_preflight": ("edit", "compose"),
+    "render_final_candidate": ("compose",),
+    "final_review": ("compose",),
+}
 
 _PROJECT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,79}$")
 
@@ -173,21 +198,21 @@ def _write_state(project_dir: Path, state: Mapping[str, Any]) -> None:
     temp.replace(path)
 
 
-def _repo_read_allowlist() -> list[str]:
-    return [
-        str((REPO_ROOT / "skills" / "persian-video").resolve()),
-        str((REPO_ROOT / "skills" / "pipelines" / "persian-footage").resolve()),
-        str((REPO_ROOT / "skills" / "meta" / "checkpoint-protocol.md").resolve()),
-        str((REPO_ROOT / "skills" / "meta" / "reviewer.md").resolve()),
-        str((REPO_ROOT / "pipeline_defs" / "persian-footage.yaml").resolve()),
-        str((REPO_ROOT / "styles" / "persian-footage").resolve()),
-        str((REPO_ROOT / "docs" / "persian-film-type-2.12-patch.md").resolve()),
-        str((REPO_ROOT / "docs" / "film-type-visual-regression.md").resolve()),
-        str((REPO_ROOT / ".agents" / "skills" / "music").resolve()),
-        str((REPO_ROOT / ".agents" / "skills" / "speech-to-text").resolve()),
-        str((REPO_ROOT / ".agents" / "skills" / "ffmpeg").resolve()),
-        str((REPO_ROOT / ".agents" / "skills" / "video-toolkit").resolve()),
+def _repo_read_allowlist(profile_version: str | None = None) -> list[str]:
+    paths = [
+        (REPO_ROOT / "skills" / "persian-video").resolve(),
+        (REPO_ROOT / "skills" / "pipelines" / "persian-footage").resolve(),
+        (REPO_ROOT / "skills" / "meta" / "checkpoint-protocol.md").resolve(),
+        (REPO_ROOT / "skills" / "meta" / "reviewer.md").resolve(),
+        (REPO_ROOT / "pipeline_defs" / "persian-footage.yaml").resolve(),
+        (REPO_ROOT / "styles" / "persian-footage").resolve(),
+        *film_type_contract_paths(profile_version, repo_root=REPO_ROOT),
+        (REPO_ROOT / ".agents" / "skills" / "music").resolve(),
+        (REPO_ROOT / ".agents" / "skills" / "speech-to-text").resolve(),
+        (REPO_ROOT / ".agents" / "skills" / "ffmpeg").resolve(),
+        (REPO_ROOT / ".agents" / "skills" / "video-toolkit").resolve(),
     ]
+    return list(dict.fromkeys(str(path) for path in paths))
 
 
 def bootstrap_persian_video(
@@ -250,8 +275,10 @@ def bootstrap_persian_video(
         input_record["script_authority"] = (
             "approved_script" if script_source is not None else "spoken_narration"
         )
+        profile_version = active_film_type_version(repo_root=REPO_ROOT)
         state: dict[str, Any] = {
             "version": WORKFLOW_VERSION,
+            "film_type_profile_version": profile_version,
             "project_id": pid,
             "pipeline_type": "persian-footage",
             "created_at": created_at.isoformat(),
@@ -267,7 +294,7 @@ def bootstrap_persian_video(
             "read_allowlist": {
                 "project_root": str(project_dir.resolve()),
                 "source_paths": [],
-                "repo_paths": _repo_read_allowlist(),
+                "repo_paths": _repo_read_allowlist(profile_version),
             },
             "evidence": {},
         }
@@ -488,6 +515,55 @@ def _phase_index(phase: str) -> int:
         raise PersianVideoWorkflowError(f"unknown workflow phase: {phase!r}") from exc
 
 
+def _validate_no_copy_preflight_completion(
+    state: Mapping[str, Any], evidence: Mapping[str, Any]
+) -> dict[str, Any]:
+    attempt_id = str(evidence.get("attempt_id") or "").strip()
+    if not attempt_id or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}", attempt_id):
+        raise PersianVideoWorkflowError(
+            "no_copy_preflight completion requires the promoted draft attempt_id"
+        )
+    root = _project_root(state)
+    report_path = root / ".preflight" / "edit" / attempt_id / "preflight_report.json"
+    canonical_path = root / "artifacts" / "edit_decisions.json"
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        canonical = json.loads(canonical_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PersianVideoWorkflowError(
+            "no_copy_preflight requires a persisted passing report and promoted canonical edit"
+        ) from exc
+    if not isinstance(report, dict) or report.get("ok") is not True:
+        raise PersianVideoWorkflowError("no_copy_preflight report is missing or refused")
+    if not isinstance(canonical, dict):
+        raise PersianVideoWorkflowError("promoted edit_decisions must be a JSON object")
+    digest = artifact_sha256(canonical)
+    if report.get("artifactSha256") != digest:
+        raise PersianVideoWorkflowError(
+            "no_copy_preflight report digest does not match the promoted canonical edit"
+        )
+    projects_root = Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve()
+    try:
+        checkpoint = read_checkpoint(projects_root, str(state["project_id"]), "edit")
+    except (CheckpointValidationError, OSError, json.JSONDecodeError) as exc:
+        raise PersianVideoWorkflowError(
+            "no_copy_preflight cannot complete until checkpoint_edit.json records the promoted edit"
+        ) from exc
+    checkpoint_edit = (checkpoint.get("artifacts") or {}).get("edit_decisions")
+    if checkpoint.get("status") != "completed" or not isinstance(checkpoint_edit, dict):
+        raise PersianVideoWorkflowError("checkpoint_edit.json is not a completed canonical edit checkpoint")
+    if artifact_sha256(checkpoint_edit) != digest:
+        raise PersianVideoWorkflowError(
+            "checkpoint_edit.json does not match the promoted canonical edit bytes"
+        )
+    return {
+        "attempt_id": attempt_id,
+        "artifact_sha256": digest,
+        "preflight_report_path": str(report_path),
+        "checkpoint_edit_path": str(root / "checkpoint_edit.json"),
+    }
+
+
 def complete_phase(
     project_id: str,
     phase: str,
@@ -530,6 +606,8 @@ def complete_phase(
                 "plan_scenes_moments sourcing_order requires unique non-empty visual-event ids"
             )
         phase_evidence["sourcing_order"] = sourcing_order
+    if phase == "no_copy_preflight":
+        phase_evidence.update(_validate_no_copy_preflight_completion(state, phase_evidence))
     if phase == "final_review":
         phase_evidence.update(_validate_final_review_completion(state, phase_evidence))
     if phase == "acquire_assets" and (state.get("asset_usage") or {}).get("pending_pass") is not None:
@@ -552,6 +630,76 @@ def complete_phase(
         state["next_phase"] = None
     else:
         state["next_phase"] = PHASES[_phase_index(phase) + 1]
+    _write_state(_project_root(state), state)
+    return state
+
+
+def _archive_stale_checkpoint(project_root: Path, stage: str, *, reason: str) -> str | None:
+    path = project_root / f"checkpoint_{stage}.json"
+    if not path.exists():
+        return None
+    history = project_root / "history"
+    history.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    target = history / f"checkpoint_{stage}_reconciled_{stamp}.json"
+    shutil.copy2(path, target)
+    path.unlink()
+    meta = history / f"checkpoint_{stage}_reconciled_{stamp}.reason.txt"
+    meta.write_text(reason.strip() + "\n", encoding="utf-8")
+    return str(target)
+
+
+def _invalidate_checkpoints_for_rewind(state: Mapping[str, Any], target_phase: str, *, reason: str) -> list[str]:
+    root = _project_root(state)
+    archived: list[str] = []
+    for stage in _REWIND_INVALIDATES.get(target_phase, ("compose",)):
+        moved = _archive_stale_checkpoint(root, stage, reason=reason)
+        if moved:
+            archived.append(moved)
+    return archived
+
+
+def reconcile_workflow_state(
+    project_id: str, *, pipeline_dir: Path | None = None
+) -> dict[str, Any]:
+    """Reconcile workflow claims with durable checkpoints; never invent progress."""
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    projects_root = Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve()
+    completed = list(state.get("completed_phases") or [])
+    rewind_to: str | None = None
+    problems: list[dict[str, Any]] = []
+    for phase, stage in _PHASE_CHECKPOINT.items():
+        if phase not in completed:
+            continue
+        try:
+            checkpoint = read_checkpoint(projects_root, project_id, stage)
+        except (CheckpointValidationError, OSError, json.JSONDecodeError) as exc:
+            checkpoint = None
+            problems.append({"phase": phase, "stage": stage, "problem": str(exc)})
+        if not checkpoint or checkpoint.get("status") != "completed":
+            problems.append({"phase": phase, "stage": stage, "problem": "missing-or-not-completed"})
+            if rewind_to is None or _phase_index(phase) < _phase_index(rewind_to):
+                rewind_to = phase
+
+    archived: list[str] = []
+    if rewind_to is not None:
+        target_index = _phase_index(rewind_to)
+        state["completed_phases"] = [p for p in completed if _phase_index(p) < target_index]
+        evidence = dict(state.get("evidence") or {})
+        state["evidence"] = {k: v for k, v in evidence.items() if _phase_index(k) < target_index}
+        state["next_phase"] = rewind_to
+        state["status"] = "active"
+        archived = _invalidate_checkpoints_for_rewind(
+            state, rewind_to, reason="workflow/checkpoint reconciliation after missing or incomplete prerequisite checkpoint",
+        )
+
+    reconciliation = {
+        "at": datetime.now(timezone.utc).isoformat(),
+        "rewoundTo": rewind_to,
+        "problems": problems,
+        "archivedCheckpoints": archived,
+    }
+    state["last_reconciliation"] = reconciliation
     _write_state(_project_root(state), state)
     return state
 
@@ -602,7 +750,8 @@ def request_send_back(
         key: value for key, value in evidence.items() if _phase_index(key) < target_index
     }
     history = list(state.get("send_back_history") or [])
-    history.append({"target_phase": target_phase, "reason": reason.strip()})
+    archived = _invalidate_checkpoints_for_rewind(state, target_phase, reason=reason.strip())
+    history.append({"target_phase": target_phase, "reason": reason.strip(), "archived_checkpoints": archived})
     state["send_back_history"] = history
     _write_state(_project_root(state), state)
     return state
@@ -1129,7 +1278,7 @@ def resume_workflow(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Start a fresh wall-time window without resetting durable workflow budgets."""
-    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    state = reconcile_workflow_state(project_id, pipeline_dir=pipeline_dir)
     stamp = now or datetime.now(timezone.utc)
     state["budget_window_started_at"] = stamp.isoformat()
     state["resumed_at"] = stamp.isoformat()
@@ -1142,6 +1291,72 @@ def resume_workflow(
     state["backlot_resume_attempts"] = history
     _write_state(_project_root(state), state)
     return state
+
+
+def stage_workflow_edit_draft(
+    project_id: str, attempt_id: str, input_path: str | Path, *, pipeline_dir: Path | None = None
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    if state.get("next_phase") != "no_copy_preflight":
+        raise PersianVideoWorkflowError(
+            f"edit drafts are only accepted during no_copy_preflight; next phase is {state.get('next_phase')!r}"
+        )
+    source = assert_read_allowed(state, input_path)
+    payload = _read_json(str(source))
+    return stage_edit_draft(_project_root(state), attempt_id, payload)
+
+
+def preflight_workflow_edit_draft(
+    project_id: str, attempt_id: str, *, pipeline_dir: Path | None = None
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    if state.get("next_phase") != "no_copy_preflight":
+        raise PersianVideoWorkflowError(
+            f"edit preflight is only valid during no_copy_preflight; next phase is {state.get('next_phase')!r}"
+        )
+    return preflight_edit_draft(_project_root(state), attempt_id)
+
+
+def promote_workflow_edit_draft(
+    project_id: str, attempt_id: str, *, pipeline_dir: Path | None = None
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    if state.get("next_phase") != "no_copy_preflight":
+        raise PersianVideoWorkflowError(
+            f"edit promotion is only valid during no_copy_preflight; next phase is {state.get('next_phase')!r}"
+        )
+    result = promote_edit_draft(_project_root(state), attempt_id)
+    canonical = Path(result["canonicalPath"])
+    edit = json.loads(canonical.read_text(encoding="utf-8"))
+    projects_root = Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve()
+    checkpoint_path = write_checkpoint(
+        projects_root, project_id, "edit", "completed", {"edit_decisions": edit},
+        pipeline_type="persian-footage", human_approval_required=False, human_approved=False,
+        metadata={"preflight_attempt_id": attempt_id, "artifact_sha256": result["artifactSha256"]},
+    )
+    return {**result, "checkpointPath": str(checkpoint_path)}
+
+
+def start_workflow_job(
+    project_id: str, *, job_id: str, phase: str, argv: Sequence[str],
+    idempotence_key: str, pipeline_dir: Path | None = None, launch: bool = True,
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    if phase not in PHASES or phase != state.get("next_phase"):
+        raise PersianVideoWorkflowError(
+            f"durable job phase must equal the workflow next phase {state.get('next_phase')!r}; got {phase!r}"
+        )
+    return start_job(
+        _project_root(state), job_id=job_id, phase=phase, argv=argv,
+        idempotence_key=idempotence_key, launch=launch,
+    )
+
+
+def reconcile_workflow_job(
+    project_id: str, job_id: str, *, pipeline_dir: Path | None = None
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    return reconcile_job(_project_root(state), job_id)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1190,6 +1405,30 @@ def build_parser() -> argparse.ArgumentParser:
     asset_result.add_argument("project_id")
     asset_result.add_argument("--retry-pass", type=int, required=True)
     asset_result.add_argument("--json", required=True, metavar="PATH")
+
+    edit_stage = sub.add_parser("edit-stage", help="stage an immutable edit draft inside the project")
+    edit_stage.add_argument("project_id")
+    edit_stage.add_argument("attempt_id")
+    edit_stage.add_argument("--json", required=True, metavar="PATH")
+
+    edit_preflight = sub.add_parser("edit-preflight", help="preflight one staged edit draft")
+    edit_preflight.add_argument("project_id")
+    edit_preflight.add_argument("attempt_id")
+
+    edit_promote = sub.add_parser("edit-promote", help="promote a digest-bound passing edit draft")
+    edit_promote.add_argument("project_id")
+    edit_promote.add_argument("attempt_id")
+
+    job_start = sub.add_parser("job-start", help="start one detached idempotent job for the current phase")
+    job_start.add_argument("project_id")
+    job_start.add_argument("job_id")
+    job_start.add_argument("--phase", required=True)
+    job_start.add_argument("--idempotence-key", required=True)
+    job_start.add_argument("argv", nargs="+")
+
+    job_status = sub.add_parser("job-status", help="reconcile and show one durable job")
+    job_status.add_argument("project_id")
+    job_status.add_argument("job_id")
     return parser
 
 
@@ -1267,8 +1506,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                     result_data=_read_json(args.json),
                 )
             )
+        elif args.command == "edit-stage":
+            _print_json(stage_workflow_edit_draft(args.project_id, args.attempt_id, args.json))
+        elif args.command == "edit-preflight":
+            _print_json(preflight_workflow_edit_draft(args.project_id, args.attempt_id))
+        elif args.command == "edit-promote":
+            _print_json(promote_workflow_edit_draft(args.project_id, args.attempt_id))
+        elif args.command == "job-start":
+            command = list(args.argv)
+            command = command[1:] if command[:1] == ["--"] else command
+            if not command:
+                raise PersianVideoWorkflowError("job-start requires a command after --")
+            _print_json(start_workflow_job(
+                args.project_id, job_id=args.job_id, phase=args.phase, argv=command,
+                idempotence_key=args.idempotence_key,
+            ))
+        elif args.command == "job-status":
+            _print_json(reconcile_workflow_job(args.project_id, args.job_id))
         return 0
-    except PersianVideoWorkflowError as exc:
+    except (PersianVideoWorkflowError, PersianEditWorkspaceError, DurableJobError, CheckpointValidationError) as exc:
         parser = build_parser()
         parser.error(str(exc))
     return 2

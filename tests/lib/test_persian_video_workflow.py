@@ -20,6 +20,7 @@ from lib.persian_video_workflow import (
     load_workflow_state,
     record_asset_search_result,
     record_phase_attempt,
+    reconcile_workflow_state,
     request_send_back,
     resume_workflow,
 )
@@ -68,6 +69,15 @@ def _advance_to(tmp_path: Path, target: str, *, project_id: str = "run") -> dict
         phase = state.get("next_phase")
         assert phase is not None
         state = record_phase_attempt(project_id, phase, pipeline_dir=tmp_path, now=BASE)
+        if phase == "no_copy_preflight":
+            # This helper builds unrelated terminal-review fixtures. Dedicated tests
+            # below exercise the real digest-bound no-copy completion contract.
+            completed = list(state.get("completed_phases") or [])
+            completed.append(phase)
+            state["completed_phases"] = completed
+            state["next_phase"] = PHASES[PHASES.index(phase) + 1]
+            workflow._write_state(tmp_path / project_id, state)
+            continue
         evidence = _prepare_inputs_evidence(state) if phase == "prepare_inputs" else None
         state = complete_phase(
             project_id, phase, evidence=evidence, pipeline_dir=tmp_path, now=BASE
@@ -207,7 +217,7 @@ def test_read_allowlist_permits_current_source_and_contracts_but_not_siblings(tm
     required_contracts = [
         ROOT / "skills" / "persian-video" / "SKILL.md",
         ROOT / "skills" / "meta" / "reviewer.md",
-        ROOT / "docs" / "persian-film-type-2.12-patch.md",
+        ROOT / "docs" / "persian-film-type-2.14-patch.md",
         ROOT / "docs" / "film-type-visual-regression.md",
         ROOT / "styles" / "persian-footage" / "film-type.json",
         ROOT / ".agents" / "skills" / "music" / "SKILL.md",
@@ -890,3 +900,148 @@ def test_front_door_is_discoverable_from_index_and_agent_guide():
         assert "raw text, or an English article" not in document
     assert "lib/persian_video_workflow.py" in guide
     assert "bounded workflow envelope" in guide
+
+
+def test_reconciliation_rewinds_claimed_phase_when_checkpoint_is_missing(tmp_path):
+    state, _ = _bootstrap(tmp_path)
+    state_path = tmp_path / "run" / "persian-video-workflow.json"
+    state["completed_phases"] = list(PHASES[:7])  # claims through acquire_assets
+    state["next_phase"] = "review_subject_regions"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    reconciled = reconcile_workflow_state("run", pipeline_dir=tmp_path)
+    # script is the earliest durable checkpoint-backed phase claimed but absent.
+    assert reconciled["next_phase"] == "align_script_timing"
+    assert "align_script_timing" not in reconciled["completed_phases"]
+    assert reconciled["last_reconciliation"]["rewoundTo"] == "align_script_timing"
+
+
+def test_send_back_archives_stale_downstream_checkpoint(tmp_path):
+    state, _ = _bootstrap(tmp_path)
+    state_path = tmp_path / "run" / "persian-video-workflow.json"
+    state["completed_phases"] = list(PHASES[:9])
+    state["next_phase"] = "render_final_candidate"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    stale = tmp_path / "run" / "checkpoint_edit.json"
+    stale.write_text('{"stale": true}', encoding="utf-8")
+    rewound = request_send_back(
+        "run", "review_subject_regions", reason="subject regions changed",
+        pipeline_dir=tmp_path, now=BASE,
+    )
+    assert not stale.exists()
+    archived = rewound["send_back_history"][-1]["archived_checkpoints"]
+    assert archived and Path(archived[0]).is_file()
+    assert rewound["next_phase"] == "review_subject_regions"
+
+
+def test_no_copy_completion_is_digest_bound_to_passing_report_and_edit_checkpoint(tmp_path, monkeypatch):
+    _bootstrap(tmp_path)
+    state = _advance_to(tmp_path, "no_copy_preflight")
+    state = record_phase_attempt("run", "no_copy_preflight", pipeline_dir=tmp_path, now=BASE)
+    project = tmp_path / "run"
+    edit = {"version": "1.0", "render_runtime": "remotion", "cuts": []}
+    canonical = project / "artifacts" / "edit_decisions.json"
+    canonical.parent.mkdir(parents=True, exist_ok=True)
+    canonical.write_text(json.dumps(edit), encoding="utf-8")
+    digest = workflow.artifact_sha256(edit)
+    report = project / ".preflight" / "edit" / "a1" / "preflight_report.json"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(json.dumps({"ok": True, "artifactSha256": digest}), encoding="utf-8")
+    monkeypatch.setattr(workflow, "read_checkpoint", lambda *args: {
+        "status": "completed", "artifacts": {"edit_decisions": edit}
+    })
+    state = complete_phase(
+        "run", "no_copy_preflight", evidence={"attempt_id": "a1"},
+        pipeline_dir=tmp_path, now=BASE,
+    )
+    evidence = state["evidence"]["no_copy_preflight"]
+    assert evidence["artifact_sha256"] == digest
+    assert evidence["preflight_report_path"] == str(report)
+
+    # A changed canonical edit cannot reuse the passing report.
+    state["next_phase"] = "no_copy_preflight"
+    state["completed_phases"].remove("no_copy_preflight")
+    workflow._write_state(project, state)
+    canonical.write_text(json.dumps({**edit, "cuts": [{"id": "changed"}]}), encoding="utf-8")
+    with pytest.raises(PersianVideoWorkflowError, match="digest does not match"):
+        complete_phase(
+            "run", "no_copy_preflight", evidence={"attempt_id": "a1"},
+            pipeline_dir=tmp_path, now=BASE,
+        )
+
+
+def test_front_door_edit_promotion_writes_checkpoint_after_workspace_promotion(tmp_path, monkeypatch):
+    _bootstrap(tmp_path)
+    _advance_to(tmp_path, "no_copy_preflight")
+    project = tmp_path / "run"
+    edit = {"version": "1.0", "render_runtime": "remotion", "cuts": []}
+    canonical = project / "artifacts" / "edit_decisions.json"
+    canonical.parent.mkdir(parents=True, exist_ok=True)
+    canonical.write_text(json.dumps(edit), encoding="utf-8")
+    digest = workflow.artifact_sha256(edit)
+    monkeypatch.setattr(workflow, "promote_edit_draft", lambda *args, **kwargs: {
+        "promoted": True, "idempotent": False, "canonicalPath": str(canonical),
+        "artifactSha256": digest,
+    })
+    captured = {}
+    def fake_write_checkpoint(pipeline_dir, project_id, stage, status, artifacts, **kwargs):
+        captured.update({
+            "pipeline_dir": pipeline_dir, "project_id": project_id, "stage": stage,
+            "status": status, "artifacts": artifacts, "kwargs": kwargs,
+        })
+        return project / "checkpoint_edit.json"
+    monkeypatch.setattr(workflow, "write_checkpoint", fake_write_checkpoint)
+    result = workflow.promote_workflow_edit_draft("run", "a1", pipeline_dir=tmp_path)
+    assert result["checkpointPath"].endswith("checkpoint_edit.json")
+    assert captured["stage"] == "edit" and captured["status"] == "completed"
+    assert captured["artifacts"]["edit_decisions"] == edit
+    assert captured["kwargs"]["metadata"]["artifact_sha256"] == digest
+
+
+def test_front_door_edit_stage_obeys_project_read_isolation(tmp_path):
+    _bootstrap(tmp_path)
+    _advance_to(tmp_path, "no_copy_preflight")
+    project = tmp_path / "run"
+    candidate = project / "artifacts" / "candidate-edit.json"
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    candidate.write_text(json.dumps({"persian": {"format": "vertical"}}), encoding="utf-8")
+    result = workflow.stage_workflow_edit_draft("run", "a1", candidate, pipeline_dir=tmp_path)
+    assert Path(result["draftPath"]).is_file()
+    outside = tmp_path.parent / "outside-edit.json"
+    outside.write_text("{}", encoding="utf-8")
+    with pytest.raises(PersianVideoWorkflowError, match="outside"):
+        workflow.stage_workflow_edit_draft("run", "a2", outside, pipeline_dir=tmp_path)
+
+
+def test_durable_job_front_door_is_bound_to_current_phase(tmp_path, monkeypatch):
+    _bootstrap(tmp_path)
+    _advance_to(tmp_path, "no_copy_preflight")
+    captured = {}
+    def fake_start(project_dir, **kwargs):
+        captured.update({"project_dir": project_dir, **kwargs})
+        return {"jobId": kwargs["job_id"], "status": "starting"}
+    monkeypatch.setattr(workflow, "start_job", fake_start)
+    result = workflow.start_workflow_job(
+        "run", job_id="job-1", phase="no_copy_preflight", argv=["python", "-V"],
+        idempotence_key="preflight-a1", pipeline_dir=tmp_path, launch=False,
+    )
+    assert result["jobId"] == "job-1"
+    assert captured["project_dir"] == (tmp_path / "run").resolve()
+    assert captured["launch"] is False
+    with pytest.raises(PersianVideoWorkflowError, match="next phase"):
+        workflow.start_workflow_job(
+            "run", job_id="job-2", phase="render_final_candidate", argv=["python", "-V"],
+            idempotence_key="wrong-phase", pipeline_dir=tmp_path, launch=False,
+        )
+
+
+def test_parser_exposes_edit_workspace_and_durable_job_commands():
+    parser = workflow.build_parser()
+    assert parser.parse_args(["edit-stage", "abc-1", "a1", "--json", "/tmp/e.json"]).command == "edit-stage"
+    assert parser.parse_args(["edit-preflight", "abc-1", "a1"]).command == "edit-preflight"
+    assert parser.parse_args(["edit-promote", "abc-1", "a1"]).command == "edit-promote"
+    args = parser.parse_args([
+        "job-start", "abc-1", "job-1", "--phase", "no_copy_preflight",
+        "--idempotence-key", "preflight-a1", "--", "python", "-V",
+    ])
+    assert args.argv == ["python", "-V"]
+    assert parser.parse_args(["job-status", "abc-1", "job-1"]).command == "job-status"
