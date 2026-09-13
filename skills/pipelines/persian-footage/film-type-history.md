@@ -4,7 +4,7 @@
 
 The active skill is `skills/pipelines/persian-footage/film-type.md`. It describes
 the current default only. This file preserves the historical guidance for Film
-Type 2.5 through 2.10 verbatim, so that an existing pinned project can still be
+Type 2.5 through 2.13, so that an existing pinned project can still be
 understood and reproduced.
 
 Read this file only when you need to:
@@ -25,6 +25,14 @@ project in bulk. Migration means resolving a fresh unpinned design and rerunning
 preparation.
 
 ---
+
+## Film Type 2.13 archived default
+
+Film Type 2.13.0 / layout 13 introduced measured watermark coverage, the 5-second
+clean intro, physical caption centering, opening semantic/hook evidence, and hard
+subtitle-boundary audit. It is frozen at
+`styles/persian-footage/film-type-2.13.0.json`; see
+`docs/persian-film-type-2.13-patch.md` when reproducing a 2.13 pin.
 
 ## Film Type 2.8 current default
 

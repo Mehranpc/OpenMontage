@@ -502,6 +502,7 @@ def build_script_aligned_cues(
     *,
     max_visible_chars: int | None = None,
     id_prefix: str = "cue",
+    min_connector_words: int = 0,
 ) -> list[PersianCue]:
     """Build delivery-safe cues from approved copy plus raw ASR timing words.
 
@@ -529,6 +530,7 @@ def build_script_aligned_cues(
         max_visible_chars=(
             max_visible_chars if max_visible_chars is not None else 84
         ),
+        min_connector_words=min_connector_words,
     )
     if not cues:
         _fail(["alignment produced no subtitle cues"])

@@ -15,7 +15,7 @@ import unittest
 from unittest.mock import patch
 
 from lib.persian_brand import canonical_watermark
-from lib.persian_design import resolve_design, prepare_v2, SUPPORTED_FILM_TYPE_29_HASH, SUPPORTED_FILM_TYPE_28_HASH, SUPPORTED_FILM_TYPE_27_HASH, SUPPORTED_FILM_TYPE_26_HASH, SUPPORTED_FILM_TYPE_25_HASH, SUPPORTED_FILM_TYPE_210_HASH, SUPPORTED_FILM_TYPE_211_HASH, SUPPORTED_FILM_TYPE_212_HASH, SUPPORTED_FILM_TYPE_HASH, SUPPORTED_FILM_TYPE_MOTION_HASH, SUPPORTED_FILM_TYPE_LEGACY_HASH, SUPPORTED_FILM_TYPE_POLISH_HASH, SUPPORTED_FILM_TYPE_REPAIR_HASH
+from lib.persian_design import resolve_design, prepare_v2, SUPPORTED_FILM_TYPE_29_HASH, SUPPORTED_FILM_TYPE_28_HASH, SUPPORTED_FILM_TYPE_27_HASH, SUPPORTED_FILM_TYPE_26_HASH, SUPPORTED_FILM_TYPE_25_HASH, SUPPORTED_FILM_TYPE_210_HASH, SUPPORTED_FILM_TYPE_211_HASH, SUPPORTED_FILM_TYPE_212_HASH, SUPPORTED_FILM_TYPE_213_HASH, SUPPORTED_FILM_TYPE_HASH, SUPPORTED_FILM_TYPE_MOTION_HASH, SUPPORTED_FILM_TYPE_LEGACY_HASH, SUPPORTED_FILM_TYPE_POLISH_HASH, SUPPORTED_FILM_TYPE_REPAIR_HASH
 from lib.persian_film_type import prepare_film_type_props
 from tools.video.persian_compose import PersianCompose
 
@@ -102,14 +102,15 @@ class FilmTypeContracts(unittest.TestCase):
                                         ('2.10.0','film-type-2.10.0.json',SUPPORTED_FILM_TYPE_210_HASH),
                                         ('2.11.0','film-type-2.11.0.json',SUPPORTED_FILM_TYPE_211_HASH),
                                         ('2.12.0','film-type-2.12.0.json',SUPPORTED_FILM_TYPE_212_HASH),
-                                        ('2.13.0','film-type.json',SUPPORTED_FILM_TYPE_HASH)]:
+                                        ('2.13.0','film-type-2.13.0.json',SUPPORTED_FILM_TYPE_213_HASH),
+                                        ('2.14.0','film-type.json',SUPPORTED_FILM_TYPE_HASH)]:
             with self.subTest(version=version):
                 profile=json.loads((ROOT/'styles/persian-footage'/filename).read_text())
                 pin={**self.raw,'profileVersion':version,'contentHash':digest,'resolved':profile}
                 self.assertEqual(resolve_design(pin),pin)
                 self.assertEqual(self._bridge(design=pin)['filmType']['version'],profile['layoutVersion'])
     def test_bridge_refuses_wrong_layout_version(self):
-        for wrong in [1,2,3,4,5,6,7,8,9,10,11,12,True,False,'13',14,None]:
+        for wrong in [1,2,3,4,5,6,7,8,9,10,11,12,13,True,False,'14',15,None]:
             with self.subTest(wrong=wrong),self.assertRaisesRegex(ValueError,'provenance'):
                 self._bridge(lambda p:p['filmType'].update(version=wrong))
     def test_repair_tokens_restore_scale_and_real_watermark_policy(self):
@@ -141,10 +142,10 @@ class FilmTypeContracts(unittest.TestCase):
         self.assertLessEqual(new['contrast']['strengths']['standard'],.6)
     def test_ranked_tokens_are_registry_default(self):
         new=resolve_design(self.raw)['resolved']
-        self.assertEqual(new['profileVersion'],'2.13.0');self.assertEqual(new['layoutVersion'],13)
+        self.assertEqual(new['profileVersion'],'2.14.0');self.assertEqual(new['layoutVersion'],14)
         self.assertEqual(new['layout']['aestheticPolicy'],'ranked-v1')
         self.assertEqual(new['contrast']['darkField'],'#191919')
-        self.assertEqual(new['contrast']['strengths'],{'soft':.24,'standard':.34,'strong':.4})
+        self.assertEqual(new['contrast']['strengths'],{'soft':.24,'standard':.34,'strong':.40})
         self.assertEqual(new['watermark']['introDelaySeconds'],5)
     def test_default_profile_requires_reviews_and_brand_clearance(self):
         new=resolve_design(self.raw)['resolved']
@@ -159,7 +160,7 @@ class FilmTypeContracts(unittest.TestCase):
         self.assertEqual(new['watermark']['safeAreas']['vertical'],{'top':.14,'bottom':.35,'left':.08,'right':.16})
     def test_213_only_adds_coverage_policy_to_the_archived_212_profile(self):
         old=json.loads((ROOT/'styles/persian-footage/film-type-2.12.0.json').read_text())
-        new=json.loads((ROOT/'styles/persian-footage/film-type.json').read_text())
+        new=json.loads((ROOT/'styles/persian-footage/film-type-2.13.0.json').read_text())
         self.assertEqual(old['profileVersion'],'2.12.0');self.assertEqual(old['layoutVersion'],12)
         self.assertEqual(new['profileVersion'],'2.13.0');self.assertEqual(new['layoutVersion'],13)
         for key in old:
@@ -167,6 +168,22 @@ class FilmTypeContracts(unittest.TestCase):
         added={'minCoverageRatio','targetCoverageRatio','longFormThresholdSeconds','minLongFormRelocations'}
         self.assertEqual({k:v for k,v in new['watermark'].items() if k not in added},old['watermark'])
         self.assertEqual({k:new['watermark'][k] for k in added},{'minCoverageRatio':.7,'targetCoverageRatio':.8,'longFormThresholdSeconds':30,'minLongFormRelocations':2})
+
+    def test_214_refines_caption_contrast_and_vertical_brand_diversity(self):
+        old=json.loads((ROOT/'styles/persian-footage/film-type-2.13.0.json').read_text())
+        new=json.loads((ROOT/'styles/persian-footage/film-type.json').read_text())
+        self.assertEqual(new['profileVersion'],'2.14.0');self.assertEqual(new['layoutVersion'],14)
+        for key in ['typography','formats','palette','motion']:
+            self.assertEqual(new[key],old[key])
+        self.assertEqual({k:v for k,v in new['layout'].items() if k!='upperCentre'},
+                         {k:v for k,v in old['layout'].items() if k!='upperCentre'})
+        self.assertEqual(old['layout']['upperCentre'],.32);self.assertEqual(new['layout']['upperCentre'],.26)
+        self.assertEqual(new['contrast']['strengths']['strong'],old['contrast']['strengths']['strong'])
+        self.assertGreater(new['contrast']['glyphShadow']['nearAlpha'],old['contrast']['glyphShadow']['nearAlpha'])
+        added={'minLongFormVerticalBands','verticalDiversityMinDwellSeconds'}
+        self.assertEqual({k:v for k,v in new['watermark'].items() if k not in added},old['watermark'])
+        self.assertEqual({k:new['watermark'][k] for k in added},
+                         {'minLongFormVerticalBands':2,'verticalDiversityMinDwellSeconds':4})
     def test_28_pin_keeps_region_review_requirement(self):
         old=json.loads((ROOT/'styles/persian-footage/film-type-2.8.0.json').read_text())
         pin={**self.raw,'profileVersion':'2.8.0','contentHash':SUPPORTED_FILM_TYPE_28_HASH,'resolved':old}

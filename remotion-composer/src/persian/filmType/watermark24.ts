@@ -49,11 +49,12 @@ export function planMovingBrand(duration:number,shotTimes:number[],eventTimes:nu
 
 type CoverageConfig=Config&{
  minCoverageRatio?:number;targetCoverageRatio?:number;
- longFormThresholdSeconds?:number;minLongFormRelocations?:number;
+ longFormThresholdSeconds?:number;minLongFormRelocations?:number;minLongFormVerticalBands?:number;verticalDiversityMinDwellSeconds?:number;
 };
 type CoverageSlot={zone:string;start:number;end:number};
 type CoverageState={covered:number;cost:number;zone:string;mask:number;moves:number;slots:CoverageSlot[]};
 const bitCount=(n:number)=>{let count=0;for(let v=n;v;v>>>=1)count+=v&1;return count;};
+const verticalBandCount=(slots:CoverageSlot[])=>new Set(slots.map(slot=>slot.zone.split("-")[0])).size;
 function betterCoverage(a:CoverageState,b:CoverageState|undefined,requiredMoves:number):boolean{
  if(!b)return true;
  if(Math.abs(a.covered-b.covered)>1e-8)return a.covered>b.covered;
@@ -78,8 +79,10 @@ export function planCoverageAwareBrand(duration:number,boundaries:number[],order
  for(let t=delay+minDwell;t<duration;t+=minDwell)events.add(t);
  const times=[...events].sort((a,b)=>a-b);if(times.length>512)throw new Error("Film Type coverage-aware watermark timeline exceeds 512 boundaries; split the review explicitly.");
  const maxRelocations=Math.max(0,cfg.maxRelocations),maxSlots=1+maxRelocations;
- const requiredMoves=duration>=(cfg.longFormThresholdSeconds??Infinity)
-  ?Math.max(0,cfg.minLongFormRelocations??0):0;
+ const longForm=duration>=(cfg.longFormThresholdSeconds??Infinity);
+ const requiredMoves=longForm?Math.max(0,cfg.minLongFormRelocations??0):0;
+ const requiredBands=longForm?Math.max(0,cfg.minLongFormVerticalBands??0):0;
+ const diversityMinDwell=longForm?Math.min(min,Math.max(0,cfg.verticalDiversityMinDwellSeconds??min)):min;
  const layers=Array.from({length:times.length},()=>new Map<string,CoverageState>());
  layers[0].set("0::0:0",{covered:0,cost:0,zone:"",mask:0,moves:0,slots:[]});
  const push=(at:number,state:CoverageState)=>{
@@ -93,8 +96,12 @@ export function planCoverageAwareBrand(duration:number,boundaries:number[],order
    if(state.slots.length>=maxSlots)continue;
    for(let j=i+1;j<times.length;j++){
     const start=times[i],end=times[j],dwell=end-start;
-    if(dwell+1e-8<minDwell)continue;
     for(const [z,zone] of order.entries()){
+     const band=zone.split("-")[0];
+     const existingBands=new Set(state.slots.map(slot=>slot.zone.split("-")[0]));
+     const diversityException=dwell+1e-8<minDwell && longForm && requiredBands>0
+      && state.slots.length>0 && !existingBands.has(band) && dwell+1e-8>=diversityMinDwell;
+     if(dwell+1e-8<minDwell&&!diversityException)continue;
      const ck=`${i}:${j}:${z}`;
      if(!valid.has(ck))valid.set(ck,clear(rects[zone],start,end));
      if(!valid.get(ck))continue;
@@ -102,7 +109,8 @@ export function planCoverageAwareBrand(duration:number,boundaries:number[],order
      if(moves>maxRelocations)continue;
      const mask=state.mask|(1<<z);
      const topPenalty=zone.startsWith("upper")?0.18:0;
-     const cost=state.cost+Math.pow(dwell-target,2)*.1+z*.12+topPenalty;
+     const diversityPenalty=diversityException?0.75:0;
+     const cost=state.cost+Math.pow(dwell-target,2)*.1+z*.12+topPenalty+diversityPenalty;
      push(j,{covered:state.covered+dwell,cost,zone,mask,moves,
       slots:[...state.slots,{zone,start,end}]});
     }
@@ -110,8 +118,12 @@ export function planCoverageAwareBrand(duration:number,boundaries:number[],order
   }
  }
  const finals=[...layers[times.length-1].values()].filter(state=>state.slots.length>0);
- finals.sort((a,b)=>betterCoverage(a,b,requiredMoves)?-1:betterCoverage(b,a,requiredMoves)?1:0);
- const best=finals[0];
+ const floorSeconds=duration*(cfg.minCoverageRatio??0);
+ const protectedPool=finals.filter(state=>state.covered+1e-8>=floorSeconds
+  && state.moves>=requiredMoves && verticalBandCount(state.slots)>=requiredBands);
+ const pool=protectedPool.length?protectedPool:finals;
+ pool.sort((a,b)=>betterCoverage(a,b,requiredMoves)?-1:betterCoverage(b,a,requiredMoves)?1:0);
+ const best=pool[0];
  if(!best)throw new Error("No safe coverage-aware watermark schedule: review text/subject regions or explicitly author an empty watermark. "+(diagnostics?.()??""));
  return best.slots.map((slot,index)=>({zone:slot.zone,startSeconds:slot.start,endSeconds:slot.end,
   rect:rects[slot.zone],transition:index?"relocate-fade":"fade-in",

@@ -218,15 +218,32 @@ export const PersianFootageVideo: React.FC<PersianVideoProps> = ({
     // slightly lower level — a bed mixed for speech sounds thin without it.
     if (!audio?.narration) return () => levels.flat;
 
-    // With narration present, the bed sits at its base level throughout. It is
-    // deliberately *not* ducked against the moments: a moment is a typographic
-    // event, not a speech event, so ducking to it would dip the music at moments
-    // where nobody is talking and hold it up during narration that has no moment
-    // on screen — audible pumping uncorrelated with the voice. The predecessor
-    // ducked against the caption list, which worked only because captions covered
-    // every spoken word; that coupling is gone with the captions.
-    return () => levels.base;
-  }, [audio]);
+    // Duck only against real narration timing. Captions and editorial moments are
+    // visual systems and must never drive the mix. Short attack/release ramps avoid
+    // audible pumping while still letting the bed breathe in genuine speech pauses.
+    const intervals = audio?.speechIntervals ?? [];
+    const attack = 0.18, release = 0.28;
+    return (frame: number) => {
+      const seconds = frame / fps;
+      let level = levels.base;
+      for (const interval of intervals) {
+        const start = interval.startSeconds, end = interval.endSeconds;
+        if (seconds >= start && seconds <= end) level = Math.min(level, levels.duck);
+        else if (seconds >= start - attack && seconds < start) {
+          const t = (seconds - (start - attack)) / attack;
+          level = Math.min(level, levels.base + (levels.duck - levels.base) * t);
+        } else if (seconds > end && seconds <= end + release) {
+          const t = (seconds - end) / release;
+          level = Math.min(level, levels.duck + (levels.base - levels.duck) * t);
+        }
+      }
+      const fadeSeconds = audio?.musicFadeSeconds ?? DEFAULT_AUDIO_LEVELS.musicFadeSeconds;
+      const totalSeconds = durationInFrames / fps;
+      const head = fadeSeconds > 0 ? Math.min(1, seconds / fadeSeconds) : 1;
+      const tail = fadeSeconds > 0 ? Math.min(1, Math.max(0, totalSeconds - seconds) / fadeSeconds) : 1;
+      return level * Math.min(head, tail);
+    };
+  }, [audio, fps, durationInFrames]);
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000000" }}>

@@ -17,6 +17,7 @@ CAPTION_MODES = frozenset({"sidecar_only", "burned_captions", "hybrid"})
 BURNED_CAPTION_MODES = frozenset({"burned_captions", "hybrid"})
 BURNED_CAPTION_MAX_VISIBLE_CHARS = 56
 BURNED_CAPTION_213_MAX_VISIBLE_CHARS = 50
+BURNED_CAPTION_214_MAX_VISIBLE_CHARS = 54
 BURNED_CAPTION_MAX_LINE_VISIBLE_CHARS = 30
 CAPTION_FONT_PX = {"vertical": 48, "landscape": 40}
 CAPTION_LINE_HEIGHT = 1.38
@@ -33,6 +34,8 @@ def burned_caption_max_visible_chars(profile_version: str | None = None) -> int:
     tighter conservative ceiling before Chromium performs the authoritative pixel-fit
     check; this is a grouping heuristic, never permission to shrink type.
     """
+    if str(profile_version or "") == "2.14.0":
+        return BURNED_CAPTION_214_MAX_VISIBLE_CHARS
     if str(profile_version or "") == "2.13.0":
         return BURNED_CAPTION_213_MAX_VISIBLE_CHARS
     return BURNED_CAPTION_MAX_VISIBLE_CHARS
@@ -121,9 +124,13 @@ def caption_band_rect(
     bottom = float(raw.get("bottom", fallback["bottom"]))
     left = float(raw.get("left", side))
     right = float(raw.get("right", side))
-    line_box = CAPTION_FONT_PX[video_format] * CAPTION_LINE_HEIGHT
-    h = (2 * line_box + 2 * CAPTION_VERTICAL_PADDING_PX) / height
-    if profile_version == "2.13.0":
+    refined = profile_version == "2.14.0"
+    font_px = (46 if video_format == "vertical" else 38) if refined else CAPTION_FONT_PX[video_format]
+    line_height = 1.32 if refined else CAPTION_LINE_HEIGHT
+    vertical_padding = 10 if refined else CAPTION_VERTICAL_PADDING_PX
+    line_box = font_px * line_height
+    h = (2 * line_box + 2 * vertical_padding) / height
+    if profile_version in {"2.13.0", "2.14.0"}:
         # Renderer 2.13 uses the larger safe-side inset on both sides so the
         # physical caption band, not merely its safe-area remainder, centers at x=.5.
         caption_side = max(left, right)
@@ -162,6 +169,7 @@ __all__ = [
     "BURNED_CAPTION_MODES",
     "BURNED_CAPTION_MAX_VISIBLE_CHARS",
     "BURNED_CAPTION_213_MAX_VISIBLE_CHARS",
+    "BURNED_CAPTION_214_MAX_VISIBLE_CHARS",
     "BURNED_CAPTION_MAX_LINE_VISIBLE_CHARS",
     "burned_caption_max_visible_chars",
     "default_caption_mode",

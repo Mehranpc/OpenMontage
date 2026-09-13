@@ -181,18 +181,50 @@ class RankedBrowserContracts(unittest.TestCase):
         self.assertFalse(any(s['startSeconds']<46.97 and s['endSeconds']>42.47 for s in q['watermarkPlan']))
         self.assertTrue(any('watermark-suppressed-for-text-clearance' in w for w in q['filmType']['warnings']))
 
-    def test_213_long_form_brand_meets_coverage_and_relocation_floor(self):
+    def test_214_context_hook_can_use_upper_center_negative_space(self):
+        p=self.props();p['durationSeconds']=20
+        p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':20,
+                     'avoidRegions':[{'x':0.0,'y':0.36,'w':0.4,'h':0.52},
+                                     {'x':0.76,'y':0.4,'w':0.24,'h':0.55}]}]
+        p['moments']=[{'id':'hook','kind':'hook','purpose':'hook-pattern-interrupt',
+                       'startSeconds':0,'endSeconds':4.15,
+                       'presentation':{'placement':'auto','motion':'cut-in','treatment':'editorial'},
+                       'segments':[{'role':'lead','text':'برای'},
+                                   {'role':'hero','text':'هر کار خوبی'},
+                                   {'role':'tail','text':'جایزه می‌دی؟'}]}]
+        q=self.prepare(p)
+        self.assertEqual(q['filmType']['moments']['hook']['placement'],'upper-center')
+        self.assertEqual(q['filmType']['moments']['hook']['fieldPeakAlpha'],.46)
+
+    def test_214_vertical_diversity_may_use_one_shorter_safe_dwell(self):
+        p=self.props();p['durationSeconds']=47;p['moments']=[]
+        blocker={'x':0,'y':0.35,'w':1,'h':0.65}
+        p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':47,
+                     'avoidRegions':[{**blocker,'startSeconds':0,'endSeconds':23},
+                                     {**blocker,'startSeconds':28,'endSeconds':47}]}]
+        p['watermark']={'persianText':'طریقت تسلیم','latinText':'Pathway_of_Surrender'}
+        plan=self.prepare(p)['watermarkPlan']
+        bands={slot['zone'].split('-',1)[0] for slot in plan}
+        self.assertGreaterEqual(len(bands),2)
+        short=[slot for slot in plan if slot['endSeconds']-slot['startSeconds']<6]
+        self.assertEqual(len(short),1)
+        self.assertGreaterEqual(short[0]['endSeconds']-short[0]['startSeconds'],4)
+        self.assertFalse(short[0]['zone'].startswith('upper'))
+
+    def test_214_long_form_brand_meets_coverage_relocation_and_vertical_diversity(self):
         p=self.props();p['durationSeconds']=47;p['moments']=[]
         p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':47,'avoidRegions':[]}]
         p['watermark']={'persianText':'طریقت تسلیم','latinText':'Pathway_of_Surrender'}
         q=self.prepare(p);plan=q['watermarkPlan']
         coverage=sum(slot['endSeconds']-slot['startSeconds'] for slot in plan)/47
         moves=sum(a['zone']!=b['zone'] for a,b in zip(plan,plan[1:]))
+        bands={slot['zone'].split('-',1)[0] for slot in plan}
         self.assertGreaterEqual(coverage,.8)
         self.assertGreaterEqual(moves,2)
+        self.assertGreaterEqual(len(bands),2)
         self.assertGreaterEqual(plan[0]['startSeconds'],5)
 
-    def test_213_refuses_an_isolated_eight_second_brand_dwell(self):
+    def test_214_refuses_an_isolated_eight_second_brand_dwell(self):
         p=self.props();p['durationSeconds']=47;p['moments']=[]
         p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':47,
                      'avoidRegions':[{'x':0,'y':0,'w':1,'h':1,'startSeconds':0,'endSeconds':10},

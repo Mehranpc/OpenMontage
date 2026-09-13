@@ -517,6 +517,22 @@ class TestAudioProps:
         assert props["audio"]["musicDuckVolume"] == pytest.approx(0.36)
         assert props["audio"]["musicFlatVolume"] == pytest.approx(0.5)
 
+    def test_word_timings_become_merged_speech_intervals_for_music_ducking(
+        self, clip: Path, staging: Path
+    ) -> None:
+        props, _ = _build(
+            _persian(clip, audio={"wordTimings": [
+                {"word": "سلام", "start": 0.4, "end": 0.6},
+                {"word": "دنیا", "start": 0.7, "end": 0.9},
+                {"word": "بعد", "start": 1.5, "end": 1.8},
+            ]}),
+            staging,
+        )
+        assert props["audio"]["speechIntervals"] == [
+            {"startSeconds": 0.4, "endSeconds": 0.9},
+            {"startSeconds": 1.5, "endSeconds": 1.8},
+        ]
+
 
 class TestFormatAndDuration:
     def test_format_defaults_to_vertical(self, clip: Path, staging: Path) -> None:

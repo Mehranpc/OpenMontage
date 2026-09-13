@@ -14,7 +14,8 @@ SUPPORTED_FILM_TYPE_29_HASH = "320a67a296d30cf1337b6c121cdd9367dfdc4e28fad1ba6af
 SUPPORTED_FILM_TYPE_210_HASH = "60ff5e80524aaa3877e8bd94e2bdd8c957c9f367947066ced034cbfb8be678e0"
 SUPPORTED_FILM_TYPE_211_HASH = "ee04b0e576891828d754b2dc8bc7139178174251e3755dea4797dd480df4f687"
 SUPPORTED_FILM_TYPE_212_HASH = "3580543858c134902cf1539fccf6d66e31f870d88a0b39a41ed1a28603f7aa5a"
-SUPPORTED_FILM_TYPE_HASH = "c742b5f13b71e504f40c3dda03625aafee4d533f1c66464045d82b21fecc683a"
+SUPPORTED_FILM_TYPE_213_HASH = "c742b5f13b71e504f40c3dda03625aafee4d533f1c66464045d82b21fecc683a"
+SUPPORTED_FILM_TYPE_HASH = "f9a2bf8d73ed2f6cc32f7d70230008cde12ed5607af0895a485b3cb7b0378c54"
 SUPPORTED_FILM_TYPE_MOTION_HASH = "06a6cc6297df4146f9a8fa82af6617cec1e07ff420c72d134fbf878217dca543"
 SUPPORTED_FILM_TYPE_REPAIR_HASH = "3ee76f211682537b5b1ac457063a76cd81f1c84dd7fa916fddeef299ff3eecab"
 SUPPORTED_FILM_TYPE_POLISH_HASH = "6d71bee9de74a627f393544bbcf9caf37b7349c422397b016f1f10597a1c43c2"
@@ -155,7 +156,7 @@ def resolve_design(raw: Any) -> dict[str, Any] | None:
 
     NOTE: None here does NOT mean "render Legacy". Since 2026-09-08 the
     persian-footage compose boundary (PersianCompose._build_props) refuses
-    absent/unversioned design outright — Film Type 2.12 is the default path and
+    absent/unversioned design outright — Film Type 2.14 is the default path and
     Legacy needs the explicit {"version": 2, "profile": "legacy"} opt-out.
     This library keeps its historical None return so other consumers
     (quiet-editorial resolution, validation) are unaffected.
@@ -193,7 +194,8 @@ def resolve_design(raw: Any) -> dict[str, Any] | None:
             "2.10.0": (10, SUPPORTED_FILM_TYPE_210_HASH),
             "2.11.0": (11, SUPPORTED_FILM_TYPE_211_HASH),
             "2.12.0": (12, SUPPORTED_FILM_TYPE_212_HASH),
-            "2.13.0": (13, SUPPORTED_FILM_TYPE_HASH),
+            "2.13.0": (13, SUPPORTED_FILM_TYPE_213_HASH),
+            "2.14.0": (14, SUPPORTED_FILM_TYPE_HASH),
         }
         expected = supported.get(profile.get("profileVersion"))
         if expected is None or type(profile.get("layoutVersion")) is not int or profile["layoutVersion"] != expected[0]:

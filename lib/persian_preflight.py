@@ -114,11 +114,14 @@ def _watermark_evidence(props: dict[str, Any]) -> dict[str, Any]:
     floor = min(minimum, possible) if duration < 20 else minimum
     min_dwell = float(cfg.get("minDwellSeconds") or 0.0)
     effective_dwell = min(min_dwell, max(0.0, duration - intro)) if duration < 20 else min_dwell
+    diversity_min_dwell = float(cfg.get("verticalDiversityMinDwellSeconds") or min_dwell)
     relocations = sum(1 for a, b in zip(slots, slots[1:]) if a.get("zone") != b.get("zone"))
     zones = sorted({str(slot.get("zone")) for slot in slots if slot.get("zone")})
+    vertical_bands = sorted({zone.split("-", 1)[0] for zone in zones if "-" in zone})
     long_form = duration >= float(cfg.get("longFormThresholdSeconds") or float("inf"))
     capacity = max(0, int((duration - intro) // min_dwell) - 1) if min_dwell > 0 else 0
     relocation_target = min(int(cfg.get("minLongFormRelocations") or 0), capacity) if long_form else 0
+    vertical_band_target = int(cfg.get("minLongFormVerticalBands") or 0) if long_form else 0
     gaps: list[dict[str, float]] = []
     cursor = intro
     for start, end in merged:
@@ -128,6 +131,27 @@ def _watermark_evidence(props: dict[str, Any]) -> dict[str, Any]:
     if cursor < duration - 1e-9:
         gaps.append({"startSeconds": round(cursor, 3), "endSeconds": round(duration, 3)})
     first_visible = intervals[0][0] if intervals else None
+    seen_bands: set[str] = set()
+    diversity_exceptions = 0
+    dwell_ok = True
+    for slot, (start, end) in zip(slots, intervals):
+        duration_slot = end - start
+        zone = str(slot.get("zone") or "")
+        band = zone.split("-", 1)[0] if "-" in zone else zone
+        if duration_slot + 1e-9 >= effective_dwell:
+            seen_bands.add(band)
+            continue
+        is_diversity_exception = (
+            long_form and diversity_min_dwell > 0
+            and duration_slot + 1e-9 >= diversity_min_dwell
+            and bool(seen_bands) and band not in seen_bands
+        )
+        if is_diversity_exception:
+            diversity_exceptions += 1
+            seen_bands.add(band)
+            continue
+        dwell_ok = False
+        seen_bands.add(band)
     return {
         "slots": slots,
         "coveredSeconds": round(covered, 3),
@@ -142,10 +166,16 @@ def _watermark_evidence(props: dict[str, Any]) -> dict[str, Any]:
         "relocationTargetReached": relocations >= relocation_target,
         "distinctZones": zones,
         "distinctZoneCount": len(zones),
+        "verticalBands": vertical_bands,
+        "verticalBandCount": len(vertical_bands),
+        "verticalBandTarget": vertical_band_target,
+        "verticalBandTargetReached": len(vertical_bands) >= vertical_band_target,
         "firstVisibleSeconds": round(first_visible, 3) if first_visible is not None else None,
         "noEarlyWatermark": first_visible is None or first_visible + 1e-9 >= intro,
         "minDwellSeconds": effective_dwell,
-        "minDwellPassed": all((end - start) + 1e-9 >= effective_dwell for start, end in intervals),
+        "verticalDiversityMinDwellSeconds": diversity_min_dwell if long_form else None,
+        "diversityDwellExceptionCount": diversity_exceptions,
+        "minDwellPassed": dwell_ok,
         "maxRelocations": int(cfg.get("maxRelocations") or 0),
         "maxRelocationsPassed": relocations <= int(cfg.get("maxRelocations") or 0),
     }

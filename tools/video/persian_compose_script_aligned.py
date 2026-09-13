@@ -101,6 +101,7 @@ class ScriptAlignedPersianCompose(PersianCompose):
                 max_visible_chars=burned_caption_max_visible_chars(profile_version),
                 id_prefix="caption",
                 require_words=True,
+                min_connector_words=8 if profile_version == "2.14.0" else 0,
             )
             return mode, build_burned_caption_props(burned)
 
@@ -115,6 +116,7 @@ class ScriptAlignedPersianCompose(PersianCompose):
         max_visible_chars: int | None = None,
         id_prefix: str = "cue",
         require_words: bool = False,
+        min_connector_words: int = 0,
     ) -> list[Any]:
         audio = persian.get("audio") or {}
         word_timings = audio.get("wordTimings")
@@ -132,6 +134,7 @@ class ScriptAlignedPersianCompose(PersianCompose):
                 word_timings,
                 max_visible_chars=max_visible_chars,
                 id_prefix=id_prefix,
+                min_connector_words=min_connector_words,
             )
         except SubtitleAlignmentError as exc:
             raise ValueError(

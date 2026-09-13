@@ -1,9 +1,9 @@
 ## Film Type is the active visual profile
 
-Film Type 2.13.0 / layout 13 is the default for every persian-footage run.
+Film Type 2.14.0 / layout 14 is the default for every persian-footage run.
 **This file does not restate the profile's rules.** Read
 `skills/pipelines/persian-footage/film-type.md` for the active contract, and
-`docs/persian-film-type-2.13-patch.md` for what the current version changed.
+`docs/persian-film-type-2.14-patch.md` for what the current version changed.
 Guidance for older pins lives in
 `skills/pipelines/persian-footage/film-type-history.md` — archive only.
 
@@ -158,7 +158,7 @@ The burned track is limited to one or two lines in the conservative platform-saf
 and its component returns nothing whenever an editorial moment is active. The watermark
 planner reserves that band as text geometry. Inspect actual caption frames in
 burned/hybrid mode; schema-valid props are not evidence that a phone-sized caption is
-comfortable to read. On Film Type 2.13 the Python planner and renderer use the same
+comfortable to read. On Film Type 2.14 the Python planner and renderer use the same
 physically centered caption band. `python -m lib.persian_preflight` reports the band
 center/symmetry and hard sentence-boundary audit; treat those fields as machine
 evidence, then inspect the actual caption pixels.
@@ -608,7 +608,7 @@ two positions from `WATERMARK_TOP_FRACTION` and four phases. On Film Type it *mo
 `planMovingBrand` in `remotion-composer/src/persian/filmType/watermark24.ts:7–44`
 schedules slots around the prepared moment rects, bounded by `maxRelocations` 5,
 the active profile's dwell/transition policy. Film Type 2.12 introduced measured
-edge-to-edge brand/text clearance and current 2.13 retains it. 2.13 additionally
+edge-to-edge brand/text clearance and current 2.14 retains it. 2.14 additionally
 measures whole-film visible coverage after the clean intro and treats long-form
 relocation as a target rather than a safety override. If no legal slot remains, the
 brand is explicitly absent for that interval and `filmType.warnings` records it; it is

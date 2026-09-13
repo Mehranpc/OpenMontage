@@ -654,7 +654,7 @@ class PersianCompose(BaseTool):
                 }
             )
 
-        if film_type and design_snapshot.get("profileVersion") == "2.13.0":
+        if film_type and design_snapshot.get("profileVersion") in {"2.13.0", "2.14.0"}:
             opening_problems = audit_opening_semantic_shots(shots)
             if opening_problems:
                 raise ValueError(
@@ -675,6 +675,26 @@ class PersianCompose(BaseTool):
         ):
             if audio.get(key) is not None:
                 audio_props[key] = float(audio[key])
+
+        # Renderer ducking follows the narration clock, never captions or editorial
+        # moments. Merge nearby word timings into speech windows so the music can
+        # move smoothly around real pauses without exposing ASR spelling downstream.
+        raw_words = audio.get("wordTimings") or []
+        intervals: list[list[float]] = []
+        for word in raw_words:
+            if not isinstance(word, dict) or word.get("start") is None or word.get("end") is None:
+                continue
+            start, end = float(word["start"]), float(word["end"])
+            if end <= start:
+                continue
+            if intervals and start - intervals[-1][1] <= 0.38:
+                intervals[-1][1] = max(intervals[-1][1], end)
+            else:
+                intervals.append([start, end])
+        if intervals:
+            audio_props["speechIntervals"] = [
+                {"startSeconds": start, "endSeconds": end} for start, end in intervals
+            ]
 
         # Music gate. A narrated project with no bed was the shipped defect: the
         # video was delivered with silence under the voice's pauses and the
@@ -716,6 +736,23 @@ class PersianCompose(BaseTool):
         resolved_persian = {**persian, "watermark": watermark}
         moments = (self._build_moments(resolved_persian, duration_seconds, v2=True, measure_layout=False) if film_type
                    else self._build_moments(resolved_persian, duration_seconds, v2=design_snapshot is not None))
+        # Film Type 2.14 adds one explicit pattern-interrupt shape: lead + hero +
+        # tail, so a small context word can sit above the claim without shrinking
+        # the whole hook. Older pins remain exact and refuse that new authored shape.
+        if design_snapshot is not None:
+            profile_version = str(design_snapshot.get("profileVersion") or "")
+            for moment in moments:
+                roles = [seg.get("role") for seg in moment.get("segments", []) if seg.get("role") != "source"]
+                contextual_hook = (
+                    moment.get("kind") == "hook"
+                    and moment.get("purpose") == "hook-pattern-interrupt"
+                    and roles == ["lead", "hero", "tail"]
+                )
+                if contextual_hook and profile_version != "2.14.0":
+                    raise ValueError(
+                        "context+claim+qualifier hooks require Film Type 2.14.0; "
+                        "pinned older profiles keep their historical hook contract"
+                    )
         # The browser bridge returns the exact lockup geometry used by the V2 planner.
         # Query it independently of moment fitting so an empty moment list cannot
         # accidentally erase the required watermark measurement.

@@ -205,6 +205,7 @@ def build_cues(
     id_prefix: str = "cue",
     max_visible_chars: int = MAX_CUE_VISIBLE_CHARS,
     max_seconds: float = MAX_CUE_SECONDS,
+    min_connector_words: int = 0,
 ) -> list[PersianCue]:
     """Group timed words into readable Persian cues.
 
@@ -252,6 +253,10 @@ def build_cues(
 
     groups = _group_words(
         parsed, max_visible_chars=max_visible_chars, max_seconds=max_seconds
+    )
+    groups = _repair_connector_fragments(
+        groups, max_visible_chars=max_visible_chars, max_seconds=max_seconds,
+        min_connector_words=min_connector_words,
     )
     groups = _merge_short_groups(
         groups, max_visible_chars=max_visible_chars, max_seconds=max_seconds
@@ -342,6 +347,66 @@ def _group_words(
         groups.append(current)
 
     return groups
+
+
+_DISCOURSE_CONNECTOR_PREFIXES = (
+    ("از", "طرفی،"), ("از", "طرفی"), ("از", "طرف", "دیگر،"),
+    ("از", "طرف", "دیگر"), ("از", "سوی", "دیگر،"), ("از", "سوی", "دیگر"),
+    ("با", "این", "حال،"), ("با", "این", "حال"), ("در", "عوض،"),
+    ("در", "عوض"), ("در", "نتیجه،"), ("در", "نتیجه"), ("برای", "همین،"),
+    ("برای", "همین"), ("به", "همین", "دلیل،"), ("به", "همین", "دلیل"),
+)
+
+def _repair_connector_fragments(
+    groups: list[list[TimedWord]], *, max_visible_chars: int, max_seconds: float,
+    min_connector_words: int = 0,
+) -> list[list[TimedWord]]:
+    """Prevent discourse openers from becoming semantically empty caption chips."""
+    if min_connector_words <= 0 or len(groups) <= 1:
+        return groups
+    result = [list(group) for group in groups]
+    index = 0
+    while index < len(result) - 1:
+        group = result[index]
+        words = tuple(word.text for word in group)
+        connector = any(words[:len(prefix)] == prefix for prefix in _DISCOURSE_CONNECTOR_PREFIXES)
+        if not connector or len(group) >= min_connector_words:
+            index += 1
+            continue
+        following = result[index + 1]
+        combined = group + following
+        combined_text = " ".join(word.text for word in combined)
+        combined_duration = combined[-1].end - combined[0].start
+        if visible_length(combined_text) <= max_visible_chars and combined_duration <= max_seconds:
+            result[index] = combined
+            del result[index + 1]
+            index += 1
+            continue
+        needed = min_connector_words - len(group)
+        if needed <= 0 or len(following) <= needed:
+            index += 1
+            continue
+        repaired = group + following[:needed]
+        donor = following[needed:]
+        repaired_text = " ".join(word.text for word in repaired)
+        if (visible_length(repaired_text) > max_visible_chars
+                or repaired[-1].end - repaired[0].start > max_seconds):
+            index += 1
+            continue
+        result[index] = repaired
+        result[index + 1] = donor
+        # A donor created by this repair often begins with «و برای…». If its full
+        # continuation fits, join it immediately rather than creating a second
+        # syntactically dependent fragment.
+        if index + 2 < len(result):
+            donor_plus_next = donor + result[index + 2]
+            donor_text = " ".join(word.text for word in donor_plus_next)
+            donor_duration = donor_plus_next[-1].end - donor_plus_next[0].start
+            if visible_length(donor_text) <= max_visible_chars and donor_duration <= max_seconds:
+                result[index + 1] = donor_plus_next
+                del result[index + 2]
+        index += 1
+    return result
 
 
 def _merge_short_groups(

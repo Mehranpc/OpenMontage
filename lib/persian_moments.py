@@ -765,6 +765,22 @@ def is_claim_qualifier_hook(moment: PersianMoment) -> bool:
     return valid_order and not any(segment.accent_words for segment in moment.segments)
 
 
+
+
+def is_context_claim_qualifier_hook(moment: PersianMoment) -> bool:
+    """A 2.14-style pattern-interrupt hook with a small context line.
+
+    The authored order is ``lead + hero + tail`` with no inline accents.  The
+    purpose gate prevents ordinary historical hooks from silently changing style;
+    compose additionally restricts this shape to Film Type 2.14+.
+    """
+    if moment.purpose != "hook-pattern-interrupt":
+        return False
+    non_source = [segment for segment in moment.segments if segment.role != "source"]
+    if [segment.role for segment in non_source] != ["lead", "hero", "tail"]:
+        return False
+    return not any(segment.accent_words for segment in moment.segments)
+
 def is_flat_display_hook(moment: PersianMoment) -> bool:
     """True when a moment has the flat display hook structure.
 
@@ -856,13 +872,16 @@ def _audit_one(moment: PersianMoment) -> list[str]:
     # gets the hook's tokens without the hook's design, which is how the
     # rejected rectangle happened: two lines at one size under no gate at all.
     if moment.kind == "hook" and not (
-        is_claim_qualifier_hook(moment) or is_flat_display_hook(moment)
+        is_claim_qualifier_hook(moment)
+        or is_context_claim_qualifier_hook(moment)
+        or is_flat_display_hook(moment)
     ):
         roles = [segment.role for segment in moment.segments]
         problems.append(
             f"{moment.id}: kind is 'hook' but the segments "
             f"({'+'.join(roles)}) are neither claim+qualifier (hero + tail, no "
-            "accentWords) nor flat display (a single hero carrying "
+            "accentWords), context+claim+qualifier (lead + hero + tail for a "
+            "hook-pattern-interrupt), nor flat display (a single hero carrying "
             "accentWords). A hook that matches no hook style silently loses "
             "every hook-scoped token — declare the style in the structure."
         )

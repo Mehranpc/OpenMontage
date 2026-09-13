@@ -2,11 +2,8 @@ import React from "react";
 import { useCurrentFrame, useVideoConfig } from "remotion";
 import { ESTEDAD_FAMILY } from "../fonts";
 import {
-  CAPTION_FONT_PX,
-  CAPTION_HORIZONTAL_PADDING_PX,
-  CAPTION_LINE_HEIGHT,
-  CAPTION_VERTICAL_PADDING_PX,
   captionBandRect,
+  captionPaintStyle,
 } from "../captionLayout";
 import type {
   PersianCaption,
@@ -38,7 +35,23 @@ export const PersianCaptionBlock: React.FC<{
   );
   if (momentOwnsFrame) return null;
 
+  // If a cue begins under an editorial moment and only a sub-second tail remains
+  // after that moment exits, suppress the whole burned cue. Painting that residue
+  // creates a one-frame/flash caption (for example the end of the opening CTA) even
+  // though the moment intentionally owned almost all of its reading window. The
+  // sidecar still keeps the approved words; only the stranded burned fragment is
+  // hidden.
+  const strandedAfterMoment = moments.some(
+    (moment) =>
+      caption.startSeconds >= moment.startSeconds &&
+      caption.startSeconds < moment.endSeconds &&
+      caption.endSeconds > moment.endSeconds &&
+      caption.endSeconds - moment.endSeconds < 1.0,
+  );
+  if (strandedAfterMoment) return null;
+
   const rect = captionBandRect(format, design);
+  const style = captionPaintStyle(format, design);
   return (
     <div
       style={{
@@ -57,16 +70,16 @@ export const PersianCaptionBlock: React.FC<{
       <div
         style={{
           maxWidth: "100%",
-          padding: `${CAPTION_VERTICAL_PADDING_PX}px ${CAPTION_HORIZONTAL_PADDING_PX}px`,
-          borderRadius: 14,
-          background: "rgba(25, 25, 25, 0.78)",
+          padding: `${style.verticalPaddingPx}px ${style.horizontalPaddingPx}px`,
+          borderRadius: style.borderRadiusPx,
+          background: style.background,
           color: "#FFFFFF",
           fontFamily: ESTEDAD_FAMILY,
-          fontSize: CAPTION_FONT_PX[format],
-          fontWeight: 700,
-          lineHeight: CAPTION_LINE_HEIGHT,
+          fontSize: style.fontPx,
+          fontWeight: style.fontWeight,
+          lineHeight: style.lineHeight,
           textAlign: "center",
-          textShadow: "0 2px 8px rgba(0, 0, 0, 0.55)",
+          textShadow: style.textShadow,
           unicodeBidi: "plaintext",
         }}
       >

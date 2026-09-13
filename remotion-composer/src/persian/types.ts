@@ -275,6 +275,8 @@ export interface PersianAudio {
   readonly musicBaseVolume?: number;
   /** Music level while narration speaks. */
   readonly musicDuckVolume?: number;
+  /** Derived speech windows from narration word timings; never authored copy. */
+  readonly speechIntervals?: readonly {startSeconds: number; endSeconds: number}[];
   /**
    * Seconds of fade at the head and tail of the music bed.
    *

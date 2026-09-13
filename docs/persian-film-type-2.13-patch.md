@@ -1,7 +1,7 @@
 # Persian Film Type 2.13 patch
 
-Film Type 2.13.0 / layout 13 is the current default for unpinned
-`persian-footage` runs. Film Type 2.12.0 remains pinned and reproducible at
+Film Type 2.13.0 / layout 13 is archived and remains reproducible for pinned
+`persian-footage` runs. Film Type 2.14.0 is the current unpinned default. Film Type 2.12.0 remains pinned and reproducible at
 `styles/persian-footage/film-type-2.12.0.json`.
 
 ## Coverage-aware watermark planning

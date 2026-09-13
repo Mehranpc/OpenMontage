@@ -1,9 +1,9 @@
 ## Film Type is the active visual profile
 
-Film Type 2.13.0 / layout 13 is the default for every persian-footage run.
+Film Type 2.14.0 / layout 14 is the default for every persian-footage run.
 **This file does not restate the profile's rules.** Read
 `skills/pipelines/persian-footage/film-type.md` for the active contract, and
-`docs/persian-film-type-2.13-patch.md` for what the current version changed.
+`docs/persian-film-type-2.14-patch.md` for what the current version changed.
 Guidance for older pins lives in
 `skills/pipelines/persian-footage/film-type-history.md` — archive only.
 

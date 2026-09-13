@@ -273,6 +273,26 @@ def test_film_type_213_regroups_real_width_risk_before_browser_fit() -> None:
     assert captions[0]["text"].endswith("انجام یک کار")
     assert captions[1]["text"] == "پاداش می‌گیرن،"
 
+def test_film_type_214_repairs_stranded_discourse_connector() -> None:
+    script = (
+        "از طرفی، بچه ممکنه به پاداش عادت کنه و برای گرفتن همون نتیجه، "
+        "کم‌کم جایزهٔ بیشتری لازم باشه."
+    )
+    persian = {
+        "design": {"version": 2, "profile": "film-type", "seed": "caption-214-connector"},
+        "platformTarget": "instagram-reels",
+        "captionMode": "hybrid",
+        "_approvedSubtitleScript": approved(script),
+        "audio": {"wordTimings": timed(script.split(), start=27.82, duration=.42, gap=.02)},
+    }
+    mode, captions = ScriptAlignedPersianCompose()._build_caption_props(persian)
+    assert mode == "hybrid"
+    assert " ".join(caption["text"] for caption in captions) == script
+    assert captions[0]["text"] == "از طرفی، بچه ممکنه به پاداش عادت کنه"
+    assert captions[1]["text"].startswith("و برای گرفتن همون نتیجه،")
+    assert all(caption["text"] != "از طرفی، بچه" for caption in captions)
+
+
 def test_hybrid_build_props_creates_burned_approved_copy(tmp_path) -> None:
     script = "درخواست کردن درست است."
     clip = tmp_path / "clip.mp4"
