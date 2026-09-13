@@ -10,6 +10,7 @@ from lib.persian_retention import audit_persian_retention
 from lib.persian_captions import caption_band_rect
 from lib.persian_srt import PersianCue, audit_cues
 from lib.persian_text import split_words
+from lib.persian_edit_contract import PersianEditContractError, validate_persian_edit_contract
 
 
 class NoCopyPersianCompose(ScriptAlignedPersianCompose):
@@ -228,8 +229,13 @@ def summarize(
     }
 
 
-def preflight_edit_decisions(payload: dict[str, Any]) -> dict[str, Any]:
+def preflight_edit_decisions(
+    payload: dict[str, Any], *, base_dir: Path | None = None
+) -> dict[str, Any]:
     edit = extract_edit_decisions(payload)
+    # Contract validation is intentionally first: schema/path/music drift should
+    # fail before retention logic or Chromium can turn it into a secondary error.
+    validate_persian_edit_contract(edit, base_dir=base_dir)
     retention = audit_persian_retention(edit["persian"])
     if retention["problems"]:
         raise ValueError(
@@ -252,7 +258,14 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         payload = json.loads(args.input.read_text(encoding="utf-8"))
-        result = preflight_edit_decisions(payload)
+        result = preflight_edit_decisions(payload, base_dir=Path.cwd())
+    except PersianEditContractError as exc:
+        print(f"PREFLIGHT REFUSED:\n{exc}")
+        print(
+            "PREFLIGHT_DIAGNOSTICS="
+            + json.dumps([item.to_dict() for item in exc.diagnostics], ensure_ascii=False)
+        )
+        return 2
     except (OSError, ValueError, TypeError, KeyError) as exc:
         print(f"PREFLIGHT REFUSED:\n{exc}")
         return 2
