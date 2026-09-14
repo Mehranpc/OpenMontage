@@ -294,6 +294,22 @@ def _report(
     }
 
 
+def _hook_recovery_class(problem: str) -> str:
+    if "visualVoiceAlignment" in problem or "perceptual change" in problem:
+        return "HOOK_VISUAL_ALIGNMENT"
+    if "arrives at" in problem or ".atSeconds" in problem or "outside the video timeline" in problem:
+        return "HOOK_TIMING"
+    if (
+        "metadata.hookQuality" in problem
+        or "requires semantic judgements" in problem
+        or "requires rationale" in problem
+        or " is required" in problem
+        or "unsupported kind" in problem
+    ):
+        return "HOOK_EVIDENCE"
+    return "HOOK_AUTHORING"
+
+
 def aggregate_preflight_edit_decisions(
     payload: dict[str, Any], *, base_dir: Path | None = None
 ) -> dict[str, Any]:
@@ -340,7 +356,11 @@ def aggregate_preflight_edit_decisions(
         return _report(
             ok=False, edit=edit,
             blocking=[
-                {"code": "HOOK_QUALITY_GATE", "message": problem, "recoveryClass": "HOOK_AUTHORING"}
+                {
+                    "code": "HOOK_QUALITY_GATE",
+                    "message": problem,
+                    "recoveryClass": _hook_recovery_class(problem),
+                }
                 for problem in hook_quality["problems"]
             ],
             evidence={"retentionAudit": retention, "hookQualityAudit": hook_quality},
