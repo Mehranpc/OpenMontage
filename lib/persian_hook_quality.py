@@ -259,11 +259,11 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
     else:
         flags = {}
         for key in ("metaIntroDelay", "vagueGap", "fullConclusionRevealed"):
-            value = raw_flags.get(key, False)
-            if not isinstance(value, bool):
+            flag_value = raw_flags.get(key, False)
+            if not isinstance(flag_value, bool):
                 problems.append(f"hookQuality.flags.{key} must be boolean")
                 continue
-            flags[key] = value
+            flags[key] = flag_value
     if flags.get("metaIntroDelay"):
         advisories.append("opening contains value-delaying meta-intro language")
     if flags.get("vagueGap"):
