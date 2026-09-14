@@ -46,7 +46,7 @@ def load_schema(name: str) -> dict:
 
 
 def _validate_final_review_hook_quality(data: dict[str, Any]) -> None:
-    """Require rendered-hook evidence only for reviews carrying the new audit."""
+    """Validate rendered-hook evidence while preserving failed-review evidence."""
     metadata = data.get("metadata")
     if not isinstance(metadata, dict) or "hookQualityAudit" not in metadata:
         return
@@ -56,10 +56,9 @@ def _validate_final_review_hook_quality(data: dict[str, Any]) -> None:
         raise jsonschema.ValidationError(
             "hook-quality review requires a version 1.0 hookQualityAudit"
         )
-    if str(audit.get("disposition") or "") not in {"acceptable", "strong"}:
-        raise jsonschema.ValidationError(
-            "hook-quality review cannot pass when the preflight disposition is weak or unassessed"
-        )
+    audit_disposition = str(audit.get("disposition") or "")
+    if audit_disposition not in {"weak", "acceptable", "strong", "unassessed"}:
+        raise jsonschema.ValidationError("hook-quality audit disposition is invalid")
 
     review = metadata.get("hookQualityReview")
     if not isinstance(review, dict):
@@ -68,9 +67,10 @@ def _validate_final_review_hook_quality(data: dict[str, Any]) -> None:
         )
     if str(review.get("version") or "") != "1.0":
         raise jsonschema.ValidationError("hook-quality review version must be 1.0")
-    if str(review.get("strength") or "") not in {"acceptable", "strong"}:
+    strength = str(review.get("strength") or "")
+    if strength not in {"weak", "acceptable", "strong"}:
         raise jsonschema.ValidationError(
-            "hook-quality review strength must be acceptable or strong"
+            "hook-quality review strength must be weak, acceptable, or strong"
         )
     if not str(review.get("rationale") or "").strip():
         raise jsonschema.ValidationError("hook-quality review requires a non-empty rationale")
@@ -84,19 +84,43 @@ def _validate_final_review_hook_quality(data: dict[str, Any]) -> None:
         raise jsonschema.ValidationError(
             "hook-quality review requires at least two non-empty rendered-opening observations"
         )
-    if review.get("mutedHookDirectionConfirmed") is not True:
+    muted_confirmed = review.get("mutedHookDirectionConfirmed")
+    payoff_prompt = review.get("payoffBeginsPromptly")
+    if not isinstance(muted_confirmed, bool):
         raise jsonschema.ValidationError(
-            "hook-quality review requires muted hook direction confirmation"
+            "hook-quality review mutedHookDirectionConfirmed must be boolean"
         )
-    if str(review.get("visualVoiceAlignment") or "") not in {"acceptable", "strong"}:
+    if not isinstance(payoff_prompt, bool):
         raise jsonschema.ValidationError(
-            "hook-quality review visualVoiceAlignment must be acceptable or strong"
+            "hook-quality review payoffBeginsPromptly must be boolean"
         )
-    if review.get("payoffBeginsPromptly") is not True:
+    visual_alignment = str(review.get("visualVoiceAlignment") or "")
+    if visual_alignment not in {"weak", "acceptable", "strong"}:
         raise jsonschema.ValidationError(
-            "hook-quality review requires evidence that payoff begins promptly in the rendered candidate"
+            "hook-quality review visualVoiceAlignment must be weak, acceptable, or strong"
         )
 
+    if data.get("status") == "pass":
+        if audit_disposition not in {"acceptable", "strong"}:
+            raise jsonschema.ValidationError(
+                "passing hook review requires acceptable or strong preflight disposition"
+            )
+        if strength not in {"acceptable", "strong"}:
+            raise jsonschema.ValidationError(
+                "passing hook-quality review strength must be acceptable or strong"
+            )
+        if muted_confirmed is not True:
+            raise jsonschema.ValidationError(
+                "passing hook-quality review requires muted hook direction confirmation"
+            )
+        if visual_alignment not in {"acceptable", "strong"}:
+            raise jsonschema.ValidationError(
+                "passing hook-quality review visualVoiceAlignment must be acceptable or strong"
+            )
+        if payoff_prompt is not True:
+            raise jsonschema.ValidationError(
+                "passing hook-quality review requires prompt payoff in the rendered candidate"
+            )
 
 
 def _parse_observed_timestamp(value: object, *, label: str) -> datetime:

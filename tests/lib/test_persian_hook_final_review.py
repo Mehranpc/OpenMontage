@@ -116,3 +116,29 @@ def test_hook_quality_review_strength_must_match_render_report_hook_strength(tmp
             pipeline_dir=tmp_path,
             now=BASE,
         )
+
+
+def test_weak_rendered_hook_can_be_persisted_as_revision_evidence(tmp_path):
+    _, _, review_path, _ = _review_ready_project(tmp_path)
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["status"] = "revise"
+    review["recommended_action"] = "revise_edit"
+    review["metadata"] = {
+        "hookQualityAudit": _hook_audit(),
+        "hookQualityReview": _hook_review(
+            strength="weak",
+            mutedHookDirectionConfirmed=False,
+            visualVoiceAlignment="weak",
+            payoffBeginsPromptly=False,
+        ),
+    }
+    review_path.write_text(json.dumps(review), encoding="utf-8")
+
+    with pytest.raises(PersianVideoWorkflowError, match="must pass"):
+        complete_phase(
+            "run",
+            "final_review",
+            evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path,
+            now=BASE,
+        )
