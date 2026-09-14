@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from typing import Any
 
 HOOK_QUALITY_VERSION = "1.0"
-SHORT_FORM_TARGETS = frozenset({"instagram-reels", "tiktok"})
+SHORT_FORM_TARGETS = frozenset({"instagram-reels", "tiktok", "youtube-shorts"})
 OPENING_WINDOW_SECONDS = 3.0
 VALUE_WARNING_SECONDS = 2.0
 VALUE_BLOCK_SECONDS = 3.0
