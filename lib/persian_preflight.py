@@ -8,6 +8,7 @@ import tempfile
 from typing import Any
 from tools.video.persian_compose_script_aligned import ScriptAlignedPersianCompose
 from lib.persian_retention import audit_persian_retention
+from lib.persian_hook_quality import audit_persian_hook_quality
 from lib.persian_captions import caption_band_rect
 from lib.persian_srt import PersianCue, audit_cues
 from lib.persian_text import split_words
@@ -191,6 +192,7 @@ def summarize(
     props: dict[str, Any],
     attributions: list[str],
     retention_audit: dict[str, Any] | None = None,
+    hook_quality_audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     design = props.get("design") or {}
     moments = []
@@ -232,6 +234,7 @@ def summarize(
         "watermarkEvidence": _watermark_evidence(props),
         "watermarkDiagnostics": props.get("watermarkDiagnostics"),
         **({"retentionAudit": retention_audit} if retention_audit is not None else {}),
+        **({"hookQualityAudit": hook_quality_audit} if hook_quality_audit is not None else {}),
     }
 
 
@@ -247,6 +250,11 @@ def preflight_edit_decisions(
         raise ValueError(
             "Persian retention preflight refused:\n- " + "\n- ".join(retention["problems"])
         )
+    hook_quality = audit_persian_hook_quality(edit)
+    if hook_quality["problems"]:
+        raise ValueError(
+            "Persian hook-quality preflight refused:\n- " + "\n- ".join(hook_quality["problems"])
+        )
     runtime_persian = NoCopyPersianCompose._runtime_persian(edit)
     if runtime_persian is None:
         raise ValueError("Expected edit_decisions.persian for Persian preflight")
@@ -254,8 +262,7 @@ def preflight_edit_decisions(
         props, attributions = NoCopyPersianCompose()._build_props(
             runtime_persian, Path(temp), "preflight"
         )
-    return summarize(props, attributions, retention)
-
+    return summarize(props, attributions, retention, hook_quality)
 
 
 def _artifact_sha256(edit: dict[str, Any]) -> str:
@@ -328,6 +335,20 @@ def aggregate_preflight_edit_decisions(
             next_actions=["Revise the edit decisions; do not weaken the retention gate."],
         )
 
+    hook_quality = audit_persian_hook_quality(edit)
+    if hook_quality["problems"]:
+        return _report(
+            ok=False, edit=edit,
+            blocking=[
+                {"code": "HOOK_QUALITY_GATE", "message": problem, "recoveryClass": "HOOK_AUTHORING"}
+                for problem in hook_quality["problems"]
+            ],
+            evidence={"retentionAudit": retention, "hookQualityAudit": hook_quality},
+            next_actions=[
+                "Revise the opening hook evidence/copy/edit; do not substitute decorative pattern interrupts for semantic value."
+            ],
+        )
+
     try:
         evidence = preflight_edit_decisions(edit, base_dir=root)
     except FilmTypePreflightError as exc:
@@ -343,7 +364,7 @@ def aggregate_preflight_edit_decisions(
                 "recoveryClass": "FILM_TYPE_LAYOUT",
                 **({"details": exc.diagnostics} if exc.diagnostics else {}),
             }],
-            evidence={"retentionAudit": retention},
+            evidence={"retentionAudit": retention, "hookQualityAudit": hook_quality},
             watermark_diagnostics=exc.diagnostics or None,
             next_actions=actions,
         )
@@ -351,7 +372,7 @@ def aggregate_preflight_edit_decisions(
         return _report(
             ok=False, edit=edit,
             blocking=[{"code": "PREFLIGHT_RUNTIME", "message": str(exc), "recoveryClass": "PREFLIGHT_RUNTIME"}],
-            evidence={"retentionAudit": retention},
+            evidence={"retentionAudit": retention, "hookQualityAudit": hook_quality},
             next_actions=["Fix the reported preflight runtime/input failure, then rerun the same draft."],
         )
 
