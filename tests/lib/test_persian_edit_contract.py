@@ -169,6 +169,43 @@ def test_distinct_nonoverlapping_windows_from_same_source_are_allowed() -> None:
     assert not [item for item in diagnostics if item.code == "shot.duplicate_source_window"]
 
 
+def _add_audible_music_fixture(edit: dict, tmp_path: Path) -> None:
+    (tmp_path / "clip.mp4").write_bytes(b"fixture")
+    (tmp_path / "bed.mp3").write_bytes(b"fixture")
+    (tmp_path / "narration.mp3").write_bytes(b"fixture")
+    edit["persian"]["shots"][0]["source"] = "clip.mp4"
+    edit["persian"]["audio"]["narration"] = "narration.mp3"
+    edit["persian"]["musicTrack"] = {
+        "path": "bed.mp3", "source": "local_original",
+        "license": {"name": "Original project-generated audio", "url": "local://generated", "downloadedAt": "2026-09-13"},
+        "contentIdRisk": {"level": "unknown", "reason": "local original"},
+    }
+
+
+def test_music_that_is_present_but_too_far_below_narration_is_refused(tmp_path: Path, monkeypatch) -> None:
+    edit = _edit()
+    _add_audible_music_fixture(edit, tmp_path)
+    edit["persian"]["audio"]["musicDuckVolume"] = 0.36
+    def loudness(path: Path) -> float:
+        return -19.8 if path.name == "bed.mp3" else -11.4
+    monkeypatch.setattr("lib.persian_edit_contract.measure_integrated_loudness", loudness)
+    diagnostics = collect_persian_edit_diagnostics(edit, base_dir=tmp_path)
+    assert any(
+        item.code == "music.mix_too_quiet" and "LU gap" in item.message
+        for item in diagnostics
+    )
+
+
+def test_default_duck_level_keeps_normalized_music_perceptible(tmp_path: Path, monkeypatch) -> None:
+    edit = _edit()
+    _add_audible_music_fixture(edit, tmp_path)
+    def loudness(path: Path) -> float:
+        return -19.8 if path.name == "bed.mp3" else -11.4
+    monkeypatch.setattr("lib.persian_edit_contract.measure_integrated_loudness", loudness)
+    diagnostics = collect_persian_edit_diagnostics(edit, base_dir=tmp_path)
+    assert not [item for item in diagnostics if item.code == "music.mix_too_quiet"]
+
+
 def test_near_silent_music_file_is_refused_before_browser(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / "clip.mp4").write_bytes(b"fixture")
     (tmp_path / "bed.mp3").write_bytes(b"fixture")

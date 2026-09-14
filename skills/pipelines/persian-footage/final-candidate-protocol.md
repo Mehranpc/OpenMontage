@@ -41,7 +41,7 @@ layout across incompatible cuts.
 
 Persist `edit_decisions` only by promoting the exact draft whose aggregate preflight report passed. Failed candidates stay under project-local `.drafts/` and `.preflight/`; they never overwrite the canonical artifact or create a completed edit checkpoint. Promotion is SHA-256 bound to the probed draft and writes `checkpoint_edit.json` only after the same digest passes.
 
-Preflight also refuses overlapping reuse of the same source-time window across shots; visibly repeating the same footage is not an acceptable default. Distinct non-overlapping windows from one longer source remain valid. Narrated projects must carry a measurable music bed: a path/licence record alone is insufficient when the file is effectively silent. The source bed must clear the conservative audibility floor before browser preflight; normalize or replace near-silent music rather than compensating with extreme renderer gain.
+Preflight also refuses overlapping reuse of the same source-time window across shots; visibly repeating the same footage is not an acceptable default. Distinct non-overlapping windows from one longer source remain valid. Narrated projects must carry a measurable music bed: a path/licence record alone is insufficient when the file is effectively silent. The source bed must clear the conservative audibility floor before browser preflight, and the ducked bed must also remain within the permitted loudness gap from narration; a technically present but perceptually absent mix is a failure. Normalize or replace near-silent music and use the canonical mix levels rather than compensating with extreme renderer gain.
 
 ## Bounded work
 

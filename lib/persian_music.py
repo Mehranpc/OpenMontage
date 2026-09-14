@@ -60,6 +60,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
+import math
 import re
 import shutil
 import subprocess
@@ -94,18 +95,35 @@ KNOWN_PERMISSIVE_LICENSES: frozenset[str] = frozenset(
 )
 
 #: Music level the renderer uses when a bed is present but no narration is.
-DEFAULT_MUSIC_FLAT_VOLUME = 0.5
+DEFAULT_MUSIC_FLAT_VOLUME = 0.65
 #: Music level while narration is present but not speaking.
-DEFAULT_MUSIC_BASE_VOLUME = 0.6
+DEFAULT_MUSIC_BASE_VOLUME = 0.72
 #: Music level while the narration speaks.
-DEFAULT_MUSIC_DUCK_VOLUME = 0.36
+DEFAULT_MUSIC_DUCK_VOLUME = 0.55
 #: Head and tail fade for the bed, seconds.
 DEFAULT_MUSIC_FADE_SECONDS = 1.5
 
 #: A source bed below this integrated level is effectively a near-silent file once
 #: renderer ducking is applied. This is an audibility floor, not a mix target.
 MUSIC_AUDIBILITY_FLOOR_LUFS = -36.0
+#: Maximum allowed loudness gap between narration and the ducked music bed.
+#: Larger gaps were perceptually silent on mobile even when the source file itself
+#: cleared the audibility floor.
+MAX_DUCKED_MUSIC_GAP_LU = 15.0
 _LUFS_RE = re.compile(r"\bI:\s*(-?[0-9]+(?:\.[0-9]+)?)\s+LUFS")
+
+
+
+def effective_music_loudness(source_lufs: float, volume: float) -> float:
+    """Return the bed loudness after renderer gain, in LUFS-equivalent dB.
+
+    Renderer volume is linear amplitude, so 20*log10(volume) is the gain applied
+    to an integrated loudness measurement.  Zero/negative volume is inaudible by
+    definition and returns negative infinity.
+    """
+    if volume <= 0:
+        return float("-inf")
+    return float(source_lufs) + 20.0 * math.log10(float(volume))
 
 
 def measure_integrated_loudness(path: Path, *, timeout: int = 60) -> float:
@@ -360,6 +378,8 @@ __all__ = [
     "DEFAULT_MUSIC_DUCK_VOLUME",
     "DEFAULT_MUSIC_FADE_SECONDS",
     "MUSIC_AUDIBILITY_FLOOR_LUFS",
+    "MAX_DUCKED_MUSIC_GAP_LU",
+    "effective_music_loudness",
     "measure_integrated_loudness",
     "MusicTrack",
     "MusicAudit",

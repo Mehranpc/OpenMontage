@@ -361,9 +361,9 @@ export const DEFAULT_WATERMARK: PersianWatermark = {
 };
 
 export const DEFAULT_AUDIO_LEVELS = {
-  musicFlatVolume: 0.5,
-  musicBaseVolume: 0.6,
-  musicDuckVolume: 0.36,
+  musicFlatVolume: 0.65,
+  musicBaseVolume: 0.72,
+  musicDuckVolume: 0.55,
   musicFadeSeconds: 1.5,
 } as const;
 

@@ -14,7 +14,13 @@ import jsonschema
 
 from schemas.artifacts import load_schema
 from lib.paths import REPO_ROOT
-from lib.persian_music import MUSIC_AUDIBILITY_FLOOR_LUFS, measure_integrated_loudness
+from lib.persian_music import (
+    DEFAULT_MUSIC_DUCK_VOLUME,
+    MAX_DUCKED_MUSIC_GAP_LU,
+    MUSIC_AUDIBILITY_FLOOR_LUFS,
+    effective_music_loudness,
+    measure_integrated_loudness,
+)
 
 
 @dataclass(frozen=True)
@@ -237,6 +243,30 @@ def _music_diagnostics(persian: dict[str, Any], *, base_dir: Path | None = None)
                         f"music integrated loudness is {loudness:.1f} LUFS, below the {MUSIC_AUDIBILITY_FLOOR_LUFS:.1f} LUFS audibility floor",
                         "normalize or replace the bed before preflight; presence of an almost-silent audio file does not satisfy the music requirement",
                     ))
+                elif audio.get("narration"):
+                    narration_raw = Path(str(audio["narration"])).expanduser()
+                    narration_path = narration_raw.resolve() if narration_raw.is_absolute() else (root / narration_raw).resolve()
+                    if narration_path.is_file():
+                        try:
+                            narration_loudness = measure_integrated_loudness(narration_path)
+                        except RuntimeError as exc:
+                            diagnostics.append(ContractDiagnostic(
+                                "music.mix_unmeasurable", "/persian/audio/narration",
+                                str(exc), "repair the narration input; production preflight must verify the speech/music balance",
+                            ))
+                        else:
+                            try:
+                                duck_volume = float(audio.get("musicDuckVolume", DEFAULT_MUSIC_DUCK_VOLUME))
+                            except (TypeError, ValueError):
+                                duck_volume = DEFAULT_MUSIC_DUCK_VOLUME
+                            effective_loudness = effective_music_loudness(loudness, duck_volume)
+                            gap = narration_loudness - effective_loudness
+                            if gap > MAX_DUCKED_MUSIC_GAP_LU:
+                                diagnostics.append(ContractDiagnostic(
+                                    "music.mix_too_quiet", "/persian/audio/musicDuckVolume",
+                                    f"ducked music is effectively {effective_loudness:.1f} LUFS against narration at {narration_loudness:.1f} LUFS ({gap:.1f} LU gap > {MAX_DUCKED_MUSIC_GAP_LU:.1f} LU maximum)",
+                                    "normalize the bed or raise the authored/default duck level so background music remains perceptible under speech; do not rely on file presence alone",
+                                ))
     return diagnostics
 
 
