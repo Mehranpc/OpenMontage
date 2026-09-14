@@ -19,21 +19,31 @@ def _base(**extra):
 def test_conforming_timeline_reports_retention_metrics():
     audit = audit_persian_retention(_base())
     assert audit["problems"] == []
-    assert audit["first3Seconds"]["eventCount"] >= 2
+    assert audit["first3Seconds"]["baselineFrameCounted"] is False
+    assert audit["first3Seconds"]["eventCount"] == 2
+    assert audit["first3Seconds"]["meaningfulEventCount"] == 1
+    assert audit["first3Seconds"]["overlayEventCount"] == 1
     assert audit["averageVisualEventSeconds"] == 4.0
     assert audit["longestVisualEvent"] == {"id": "s3", "seconds": 6.0}
     assert audit["weakEmptyIntervals"] == []
     assert audit["cutGrammar"]["nonCutCount"] == 0
 
 
-def test_first_three_seconds_need_a_second_event_or_pattern_interrupt():
+def test_static_opening_is_structural_advisory_not_semantic_hook_failure():
     audit = audit_persian_retention(_base(shots=[_shot("s1", 0, 12)], moments=[]))
-    assert any("first 3 seconds" in p for p in audit["problems"])
+    assert audit["problems"] == []
+    assert audit["first3Seconds"]["eventCount"] == 0
+    assert audit["first3Seconds"]["meaningfulEventCount"] == 0
+    assert any("meaningful post-start visual change" in a for a in audit["advisories"])
 
 
-def test_opening_moment_counts_as_pattern_interrupt():
+def test_opening_moment_is_overlay_not_meaningful_visual_change():
     audit = audit_persian_retention(_base(shots=[_shot("s1", 0, 12)]))
-    assert not any("first 3 seconds" in p for p in audit["problems"])
+    assert audit["problems"] == []
+    assert audit["first3Seconds"]["eventCount"] == 1
+    assert audit["first3Seconds"]["meaningfulEventCount"] == 0
+    assert audit["first3Seconds"]["overlayEventCount"] == 1
+    assert any("typographic overlay" in a for a in audit["advisories"])
 
 
 def test_long_shot_is_reported_as_retention_risk_not_invented_as_absolute_failure():
