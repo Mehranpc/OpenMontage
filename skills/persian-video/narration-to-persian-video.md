@@ -4,8 +4,10 @@ Use this capability only for the middle production phases reported by `persian-v
 
 The narration/script entering these phases is authoritative production copy. Scene and edit stages may derive selective on-screen moments under their own contracts, but must not rewrite the narration itself or reopen it as a writing task.
 
-For scene/moment planning, read `skills/pipelines/persian-footage/scene-director.md` and `edit-director.md`. Persist the normal `scene_plan`, `asset_manifest`, and `edit_decisions` checkpoints in manifest order; do not invent a second artifact system for the front door.
+For scene/moment planning, read `skills/pipelines/persian-footage/scene-director.md`, `edit-director.md`, and `hook-quality.md`. Persist the normal `scene_plan`, `asset_manifest`, and `edit_decisions` checkpoints in manifest order; do not invent a second artifact system for the front door.
 New scene plans separate semantic narration beats from shot-level `visual_events`; acquisition and edit preserve that identity through `visual_event_id` / `visualEventId` instead of collapsing each semantic beat to one clip. New events also carry narration span, intent/action/motif, visual search brief, shot composition, affect, human-presence intent, importance, conflict visibility, and an ordered fallback level; run `audit_scene_plan` and retain its `sourcing_order`.
+
+For new short-form production, the edit stage must author top-level `metadata.hookQuality` according to `hook-quality.md` before no-copy preflight. The record separates measured timing/perceptual facts from explicit semantic judgements with rationale. Frame zero is not a visual change, typography is not automatically equivalent to an action/cut/reveal, and the evidence must not silently rewrite authoritative narration. If hook quality cannot be repaired honestly within the existing editorial authority, use the workflow revision path rather than weakening the gate.
 
 For acquisition, read `asset-director.md`. Every `direct_clip_search` call must first be passed through the code-owned budget clamp:
 
@@ -22,7 +24,7 @@ The automatic path is exactly one primary pass plus at most one alternate-query 
 
 Before accepting assets, inspect the intended crop/window at start, middle, and end and persist the canonical `frame_review` evidence. Preserve planned human/subject presence, reject high staged-stock risk or affect mismatch, and record the authored query, candidate rank, semantic relevance, and fallback provenance. A relevance score, filename, or one provider thumbnail is not visual review.
 
-Before rendering, read `skills/pipelines/persian-footage/final-candidate-protocol.md` and run its no-copy preflight. The preflight must use current-project paths and report zero media copies. Do not use `PersianCompose._build_props` directly and do not stage another project's media.
+Before rendering, read `skills/pipelines/persian-footage/final-candidate-protocol.md` and run its no-copy preflight. The preflight must use current-project paths and report zero media copies. Do not use `PersianCompose._build_props` directly and do not stage another project's media. For short-form targets, a `HOOK_QUALITY_GATE` refusal is a real editorial blocker: follow its recovery class (`HOOK_EVIDENCE`, `HOOK_TIMING`, `HOOK_VISUAL_ALIGNMENT`, or `HOOK_AUTHORING`) instead of adding decorative cuts or bypassing the report.
 
 Render one final candidate through the canonical `compose-director.md` path. Retries require the state machine's attempt/send-back budget; do not create a gallery of final renders. The candidate is not approved merely because technical QA passes.
 

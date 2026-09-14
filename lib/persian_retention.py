@@ -52,23 +52,40 @@ def audit_persian_retention(persian: dict[str, Any]) -> dict[str, Any]:
     average = sum(d for _, d in shot_durations) / len(shot_durations) if shot_durations else 0.0
     longest_id, longest = max(shot_durations, key=lambda x: x[1], default=(None, 0.0))
 
-    # Initial footage counts as the first visual event; any later shot start or
-    # typographic moment in the opening window is an additional change/pattern break.
-    opening_events: list[dict[str, Any]] = []
-    for shot in shots:
-        start, end = _span(shot)
-        if start < OPENING_WINDOW_SECONDS and end > 0:
-            opening_events.append({"kind": "shot", "id": shot.get("id"), "at": start})
-    for moment in moments:
-        start, _ = _span(moment)
-        if 0 <= start < OPENING_WINDOW_SECONDS:
-            opening_events.append({"kind": "moment", "id": moment.get("id"), "at": start})
-    opening_events.sort(key=lambda event: (float(event["at"]), 0 if event["kind"] == "shot" else 1))
-    if len(opening_events) < 2:
-        problems.append(
-            "first 3 seconds contain fewer than two visual events/pattern interrupts; "
-            "one static footage event plus narration is a weak Reels opening"
-        )
+    # Frame zero is the baseline state, not a retention event. Later shot starts
+    # are meaningful timeline changes; typographic arrivals remain separate overlays.
+    baseline = next(
+        (
+            {"kind": "baseline_shot", "id": shot.get("id"), "at": 0.0}
+            for shot in shots
+            if _span(shot)[0] <= 1e-6 and _span(shot)[1] > 0
+        ),
+        None,
+    )
+    meaningful_opening_events = [
+        {"kind": "shot", "id": shot.get("id"), "at": _span(shot)[0]}
+        for shot in shots
+        if 1e-6 < _span(shot)[0] < OPENING_WINDOW_SECONDS
+    ]
+    overlay_opening_events = [
+        {"kind": "moment", "id": moment.get("id"), "at": _span(moment)[0]}
+        for moment in moments
+        if 1e-6 < _span(moment)[0] < OPENING_WINDOW_SECONDS
+    ]
+    opening_events = sorted(
+        meaningful_opening_events + overlay_opening_events,
+        key=lambda event: (float(event["at"]), event["kind"]),
+    )
+    if not meaningful_opening_events:
+        if overlay_opening_events:
+            advisories.append(
+                "first 3 seconds have no meaningful post-start visual change; a typographic overlay is present "
+                "but is not equivalent to a shot/action/reveal change"
+            )
+        else:
+            advisories.append(
+                "first 3 seconds have no meaningful post-start visual change; review the opening for perceptual stasis"
+            )
 
     if longest > LONG_EVENT_WARNING_SECONDS:
         level = "high retention risk" if longest > LONG_EVENT_HIGH_RISK_SECONDS else "retention risk"
@@ -202,7 +219,16 @@ def audit_persian_retention(persian: dict[str, Any]) -> dict[str, Any]:
     return {
         "problems": problems,
         "advisories": advisories,
-        "first3Seconds": {"eventCount": len(opening_events), "events": opening_events},
+        "first3Seconds": {
+            "baselineFrameCounted": False,
+            "baseline": baseline,
+            "eventCount": len(opening_events),
+            "meaningfulEventCount": len(meaningful_opening_events),
+            "overlayEventCount": len(overlay_opening_events),
+            "events": opening_events,
+            "meaningfulEvents": meaningful_opening_events,
+            "overlayEvents": overlay_opening_events,
+        },
         "averageVisualEventSeconds": round(average, 3),
         "longestVisualEvent": {"id": longest_id, "seconds": round(longest, 3)},
         "meaningfulChangesPer15Seconds": windows,

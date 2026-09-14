@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/artifacts/post_publish_performance",
+  "title": "Post-Publish Performance",
+  "description": "Append-only observational performance snapshots for an exact published render. This artifact is calibration evidence only and does not authorize automatic production-threshold changes.",
+  "type": "object",
+  "required": [
+    "version",
+    "project_id",
+    "platform",
+    "published_at",
+    "published_render",
+    "hook_quality",
+    "calibration_mode",
+    "snapshots"
+  ],
+  "properties": {
+    "version": {"type": "string", "const": "1.0"},
+    "project_id": {"type": "string", "minLength": 1},
+    "platform": {
+      "type": "string",
+      "enum": ["instagram-reels", "tiktok", "youtube-shorts", "generic"]
+    },
+    "published_at": {"type": "string", "minLength": 1},
+    "published_render": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "additionalProperties": false
+    },
+    "hook_quality": {
+      "type": "object",
+      "required": ["opening_hook_text", "preflight_disposition", "preflight_audit"],
+      "properties": {
+        "opening_hook_text": {"type": "string"},
+        "preflight_disposition": {
+          "type": "string",
+          "enum": ["weak", "acceptable", "strong", "unassessed"]
+        },
+        "preflight_audit": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    "calibration_mode": {"type": "string", "const": "observational"},
+    "snapshots": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/snapshot"}
+    },
+    "notes": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "nullableCount": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "nullableRatio": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "snapshot": {
+      "type": "object",
+      "required": ["checkpoint", "captured_at", "hours_since_publish"],
+      "properties": {
+        "checkpoint": {"type": "string", "enum": ["1h", "4h", "24h", "72h", "custom"]},
+        "captured_at": {"type": "string", "minLength": 1},
+        "hours_since_publish": {"type": "number", "minimum": 0},
+        "views": {"$ref": "#/$defs/nullableCount"},
+        "viewers": {"$ref": "#/$defs/nullableCount"},
+        "average_watch_time_seconds": {"type": ["number", "null"], "minimum": 0},
+        "skip_rate": {"$ref": "#/$defs/nullableRatio"},
+        "likes": {"$ref": "#/$defs/nullableCount"},
+        "comments": {"$ref": "#/$defs/nullableCount"},
+        "reposts": {"$ref": "#/$defs/nullableCount"},
+        "shares": {"$ref": "#/$defs/nullableCount"},
+        "saves": {"$ref": "#/$defs/nullableCount"},
+        "follows": {"$ref": "#/$defs/nullableCount"},
+        "view_sources": {
+          "type": "object",
+          "properties": {
+            "feed": {"$ref": "#/$defs/nullableRatio"},
+            "stories": {"$ref": "#/$defs/nullableRatio"},
+            "reels_tab": {"$ref": "#/$defs/nullableRatio"},
+            "explore": {"$ref": "#/$defs/nullableRatio"},
+            "profile": {"$ref": "#/$defs/nullableRatio"},
+            "other": {"$ref": "#/$defs/nullableRatio"}
+          },
+          "additionalProperties": false
+        },
+        "retention_points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["at_seconds", "viewer_ratio"],
+            "properties": {
+              "at_seconds": {"type": "number", "minimum": 0},
+              "viewer_ratio": {"type": "number", "minimum": 0, "maximum": 1}
+            },
+            "additionalProperties": false
+          }
+        },
+        "notes": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

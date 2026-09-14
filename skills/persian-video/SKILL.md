@@ -97,6 +97,7 @@ Always follow these sources rather than restating their rules here:
 - `skills/pipelines/persian-footage/executive-producer.md` — stage execution and delegation.
 - `skills/pipelines/persian-footage/script-director.md` — technical Persian script validation; in this front door, authoritative copy is preserved rather than newly authored.
 - `skills/pipelines/persian-footage/subtitle-alignment.md` — approved-script/timing authority boundary.
+- `skills/pipelines/persian-footage/hook-quality.md` — evidence-backed short-form hook quality, preflight recovery classes, rendered-hook review, and observational post-publish calibration.
 - `skills/pipelines/persian-footage/final-candidate-protocol.md` — no-copy preflight and candidate lifecycle.
 - `skills/meta/checkpoint-protocol.md` — checkpoint persistence and approval protocol.
 

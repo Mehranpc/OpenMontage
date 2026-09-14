@@ -147,3 +147,58 @@ def test_cutless_persian_bytes_pass_preflight_contract_and_checkpoint_schema(
         "artifacts": {"edit_decisions": payload},
     }
     validate_checkpoint(checkpoint)
+
+
+def test_reels_preflight_refuses_structural_pass_with_weak_hook_evidence(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from lib.persian_preflight import aggregate_preflight_edit_decisions
+
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"fixture")
+    payload = _payload(str(source))
+    payload["persian"]["platformTarget"] = "instagram-reels"
+    payload["metadata"] = {
+        "hookQuality": {
+            "version": "1.0",
+            "valueProposition": {
+                "atSeconds": 4.96,
+                "evidence": "The paradox is not complete until the first sentence ends.",
+            },
+            "semanticTension": {
+                "kind": "contradiction",
+                "atSeconds": 4.96,
+                "evidence": "Slow can be faster, but the contradiction lands late.",
+            },
+            "firstProof": {
+                "atSeconds": 7.74,
+                "evidence": "The first concrete example starts after the meta-intro.",
+            },
+            "judgements": {
+                "semanticPredictionError": {"level": "acceptable", "rationale": "There is a real paradox."},
+                "audienceRelevance": {"level": "acceptable", "rationale": "Progress is relevant but broad."},
+                "concreteness": {"level": "weak", "rationale": "The opening starts with abstract progress language."},
+                "hookBodyAlignment": {"level": "strong", "rationale": "The body does explain the opening claim."},
+                "visualVoiceAlignment": {"level": "weak", "rationale": "Calm notebook B-roll does not express the contradiction."},
+            },
+            "flags": {
+                "metaIntroDelay": True,
+                "vagueGap": False,
+                "fullConclusionRevealed": True,
+            },
+        }
+    }
+
+    def should_not_run(*args, **kwargs):  # pragma: no cover - assertion helper
+        raise AssertionError("browser preparation must not run for a hook-quality refusal")
+
+    monkeypatch.setattr(NoCopyPersianCompose, "_build_props", should_not_run)
+    report = aggregate_preflight_edit_decisions(payload, base_dir=tmp_path)
+
+    assert report["ok"] is False
+    assert report["blockingIssues"][0]["code"] == "HOOK_QUALITY_GATE"
+    audit = report["evidence"]["hookQualityAudit"]
+    assert audit["disposition"] == "weak"
+    assert audit["timing"]["timeToValueSeconds"] == 4.96
+    assert audit["timing"]["timeToFirstProofSeconds"] == 7.74
+    assert any("value proposition" in problem for problem in audit["problems"])

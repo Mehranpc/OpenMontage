@@ -12,6 +12,7 @@ from lib.checkpoint import (
     write_checkpoint,
 )
 from lib.persian_preflight import (NoCopyPersianCompose, extract_edit_decisions, preflight_edit_decisions, summarize)
+from lib.persian_retention import audit_persian_retention
 from schemas.artifacts import validate_artifact
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -224,22 +225,22 @@ def test_no_copy_stage_and_helpers(tmp_path):
     assert result["moments"][0]["geometry"]["placement"] == "upper-left"
 
 
-def test_preflight_refuses_a_weak_single_event_opening_before_render_work():
-    payload = {
-        "persian": {
-            "format": "vertical",
-            "durationSeconds": 12.0,
-            "shots": [{
-                "id": "s1", "source": "unused.mp4",
-                "startSeconds": 0.0, "endSeconds": 12.0,
-                "camera": "none", "attribution": "Regression fixture",
-            }],
-            "moments": [],
-            "typographicBeats": [],
-        }
-    }
-    with pytest.raises(ValueError, match="first 3 seconds"):
-        preflight_edit_decisions(payload)
+def test_structural_retention_treats_a_single_shot_opening_as_advisory():
+    audit = audit_persian_retention({
+        "format": "vertical",
+        "durationSeconds": 12.0,
+        "shots": [{
+            "id": "s1", "source": "unused.mp4",
+            "startSeconds": 0.0, "endSeconds": 12.0,
+            "camera": "none", "attribution": "Regression fixture",
+        }],
+        "moments": [],
+        "typographicBeats": [],
+    })
+    assert audit["problems"] == []
+    assert audit["first3Seconds"]["baselineFrameCounted"] is False
+    assert audit["first3Seconds"]["meaningfulEventCount"] == 0
+    assert any("meaningful post-start" in item for item in audit["advisories"])
 
 
 def test_summary_can_carry_retention_audit_without_media_copies():
