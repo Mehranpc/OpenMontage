@@ -32,7 +32,7 @@ JUDGEMENT_FIELDS = (
 )
 JUDGEMENT_LEVELS = frozenset({"weak", "acceptable", "strong"})
 PERCEPTUAL_CHANGE_KINDS = frozenset(
-    {"shot_change", "action", "reaction", "reveal", "detail", "scale_change", "punch_in", "subject_motion"}
+    {"action", "reaction", "reveal", "detail", "scale_change", "punch_in", "subject_motion"}
 )
 
 
@@ -257,10 +257,13 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
         problems.append("hookQuality.flags must be an object")
         flags: dict[str, bool] = {}
     else:
-        flags = {
-            key: bool(raw_flags.get(key, False))
-            for key in ("metaIntroDelay", "vagueGap", "fullConclusionRevealed")
-        }
+        flags = {}
+        for key in ("metaIntroDelay", "vagueGap", "fullConclusionRevealed"):
+            value = raw_flags.get(key, False)
+            if not isinstance(value, bool):
+                problems.append(f"hookQuality.flags.{key} must be boolean")
+                continue
+            flags[key] = value
     if flags.get("metaIntroDelay"):
         advisories.append("opening contains value-delaying meta-intro language")
     if flags.get("vagueGap"):

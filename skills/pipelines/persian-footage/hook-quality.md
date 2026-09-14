@@ -1,6 +1,6 @@
 # Persian Hook Quality Contract
 
-This contract applies to new Persian short-form production, especially `instagram-reels` and `tiktok`.
+This contract applies to new Persian short-form production, especially `instagram-reels`, `tiktok`, and `youtube-shorts`.
 It supplements structural retention QA; it does not replace it.
 
 ## Core distinction
@@ -57,7 +57,7 @@ For new short-form production, persist top-level `metadata.hookQuality` inside `
 Allowed `semanticTension.kind` values are `question`, `specific_gap`, `contradiction`, `consequence`, `micro_suspense`, and `direct_benefit`.
 Judgement levels are `weak`, `acceptable`, or `strong` and always require rationale.
 
-Allowed authored perceptual-change kinds are `shot_change`, `action`, `reaction`, `reveal`, `detail`, `scale_change`, `punch_in`, and `subject_motion`.
+Allowed authored within-shot perceptual-change kinds are `action`, `reaction`, `reveal`, `detail`, `scale_change`, `punch_in`, and `subject_motion`. Shot changes are derived from the actual timeline and must never be authored as evidence.
 Do not author an event merely because a baseline frame exists. Frame zero is the starting state, not a change.
 Do not count a typographic moment as the same thing as a meaningful shot/action/reveal change.
 

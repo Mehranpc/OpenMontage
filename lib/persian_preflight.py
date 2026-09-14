@@ -305,6 +305,7 @@ def _hook_recovery_class(problem: str) -> str:
         or "requires rationale" in problem
         or " is required" in problem
         or "unsupported kind" in problem
+        or "must be boolean" in problem
     ):
         return "HOOK_EVIDENCE"
     return "HOOK_AUTHORING"

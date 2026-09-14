@@ -162,3 +162,25 @@ def test_risk_signals_can_pass_as_actionable_acceptable_advisories(
     audit = report["evidence"]["hookQualityAudit"]
     assert audit["disposition"] == "acceptable"
     assert any(needle in item for item in audit["advisories"])
+
+
+def test_authored_shot_change_cannot_fabricate_a_timeline_cut(monkeypatch, tmp_path):
+    hook = _hook(perceptualChanges=[
+        {
+            "kind": "shot_change",
+            "atSeconds": 0.8,
+            "evidence": "Authored metadata claims a cut that the timeline does not contain.",
+        }
+    ])
+    report = _run(monkeypatch, tmp_path, hook)
+    assert report["ok"] is False
+    assert any("unsupported kind 'shot_change'" in item["message"] for item in report["blockingIssues"])
+
+
+def test_hook_flags_require_real_booleans_instead_of_truthy_strings(monkeypatch, tmp_path):
+    hook = _hook(
+        flags={"metaIntroDelay": "false", "vagueGap": False, "fullConclusionRevealed": False}
+    )
+    report = _run(monkeypatch, tmp_path, hook)
+    assert report["ok"] is False
+    assert any("metaIntroDelay must be boolean" in item["message"] for item in report["blockingIssues"])
