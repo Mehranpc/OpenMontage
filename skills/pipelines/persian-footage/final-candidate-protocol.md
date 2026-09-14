@@ -39,8 +39,9 @@ regions block all layouts—never tighten a region because the planner wants its
 Prefer one compatible shot long enough for the moment instead of extending a fixed
 layout across incompatible cuts.
 
-Persist `edit_decisions` once, only after the entire edit passes preflight. Failed
-candidates stay in memory and never create checkpoint history.
+Persist `edit_decisions` only by promoting the exact draft whose aggregate preflight report passed. Failed candidates stay under project-local `.drafts/` and `.preflight/`; they never overwrite the canonical artifact or create a completed edit checkpoint. Promotion is SHA-256 bound to the probed draft and writes `checkpoint_edit.json` only after the same digest passes.
+
+Preflight also refuses overlapping reuse of the same source-time window across shots; visibly repeating the same footage is not an acceptable default. Distinct non-overlapping windows from one longer source remain valid. Narrated projects must carry a measurable music bed: a path/licence record alone is insufficient when the file is effectively silent. The source bed must clear the conservative audibility floor before browser preflight, and the ducked bed must also remain within the permitted loudness gap from narration; a technically present but perceptually absent mix is a failure. Normalize or replace near-silent music and use the canonical mix levels rather than compensating with extreme renderer gain.
 
 ## Bounded work
 
@@ -50,16 +51,19 @@ omit a nonessential moment while preserving narration; source a compatible shot 
 exact copy; otherwise return one structured blocker. A new user goal may authorize
 one new bounded cycle but does not approve visuals.
 
+When explicit new user feedback requires revising an already-bounded candidate, open that fresh cycle through the front door with `python -m lib.persian_video_workflow send-back <project-id> <target-phase> --reason "..." --user-directed-revision`. This records the prior counters/history and starts a new bounded window; never edit workflow state or reset counters by hand.
+
 ## No-copy preflight
 
-Use:
+For front-door production use the project draft lifecycle:
 
 ```bash
-python -m lib.persian_preflight path/to/checkpoint_edit.json
+python -m lib.persian_video_workflow edit-stage <project-id> <attempt-id> --json /allowed/edit-decisions.json
+python -m lib.persian_video_workflow edit-preflight <project-id> <attempt-id>
+python -m lib.persian_video_workflow edit-promote <project-id> <attempt-id>
 ```
 
-It runs the real audits and Film Type browser measurement while validating media
-paths without copying them. It also runs `lib.persian_retention.audit_persian_retention`:
+`lib.persian_preflight` remains the lower-level diagnostic CLI when a standalone report is needed. It runs the real audits and Film Type browser measurement while validating media paths without copying them. It persists an aggregate report on both pass and refusal when `--output` is supplied. It also runs `lib.persian_retention.audit_persian_retention`:
 the first three seconds need a second visual event or pattern interrupt, uncovered visual
 intervals are refused, long uninterrupted events and long text-only endings are reported,
 and cut grammar is recorded. The numeric ~8-10s long-shot range is a retention-risk

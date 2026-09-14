@@ -185,9 +185,8 @@ def _minimal_persian_block() -> dict[str, Any]:
 def _edit_decisions(persian: dict[str, Any]) -> dict[str, Any]:
     """A whole artifact around a `persian` block.
 
-    `cuts` is empty on purpose and that is not a placeholder: the Persian composition is
-    the template, its timeline lives in `persian.shots`, and there is no cut list. The
-    schema still requires the key, so a Persian artifact carries it empty.
+    `cuts` may be retained as an empty legacy compatibility field, but Persian composition
+    owns its timeline in `persian.shots`. New Persian artifacts may omit top-level `cuts`.
     """
     return {
         "version": "1.0",
@@ -202,6 +201,33 @@ def _edit_decisions(persian: dict[str, Any]) -> dict[str, Any]:
 def test_a_complete_persian_edit_decision_validates() -> None:
     problems = _errors("edit_decisions", _edit_decisions(_minimal_persian_block()))
     assert not problems, problems
+
+
+def test_persian_edit_decision_without_top_level_cuts_validates() -> None:
+    artifact = _edit_decisions(_minimal_persian_block())
+    artifact.pop("cuts")
+    problems = _errors("edit_decisions", artifact)
+    assert not problems, problems
+
+
+def test_persian_edit_decision_rejects_nonempty_legacy_cuts() -> None:
+    artifact = _edit_decisions(_minimal_persian_block())
+    artifact["cuts"] = [{
+        "id": "legacy-cut", "source": "clip.mp4",
+        "in_seconds": 0.0, "out_seconds": 1.0,
+    }]
+    problems = _errors("edit_decisions", artifact)
+    assert any("expected to be empty" in problem for problem in problems), problems
+
+
+def test_non_persian_edit_decision_still_requires_cuts() -> None:
+    artifact = {
+        "version": "1.0",
+        "render_runtime": "remotion",
+        "renderer_family": "presenter",
+    }
+    problems = _errors("edit_decisions", artifact)
+    assert any("'cuts' is a required property" in problem for problem in problems), problems
 
 
 def test_persian_platform_target_accepts_instagram_reels() -> None:

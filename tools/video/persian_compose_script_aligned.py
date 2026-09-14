@@ -103,11 +103,49 @@ class ScriptAlignedPersianCompose(PersianCompose):
                 require_words=True,
                 min_connector_words=8 if profile_version == "2.14.0" else 0,
             )
+            burned = self._suppress_stranded_burned_cues(
+                burned, persian.get("moments") or []
+            )
             return mode, build_burned_caption_props(burned)
 
         # Sidecar-only still validates approved-script alignment before browser work.
         self._aligned_subtitle_cues(persian)
         return mode, []
+
+
+    @staticmethod
+    def _suppress_stranded_burned_cues(cues, moments, *, fragment_seconds: float = 1.0):
+        """Drop a burned cue when all paintable time outside moments is a flash.
+
+        Sidecar subtitles remain complete. Editorial moments own overlapping frames;
+        if the remaining burned-caption visibility across the cue is under one second,
+        painting it creates a flash rather than a readable caption.
+        """
+        kept = []
+        for cue in cues:
+            intervals = [(cue.start_seconds, cue.end_seconds)]
+            for moment in moments:
+                if not isinstance(moment, dict):
+                    continue
+                m0 = float(moment.get("startSeconds", 0.0))
+                m1 = float(moment.get("endSeconds", 0.0))
+                if m1 <= m0:
+                    continue
+                next_intervals = []
+                for a, b in intervals:
+                    if b <= m0 or a >= m1:
+                        next_intervals.append((a, b))
+                        continue
+                    if a < m0:
+                        next_intervals.append((a, min(b, m0)))
+                    if b > m1:
+                        next_intervals.append((max(a, m1), b))
+                intervals = next_intervals
+            visible = sum(max(0.0, b - a) for a, b in intervals)
+            if visible >= fragment_seconds:
+                kept.append(cue)
+            # Less than fragment_seconds of paintable time is a flash; sidecar remains.
+        return kept
 
     @staticmethod
     def _aligned_subtitle_cues(

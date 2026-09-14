@@ -61,7 +61,26 @@ python -m lib.persian_video_workflow attempt <project-id>
 python -m lib.persian_video_workflow complete <project-id> --evidence-json /abs/evidence.json
 ```
 
+For `no_copy_preflight`, never write `artifacts/edit_decisions.json` directly. Use the digest-bound draft lifecycle; failed probes remain under `.drafts/` / `.preflight/` and cannot replace the canonical edit:
+
+```bash
+python -m lib.persian_video_workflow edit-stage <project-id> <attempt-id> --json /allowed/edit-decisions.json
+python -m lib.persian_video_workflow edit-preflight <project-id> <attempt-id>
+python -m lib.persian_video_workflow edit-promote <project-id> <attempt-id>
+printf '{"attempt_id":"<attempt-id>"}' > /tmp/preflight-evidence.json
+python -m lib.persian_video_workflow complete <project-id> --phase no_copy_preflight --evidence-json /tmp/preflight-evidence.json
+```
+
+Long-running current-phase commands should use the durable runner instead of depending on one chat/terminal session. Use `--` before the child command. Re-running the same idempotence key reuses the same logical job; `job-status` reconciles detached/orphaned execution before any retry:
+
+```bash
+python -m lib.persian_video_workflow job-start <project-id> <job-id> --phase <next-phase> --idempotence-key <key> -- <command> [args...]
+python -m lib.persian_video_workflow job-status <project-id> <job-id>
+```
+
 If a review requires going backward, use `send-back`; never edit `next_phase` by hand. The code preserves attempt history and enforces the manifest's send-back ceiling.
+
+If explicit new user feedback identifies defects in a rendered candidate after that automatic ceiling is exhausted, use `python -m lib.persian_video_workflow send-back <project-id> <target-phase> --reason "..." --user-directed-revision` to open one fresh bounded revision cycle. The workflow records the old counters, archives invalid downstream checkpoints, and starts a fresh wall-time window; never reset counters or workflow JSON by hand.
 
 Before reading any path not already opened by the current tool call, enforce project isolation:
 

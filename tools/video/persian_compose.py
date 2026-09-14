@@ -72,7 +72,16 @@ from lib.persian_render_qa import (
     find_coverage_gaps,
 )
 from lib.persian_motion_qa import audit_render_motion
-from lib.persian_music import audit_music, audio_props_with_music, build_music_track
+from lib.paths import REPO_ROOT
+from lib.persian_music import (
+    DEFAULT_MUSIC_BASE_VOLUME,
+    DEFAULT_MUSIC_DUCK_VOLUME,
+    DEFAULT_MUSIC_FADE_SECONDS,
+    DEFAULT_MUSIC_FLAT_VOLUME,
+    audit_music,
+    audio_props_with_music,
+    build_music_track,
+)
 from lib.persian_srt import audit_cues, build_cues, render_srt
 from lib.persian_captions import (
     BURNED_CAPTION_MODES,
@@ -401,7 +410,9 @@ class PersianCompose(BaseTool):
 
             try:
                 qa = audit_render_luminance(
-                    output_path, beat_windows=props["typographicBeats"]
+                    output_path,
+                    beat_windows=props["typographicBeats"],
+                    moment_windows=props["moments"],
                 )
             except RuntimeError as exc:
                 return ToolResult(
@@ -719,7 +730,10 @@ class PersianCompose(BaseTool):
         track = build_music_track(raw_track) if raw_track else None
         if track is not None:
             audio_props["music"] = self._stage(Path(track.path), staging_dir, run_id)
-            audio_props.setdefault("musicFadeSeconds", 1.5)
+            audio_props.setdefault("musicFlatVolume", DEFAULT_MUSIC_FLAT_VOLUME)
+            audio_props.setdefault("musicBaseVolume", DEFAULT_MUSIC_BASE_VOLUME)
+            audio_props.setdefault("musicDuckVolume", DEFAULT_MUSIC_DUCK_VOLUME)
+            audio_props.setdefault("musicFadeSeconds", DEFAULT_MUSIC_FADE_SECONDS)
         music_audit = audit_music(
             track=track,
             narrated=narrated,
@@ -1075,7 +1089,7 @@ class PersianCompose(BaseTool):
         """Copy one media file into the staging dir; return its staticFile path."""
         resolved = source.expanduser()
         if not resolved.is_absolute():
-            resolved = (Path.cwd() / resolved).resolve()
+            resolved = (REPO_ROOT / resolved).resolve()
         if not resolved.exists():
             raise FileNotFoundError(
                 f"Media file not found: {source}. A missing file renders as a silent "

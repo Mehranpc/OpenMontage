@@ -12,6 +12,30 @@ import tempfile
 from typing import Any
 
 
+class FilmTypePreflightError(ValueError):
+    """Structured browser-prepass refusal with machine-readable diagnostics."""
+
+    def __init__(self, message: str, *, code: str = "FILM_TYPE_PREPASS", diagnostics: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.code = code
+        self.diagnostics = diagnostics or {}
+
+
+def _split_diagnostics(detail: str) -> tuple[str, str, dict[str, Any]]:
+    marker = "OPENMONTAGE_DIAGNOSTICS="
+    if marker not in detail:
+        return detail.strip(), "FILM_TYPE_PREPASS", {}
+    human, raw = detail.split(marker, 1)
+    try:
+        payload = json.loads(raw.strip())
+    except (TypeError, ValueError):
+        return human.strip(), "FILM_TYPE_PREPASS", {}
+    if not isinstance(payload, dict):
+        return human.strip(), "FILM_TYPE_PREPASS", {}
+    diagnostics = payload.get("watermarkDiagnostics")
+    return human.strip(), str(payload.get("code") or "FILM_TYPE_PREPASS"), diagnostics if isinstance(diagnostics, dict) else {}
+
+
 def prepare_film_type_props(props: dict[str, Any], composer: Path) -> dict[str, Any]:
     """Return props measured by the same browser/renderer code that will paint.
 
@@ -44,9 +68,11 @@ def prepare_film_type_props(props: dict[str, Any], composer: Path) -> dict[str, 
                         break
                     except (ValueError, KeyError, TypeError):
                         pass
-            raise ValueError(
+            human, code, diagnostics = _split_diagnostics(detail)
+            raise FilmTypePreflightError(
                 "Film Type requires real browser font measurement; no estimated "
-                "or Legacy fallback was used. Browser preparation failed:\n" + detail
+                "or Legacy fallback was used. Browser preparation failed:\n" + human,
+                code=code, diagnostics=diagnostics,
             )
         try:
             prepared = json.loads(result.read_text(encoding="utf-8"))
@@ -64,7 +90,7 @@ def prepare_film_type_props(props: dict[str, Any], composer: Path) -> dict[str, 
         if prepared.get("watermarkPlanMeasured") is not True:
             raise ValueError("Film Type watermark planning was not completed")
         # The prepass may add geometry, never rewrite approved content or timing.
-        additions = {"filmType", "watermarkPlan", "watermarkMeasurement", "watermarkPlanMeasured", "moments"}
+        additions = {"filmType", "watermarkPlan", "watermarkMeasurement", "watermarkPlanMeasured", "watermarkDiagnostics", "moments"}
         for key in (set(props) | set(prepared)) - additions:
             if prepared.get(key) != props.get(key):
                 raise ValueError(f"Film Type preparation unexpectedly changed {key}")

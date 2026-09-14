@@ -227,8 +227,13 @@ def test_no_copy_stage_and_helpers(tmp_path):
 def test_preflight_refuses_a_weak_single_event_opening_before_render_work():
     payload = {
         "persian": {
+            "format": "vertical",
             "durationSeconds": 12.0,
-            "shots": [{"id": "s1", "startSeconds": 0.0, "endSeconds": 12.0}],
+            "shots": [{
+                "id": "s1", "source": "unused.mp4",
+                "startSeconds": 0.0, "endSeconds": 12.0,
+                "camera": "none", "attribution": "Regression fixture",
+            }],
             "moments": [],
             "typographicBeats": [],
         }

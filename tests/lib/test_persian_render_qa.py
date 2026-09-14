@@ -16,6 +16,7 @@ import pytest
 from lib.persian_render_qa import (
     DEAD_LUMA_FAIL,
     DEAD_LUMA_WARN,
+    audit_render_luminance,
     find_coverage_gaps,
     find_dark_runs,
     window_mean,
@@ -125,3 +126,33 @@ class TestWindowMeanBinWidth:
     def test_one_second_bins_still_overlap(self) -> None:
         samples = [(0.0, 60.0), (1.0, 25.0), (2.0, 60.0)]
         assert window_mean(samples, 0.5, 1.5) == pytest.approx(42.5)
+
+class TestTypographicPlateLuminance:
+    def test_dark_plate_with_real_moment_text_is_not_dead_black(self, monkeypatch, tmp_path) -> None:
+        samples = [(float(i), 20.0 if 19 <= i < 25 else 80.0) for i in range(0, 51)]
+        monkeypatch.setattr(
+            "lib.persian_render_qa.measure_per_second_luma",
+            lambda *a, **k: (samples, 0.1),
+        )
+        qa = audit_render_luminance(
+            tmp_path / "render.mp4",
+            beat_windows=[{"id": "beat-5", "startSeconds": 18.9, "endSeconds": 25.58}],
+            moment_windows=[{"id": "moment-3", "startSeconds": 18.9, "endSeconds": 25.58}],
+        )
+        assert qa.passed is True
+        assert qa.dead_runs == []
+        assert qa.beat_luma[0]["meanYavg"] == pytest.approx(35.0)
+
+    def test_dark_plate_without_moment_text_still_fails(self, monkeypatch, tmp_path) -> None:
+        samples = [(float(i), 20.0 if 19 <= i < 25 else 80.0) for i in range(0, 51)]
+        monkeypatch.setattr(
+            "lib.persian_render_qa.measure_per_second_luma",
+            lambda *a, **k: (samples, 0.1),
+        )
+        qa = audit_render_luminance(
+            tmp_path / "render.mp4",
+            beat_windows=[{"id": "beat-5", "startSeconds": 18.9, "endSeconds": 25.58}],
+            moment_windows=[],
+        )
+        assert qa.passed is False
+        assert qa.dead_runs

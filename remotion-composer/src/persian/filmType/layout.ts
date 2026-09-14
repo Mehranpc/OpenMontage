@@ -55,7 +55,33 @@ export type FilmTypeLayout = {
   version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14; inputHash: string; moments: Record<string, FilmMomentLayout>;
   lockup: FilmLockup | null; warnings: string[];
 };
-type TimedRect = Rect & { startSeconds: number; endSeconds: number };
+type TimedRect = Rect & {
+  startSeconds: number; endSeconds: number;
+  ownerType?: "subject" | "moment" | "caption";
+  ownerId?: string; shotId?: string; regionIndex?: number;
+};
+type WatermarkDiagnosticBlocker = {
+  blockerType: "subject-region" | "text-collision" | "caption-collision" | "text-clearance" | "safe-area";
+  ownerId?: string; shotId?: string; regionIndex?: number;
+  zone: string; startSeconds: number; endSeconds: number; secondsAffected: number;
+  clearancePx: number; candidateRect: Rect; effectiveCandidateRect: Rect;
+  rawBlockerRect?: Rect; effectiveBlockerRect?: Rect;
+};
+export type WatermarkDiagnostics = {
+  durationSeconds: number; introDelaySeconds: number; eligibleSeconds: number;
+  coveredSeconds: number; missingSeconds: number;
+  coverageRatio: number; coverageRatioEligibleWindow: number;
+  coverageFloor: number; coverageTarget: number;
+  suppressionGaps: Array<{startSeconds:number;endSeconds:number}>;
+  candidateZones: string[]; rejectedIntervals: WatermarkDiagnosticBlocker[];
+  bestSchedule: NonNullable<PersianVideoProps["watermarkPlan"]>;
+  topBlockers: Array<{
+    blockerType: WatermarkDiagnosticBlocker["blockerType"]; ownerId?: string; shotId?: string;
+    regionIndex?: number; secondsAffected: number; intervals: Array<{startSeconds:number;endSeconds:number}>;
+    zones: string[]; projectedCoverageUpperBoundIfAbsent: number;
+  }>;
+};
+type WatermarkDiagnosticSink = {candidateZones:string[];rejectedIntervals:WatermarkDiagnosticBlocker[]};
 
 const round = (n: number) => Math.round(n * 1000) / 1000;
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
@@ -252,11 +278,11 @@ export function timedAvoidRegions(props: PersianVideoProps): TimedRect[] {
   const result: TimedRect[] = [];
   for (const shot of props.shots) {
     if (shot.avoidRegions !== undefined && !Array.isArray(shot.avoidRegions)) throw new Error(`Shot ${shot.id}: avoidRegions must be an array.`);
-    for (const region of shot.avoidRegions ?? []) {
+    for (const [regionIndex,region] of (shot.avoidRegions ?? []).entries()) {
       if (![region.x,region.y,region.w,region.h].every(Number.isFinite) || region.x < 0 || region.y < 0 || region.w <= 0 || region.h <= 0 || region.x + region.w > 1 || region.y + region.h > 1) throw new Error(`Shot ${shot.id}: invalid normalized avoid region.`);
       const start = region.startSeconds ?? shot.startSeconds, end = region.endSeconds ?? shot.endSeconds;
       if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || start < shot.startSeconds || end > shot.endSeconds) throw new Error(`Shot ${shot.id}: avoid region times must be absolute timeline seconds within this shot.`);
-      result.push({...region,startSeconds:start,endSeconds:end});
+      result.push({...region,startSeconds:start,endSeconds:end,ownerType:"subject",ownerId:shot.id,shotId:shot.id,regionIndex});
     }
   }
   return result;
@@ -497,7 +523,45 @@ function watermarkRelocations(plan: NonNullable<PersianVideoProps["watermarkPlan
   return moves;
 }
 
-function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record<string,FilmMomentLayout>, lockup: FilmLockup | null, avoid: TimedRect[]): NonNullable<PersianVideoProps["watermarkPlan"]> {
+function mergeDiagnosticIntervals(intervals:Array<{startSeconds:number;endSeconds:number}>):Array<{startSeconds:number;endSeconds:number}>{
+  const ordered=[...intervals].filter(x=>x.endSeconds>x.startSeconds).sort((a,b)=>a.startSeconds-b.startSeconds);
+  const merged:Array<{startSeconds:number;endSeconds:number}>=[];
+  for(const span of ordered){
+    const last=merged[merged.length-1];
+    if(last&&span.startSeconds<=last.endSeconds+1e-6)last.endSeconds=Math.max(last.endSeconds,span.endSeconds);
+    else merged.push({startSeconds:span.startSeconds,endSeconds:span.endSeconds});
+  }
+  return merged.map(span=>({startSeconds:round(span.startSeconds),endSeconds:round(span.endSeconds)}));
+}
+
+function buildWatermarkDiagnostics(
+  props:PersianVideoProps,p:FilmProfile,plan:NonNullable<PersianVideoProps["watermarkPlan"]>,sink:WatermarkDiagnosticSink,
+):WatermarkDiagnostics{
+  const cfg=p.watermark,duration=props.durationSeconds,intro=Math.min(duration,cfg.introDelaySeconds??0);
+  const covered=watermarkCoveredSeconds(plan),coverage=duration>0?covered/duration:0,eligible=Math.max(0,duration-intro);
+  const possibleRatio=duration>0?eligible/duration:0;
+  const floor=duration<20?Math.min(cfg.minCoverageRatio??0,possibleRatio):(cfg.minCoverageRatio??0);
+  const target=cfg.targetCoverageRatio??floor;
+  const slots=[...plan].sort((a,b)=>a.startSeconds-b.startSeconds);
+  const gaps:Array<{startSeconds:number;endSeconds:number}>=[]; let cursor=intro;
+  for(const slot of slots){if(slot.startSeconds>cursor+1e-6)gaps.push({startSeconds:round(cursor),endSeconds:round(slot.startSeconds)});cursor=Math.max(cursor,slot.endSeconds);}
+  if(cursor<duration-1e-6)gaps.push({startSeconds:round(cursor),endSeconds:round(duration)});
+  type Aggregate={blockerType:WatermarkDiagnosticBlocker["blockerType"];ownerId?:string;shotId?:string;regionIndex?:number;intervals:Array<{startSeconds:number;endSeconds:number}>;zones:Set<string>};
+  const groups=new Map<string,Aggregate>();
+  for(const item of sink.rejectedIntervals){
+    const key=[item.blockerType,item.ownerId??"",item.shotId??"",item.regionIndex??""].join("|");
+    const current=groups.get(key)??{blockerType:item.blockerType,ownerId:item.ownerId,shotId:item.shotId,regionIndex:item.regionIndex,intervals:[],zones:new Set<string>()};
+    current.intervals.push({startSeconds:item.startSeconds,endSeconds:item.endSeconds});current.zones.add(item.zone);groups.set(key,current);
+  }
+  const topBlockers=[...groups.values()].map(group=>{
+    const intervals=mergeDiagnosticIntervals(group.intervals);
+    const seconds=intervals.reduce((sum,span)=>sum+span.endSeconds-span.startSeconds,0);
+    return {blockerType:group.blockerType,ownerId:group.ownerId,shotId:group.shotId,regionIndex:group.regionIndex,secondsAffected:round(seconds),intervals,zones:[...group.zones].sort(),projectedCoverageUpperBoundIfAbsent:round(Math.min(1,coverage+(duration>0?seconds/duration:0)))};
+  }).sort((a,b)=>b.secondsAffected-a.secondsAffected||String(a.ownerId??"").localeCompare(String(b.ownerId??""))).slice(0,12);
+  return {durationSeconds:round(duration),introDelaySeconds:round(intro),eligibleSeconds:round(eligible),coveredSeconds:round(covered),missingSeconds:round(Math.max(0,duration-covered)),coverageRatio:round(coverage),coverageRatioEligibleWindow:round(eligible>0?covered/eligible:0),coverageFloor:round(floor),coverageTarget:round(target),suppressionGaps:gaps,candidateZones:[...sink.candidateZones],rejectedIntervals:[...sink.rejectedIntervals],bestSchedule:[...plan],topBlockers};
+}
+
+function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record<string,FilmMomentLayout>, lockup: FilmLockup | null, avoid: TimedRect[], diagnosticSink?: WatermarkDiagnosticSink): NonNullable<PersianVideoProps["watermarkPlan"]> {
   if (!lockup) return [];
   const dims=FORMAT_DIMENSIONS[props.format],safe=watermarkSafeArea(p,props.format),l=p.layout,cfg=p.watermark;
   const repair=p.profileVersion === "2.3.0" || p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0")))));
@@ -554,42 +618,60 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
     return total;
   };
   if (regionAvoid.length) order.sort((a,b)=>regionBlockedSeconds(a)-regionBlockedSeconds(b));
-  const textRects: TimedRect[]=props.moments.map(m=>({...layouts[m.id].rect,h:layouts[m.id].rect.h+l.motionClearancePx/dims.height,startSeconds:m.startSeconds,endSeconds:m.endSeconds}));
+  const textRects: TimedRect[]=props.moments.map(m=>({...layouts[m.id].rect,h:layouts[m.id].rect.h+l.motionClearancePx/dims.height,startSeconds:m.startSeconds,endSeconds:m.endSeconds,ownerType:"moment",ownerId:m.id}));
   const textLabels:string[]=props.moments.map(m=>`moment ${m.id}`);
   const captionActive=props.captionMode === "burned_captions" || props.captionMode === "hybrid";
   if(captionActive) {
     for(const caption of props.captions ?? []) {
-      textRects.push({...captionBandRect(props.format, props.design),startSeconds:caption.startSeconds,endSeconds:caption.endSeconds});
+      textRects.push({...captionBandRect(props.format, props.design),startSeconds:caption.startSeconds,endSeconds:caption.endSeconds,ownerType:"caption",ownerId:caption.id});
       textLabels.push(`caption ${caption.id}`);
     }
   }
   const blockers:string[]=[];
+  if(diagnosticSink) diagnosticSink.candidateZones=[...order];
+  const diagnosticKeys=new Set<string>();
   const visualClearancePx=(p.profileVersion==="2.12.0" || p.profileVersion==="2.13.0" || p.profileVersion==="2.14.0")
     ? Math.max(cfg.minTextClearancePx??0,lockup.heightPx)
     : l.collisionMarginPx;
-  const noteBlocker=(r:Rect,start:number,end:number,label:string,o:TimedRect)=>{
+  const noteBlocker=(r:Rect,start:number,end:number,label:string,o:TimedRect|undefined,blockerType:WatermarkDiagnosticBlocker["blockerType"],clearancePx:number)=>{
     const zone=Object.keys(rects).find(z=>rects[z]===r)??"unknown";
-    const detail=`${zone} ${start}-${end}s blocked by ${label} (${o.startSeconds}-${o.endSeconds}s)`;
+    const overlapStart=Math.max(start,o?.startSeconds??start),overlapEnd=Math.min(end,o?.endSeconds??end);
+    if(overlapEnd<=overlapStart)return;
+    const detail=`${zone} ${start}-${end}s blocked by ${label}${o?` (${o.startSeconds}-${o.endSeconds}s)`:""}`;
     if(blockers.length<3&&!blockers.includes(detail))blockers.push(detail);
+    if(!diagnosticSink)return;
+    const key=[blockerType,o?.ownerId??"",o?.shotId??"",o?.regionIndex??"",zone,round(overlapStart),round(overlapEnd),clearancePx].join("|");
+    if(diagnosticKeys.has(key))return; diagnosticKeys.add(key);
+    const raw=o?{x:o.x,y:o.y,w:o.w,h:o.h}:undefined;
+    diagnosticSink.rejectedIntervals.push({
+      blockerType,ownerId:o?.ownerId,shotId:o?.shotId,regionIndex:o?.regionIndex,zone,
+      startSeconds:round(overlapStart),endSeconds:round(overlapEnd),secondsAffected:round(overlapEnd-overlapStart),
+      clearancePx,candidateRect:{...r},effectiveCandidateRect:expand(r,clearancePx/dims.width,clearancePx/dims.height),
+      rawBlockerRect:raw,effectiveBlockerRect:raw,
+    });
   };
-  const clearText=(r:Rect,start:number,end:number,marginPx:number)=>{
+  const clearText=(r:Rect,start:number,end:number,marginPx:number,clearanceOnly=false)=>{
     const envelope=expand(r,marginPx/dims.width,marginPx/dims.height);
     const index=textRects.findIndex(o=>o.startSeconds<end&&o.endSeconds>start&&intersects(envelope,o));
     if(index<0)return true;
-    noteBlocker(r,start,end,textLabels[index]??`text ${index}`,textRects[index]);
+    const owner=textRects[index];
+    const kind=clearanceOnly?"text-clearance":owner.ownerType==="caption"?"caption-collision":"text-collision";
+    noteBlocker(r,start,end,textLabels[index]??`text ${index}`,owner,kind,marginPx);
     return false;
   };
   const clearSubject=(r:Rect,start:number,end:number)=>{
     const envelope=expand(r,l.collisionMarginPx/dims.width,l.collisionMarginPx/dims.height);
     const index=subjectAvoid.findIndex(o=>o.startSeconds<end&&o.endSeconds>start&&intersects(envelope,o));
     if(index<0)return true;
-    noteBlocker(r,start,end,`subject region ${index}`,subjectAvoid[index]);
+    noteBlocker(r,start,end,`subject region ${index}`,subjectAvoid[index],"subject-region",l.collisionMarginPx);
     return false;
   };
-  const hardClear=(r:Rect,start:number,end:number)=>inWatermarkSafe(r,safe)
-    && clearText(r,start,end,l.collisionMarginPx) && clearSubject(r,start,end);
+  const hardClear=(r:Rect,start:number,end:number)=>{
+    if(!inWatermarkSafe(r,safe)){noteBlocker(r,start,end,"safe area",undefined,"safe-area",0);return false;}
+    return clearText(r,start,end,l.collisionMarginPx) && clearSubject(r,start,end);
+  };
   const preferredClear=(r:Rect,start:number,end:number)=>hardClear(r,start,end)
-    && clearText(r,start,end,visualClearancePx);
+    && clearText(r,start,end,visualClearancePx,true);
   const clear=(p.profileVersion==="2.12.0" || p.profileVersion==="2.13.0" || p.profileVersion==="2.14.0")?preferredClear:hardClear;
   const timelineBoundaries=[...props.shots.flatMap(s=>[s.startSeconds,s.endSeconds]),...props.moments.flatMap(m=>[m.startSeconds,m.endSeconds]),...(captionActive?(props.captions ?? []).flatMap(c=>[c.startSeconds,c.endSeconds]):[]),...subjectAvoid.flatMap(r=>[r.startSeconds,r.endSeconds])];
   if(p.profileVersion==="2.13.0" || p.profileVersion==="2.14.0") return planCoverageAwareBrand(props.durationSeconds,timelineBoundaries,order,rects,preferredClear,cfg,cfg.introDelaySeconds??0,()=>blockers.join("; "));
@@ -704,7 +786,9 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
   if(profile.profileVersion === "2.10.0" || profile.profileVersion === "2.11.0" || profile.profileVersion === "2.12.0" || (profile.profileVersion === "2.13.0" || profile.profileVersion === "2.14.0")) warnings.push("Film Type 2.10+: legibility comes from a small per-row field plus a two-layer glyph shadow. This is a readability aid, not a measured contrast guarantee; review bright footage yourself. Pin profileVersion 2.9.0 to restore the previous single-block field.");
   const lockup=measureLockup(props,profile);
   const filmType: FilmTypeLayout={version:profile.layoutVersion,inputHash,moments:layouts,lockup,warnings};
-  const watermarkPlan=planWatermark(props,profile,layouts,lockup,avoid);
+  const watermarkDiagnosticSink:WatermarkDiagnosticSink={candidateZones:[],rejectedIntervals:[]};
+  const watermarkPlan=planWatermark(props,profile,layouts,lockup,avoid,watermarkDiagnosticSink);
+  const watermarkDiagnostics=lockup?buildWatermarkDiagnostics(props,profile,watermarkPlan,watermarkDiagnosticSink):undefined;
   if((profile.profileVersion==="2.12.0" || profile.profileVersion==="2.13.0" || profile.profileVersion==="2.14.0")&&lockup){
     const slots=[...watermarkPlan].sort((a,b)=>a.startSeconds-b.startSeconds),gaps:string[]=[];
     let cursor=profile.watermark.introDelaySeconds??0;
@@ -714,13 +798,13 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
   }
   if((profile.profileVersion==="2.13.0" || profile.profileVersion==="2.14.0")&&lockup){
     const cfg=profile.watermark,intro=Math.min(props.durationSeconds,cfg.introDelaySeconds??0);
-    const possibleRatio=Math.max(0,(props.durationSeconds-intro)/props.durationSeconds);
-    const coverage=watermarkCoveredSeconds(watermarkPlan)/props.durationSeconds;
-    const minimum=props.durationSeconds<20
-      ? Math.min(cfg.minCoverageRatio!,possibleRatio)
-      : cfg.minCoverageRatio!;
-    const target=cfg.targetCoverageRatio!;
-    if(coverage+1e-6<minimum) throw new Error(`Film Type ${profile.profileVersion} watermark coverage ${(coverage*100).toFixed(1)}% is below the required ${(minimum*100).toFixed(1)}%. Re-edit text/subject timing or footage so the brand can occupy legal slots; do not ship a brief isolated watermark dwell.`);
+    const coverage=watermarkDiagnostics?.coverageRatio??(watermarkCoveredSeconds(watermarkPlan)/props.durationSeconds);
+    const minimum=watermarkDiagnostics?.coverageFloor??cfg.minCoverageRatio!;
+    const target=watermarkDiagnostics?.coverageTarget??cfg.targetCoverageRatio!;
+    if(coverage+1e-6<minimum){
+      const human=`Film Type ${profile.profileVersion} watermark coverage ${(coverage*100).toFixed(1)}% is below the required ${(minimum*100).toFixed(1)}%. Re-edit text/subject timing or footage so the brand can occupy legal slots; do not ship a brief isolated watermark dwell.`;
+      throw new Error(`${human} OPENMONTAGE_DIAGNOSTICS=${JSON.stringify({code:"WATERMARK_COVERAGE",watermarkDiagnostics})}`);
+    }
     if(coverage+1e-6<target) warnings.push(`watermark-coverage-below-target: ${(coverage*100).toFixed(1)}% visible vs ${(target*100).toFixed(1)}% target; minimum coverage still passes.`);
     if(props.durationSeconds>=(cfg.longFormThresholdSeconds??Infinity)){
       const capacity=Math.max(0,Math.floor((props.durationSeconds-intro)/cfg.minDwellSeconds)-1);
@@ -741,7 +825,7 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
   if(props.filmType && (stableJSON(props.filmType)!==stableJSON(filmType) || stableJSON(props.watermarkPlan)!==stableJSON(watermarkPlan))) {
     throw new Error("Saved Film Type geometry is stale or differs from this browser's font measurement. Re-run persian_compose to create a fresh review snapshot.");
   }
-  return {...props,filmType,watermarkPlan,watermarkPlanMeasured:true,
+  return {...props,filmType,watermarkPlan,watermarkPlanMeasured:true,watermarkDiagnostics,
     watermarkMeasurement:lockup?{widthPx:lockup.widthPx,heightPx:lockup.heightPx,layout:"two-line" as const,measured:true as const}:undefined,
     moments:props.moments.map(m=>({...m,layoutGeometry:layouts[m.id].rect,stackHeightPx:layouts[m.id].heightPx,stackWidthPx:layouts[m.id].widthPx}))};
 }

@@ -257,6 +257,38 @@ def test_hybrid_mode_keeps_sidecar_approved_copy(tmp_path) -> None:
     assert script in (tmp_path / "final.srt").read_text(encoding="utf-8-sig")
 
 
+
+def test_opening_caption_fragment_before_hook_is_suppressed_not_flashed() -> None:
+    script = "اگه می‌خوای سریع‌تر پیشرفت کنی،"
+    persian = {
+        "platformTarget": "instagram-reels",
+        "captionMode": "hybrid",
+        "_approvedSubtitleScript": approved(script),
+        "moments": [{
+            "id": "hook", "kind": "hook", "startSeconds": 0.2, "endSeconds": 4.0,
+            "segments": [{"role": "hero", "text": "آهسته‌تر جلو برو"}],
+        }],
+        "audio": {"wordTimings": timed(script.split(), start=0.0, duration=0.28, gap=0.02)},
+    }
+    mode, captions = ScriptAlignedPersianCompose()._build_caption_props(persian)
+    assert mode == "hybrid"
+    assert captions == []
+
+
+def test_readable_caption_head_before_moment_is_not_suppressed() -> None:
+    script = "این کپشن زمان کافی برای خواندن دارد."
+    persian = {
+        "captionMode": "hybrid",
+        "_approvedSubtitleScript": approved(script),
+        "moments": [{
+            "id": "later", "kind": "statement", "startSeconds": 1.5, "endSeconds": 4.0,
+            "segments": [{"role": "hero", "text": "متن لحظه"}],
+        }],
+        "audio": {"wordTimings": timed(script.split(), start=0.0, duration=0.30, gap=0.02)},
+    }
+    _, captions = ScriptAlignedPersianCompose()._build_caption_props(persian)
+    assert captions
+
 def test_film_type_213_regroups_real_width_risk_before_browser_fit() -> None:
     script = "پژوهش‌ها نشون می‌دن وقتی آدم‌ها برای انجام یک کار پاداش می‌گیرن،"
     persian = {
@@ -310,23 +342,21 @@ def test_hybrid_build_props_creates_burned_approved_copy(tmp_path) -> None:
             "attribution": "Video by Someone on Pexels",
         }],
         "moments": [{
-            "id": "m1", "kind": "statement", "startSeconds": 0.4,
-            "endSeconds": 4.4, "anchorText": "درخواست کردن",
+            "id": "m1", "kind": "statement", "startSeconds": 9.0,
+            "endSeconds": 11.0, "anchorText": "متن دیگر",
             "segments": [{"role": "hero", "text": "درخواست کردن درست است"}],
         }],
         "audio": {
-            "wordTimings": timed(["درخواست", "گردن", "درست", "است."]),
+            "wordTimings": timed(["درخواست", "گردن", "درست", "است."], start=0.0),
         },
     }
-    props, _ = ScriptAlignedPersianCompose()._build_props(
-        persian, tmp_path / "stage", "hybrid-test"
-    )
-    assert props["captionMode"] == "hybrid"
-    assert props["captions"]
-    burned = " ".join(caption["text"] for caption in props["captions"])
+    mode, captions = ScriptAlignedPersianCompose()._build_caption_props(persian)
+    assert mode == "hybrid"
+    assert captions
+    burned = " ".join(caption["text"] for caption in captions)
     assert burned == script
     assert "گردن" not in burned
-    assert all(1 <= len(caption["lines"]) <= 2 for caption in props["captions"])
+    assert all(1 <= len(caption["lines"]) <= 2 for caption in captions)
 
 
 def test_short_hybrid_film_type_keeps_watermark_after_intro_delay(tmp_path) -> None:

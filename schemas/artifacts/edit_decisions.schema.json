@@ -6,7 +6,6 @@
   "type": "object",
   "required": [
     "version",
-    "cuts",
     "render_runtime"
   ],
   "properties": {
@@ -472,7 +471,7 @@
     },
     "persian": {
       "type": "object",
-      "description": "Props for the persian-footage composition, consumed by tools/video/persian_compose.py and mirrored by remotion-composer/src/persian/types.ts. Present only when renderer_family='persian-footage', which carries an empty top-level `cuts` array because its timeline lives in `persian.shots` — the Persian composition IS the template and has no cut list. Times are seconds at this boundary and converted to frames exactly once, inside the components.",
+      "description": "Props for the persian-footage composition, consumed by tools/video/persian_compose.py and mirrored by remotion-composer/src/persian/types.ts. Present only when renderer_family='persian-footage'. Its timeline lives in `persian.shots`, so top-level `cuts` may be omitted; legacy Persian artifacts may retain it only as an empty array. The Persian composition IS the template and has no cut list. Times are seconds at this boundary and converted to frames exactly once, inside the components.",
       "required": [
         "format",
         "durationSeconds",
@@ -1298,5 +1297,24 @@
       "type": "object"
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "required": ["renderer_family"],
+        "properties": {
+          "renderer_family": {"const": "persian-footage"}
+        }
+      },
+      "then": {
+        "required": ["persian"],
+        "properties": {
+          "cuts": {"maxItems": 0}
+        }
+      },
+      "else": {
+        "required": ["cuts"]
+      }
+    }
+  ],
   "additionalProperties": false
 }

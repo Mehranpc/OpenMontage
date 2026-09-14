@@ -41,7 +41,7 @@
  * how the floating «نفر» happened in the first place.
  */
 
-import type { FilmTypeLayout } from "./filmType/layout";
+import type { FilmTypeLayout, WatermarkDiagnostics } from "./filmType/layout";
 import type { CameraMove } from "./motion";
 import type { PersianFormat } from "./tokens";
 import { compareKey, splitWords } from "./text";
@@ -340,6 +340,8 @@ export type PersianVideoProps = {
   readonly watermark?: PersianWatermark;
   readonly watermarkPlan?: readonly { zone: string; startSeconds: number; endSeconds: number; rect: { x: number; y: number; w: number; h: number }; transition: string; reason?: string; }[];
   readonly watermarkPlanMeasured?: boolean;
+  /** Structured planner evidence. Derived by browser preflight; never authored. */
+  readonly watermarkDiagnostics?: WatermarkDiagnostics;
   readonly watermarkMeasurement?: { widthPx: number; heightPx: number; layout: "single-line" | "two-line"; measured: true };
   /** Total duration. Authoritative — `calculateMetadata` uses it directly. */
   readonly durationSeconds: number;
@@ -359,9 +361,9 @@ export const DEFAULT_WATERMARK: PersianWatermark = {
 };
 
 export const DEFAULT_AUDIO_LEVELS = {
-  musicFlatVolume: 0.5,
-  musicBaseVolume: 0.6,
-  musicDuckVolume: 0.36,
+  musicFlatVolume: 0.65,
+  musicBaseVolume: 0.72,
+  musicDuckVolume: 0.55,
   musicFadeSeconds: 1.5,
 } as const;
 
