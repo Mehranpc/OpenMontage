@@ -711,13 +711,16 @@ def request_send_back(
     reason: str,
     pipeline_dir: Path | None = None,
     now: datetime | None = None,
+    user_directed_revision: bool = False,
 ) -> dict[str, Any]:
-    """Rewind a bounded production without erasing retry history."""
+    """Rewind a bounded production; explicit user feedback may open one fresh cycle."""
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
-    assert_within_wall_time(state, now=now)
-    if state.get("status") == "awaiting_human":
+    effective_now = now or datetime.now(timezone.utc)
+    if not user_directed_revision:
+        assert_within_wall_time(state, now=effective_now)
+    if state.get("status") == "awaiting_human" and not user_directed_revision:
         raise PersianVideoWorkflowError(
-            "workflow already stopped at awaiting_human; use the checkpoint approval protocol"
+            "workflow already stopped at awaiting_human; use an explicit user-directed revision or the checkpoint approval protocol"
         )
     if target_phase not in PHASES[3:-1]:
         raise PersianVideoWorkflowError(
@@ -733,13 +736,27 @@ def request_send_back(
             f"send-back must rewind the workflow; current={current!r}, target={target_phase!r}"
         )
 
-    used = int(state.get("send_backs", 0)) + 1
-    limit = int(state["budgets"]["max_send_backs"])
-    if used > limit:
-        raise PersianVideoWorkflowError(
-            f"send-back budget exhausted: {used} requested > {limit} allowed"
-        )
-    state["send_backs"] = used
+    previous_send_backs = int(state.get("send_backs", 0))
+    previous_attempts = dict(state.get("attempts") or {})
+    if user_directed_revision:
+        # The bounded protocol explicitly permits a fresh cycle after new user
+        # feedback.  Record the provenance and reset only operational counters at
+        # or after the requested rewind; never silently expand the automatic budget.
+        state["user_revision_cycles"] = int(state.get("user_revision_cycles", 0)) + 1
+        state["send_backs"] = 0
+        state["budget_window_started_at"] = effective_now.isoformat()
+        state["attempts"] = {
+            key: value for key, value in previous_attempts.items()
+            if key in PHASES and _phase_index(key) < target_index
+        }
+    else:
+        used = previous_send_backs + 1
+        limit = int(state["budgets"]["max_send_backs"])
+        if used > limit:
+            raise PersianVideoWorkflowError(
+                f"send-back budget exhausted: {used} requested > {limit} allowed"
+            )
+        state["send_backs"] = used
     state["status"] = "active"
     state["next_phase"] = target_phase
     state["completed_phases"] = [
@@ -751,7 +768,16 @@ def request_send_back(
     }
     history = list(state.get("send_back_history") or [])
     archived = _invalidate_checkpoints_for_rewind(state, target_phase, reason=reason.strip())
-    history.append({"target_phase": target_phase, "reason": reason.strip(), "archived_checkpoints": archived})
+    history.append({
+        "target_phase": target_phase,
+        "reason": reason.strip(),
+        "archived_checkpoints": archived,
+        **({
+            "user_directed_revision": True,
+            "prior_send_backs": previous_send_backs,
+            "prior_attempts": previous_attempts,
+        } if user_directed_revision else {}),
+    })
     state["send_back_history"] = history
     _write_state(_project_root(state), state)
     return state
@@ -1414,6 +1440,10 @@ def build_parser() -> argparse.ArgumentParser:
     send_back.add_argument("project_id")
     send_back.add_argument("target_phase")
     send_back.add_argument("--reason", required=True)
+    send_back.add_argument(
+        "--user-directed-revision", action="store_true",
+        help="start a fresh bounded revision cycle after explicit new user feedback",
+    )
 
     guard = sub.add_parser("guard-read", help="check one path against the read allowlist")
     guard.add_argument("project_id")
@@ -1508,6 +1538,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.project_id,
                     args.target_phase,
                     reason=args.reason,
+                    user_directed_revision=args.user_directed_revision,
                 )
             )
         elif args.command == "guard-read":

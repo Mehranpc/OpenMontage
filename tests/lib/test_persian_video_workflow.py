@@ -327,6 +327,22 @@ def test_send_back_budget_and_resume_preserve_durable_counters(tmp_path):
     with pytest.raises(PersianVideoWorkflowError, match="send-back budget exhausted"):
         request_send_back("run", "prepare_inputs", reason="too many", pipeline_dir=tmp_path, now=BASE)
 
+    revised = request_send_back(
+        "run", "prepare_inputs", reason="explicit user feedback",
+        pipeline_dir=tmp_path, now=BASE + timedelta(minutes=1),
+        user_directed_revision=True,
+    )
+    assert revised["send_backs"] == 0
+    assert revised["user_revision_cycles"] == 1
+    assert "prepare_inputs" not in revised["attempts"]
+    assert revised["send_back_history"][-1]["user_directed_revision"] is True
+    assert revised["send_back_history"][-1]["prior_send_backs"] == 2
+
+    # Rebuild the pre-resume state so the original resume assertions stay focused
+    # on ordinary automatic counters, not the new explicit-user cycle.
+    revised["send_backs"] = 2
+    revised["attempts"]["prepare_inputs"] = 3
+    workflow._write_state(tmp_path / "run", revised)
     calls = []
     resumed = resume_workflow(
         "run", pipeline_dir=tmp_path, backlot_opener=lambda pid: calls.append(pid) or 0,

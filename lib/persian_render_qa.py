@@ -281,12 +281,31 @@ def audit_render_luminance(
     video_path: Path,
     *,
     beat_windows: Sequence[dict[str, Any]] = (),
+    moment_windows: Sequence[dict[str, Any]] = (),
     timeout: int = 600,
 ) -> RenderQa:
-    """Measure `video_path` and refuse delivery over a >= 1.0s run below 22."""
+    """Measure the render and refuse dead darkness, not intentional painted type plates."""
     per_second, elapsed = measure_per_second_luma(video_path, timeout=timeout)
-    dead = find_dark_runs(per_second, below=DEAD_LUMA_FAIL)
-    warned = find_dark_runs(per_second, below=DEAD_LUMA_WARN)
+
+    protected: list[tuple[float, float]] = []
+    for beat in beat_windows:
+        b0, b1 = float(beat.get("startSeconds", 0.0)), float(beat.get("endSeconds", 0.0))
+        for moment in moment_windows:
+            m0, m1 = float(moment.get("startSeconds", 0.0)), float(moment.get("endSeconds", 0.0))
+            start, end = max(b0, m0), min(b1, m1)
+            if end > start:
+                protected.append((start, end))
+
+    # One-second bins fully covered by both a typographic beat and actual moment
+    # text are not "dead plate" seconds. Keep their original values for beatLuma,
+    # but lift them only for dead/warn run detection. Footage and empty plate
+    # seconds retain the calibrated 22/30 thresholds unchanged.
+    detection = []
+    for stamp, yavg in per_second:
+        painted = any(stamp >= start - 1e-6 and stamp + 1.0 <= end + 1e-6 for start, end in protected)
+        detection.append((stamp, max(yavg, DEAD_LUMA_WARN) if painted else yavg))
+    dead = find_dark_runs(detection, below=DEAD_LUMA_FAIL)
+    warned = find_dark_runs(detection, below=DEAD_LUMA_WARN)
     beats = []
     for beat in beat_windows:
         start = float(beat.get("startSeconds", 0.0))

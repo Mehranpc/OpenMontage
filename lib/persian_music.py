@@ -58,7 +58,11 @@ provenance the pipeline did not see.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
+import re
+import shutil
+import subprocess
 
 #: Values `content_id_risk` may take. `low` must cite a licence; `high` is refused;
 #: `unknown` passes only with a recorded acknowledgement.
@@ -97,6 +101,31 @@ DEFAULT_MUSIC_BASE_VOLUME = 0.6
 DEFAULT_MUSIC_DUCK_VOLUME = 0.36
 #: Head and tail fade for the bed, seconds.
 DEFAULT_MUSIC_FADE_SECONDS = 1.5
+
+#: A source bed below this integrated level is effectively a near-silent file once
+#: renderer ducking is applied. This is an audibility floor, not a mix target.
+MUSIC_AUDIBILITY_FLOOR_LUFS = -36.0
+_LUFS_RE = re.compile(r"\bI:\s*(-?[0-9]+(?:\.[0-9]+)?)\s+LUFS")
+
+
+def measure_integrated_loudness(path: Path, *, timeout: int = 60) -> float:
+    """Measure integrated LUFS with ffmpeg/ebur128; refuse an unmeasurable bed."""
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        raise RuntimeError("ffmpeg is not on PATH, so music audibility cannot be measured")
+    completed = subprocess.run(
+        [ffmpeg, "-hide_banner", "-nostats", "-i", str(path),
+         "-af", "ebur128=framelog=verbose", "-f", "null", "-"],
+        capture_output=True, text=True, timeout=timeout,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg loudness measurement failed for {path} (exit {completed.returncode})"
+        )
+    matches = _LUFS_RE.findall((completed.stdout or "") + "\n" + (completed.stderr or ""))
+    if not matches:
+        raise RuntimeError(f"ffmpeg produced no integrated-loudness result for {path}")
+    return float(matches[-1])
 
 
 @dataclass
@@ -330,6 +359,8 @@ __all__ = [
     "DEFAULT_MUSIC_BASE_VOLUME",
     "DEFAULT_MUSIC_DUCK_VOLUME",
     "DEFAULT_MUSIC_FADE_SECONDS",
+    "MUSIC_AUDIBILITY_FLOOR_LUFS",
+    "measure_integrated_loudness",
     "MusicTrack",
     "MusicAudit",
     "build_music_track",

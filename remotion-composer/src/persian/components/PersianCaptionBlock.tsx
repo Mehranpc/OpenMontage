@@ -41,14 +41,21 @@ export const PersianCaptionBlock: React.FC<{
   // though the moment intentionally owned almost all of its reading window. The
   // sidecar still keeps the approved words; only the stranded burned fragment is
   // hidden.
-  const strandedAfterMoment = moments.some(
-    (moment) =>
-      caption.startSeconds >= moment.startSeconds &&
-      caption.startSeconds < moment.endSeconds &&
-      caption.endSeconds > moment.endSeconds &&
-      caption.endSeconds - moment.endSeconds < 1.0,
-  );
-  if (strandedAfterMoment) return null;
+  let visibleIntervals: Array<[number, number]> = [[caption.startSeconds, caption.endSeconds]];
+  for (const moment of moments) {
+    const next: Array<[number, number]> = [];
+    for (const [start, end] of visibleIntervals) {
+      if (end <= moment.startSeconds || start >= moment.endSeconds) {
+        next.push([start, end]);
+        continue;
+      }
+      if (start < moment.startSeconds) next.push([start, Math.min(end, moment.startSeconds)]);
+      if (end > moment.endSeconds) next.push([Math.max(start, moment.endSeconds), end]);
+    }
+    visibleIntervals = next;
+  }
+  const paintableSeconds = visibleIntervals.reduce((sum, [start, end]) => sum + Math.max(0, end - start), 0);
+  if (paintableSeconds > 0 && paintableSeconds < 1.0) return null;
 
   const rect = captionBandRect(format, design);
   const style = captionPaintStyle(format, design);

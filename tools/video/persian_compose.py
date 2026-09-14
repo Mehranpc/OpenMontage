@@ -402,7 +402,9 @@ class PersianCompose(BaseTool):
 
             try:
                 qa = audit_render_luminance(
-                    output_path, beat_windows=props["typographicBeats"]
+                    output_path,
+                    beat_windows=props["typographicBeats"],
+                    moment_windows=props["moments"],
                 )
             except RuntimeError as exc:
                 return ToolResult(

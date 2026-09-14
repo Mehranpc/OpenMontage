@@ -14,6 +14,7 @@ import jsonschema
 
 from schemas.artifacts import load_schema
 from lib.paths import REPO_ROOT
+from lib.persian_music import MUSIC_AUDIBILITY_FLOOR_LUFS, measure_integrated_loudness
 
 
 @dataclass(frozen=True)
@@ -152,7 +153,41 @@ def _region_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnostic]:
     return diagnostics
 
 
-def _music_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnostic]:
+
+def _shot_source_window_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnostic]:
+    """Refuse visibly repeated source time, while allowing distinct windows of one clip."""
+    diagnostics: list[ContractDiagnostic] = []
+    by_source: dict[str, list[tuple[int, str, float, float]]] = {}
+    for index, shot in enumerate(persian.get("shots") or []):
+        if not isinstance(shot, dict) or not shot.get("source"):
+            continue
+        try:
+            timeline_start = float(shot.get("startSeconds", 0.0))
+            timeline_end = float(shot.get("endSeconds", 0.0))
+            source_start = float(shot.get("sourceInSeconds") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        duration = timeline_end - timeline_start
+        if duration <= 0:
+            continue
+        source_end = source_start + duration
+        source = str(shot["source"])
+        shot_id = str(shot.get("id") or f"shot-{index}")
+        for prior_index, prior_id, prior_start, prior_end in by_source.get(source, []):
+            overlap = min(source_end, prior_end) - max(source_start, prior_start)
+            if overlap > 0.10:
+                diagnostics.append(
+                    ContractDiagnostic(
+                        "shot.duplicate_source_window",
+                        _pointer(["persian", "shots", index, "source"]),
+                        f"{shot_id!r} reuses {overlap:.2f}s of source time already shown by {prior_id!r}",
+                        "use the scene's own reviewed asset or a non-overlapping source window; repeated visible footage is not an acceptable default",
+                    )
+                )
+        by_source.setdefault(source, []).append((index, shot_id, source_start, source_end))
+    return diagnostics
+
+def _music_diagnostics(persian: dict[str, Any], *, base_dir: Path | None = None) -> list[ContractDiagnostic]:
     diagnostics: list[ContractDiagnostic] = []
     audio = persian.get("audio") if isinstance(persian.get("audio"), dict) else {}
     if persian.get("musicTrack") and audio.get("music"):
@@ -182,6 +217,26 @@ def _music_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnostic]:
                 "move it to /persian/acknowledgeUnknownMusicRisk",
             )
         )
+    track = persian.get("musicTrack") if isinstance(persian.get("musicTrack"), dict) else None
+    if track and base_dir is not None and track.get("path"):
+        raw = Path(str(track["path"])).expanduser()
+        root = base_dir.expanduser().resolve()
+        resolved = raw.resolve() if raw.is_absolute() else (root / raw).resolve()
+        if resolved.is_file():
+            try:
+                loudness = measure_integrated_loudness(resolved)
+            except RuntimeError as exc:
+                diagnostics.append(ContractDiagnostic(
+                    "music.loudness_unmeasurable", "/persian/musicTrack/path",
+                    str(exc), "repair or replace the music file; production preflight must verify audible signal",
+                ))
+            else:
+                if loudness < MUSIC_AUDIBILITY_FLOOR_LUFS:
+                    diagnostics.append(ContractDiagnostic(
+                        "music.near_silent", "/persian/musicTrack/path",
+                        f"music integrated loudness is {loudness:.1f} LUFS, below the {MUSIC_AUDIBILITY_FLOOR_LUFS:.1f} LUFS audibility floor",
+                        "normalize or replace the bed before preflight; presence of an almost-silent audio file does not satisfy the music requirement",
+                    ))
     return diagnostics
 
 
@@ -227,7 +282,8 @@ def collect_persian_edit_diagnostics(
     persian = edit.get("persian")
     if isinstance(persian, dict):
         diagnostics.extend(_region_diagnostics(persian))
-        diagnostics.extend(_music_diagnostics(persian))
+        diagnostics.extend(_shot_source_window_diagnostics(persian))
+        diagnostics.extend(_music_diagnostics(persian, base_dir=base_dir))
         diagnostics.extend(_path_diagnostics(persian, base_dir=base_dir))
 
     # Alias errors can be reported by both the strict schema and semantic pass;

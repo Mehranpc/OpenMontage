@@ -142,3 +142,45 @@ def test_nested_unknown_music_ack_names_top_level_location() -> None:
         and "/persian/acknowledgeUnknownMusicRisk" in (item.hint or "")
         for item in diagnostics
     )
+
+def test_overlapping_reuse_of_same_source_window_is_refused() -> None:
+    edit = _edit()
+    first = edit["persian"]["shots"][0]
+    first["endSeconds"] = 6.0
+    edit["persian"]["shots"].append({
+        "id": "shot-2", "source": first["source"],
+        "startSeconds": 6.0, "endSeconds": 12.0, "sourceInSeconds": 4.0,
+        "camera": "none", "attribution": "Video by Test on Pexels", "avoidRegions": [],
+    })
+    diagnostics = collect_persian_edit_diagnostics(edit)
+    assert any(item.code == "shot.duplicate_source_window" for item in diagnostics)
+
+
+def test_distinct_nonoverlapping_windows_from_same_source_are_allowed() -> None:
+    edit = _edit()
+    first = edit["persian"]["shots"][0]
+    first["endSeconds"] = 6.0
+    edit["persian"]["shots"].append({
+        "id": "shot-2", "source": first["source"],
+        "startSeconds": 6.0, "endSeconds": 12.0, "sourceInSeconds": 6.0,
+        "camera": "none", "attribution": "Video by Test on Pexels", "avoidRegions": [],
+    })
+    diagnostics = collect_persian_edit_diagnostics(edit)
+    assert not [item for item in diagnostics if item.code == "shot.duplicate_source_window"]
+
+
+def test_near_silent_music_file_is_refused_before_browser(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "clip.mp4").write_bytes(b"fixture")
+    (tmp_path / "bed.mp3").write_bytes(b"fixture")
+    edit = _edit()
+    edit["persian"]["musicTrack"] = {
+        "path": "bed.mp3", "source": "local_original",
+        "license": {"name": "Original project-generated audio", "url": "local://generated", "downloadedAt": "2026-09-13"},
+        "contentIdRisk": {"level": "unknown", "reason": "local original"},
+    }
+    monkeypatch.setattr("lib.persian_edit_contract.measure_integrated_loudness", lambda _: -57.7)
+    diagnostics = collect_persian_edit_diagnostics(edit, base_dir=tmp_path)
+    assert any(
+        item.code == "music.near_silent" and "-57.7 LUFS" in item.message
+        for item in diagnostics
+    )
