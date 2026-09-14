@@ -1,8 +1,8 @@
 """Evidence-backed hook-quality audit for Persian short-form production.
 
-This module deliberately separates deterministic timing/perceptual facts from
-agent-authored semantic judgements. It does not pretend that Python can infer
-curiosity, relevance, or meaning from timestamps alone.
+Timing and perceptual facts are deterministic. Semantic qualities are authored
+judgements with rationale; this module never pretends to infer psychology from
+pixels or timestamps alone.
 """
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from typing import Any
 HOOK_QUALITY_VERSION = "1.0"
 SHORT_FORM_TARGETS = frozenset({"instagram-reels", "tiktok"})
 OPENING_WINDOW_SECONDS = 3.0
-
 VALUE_WARNING_SECONDS = 2.0
 VALUE_BLOCK_SECONDS = 3.0
 TENSION_WARNING_SECONDS = 2.5
@@ -35,6 +34,17 @@ JUDGEMENT_LEVELS = frozenset({"weak", "acceptable", "strong"})
 PERCEPTUAL_CHANGE_KINDS = frozenset(
     {"shot_change", "action", "reaction", "reveal", "detail", "scale_change", "punch_in", "subject_motion"}
 )
+
+
+def _target(edit: Mapping[str, Any], persian: Mapping[str, Any], metadata: Mapping[str, Any]) -> str:
+    """Resolve the delivery target from current and historical production fields."""
+    del edit
+    return str(
+        persian.get("platformTarget")
+        or metadata.get("target_platform")
+        or metadata.get("targetPlatform")
+        or ""
+    ).strip()
 
 
 def _seconds(record: object, *, label: str, duration: float, problems: list[str]) -> float | None:
@@ -76,16 +86,22 @@ def _judgements(raw: object, problems: list[str]) -> dict[str, dict[str, str]]:
 
 
 def _perceptual_evidence(
-    persian: Mapping[str, Any], hook: Mapping[str, Any] | None, advisories: list[str], problems: list[str]
+    persian: Mapping[str, Any],
+    hook: Mapping[str, Any] | None,
+    advisories: list[str],
+    problems: list[str],
 ) -> dict[str, Any]:
     changes: list[dict[str, Any]] = []
     shots = sorted(
-        list(persian.get("shots") or []), key=lambda shot: float(shot.get("startSeconds") or 0.0)
+        list(persian.get("shots") or []),
+        key=lambda shot: float(shot.get("startSeconds") or 0.0),
     )
     for shot in shots:
         start = float(shot.get("startSeconds") or 0.0)
         if 1e-6 < start < OPENING_WINDOW_SECONDS:
-            changes.append({"kind": "shot_change", "atSeconds": start, "source": str(shot.get("id") or "shot")})
+            changes.append(
+                {"kind": "shot_change", "atSeconds": start, "source": str(shot.get("id") or "shot")}
+            )
 
     if hook is not None:
         authored = hook.get("perceptualChanges") or []
@@ -114,7 +130,8 @@ def _perceptual_evidence(
 
     changes.sort(key=lambda item: float(item["atSeconds"]))
     moments = sorted(
-        list(persian.get("moments") or []), key=lambda moment: float(moment.get("startSeconds") or 0.0)
+        list(persian.get("moments") or []),
+        key=lambda moment: float(moment.get("startSeconds") or 0.0),
     )
     overlays = [
         {"id": moment.get("id"), "atSeconds": float(moment.get("startSeconds") or 0.0)}
@@ -140,18 +157,27 @@ def _perceptual_evidence(
     }
 
 
-def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
-    """Audit short-form hook evidence before browser/render work.
+def _policy() -> dict[str, Any]:
+    return {
+        "openingWindowSeconds": OPENING_WINDOW_SECONDS,
+        "valueWarningSeconds": VALUE_WARNING_SECONDS,
+        "valueBlockSeconds": VALUE_BLOCK_SECONDS,
+        "tensionWarningSeconds": TENSION_WARNING_SECONDS,
+        "tensionBlockSeconds": TENSION_BLOCK_SECONDS,
+        "proofWarningSeconds": PROOF_WARNING_SECONDS,
+        "proofBlockSeconds": PROOF_BLOCK_SECONDS,
+        "maxMeaningfulChangesFirst3Seconds": MAX_MEANINGFUL_CHANGES_FIRST_3S,
+        "thresholdStatus": "initial-conservative-calibration",
+    }
 
-    Semantic claims come from top-level ``metadata.hookQuality`` and are required
-    for current short-form targets. Historical/non-short-form artifacts without the
-    record remain readable and report ``unassessed`` rather than being reinterpreted.
-    """
+
+def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
+    """Audit short-form hook evidence before browser/render work."""
     persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
-    duration = float(persian.get("durationSeconds") or 0.0)
-    target = str(persian.get("platformTarget") or "").strip()
-    required = target in SHORT_FORM_TARGETS
     metadata = edit.get("metadata") if isinstance(edit.get("metadata"), Mapping) else {}
+    duration = float(persian.get("durationSeconds") or 0.0)
+    target = _target(edit, persian, metadata)
+    required = target in SHORT_FORM_TARGETS
     raw_hook = metadata.get("hookQuality")
     hook = raw_hook if isinstance(raw_hook, Mapping) else None
     problems: list[str] = []
@@ -189,11 +215,12 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
     value = _seconds(hook.get("valueProposition"), label="value proposition", duration=duration, problems=problems)
     tension = _seconds(hook.get("semanticTension"), label="semantic tension", duration=duration, problems=problems)
     proof = _seconds(hook.get("firstProof"), label="first proof", duration=duration, problems=problems)
-
     tension_record = hook.get("semanticTension")
     tension_kind = str(tension_record.get("kind") or "").strip() if isinstance(tension_record, Mapping) else ""
     if tension_kind not in TENSION_KINDS:
-        problems.append("semantic tension kind must identify a specific gap, contradiction, consequence, suspense, or benefit")
+        problems.append(
+            "semantic tension kind must identify a specific gap, contradiction, consequence, suspense, or benefit"
+        )
 
     if value is not None:
         if value > VALUE_BLOCK_SECONDS:
@@ -239,7 +266,9 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
     if flags.get("vagueGap"):
         problems.append("hook information gap is too vague to identify a reachable missing answer")
     if flags.get("fullConclusionRevealed"):
-        advisories.append("opening reveals the full conclusion; verify that another concrete reason to continue remains")
+        advisories.append(
+            "opening reveals the full conclusion; verify that another concrete reason to continue remains"
+        )
 
     perceptual = _perceptual_evidence(persian, hook, advisories, problems)
     if problems:
@@ -273,22 +302,4 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _policy() -> dict[str, Any]:
-    return {
-        "openingWindowSeconds": OPENING_WINDOW_SECONDS,
-        "valueWarningSeconds": VALUE_WARNING_SECONDS,
-        "valueBlockSeconds": VALUE_BLOCK_SECONDS,
-        "tensionWarningSeconds": TENSION_WARNING_SECONDS,
-        "tensionBlockSeconds": TENSION_BLOCK_SECONDS,
-        "proofWarningSeconds": PROOF_WARNING_SECONDS,
-        "proofBlockSeconds": PROOF_BLOCK_SECONDS,
-        "maxMeaningfulChangesFirst3Seconds": MAX_MEANINGFUL_CHANGES_FIRST_3S,
-        "thresholdStatus": "initial-conservative-calibration",
-    }
-
-
-__all__ = [
-    "HOOK_QUALITY_VERSION",
-    "SHORT_FORM_TARGETS",
-    "audit_persian_hook_quality",
-]
+__all__ = ["HOOK_QUALITY_VERSION", "SHORT_FORM_TARGETS", "audit_persian_hook_quality"]
