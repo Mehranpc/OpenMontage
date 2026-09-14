@@ -158,7 +158,7 @@ def test_reels_preflight_refuses_structural_pass_with_weak_hook_evidence(
     source.write_bytes(b"fixture")
     payload = _payload(str(source))
     payload["persian"]["platformTarget"] = "instagram-reels"
-    payload["persian"]["metadata"] = {
+    payload["metadata"] = {
         "hookQuality": {
             "version": "1.0",
             "valueProposition": {
