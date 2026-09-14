@@ -5,7 +5,7 @@ import json
 import pytest
 
 from lib.persian_video_workflow import PersianVideoWorkflowError, complete_phase
-from tests.lib.test_persian_video_workflow import BASE, _review_ready_project
+from tests.lib.test_persian_video_workflow import BASE, _checkpoint, _review_ready_project
 
 
 def _hook_audit() -> dict:
@@ -73,13 +73,17 @@ def test_evidence_backed_hook_review_requires_rendered_alignment_and_prompt_payo
 
 
 def test_valid_evidence_backed_hook_review_allows_existing_final_review_contract(tmp_path):
-    _, _, review_path, _ = _review_ready_project(tmp_path)
+    _, _, review_path, report = _review_ready_project(tmp_path)
     review = json.loads(review_path.read_text(encoding="utf-8"))
     review["metadata"] = {
         "hookQualityAudit": _hook_audit(),
         "hookQualityReview": _hook_review(),
     }
     review_path.write_text(json.dumps(review), encoding="utf-8")
+    report["hook_strength"] = "acceptable"
+    (tmp_path / "run" / "checkpoint_compose.json").write_text(
+        json.dumps(_checkpoint(report)), encoding="utf-8"
+    )
 
     state = complete_phase(
         "run",
@@ -89,3 +93,26 @@ def test_valid_evidence_backed_hook_review_allows_existing_final_review_contract
         now=BASE,
     )
     assert state["next_phase"] == "awaiting_human"
+
+
+def test_hook_quality_review_strength_must_match_render_report_hook_strength(tmp_path):
+    _, _, review_path, report = _review_ready_project(tmp_path)
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["metadata"] = {
+        "hookQualityAudit": _hook_audit(),
+        "hookQualityReview": _hook_review(strength="acceptable"),
+    }
+    review_path.write_text(json.dumps(review), encoding="utf-8")
+    report["hook_strength"] = "strong"
+    (tmp_path / "run" / "checkpoint_compose.json").write_text(
+        json.dumps(_checkpoint(report)), encoding="utf-8"
+    )
+
+    with pytest.raises(PersianVideoWorkflowError, match="hook_strength"):
+        complete_phase(
+            "run",
+            "final_review",
+            evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path,
+            now=BASE,
+        )

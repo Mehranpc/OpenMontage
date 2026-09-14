@@ -1120,10 +1120,14 @@ def _validate_final_review_completion(
     if not isinstance(review, dict):
         raise PersianVideoWorkflowError("final_review artifact must be a JSON object")
 
+    metadata = review.get("metadata")
+    hook_review = metadata.get("hookQualityReview") if isinstance(metadata, Mapping) else None
+    hook_review_strength = (
+        str(hook_review.get("strength") or "").strip() if isinstance(hook_review, Mapping) else None
+    )
     preflight_hook = _required_preflight_hook_quality(state)
     if preflight_hook is not None:
-        metadata = review.get("metadata")
-        if not isinstance(metadata, Mapping) or not isinstance(metadata.get("hookQualityReview"), Mapping):
+        if not isinstance(metadata, Mapping) or not isinstance(hook_review, Mapping):
             raise PersianVideoWorkflowError(
                 "final_review hook-quality review is required because no_copy_preflight recorded a required hook audit"
             )
@@ -1189,6 +1193,10 @@ def _validate_final_review_completion(
     if not isinstance(report, Mapping):
         raise PersianVideoWorkflowError("compose checkpoint is missing render_report")
     _render_report_review_fields(report)
+    if hook_review_strength is not None and str(report.get("hook_strength") or "").strip() != hook_review_strength:
+        raise PersianVideoWorkflowError(
+            "render_report.hook_strength must match final_review hook-quality review strength"
+        )
     if str(report.get("caption_mode") or "") in {"burned_captions", "hybrid"}:
         caption_frames = list(report.get("caption_verification_frames") or [])
         if len(caption_frames) < 3:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -97,12 +98,57 @@ def _validate_final_review_hook_quality(data: dict[str, Any]) -> None:
         )
 
 
+
+def _parse_observed_timestamp(value: object, *, label: str) -> datetime:
+    if not isinstance(value, str) or not value.strip():
+        raise jsonschema.ValidationError(f"{label} must be an ISO-8601 timestamp")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise jsonschema.ValidationError(f"{label} must be an ISO-8601 timestamp") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise jsonschema.ValidationError(f"{label} must include a timezone offset")
+    return parsed
+
+
+def _validate_post_publish_performance(data: dict[str, Any]) -> None:
+    published_at = _parse_observed_timestamp(data.get("published_at"), label="published_at")
+    seen_checkpoints: set[str] = set()
+    previous_hours = -1.0
+    previous_captured: datetime | None = None
+    for index, snapshot in enumerate(data.get("snapshots") or []):
+        if not isinstance(snapshot, dict):
+            continue
+        checkpoint = str(snapshot.get("checkpoint") or "")
+        if checkpoint in seen_checkpoints:
+            raise jsonschema.ValidationError(f"duplicate post-publish checkpoint {checkpoint!r}")
+        seen_checkpoints.add(checkpoint)
+        captured = _parse_observed_timestamp(
+            snapshot.get("captured_at"), label=f"snapshots[{index}].captured_at"
+        )
+        if captured < published_at:
+            raise jsonschema.ValidationError("post-publish snapshot cannot precede published_at")
+        hours = float(snapshot.get("hours_since_publish") or 0.0)
+        actual_hours = (captured - published_at).total_seconds() / 3600.0
+        if abs(hours - actual_hours) > 0.25:
+            raise jsonschema.ValidationError(
+                f"snapshots[{index}].hours_since_publish is inconsistent with captured_at"
+            )
+        if hours <= previous_hours:
+            raise jsonschema.ValidationError("post-publish snapshot hours must increase")
+        if previous_captured is not None and captured <= previous_captured:
+            raise jsonschema.ValidationError("post-publish captured_at timestamps must increase")
+        previous_hours = hours
+        previous_captured = captured
+
 def validate_artifact(name: str, data: dict[str, Any]) -> None:
     """Validate artifact data against its schema. Raises on failure."""
     schema = load_schema(name)
     jsonschema.validate(instance=data, schema=schema)
     if name == "final_review":
         _validate_final_review_hook_quality(data)
+    elif name == "post_publish_performance":
+        _validate_post_publish_performance(data)
 
 
 def list_schemas() -> list[str]:

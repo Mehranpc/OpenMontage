@@ -62,3 +62,20 @@ def test_post_publish_performance_schema_rejects_non_sha_render_binding():
     record["published_render"]["sha256"] = "not-a-digest"
     with pytest.raises(ValidationError):
         validate_artifact("post_publish_performance", record)
+
+
+def test_post_publish_performance_schema_rejects_invalid_or_inconsistent_timestamps():
+    invalid = _record()
+    invalid["published_at"] = "not-a-timestamp"
+    with pytest.raises(ValidationError):
+        validate_artifact("post_publish_performance", invalid)
+
+    before_publish = _record()
+    before_publish["snapshots"][0]["captured_at"] = "2026-09-14T07:00:00Z"
+    with pytest.raises(ValidationError):
+        validate_artifact("post_publish_performance", before_publish)
+
+    inconsistent_hours = _record()
+    inconsistent_hours["snapshots"][0]["hours_since_publish"] = 24.0
+    with pytest.raises(ValidationError):
+        validate_artifact("post_publish_performance", inconsistent_hours)
