@@ -560,6 +560,7 @@ def _validate_no_copy_preflight_completion(
         "attempt_id": attempt_id,
         "artifact_sha256": digest,
         "preflight_report_path": str(report_path),
+        "preflight_report_sha256": _hash_file(report_path),
         "checkpoint_edit_path": str(root / "checkpoint_edit.json"),
     }
 
@@ -1084,6 +1085,29 @@ def _render_report_review_fields(report: Mapping[str, Any]) -> None:
             )
 
 
+def _required_preflight_hook_quality(state: Mapping[str, Any]) -> dict[str, Any] | None:
+    phase_evidence = (state.get("evidence") or {}).get("no_copy_preflight")
+    if not isinstance(phase_evidence, Mapping):
+        return None
+    reported_path = phase_evidence.get("preflight_report_path")
+    if not str(reported_path or "").strip():
+        return None
+    report_path = _project_file(state, reported_path, label="no-copy preflight report")
+    reported_sha = str(phase_evidence.get("preflight_report_sha256") or "").strip().lower()
+    if reported_sha and _hash_file(report_path) != reported_sha:
+        raise PersianVideoWorkflowError("no-copy preflight report changed after completion")
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PersianVideoWorkflowError("no-copy preflight report is unreadable JSON") from exc
+    audit = ((report.get("evidence") or {}).get("hookQualityAudit")) if isinstance(report, Mapping) else None
+    if not isinstance(audit, Mapping) or audit.get("required") is not True:
+        return None
+    if str(audit.get("disposition") or "") not in {"acceptable", "strong"} or list(audit.get("problems") or []):
+        raise PersianVideoWorkflowError("required preflight hook-quality audit is not passing")
+    return dict(audit)
+
+
 def _validate_final_review_completion(
     state: Mapping[str, Any], evidence: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -1095,6 +1119,19 @@ def _validate_final_review_completion(
         raise PersianVideoWorkflowError("final_review artifact is unreadable JSON") from exc
     if not isinstance(review, dict):
         raise PersianVideoWorkflowError("final_review artifact must be a JSON object")
+
+    preflight_hook = _required_preflight_hook_quality(state)
+    if preflight_hook is not None:
+        metadata = review.get("metadata")
+        if not isinstance(metadata, Mapping) or not isinstance(metadata.get("hookQualityReview"), Mapping):
+            raise PersianVideoWorkflowError(
+                "final_review hook-quality review is required because no_copy_preflight recorded a required hook audit"
+            )
+        if metadata.get("hookQualityAudit") != preflight_hook:
+            raise PersianVideoWorkflowError(
+                "final_review hookQualityAudit does not match preflight hookQualityAudit"
+            )
+
     try:
         validate_artifact("final_review", review)
     except ValidationError as exc:
