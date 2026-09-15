@@ -49,7 +49,7 @@ def test_current_hook_audit_requires_evidence_backed_final_hook_review(tmp_path)
     review["metadata"] = {"hookQualityAudit": _hook_audit()}
     review_path.write_text(json.dumps(review), encoding="utf-8")
 
-    with pytest.raises(PersianVideoWorkflowError, match="hook-quality review"):
+    with pytest.raises(PersianVideoWorkflowError, match="hook-quality review|visual/voice alignment"):
         complete_phase(
             "run",
             "final_review",
@@ -197,6 +197,26 @@ def test_final_review_rejects_mix_intelligible_without_numeric_audio_evidence(tm
     )
 
     with pytest.raises(PersianVideoWorkflowError, match="audio.*evidence|policyVersion|rendered audio"):
+        complete_phase(
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
+        )
+
+
+def test_final_review_binds_rendered_hook_review_to_actual_candidate_digest(tmp_path):
+    _, candidate, review_path, report = _review_ready_project(tmp_path)
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["metadata"] = {
+        "hookQualityAudit": _hook_audit(),
+        "hookQualityReview": _hook_review(candidate, reviewedCandidateSha256="b" * 64),
+    }
+    review_path.write_text(json.dumps(review), encoding="utf-8")
+    report["hook_strength"] = "acceptable"
+    (tmp_path / "run" / "checkpoint_compose.json").write_text(
+        json.dumps(_checkpoint(report)), encoding="utf-8"
+    )
+
+    with pytest.raises(PersianVideoWorkflowError, match="digest"):
         complete_phase(
             "run", "final_review", evidence={"final_review_path": str(review_path)},
             pipeline_dir=tmp_path, now=BASE,
