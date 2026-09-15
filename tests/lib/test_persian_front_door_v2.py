@@ -102,17 +102,39 @@ def _fake_extract(_candidate: Path, target: Path, times: list[float], prefix: st
 
 
 def test_full_front_door_reaches_awaiting_human_with_v2_evidence(monkeypatch, tmp_path: Path) -> None:
+    def assert_phase_running(phase: str) -> None:
+        state = e2e.load_workflow_state(e2e.PROJECT_ID, pipeline_dir=tmp_path)
+        entry = state["phase_telemetry"][phase][-1]
+        assert entry["outcome"] == "running"
+        assert entry["finished_at"] is None
+
     def fake_narration(work: Path) -> Path:
         path = work / "narration.wav"
         path.write_bytes(b"fixture-audio" * 200)
         return path
 
+    def fake_alignment(*args, **kwargs):
+        assert_phase_running("align_script_timing")
+        return _fake_alignment(*args, **kwargs)
+
+    def fake_aggregate(payload: dict, *, base_dir=None) -> dict:
+        assert_phase_running("no_copy_preflight")
+        return _fake_aggregate(payload, base_dir=base_dir)
+
+    def fake_compose(self, inputs: dict):
+        assert_phase_running("render_final_candidate")
+        return _fake_compose(self, inputs)
+
+    def fake_extract(candidate: Path, target: Path, times: list[float], prefix: str) -> list[str]:
+        assert_phase_running("final_review")
+        return _fake_extract(candidate, target, times, prefix)
+
     monkeypatch.setattr(e2e, "_make_narration", fake_narration)
-    monkeypatch.setattr(e2e, "_transcribe", _fake_alignment)
-    monkeypatch.setattr(e2e, "_align_timing", _fake_alignment, raising=False)
+    monkeypatch.setattr(e2e, "_transcribe", fake_alignment)
+    monkeypatch.setattr(e2e, "_align_timing", fake_alignment, raising=False)
     monkeypatch.setattr(e2e, "_make_synthetic_clips", _fake_clips)
-    monkeypatch.setattr(edit_workspace, "aggregate_preflight_edit_decisions", _fake_aggregate)
-    monkeypatch.setattr(e2e.ScriptAlignedPersianCompose, "execute", _fake_compose)
+    monkeypatch.setattr(edit_workspace, "aggregate_preflight_edit_decisions", fake_aggregate)
+    monkeypatch.setattr(e2e.ScriptAlignedPersianCompose, "execute", fake_compose)
     monkeypatch.setattr(
         e2e,
         "_probe",
@@ -124,7 +146,7 @@ def test_full_front_door_reaches_awaiting_human_with_v2_evidence(monkeypatch, tm
             "format": {"duration": "10.5"},
         },
     )
-    monkeypatch.setattr(e2e, "_extract_frames", _fake_extract)
+    monkeypatch.setattr(e2e, "_extract_frames", fake_extract)
     monkeypatch.setattr(
         e2e,
         "measure_rendered_audio_output",
