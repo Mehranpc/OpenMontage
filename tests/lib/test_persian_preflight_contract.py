@@ -160,8 +160,8 @@ def test_reels_preflight_refuses_structural_pass_with_weak_hook_evidence(
     payload["persian"]["platformTarget"] = "instagram-reels"
     payload["metadata"] = {
         "hookQuality": {
-            "version": "1.0",
-            "valueProposition": {
+            "version": "2.0",
+            "viewerValue": {
                 "atSeconds": 4.96,
                 "evidence": "The paradox is not complete until the first sentence ends.",
             },
@@ -171,6 +171,7 @@ def test_reels_preflight_refuses_structural_pass_with_weak_hook_evidence(
                 "evidence": "Slow can be faster, but the contradiction lands late.",
             },
             "firstProof": {
+                "kind": "example",
                 "atSeconds": 7.74,
                 "evidence": "The first concrete example starts after the meta-intro.",
             },
@@ -201,4 +202,4 @@ def test_reels_preflight_refuses_structural_pass_with_weak_hook_evidence(
     assert audit["disposition"] == "weak"
     assert audit["timing"]["timeToValueSeconds"] == 4.96
     assert audit["timing"]["timeToFirstProofSeconds"] == 7.74
-    assert any("value proposition" in problem for problem in audit["problems"])
+    assert any("viewer value arrives" in problem for problem in audit["problems"])
