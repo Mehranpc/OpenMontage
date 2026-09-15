@@ -308,3 +308,35 @@ def test_pixabay_rendition_respects_explicit_max_width():
     picked = _pick_pixabay_rendition(videos, min_width=1080, max_width=1080)
     assert picked is not None
     assert picked["width"] == 1080
+
+
+def test_metadata_technical_reject_does_not_consume_semantic_candidate_cap(monkeypatch, tmp_path):
+    source = _Source(
+        {"one": [_candidate("large", width=1440, height=2560), _candidate("fit")]},
+        size=1500,
+    )
+    _install_source(monkeypatch, source)
+    monkeypatch.setattr(
+        module,
+        "_probe_media",
+        lambda *_a, **_k: {"width": 1080, "height": 1920, "duration": 8.0},
+    )
+    result = DirectClipSearch().execute(
+        _inputs(
+            tmp_path,
+            ["one"],
+            max_candidates_total=1,
+            filters={
+                "orientation": "portrait",
+                "min_duration": 5,
+                "min_width": 1080,
+                "max_width": 1080,
+            },
+        )
+    )
+    assert result.success is True
+    assert result.data["clips_downloaded"] == 1
+    assert result.data["clips"][0]["clip_id"] == "pexels_fit"
+    assert result.data["candidates_considered"] == 2
+    assert result.data["technical_rejects"] == 1
+    assert result.data["semantic_candidates_reviewed"] == 1
