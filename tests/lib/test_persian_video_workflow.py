@@ -69,9 +69,11 @@ def _advance_to(tmp_path: Path, target: str, *, project_id: str = "run") -> dict
         phase = state.get("next_phase")
         assert phase is not None
         state = record_phase_attempt(project_id, phase, pipeline_dir=tmp_path, now=BASE)
-        if phase == "no_copy_preflight":
-            # This helper builds unrelated terminal-review fixtures. Dedicated tests
-            # below exercise the real digest-bound no-copy completion contract.
+        if phase in workflow._PHASE_CHECKPOINT:
+            # This helper builds fixtures for tests unrelated to checkpoint
+            # persistence. Dedicated lifecycle tests exercise the real atomic
+            # checkpoint contract, so bypass checkpoint-backed phases here rather
+            # than weakening production complete_phase().
             completed = list(state.get("completed_phases") or [])
             completed.append(phase)
             state["completed_phases"] = completed
