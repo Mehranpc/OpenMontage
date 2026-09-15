@@ -27,6 +27,11 @@ from lib.persian_durable_job import DurableJobError, reconcile_job, start_job
 from lib.persian_edit_workspace import (
     PersianEditWorkspaceError, artifact_sha256, load_promotable_edit_draft, preflight_edit_draft, promote_edit_draft, stage_edit_draft,
 )
+from lib.persian_rendered_review import (
+    PersianRenderedReviewError,
+    validate_rendered_audio_review,
+    validate_rendered_hook_review,
+)
 from schemas.artifacts import validate_artifact
 from jsonschema.exceptions import ValidationError
 
@@ -1373,6 +1378,22 @@ def _validate_final_review_completion(
                 "final_review hookQualityAudit does not match preflight hookQualityAudit"
             )
 
+    if isinstance(hook_review, Mapping) and str(hook_review.get("version") or "") == "2.0":
+        try:
+            validate_rendered_hook_review(
+                hook_review,
+                candidate_sha256=candidate["candidate_sha256"],
+                require_pass=review.get("status") == "pass",
+            )
+        except PersianRenderedReviewError as exc:
+            raise PersianVideoWorkflowError(
+                f"final_review hook-quality review failed: {exc}"
+            ) from exc
+    elif preflight_hook is not None and str(preflight_hook.get("version") or "") == "2.0":
+        raise PersianVideoWorkflowError(
+            "final_review hook-quality review must use rendered Hook Quality v2 evidence"
+        )
+
     try:
         validate_artifact("final_review", review)
     except ValidationError as exc:
@@ -1404,10 +1425,18 @@ def _validate_final_review_completion(
         _project_file(state, frame, label="final_review frame")
 
     audio = checks.get("audio_spotcheck") or {}
-    if audio.get("unexpected_silence") is True or audio.get("clipping_detected") is True:
-        raise PersianVideoWorkflowError("final_review audio_spotcheck found silence or clipping")
-    if audio.get("mix_intelligible") is not True or list(audio.get("issues") or []):
-        raise PersianVideoWorkflowError("final_review audio_spotcheck must pass without issues")
+    if not isinstance(audio, Mapping):
+        raise PersianVideoWorkflowError("final_review audio_spotcheck must be an evidence object")
+    try:
+        validate_rendered_audio_review(
+            audio,
+            candidate_sha256=candidate["candidate_sha256"],
+            require_pass=True,
+        )
+    except PersianRenderedReviewError as exc:
+        raise PersianVideoWorkflowError(
+            f"final_review rendered audio evidence failed: {exc}"
+        ) from exc
 
     promise = checks.get("promise_preservation") or {}
     if promise.get("delivery_promise_honored") is not True:
