@@ -1,58 +1,9 @@
-"""Music for a narrated Persian video: required, sourced, and licensed on record.
+"""Music for a narrated Persian video: required, sourced, licensed, and mixed on record.
 
-## Why "optional music" was the bug
-
-The pipeline shipped `pixabay_music` and `audio_mixer` as *optional* tools in the
-compose stage, and the natural reading of an optional tool — by an agent or a human
-— is "run it if convenient". The shipped render was therefore delivered with an
-empty `assets/music/` directory, a narration, and no bed: a finished video with
-silence between the voice's sentences, delivered to the user with the question
-«می‌خوای موزیک هم اضافه کنم؟» attached. That question is the edit's own job
-arriving late; a deliverable should not ask the client to notice a missing layer.
-
-So in narrated mode music is **required**: `audit_music` fails when the bed is
-absent, unless the caller states `omit_music_reason` — an explicit, recorded
-decision rather than a default silence.
-
-## Why a licence record, and what it honestly contains
-
-The user's requirement was «مطمئن شو موزیک‌های پیکس‌بی یا منابعی که داره، مشکل
-کپی‌رایت در اینستاگرام نداشته باشن». No automated check can *guarantee* that:
-Instagram's enforcement includes third-party Content-ID fingerprinting, and a
-track can be flagged by a system that never read the licence. What a gate CAN do —
-and what this module does — is refuse music whose provenance is not on record:
-
-* **A commercial-use licence name.** Pixabay publishes the "Pixabay Content
-  License" on every track page; a track whose licence field says so is recorded.
-* **The source.** Where the file came from, as the searchable term and tool used,
-  so a re-download is possible and a licence page can be revisited.
-* **The licence URL.** The page the licence was read from, so the claim is
-  checkable by a human rather than trusted from a string.
-* **The download date.** Licences change; the date is what makes an old record
-  falsifiable rather than eternally valid.
-* **An attribution line** where the licence or the source asks for one.
-* **A `content_id_risk` judgement** — low/unknown/high — with the reason recorded,
-  not just the rating, so a later reader can disagree with evidence.
-
-The audit refuses `high`, requires `low` to cite the licence, and passes `unknown`
-only with an explicit acknowledgement recorded in the same place — never silently.
-
-## The Pixabay Content License, as it stands
-
-Permits use in commercial and monetized social media. Forbids: redistribution of
-the track standalone or in a media compilation, sale of the track as-is or with
-minor changes, and use of the track *in an AI dataset*. Requires: no
-identification of the authors as endorsing your use. This module encodes those
-terms as `PIXABAY_CONTENT_LICENSE` and treats a Pixabay-sourced track as
-`content_id_risk: low` — low, not zero, because Content-ID is third-party and no
-licence with a third party binds it. That boundary is stated in the audit output
-rather than papered over.
-
-## The user's own music
-
-A user-supplied file passes with `source: "user-provided"`, its licence unknown by
-default, and an acknowledgement recorded — the honest reading of a file whose
-provenance the pipeline did not see.
+Narrated production uses measured loudness to derive the speech-time music gain.
+The historical fixed renderer volumes remain as legacy/default values for callers
+that do not have production loudness evidence, but they are not the primary mix
+policy for Persian production.
 """
 
 from __future__ import annotations
@@ -65,12 +16,8 @@ import re
 import shutil
 import subprocess
 
-#: Values `content_id_risk` may take. `low` must cite a licence; `high` is refused;
-#: `unknown` passes only with a recorded acknowledgement.
 RiskLevel = Literal["low", "unknown", "high"]
 
-#: The Pixabay Content License terms, as published on every Pixabay track page.
-#: Encoded rather than linked-only so the audit's statements are inspectable.
 PIXABAY_CONTENT_LICENSE = {
     "name": "Pixabay Content License",
     "permits": [
@@ -87,54 +34,112 @@ PIXABAY_CONTENT_LICENSE = {
     "requires": [],
 }
 
-#: Licence names the audit recognizes as permitting monetized social media use.
-#: Everything else is `unknown` by default — the caller can still declare it low
-#: with a licence URL on record.
 KNOWN_PERMISSIVE_LICENSES: frozenset[str] = frozenset(
     {PIXABAY_CONTENT_LICENSE["name"], "Pixabay Content License"}
 )
 
-#: Music level the renderer uses when a bed is present but no narration is.
+# Legacy/default renderer levels. Production speech-time gain is derived below.
 DEFAULT_MUSIC_FLAT_VOLUME = 0.65
-#: Music level while narration is present but not speaking.
 DEFAULT_MUSIC_BASE_VOLUME = 0.72
-#: Music level while the narration speaks.
 DEFAULT_MUSIC_DUCK_VOLUME = 0.55
-#: Head and tail fade for the bed, seconds.
 DEFAULT_MUSIC_FADE_SECONDS = 1.5
 
-#: A source bed below this integrated level is effectively a near-silent file once
-#: renderer ducking is applied. This is an audibility floor, not a mix target.
+# Versioned calibration policy. These values are deliberately explicit so later
+# post-publish/perceptual calibration requires a policy revision rather than a
+# silent constant tweak.
+LOUDNESS_MIX_POLICY_VERSION = "1.0"
+TARGET_MUSIC_SEPARATION_LU = 10.0
+MIN_MUSIC_SEPARATION_LU = 7.0
+MAX_MUSIC_SEPARATION_LU = 14.0
 MUSIC_AUDIBILITY_FLOOR_LUFS = -36.0
-#: Maximum allowed loudness gap between narration and the ducked music bed.
-#: Larger gaps were perceptually silent on mobile even when the source file itself
-#: cleared the audibility floor.
-MAX_DUCKED_MUSIC_GAP_LU = 15.0
 _LUFS_RE = re.compile(r"\bI:\s*(-?[0-9]+(?:\.[0-9]+)?)\s+LUFS")
 
 
-
 def effective_music_loudness(source_lufs: float, volume: float) -> float:
-    """Return the bed loudness after renderer gain, in LUFS-equivalent dB.
-
-    Renderer volume is linear amplitude, so 20*log10(volume) is the gain applied
-    to an integrated loudness measurement.  Zero/negative volume is inaudible by
-    definition and returns negative infinity.
-    """
+    """Return bed loudness after a linear-amplitude renderer gain."""
     if volume <= 0:
         return float("-inf")
     return float(source_lufs) + 20.0 * math.log10(float(volume))
 
 
+def evaluate_music_separation(
+    *,
+    narration_lufs: float,
+    music_lufs: float,
+    music_gain: float,
+) -> dict[str, Any]:
+    """Evaluate one speech-time gain against the symmetric mix policy."""
+    predicted_music = effective_music_loudness(float(music_lufs), float(music_gain))
+    separation = float(narration_lufs) - predicted_music
+    if separation < MIN_MUSIC_SEPARATION_LU:
+        passed = False
+        reason = "music_too_loud"
+    elif separation > MAX_MUSIC_SEPARATION_LU:
+        passed = False
+        reason = "music_too_quiet"
+    else:
+        passed = True
+        reason = "ok"
+    return {
+        "policyVersion": LOUDNESS_MIX_POLICY_VERSION,
+        "measuredNarrationLufs": round(float(narration_lufs), 3),
+        "measuredMusicLufs": round(float(music_lufs), 3),
+        "speechMusicGain": round(float(music_gain), 6),
+        "predictedSpeechMusicLufs": round(predicted_music, 3),
+        "predictedSeparationLu": round(separation, 3),
+        "targetSeparationLu": TARGET_MUSIC_SEPARATION_LU,
+        "minSeparationLu": MIN_MUSIC_SEPARATION_LU,
+        "maxSeparationLu": MAX_MUSIC_SEPARATION_LU,
+        "passed": passed,
+        "reason": reason,
+    }
+
+
+def derive_loudness_aware_mix(
+    *,
+    narration_lufs: float,
+    music_lufs: float,
+) -> dict[str, Any]:
+    """Derive speech-time music gain from measured source loudness.
+
+    The target music level is narration minus TARGET_MUSIC_SEPARATION_LU. Since
+    renderer gain is linear amplitude, convert the required dB/LU adjustment with
+    10 ** (dB / 20). The returned plan is evaluated through the same symmetric
+    policy used for authored/legacy overrides.
+    """
+    target_music_lufs = float(narration_lufs) - TARGET_MUSIC_SEPARATION_LU
+    gain_db = target_music_lufs - float(music_lufs)
+    gain = 10.0 ** (gain_db / 20.0)
+    plan = evaluate_music_separation(
+        narration_lufs=float(narration_lufs),
+        music_lufs=float(music_lufs),
+        music_gain=gain,
+    )
+    plan["derivedGainDb"] = round(gain_db, 3)
+    return plan
+
+
 def measure_integrated_loudness(path: Path, *, timeout: int = 60) -> float:
-    """Measure integrated LUFS with ffmpeg/ebur128; refuse an unmeasurable bed."""
+    """Measure integrated LUFS with ffmpeg/ebur128; refuse an unmeasurable source."""
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         raise RuntimeError("ffmpeg is not on PATH, so music audibility cannot be measured")
     completed = subprocess.run(
-        [ffmpeg, "-hide_banner", "-nostats", "-i", str(path),
-         "-af", "ebur128=framelog=verbose", "-f", "null", "-"],
-        capture_output=True, text=True, timeout=timeout,
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-nostats",
+            "-i",
+            str(path),
+            "-af",
+            "ebur128=framelog=verbose",
+            "-f",
+            "null",
+            "-",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if completed.returncode != 0:
         raise RuntimeError(
@@ -148,21 +153,12 @@ def measure_integrated_loudness(path: Path, *, timeout: int = 60) -> float:
 
 @dataclass
 class MusicTrack:
-    """One music bed, with its provenance on record."""
-
-    #: Path relative to the composition's public dir, as `PersianAudio.music` uses.
     path: str
-    #: Tool the file came from — `pixabay_music`, `freesound_music`, a user file.
     source: str
-    #: The licence name as published at the source, verbatim.
     license_name: str
-    #: URL of the page the licence was read from.
     license_url: str
-    #: ISO date the file was downloaded.
     downloaded_at: str
-    #: Attribution line, if the licence or the source asks for one.
     attribution: str = ""
-    #: The honest judgement, with its reason.
     content_id_risk: RiskLevel = "unknown"
     risk_reason: str = ""
 
@@ -179,10 +175,7 @@ class MusicTrack:
             "contentIdRisk": {
                 "level": self.content_id_risk,
                 "reason": self.risk_reason,
-                "acknowledged": "Content-ID is third-party fingerprinting; no "
-                "licence binds it, so no automated check can guarantee zero claim "
-                "risk on Instagram. Provenance is recorded so any claim can be "
-                "answered with the licence page.",
+                "acknowledged": "Content-ID is third-party fingerprinting; no licence binds it, so no automated check can guarantee zero claim risk on Instagram. Provenance is recorded so any claim can be answered with the licence page.",
             },
         }
 
@@ -207,19 +200,12 @@ class MusicAudit:
 
 
 def build_music_track(raw: dict[str, Any]) -> MusicTrack:
-    """Normalize a raw music record, refusing absent provenance fields.
-
-    Missing provenance is not defaulted — it is rejected, because a record with an
-    empty `license_url` is exactly the "we did not check" that the audit exists to
-    prevent, dressed as data.
-    """
+    """Normalize a raw music record, refusing absent provenance fields."""
     license_block = raw.get("license") or {}
     risk_block = raw.get("contentIdRisk") or {}
     risk = risk_block.get("level") or "unknown"
     if risk not in ("low", "unknown", "high"):
-        raise ValueError(
-            f"music contentIdRisk {risk!r} is not one of low/unknown/high"
-        )
+        raise ValueError(f"music contentIdRisk {risk!r} is not one of low/unknown/high")
 
     path = str(raw.get("path") or "").strip()
     source = str(raw.get("source") or "").strip()
@@ -228,7 +214,6 @@ def build_music_track(raw: dict[str, Any]) -> MusicTrack:
     downloaded_at = str(
         license_block.get("downloadedAt") or raw.get("downloadedAt") or ""
     ).strip()
-
     missing = [
         name
         for name, value in (
@@ -242,10 +227,7 @@ def build_music_track(raw: dict[str, Any]) -> MusicTrack:
     ]
     if missing:
         raise ValueError(
-            f"music record is missing {', '.join(missing)}. Provenance is not "
-            "optional: a bed whose licence page cannot be revisited is a claim "
-            "about copyright nobody can check, and the user asked for exactly that "
-            "not to happen."
+            f"music record is missing {', '.join(missing)}. Provenance is not optional: a bed whose licence page cannot be revisited is a claim about copyright nobody can check."
         )
 
     return MusicTrack(
@@ -267,77 +249,39 @@ def audit_music(
     acknowledge_unknown_risk: bool = False,
     omit_music_reason: str = "",
 ) -> MusicAudit:
-    """Gate the music layer for a project.
-
-    Args:
-        track: The music record, or None when the project has no bed.
-        narrated: Whether this project carries narration. Silent projects may
-            legitimately have no bed (the voice was never the spine), so the
-            requirement is scoped to narrated ones.
-        acknowledge_unknown_risk: An explicit, recorded acknowledgement that
-            Content-ID risk cannot be zero. Required to pass with `unknown` risk.
-        omit_music_reason: The recorded reason a narrated project ships without a
-            bed. Present → advisory, not fault: an explicit decision, not a default
-            silence.
-
-    The requirement being enforced is the user's, verbatim: delivering a narrated
-    video with no music and then asking «می‌خوای موزیک هم اضافه کنم؟» is the edit's
-    own job arriving late. An optional tool is how it got skipped; required is the
-    fix, with an explicit escape hatch so a deliberate silence is still expressible.
-    """
+    """Gate the music layer and its provenance for a project."""
     audit = MusicAudit(track=track)
-
     if track is None:
         if narrated:
             if omit_music_reason:
                 audit.advisories.append(
                     "no music bed, by recorded decision: "
-                    f"{omit_music_reason!r}. An explicit choice rather than a "
-                    "default silence — the pipeline treats it as legitimate but "
-                    "keeps it on the record."
+                    f"{omit_music_reason!r}. An explicit choice rather than a default silence."
                 )
             else:
                 audit.problems.append(
-                    "a narrated video has no music bed. Music is required in "
-                    "narrated mode — a finished deliverable with silence under the "
-                    "voice's pauses is an unfinished edit, and asking the client "
-                    "afterwards is the edit's own job arriving late. Either source "
-                    "a bed (pixabay_music is available and needs no key) or record "
-                    "an explicit omit_music_reason."
+                    "a narrated video has no music bed. Music is required in narrated mode; source a licensed bed or record an explicit omit_music_reason."
                 )
         return audit
 
     if track.content_id_risk == "high":
         audit.problems.append(
-            f"music {track.path!r} is marked high Content-ID risk: {track.risk_reason} "
-            "— pick another track. The user asked for Instagram-safe audio, and a "
-            "known-risk track is the one case that cannot be acknowledged away."
+            f"music {track.path!r} is marked high Content-ID risk: {track.risk_reason} — pick another track."
         )
         return audit
 
     if track.content_id_risk == "low":
         if track.license_name not in KNOWN_PERMISSIVE_LICENSES:
             audit.problems.append(
-                f"music {track.path!r} claims low risk under licence "
-                f"«{track.license_name}», which is not one the audit recognizes as "
-                "permitting monetized social media. Record the licence terms or "
-                "downgrade the judgement to unknown."
+                f"music {track.path!r} claims low risk under licence «{track.license_name}», which is not recognized as permitting monetized social media."
             )
         if not track.license_url:
-            audit.problems.append(
-                f"music {track.path!r} has no licence URL — a low-risk claim that "
-                "cannot be revisited is not a claim, it is a hope."
-            )
+            audit.problems.append(f"music {track.path!r} has no licence URL")
 
     if track.content_id_risk == "unknown" and not acknowledge_unknown_risk:
         audit.problems.append(
-            f"music {track.path!r} has unknown Content-ID risk and the record does "
-            "not acknowledge it. Unknown is acceptable only when someone has "
-            "consciously accepted it: pass acknowledge_unknown_risk and the "
-            "acknowledgement is written into the audit record, so the decision "
-            "survives to whoever has to answer a claim."
+            f"music {track.path!r} has unknown Content-ID risk and the record does not acknowledge it."
         )
-
     return audit
 
 
@@ -345,25 +289,30 @@ def audio_props_with_music(
     *,
     narration: str | None,
     music_path: str | None,
+    narration_lufs: float | None = None,
+    music_lufs: float | None = None,
 ) -> dict[str, Any] | None:
-    """The `PersianAudio` block the compose stage should emit.
-
-    Every music level is stated explicitly rather than left to the renderer's
-    defaults, because defaults that live in two places (renderer and pipeline)
-    drift apart in exactly one of them, silently.
-    """
+    """Build renderer audio props, deriving speech gain when measurements exist."""
     if narration is None and music_path is None:
         return None
     props: dict[str, Any] = {}
     if narration is not None:
         props["narration"] = narration
     if music_path is not None:
+        duck = DEFAULT_MUSIC_DUCK_VOLUME
+        if narration_lufs is not None and music_lufs is not None:
+            duck = float(
+                derive_loudness_aware_mix(
+                    narration_lufs=narration_lufs,
+                    music_lufs=music_lufs,
+                )["speechMusicGain"]
+            )
         props.update(
             {
                 "music": music_path,
                 "musicFlatVolume": DEFAULT_MUSIC_FLAT_VOLUME,
                 "musicBaseVolume": DEFAULT_MUSIC_BASE_VOLUME,
-                "musicDuckVolume": DEFAULT_MUSIC_DUCK_VOLUME,
+                "musicDuckVolume": duck,
                 "musicFadeSeconds": DEFAULT_MUSIC_FADE_SECONDS,
             }
         )
@@ -377,9 +326,14 @@ __all__ = [
     "DEFAULT_MUSIC_BASE_VOLUME",
     "DEFAULT_MUSIC_DUCK_VOLUME",
     "DEFAULT_MUSIC_FADE_SECONDS",
+    "LOUDNESS_MIX_POLICY_VERSION",
+    "TARGET_MUSIC_SEPARATION_LU",
+    "MIN_MUSIC_SEPARATION_LU",
+    "MAX_MUSIC_SEPARATION_LU",
     "MUSIC_AUDIBILITY_FLOOR_LUFS",
-    "MAX_DUCKED_MUSIC_GAP_LU",
     "effective_music_loudness",
+    "evaluate_music_separation",
+    "derive_loudness_aware_mix",
     "measure_integrated_loudness",
     "MusicTrack",
     "MusicAudit",
