@@ -586,6 +586,50 @@ def record_phase_attempt(
     return state
 
 
+def record_phase_failure(
+    project_id: str,
+    phase: str,
+    *,
+    reason: str,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Close the current phase attempt as failed without inventing workflow progress."""
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    if phase not in PHASES or phase != state.get("next_phase"):
+        raise PersianVideoWorkflowError(
+            f"cannot fail {phase!r}; next phase is {state.get('next_phase')!r}"
+        )
+    telemetry = state.get("phase_telemetry") or {}
+    entries = list(telemetry.get(phase) or []) if isinstance(telemetry, Mapping) else []
+    if not entries or not isinstance(entries[-1], Mapping):
+        raise PersianVideoWorkflowError(
+            f"cannot fail {phase!r} without a recorded running attempt"
+        )
+    if entries[-1].get("finished_at"):
+        raise PersianVideoWorkflowError(
+            f"cannot fail {phase!r}; latest attempt is already finished"
+        )
+    _finish_phase_telemetry(state, phase, outcome="failed", now=now)
+    telemetry = dict(state.get("phase_telemetry") or {})
+    entries = list(telemetry.get(phase) or [])
+    entry = dict(entries[-1])
+    entry["failure_reason"] = str(reason).strip() or "unspecified failure"
+    entries[-1] = entry
+    telemetry[phase] = entries
+    state["phase_telemetry"] = telemetry
+    failures = list(state.get("phase_failures") or [])
+    failures.append({
+        "phase": phase,
+        "attempt": int(entry.get("attempt") or 0),
+        "reason": entry["failure_reason"],
+        "finished_at": entry.get("finished_at"),
+    })
+    state["phase_failures"] = failures
+    _write_state(_project_root(state), state)
+    return state
+
+
 def _project_root(state: Mapping[str, Any]) -> Path:
     return Path(str(state["read_allowlist"]["project_root"])).resolve()
 
