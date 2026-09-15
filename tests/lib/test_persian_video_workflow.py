@@ -532,7 +532,11 @@ def test_second_asset_pass_is_sorted_by_scene_importance_order(tmp_path):
             "stage": "scene_plan", "status": "completed",
             "timestamp": BASE.isoformat(), "checkpoint_policy": "guided",
             "human_approval_required": False, "human_approved": False,
-            "artifacts": {"scene_plan": {"version": "1.0", "scenes": []}},
+            "artifacts": {"scene_plan": {"version": "1.0", "scenes": [{
+                    "id": "fixture-scene", "type": "broll",
+                    "description": "checkpoint fixture",
+                    "start_seconds": 0.0, "end_seconds": 1.0,
+                }]}},
         }),
         encoding="utf-8",
     )
@@ -569,7 +573,11 @@ def test_second_asset_pass_rejects_slots_outside_scene_importance_order(tmp_path
             "stage": "scene_plan", "status": "completed",
             "timestamp": BASE.isoformat(), "checkpoint_policy": "guided",
             "human_approval_required": False, "human_approved": False,
-            "artifacts": {"scene_plan": {"version": "1.0", "scenes": []}},
+            "artifacts": {"scene_plan": {"version": "1.0", "scenes": [{
+                    "id": "fixture-scene", "type": "broll",
+                    "description": "checkpoint fixture",
+                    "start_seconds": 0.0, "end_seconds": 1.0,
+                }]}},
         }),
         encoding="utf-8",
     )
