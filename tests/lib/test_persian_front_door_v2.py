@@ -147,3 +147,17 @@ def test_full_front_door_reaches_awaiting_human_with_v2_evidence(monkeypatch, tm
     assert result["preflight_report_path"]
     assert result["final_review_path"]
     assert result["candidate_sha256"]
+
+
+def test_local_e2e_opening_shot_carries_film_type_semantic_contract(tmp_path: Path) -> None:
+    narration = tmp_path / "narration.wav"
+    narration.write_bytes(b"audio")
+    clips = _fake_clips(tmp_path)
+    edit = e2e._edit_decisions(narration, e2e._fixture_words(), clips)
+    opening = edit["persian"]["shots"][0]
+
+    assert opening["showsSubject"] is True
+    assert opening["semanticRole"] == "hook_subject"
+    assert opening["semanticDirection"]
+    assert opening["openingSemanticMatch"] is True
+    assert opening["selectionReason"]
