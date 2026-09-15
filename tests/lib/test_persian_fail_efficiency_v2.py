@@ -14,6 +14,7 @@ from lib.persian_video_workflow import (
     load_workflow_state,
     record_asset_search_result,
     record_phase_attempt,
+    record_phase_failure,
 )
 from tests.lib.test_persian_preflight_contract import _payload
 from tests.lib.test_persian_video_workflow import BASE, _asset_result, _bootstrap_to_assets, _bootstrap
@@ -79,6 +80,21 @@ def test_approved_script_mode_selects_timing_oriented_alignment_policy(tmp_path:
     assert policy["scriptAuthority"] == "approved_script"
     assert policy["primaryModelClass"] == "smallest_adequate_word_timing"
     assert policy["heavyTranscriptionRecoveryOnly"] is True
+
+
+def test_phase_failure_closes_running_telemetry_without_advancing_workflow(tmp_path: Path) -> None:
+    _bootstrap(tmp_path)
+    record_phase_attempt("run", "prepare_inputs", pipeline_dir=tmp_path, now=BASE)
+    failed = record_phase_failure(
+        "run", "prepare_inputs", reason="external alignment crashed",
+        pipeline_dir=tmp_path, now=BASE + timedelta(seconds=7),
+    )
+    entry = failed["phase_telemetry"]["prepare_inputs"][-1]
+    assert entry["outcome"] == "failed"
+    assert entry["duration_seconds"] == pytest.approx(7.0)
+    assert entry["failure_reason"] == "external alignment crashed"
+    assert failed["next_phase"] == "prepare_inputs"
+    assert "prepare_inputs" not in failed["completed_phases"]
 
 
 def test_phase_telemetry_distinguishes_editorial_and_external_execution(tmp_path: Path) -> None:
