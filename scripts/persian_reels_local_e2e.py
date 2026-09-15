@@ -38,6 +38,7 @@ from lib.persian_video_workflow import (
     promote_workflow_edit_draft,
     record_asset_search_result,
     record_phase_attempt,
+    record_phase_failure,
     stage_workflow_edit_draft,
 )
 from schemas.artifacts import validate_artifact
@@ -445,35 +446,11 @@ def _attempt_complete(root: Path, phase: str, evidence: dict[str, Any]) -> None:
 
 def _advance_to_assets(
     root: Path,
-    state: dict[str, Any],
-    alignment: dict[str, Any],
     plan: dict[str, Any],
     manifest: dict[str, Any],
     sourcing_order: list[str],
 ) -> None:
-    """Advance through prepared inputs using checkpoint-first atomic ordering."""
-    _attempt_complete(root, "prepare_inputs", {
-        "authoritative_script_sha256": state["input"]["approved_script"]["sha256"],
-        "narration_sha256": state["input"]["narration"]["sha256"],
-    })
-
-    # Checkpoint-backed phases commit durable artifact truth before workflow state
-    # advances. This is intentionally the opposite of the old local harness order.
-    write_checkpoint(
-        root, PROJECT_ID, "idea", "completed", {"brief": _brief()},
-        pipeline_type="persian-footage",
-    )
-    write_checkpoint(
-        root, PROJECT_ID, "script", "completed", {"script": _script_artifact()},
-        pipeline_type="persian-footage",
-    )
-    _attempt_complete(root, "align_script_timing", {
-        "provider": alignment.get("provider") or "mlx_whisper",
-        "model": alignment.get("model"),
-        "alignment_mode": alignment.get("alignment_mode"),
-        "heavy_recovery_used": bool(alignment.get("heavy_recovery_used")),
-    })
-
+    """Advance scene planning/assets after prepared inputs and alignment are durable."""
     write_checkpoint(
         root, PROJECT_ID, "scene_plan", "completed", {"scene_plan": plan},
         pipeline_type="persian-footage",
@@ -679,7 +656,34 @@ def run_local(root: Path) -> dict[str, Any]:
     project = Path(state["read_allowlist"]["project_root"])
     narration = Path(state["input"]["narration"]["source_path"])
     alignment_policy = alignment_execution_policy(state)
-    alignment = _align_timing(narration, project / "artifacts" / "transcription", state)
+    _attempt_complete(root, "prepare_inputs", {
+        "authoritative_script_sha256": state["input"]["approved_script"]["sha256"],
+        "narration_sha256": state["input"]["narration"]["sha256"],
+    })
+    write_checkpoint(
+        root, PROJECT_ID, "idea", "completed", {"brief": _brief()},
+        pipeline_type="persian-footage",
+    )
+    write_checkpoint(
+        root, PROJECT_ID, "script", "completed", {"script": _script_artifact()},
+        pipeline_type="persian-footage",
+    )
+    record_phase_attempt(PROJECT_ID, "align_script_timing", pipeline_dir=root)
+    try:
+        alignment = _align_timing(
+            narration, project / "artifacts" / "transcription", state
+        )
+    except Exception as exc:
+        record_phase_failure(
+            PROJECT_ID, "align_script_timing", reason=str(exc), pipeline_dir=root
+        )
+        raise
+    complete_phase(PROJECT_ID, "align_script_timing", evidence={
+        "provider": alignment.get("provider") or "mlx_whisper",
+        "model": alignment.get("model"),
+        "alignment_mode": alignment.get("alignment_mode"),
+        "heavy_recovery_used": bool(alignment.get("heavy_recovery_used")),
+    }, pipeline_dir=root)
     words = list(alignment["word_timestamps"])
     clips = _make_synthetic_clips(project)
     plan = _scene_plan()
@@ -702,7 +706,7 @@ def run_local(root: Path) -> dict[str, Any]:
     if retention["problems"]:
         raise RuntimeError("retention audit failed: " + "; ".join(retention["problems"]))
     _advance_to_assets(
-        root, state, alignment, plan, projected_manifest, scene_audit["sourcing_order"]
+        root, plan, projected_manifest, scene_audit["sourcing_order"]
     )
     _attempt_complete(root, "review_subject_regions", {"synthetic_fixture": True,
                                                         "regions_reviewed": True})
@@ -711,50 +715,78 @@ def run_local(root: Path) -> dict[str, Any]:
     stage_workflow_edit_draft(
         PROJECT_ID, attempt_id, edit_input, pipeline_dir=root
     )
-    preflight = preflight_workflow_edit_draft(
-        PROJECT_ID, attempt_id, pipeline_dir=root
-    )
-    if preflight.get("ok") is not True:
-        raise RuntimeError(
-            "front-door aggregate preflight refused: "
-            + json.dumps(preflight.get("blockingIssues") or [], ensure_ascii=False)
+    record_phase_attempt(PROJECT_ID, "no_copy_preflight", pipeline_dir=root)
+    try:
+        preflight = preflight_workflow_edit_draft(
+            PROJECT_ID, attempt_id, pipeline_dir=root
         )
-    promoted = promote_workflow_edit_draft(
-        PROJECT_ID, attempt_id, pipeline_dir=root
+        if preflight.get("ok") is not True:
+            raise RuntimeError(
+                "front-door aggregate preflight refused: "
+                + json.dumps(preflight.get("blockingIssues") or [], ensure_ascii=False)
+            )
+        promoted = promote_workflow_edit_draft(
+            PROJECT_ID, attempt_id, pipeline_dir=root
+        )
+        canonical_edit = json.loads(
+            Path(promoted["canonicalPath"]).read_text(encoding="utf-8")
+        )
+    except Exception as exc:
+        record_phase_failure(
+            PROJECT_ID, "no_copy_preflight", reason=str(exc), pipeline_dir=root
+        )
+        raise
+    complete_phase(
+        PROJECT_ID, "no_copy_preflight", evidence={"attempt_id": attempt_id}, pipeline_dir=root
     )
-    canonical_edit = json.loads(
-        Path(promoted["canonicalPath"]).read_text(encoding="utf-8")
-    )
-    _attempt_complete(root, "no_copy_preflight", {"attempt_id": attempt_id})
     candidate = project / "renders" / "candidate.mp4"
-    result = ScriptAlignedPersianCompose().execute({
-        "edit_decisions": canonical_edit, "output_path": str(candidate), "crf": 20,
-        "concurrency": 2, "timeout_ms": 120000})
-    if not result.success:
-        raise RuntimeError(result.error or "Persian compose failed")
-    data = dict(result.data or {})
-    _attempt_complete(root, "render_final_candidate", {"output_path": str(candidate),
-                                                        "motion_qa_passed": data["post_render_motion_qa"]["passed"]})
-    probe = _probe(candidate)
-    review_frames = _extract_frames(candidate, project / "artifacts" / "final-review-frames",
-                                    [0.5, 3.2, 6.2, 9.5], "review")
-    caption_frames = _extract_frames(candidate, project / "artifacts" / "caption-review-frames",
-                                     [1.0, 5.6, 9.0], "caption")
-    rendered_audio = measure_rendered_audio_output(candidate)
-    hook_audit = ((preflight.get("evidence") or {}).get("hookQualityAudit"))
-    if not isinstance(hook_audit, dict) or hook_audit.get("required") is not True:
-        raise RuntimeError(
-            "front-door preflight did not persist required Hook Quality v2 evidence"
+    record_phase_attempt(PROJECT_ID, "render_final_candidate", pipeline_dir=root)
+    try:
+        result = ScriptAlignedPersianCompose().execute({
+            "edit_decisions": canonical_edit, "output_path": str(candidate), "crf": 20,
+            "concurrency": 2, "timeout_ms": 120000})
+        if not result.success:
+            raise RuntimeError(result.error or "Persian compose failed")
+        data = dict(result.data or {})
+    except Exception as exc:
+        record_phase_failure(
+            PROJECT_ID, "render_final_candidate", reason=str(exc), pipeline_dir=root
         )
-    review_path = _build_final_review(
-        candidate, review_frames, data.get("subtitle_path"), probe, project,
-        hook_audit, rendered_audio,
+        raise
+    complete_phase(PROJECT_ID, "render_final_candidate", evidence={
+        "output_path": str(candidate),
+        "motion_qa_passed": data["post_render_motion_qa"]["passed"],
+    }, pipeline_dir=root)
+    record_phase_attempt(PROJECT_ID, "final_review", pipeline_dir=root)
+    try:
+        probe = _probe(candidate)
+        review_frames = _extract_frames(candidate, project / "artifacts" / "final-review-frames",
+                                        [0.5, 3.2, 6.2, 9.5], "review")
+        caption_frames = _extract_frames(candidate, project / "artifacts" / "caption-review-frames",
+                                         [1.0, 5.6, 9.0], "caption")
+        rendered_audio = measure_rendered_audio_output(candidate)
+        hook_audit = ((preflight.get("evidence") or {}).get("hookQualityAudit"))
+        if not isinstance(hook_audit, dict) or hook_audit.get("required") is not True:
+            raise RuntimeError(
+                "front-door preflight did not persist required Hook Quality v2 evidence"
+            )
+        review_path = _build_final_review(
+            candidate, review_frames, data.get("subtitle_path"), probe, project,
+            hook_audit, rendered_audio,
+        )
+        report = _render_report(data, candidate, retention, review_path, review_frames,
+                                caption_frames, probe)
+        write_checkpoint(root, PROJECT_ID, "compose", "awaiting_human",
+                         {"render_report": report}, pipeline_type="persian-footage")
+    except Exception as exc:
+        record_phase_failure(
+            PROJECT_ID, "final_review", reason=str(exc), pipeline_dir=root
+        )
+        raise
+    complete_phase(
+        PROJECT_ID, "final_review", evidence={"final_review_path": str(review_path)},
+        pipeline_dir=root,
     )
-    report = _render_report(data, candidate, retention, review_path, review_frames,
-                            caption_frames, probe)
-    write_checkpoint(root, PROJECT_ID, "compose", "awaiting_human",
-                     {"render_report": report}, pipeline_type="persian-footage")
-    _attempt_complete(root, "final_review", {"final_review_path": str(review_path)})
     terminal = complete_phase(PROJECT_ID, "awaiting_human", pipeline_dir=root)
     summary = {
         "ok": True, "production_certified": False, "disclaimer": DISCLAIMER,
