@@ -447,6 +447,24 @@ class DirectClipSearch(BaseTool):
             semantic_candidates_reviewed = 0
             technical_rejects = 0
             duplicate_technical_rejects = 0
+            seen_technical_rejects: set[tuple[str, str, str, str]] = set()
+
+            def register_technical_reject(
+                *, phase: str, source: str, clip_id: str, error: str
+            ) -> None:
+                nonlocal technical_rejects, duplicate_technical_rejects
+                identity = (source, clip_id, phase, error)
+                if identity in seen_technical_rejects:
+                    duplicate_technical_rejects += 1
+                else:
+                    seen_technical_rejects.add(identity)
+                    technical_rejects += 1
+                errors.append({
+                    "phase": phase,
+                    "clip_id": clip_id,
+                    "source": source,
+                    "error": error,
+                })
 
             def progress_data() -> dict[str, Any]:
                 return {
@@ -586,13 +604,12 @@ class DirectClipSearch(BaseTool):
 
                         metadata_error = _candidate_filter_error(cand, filters)
                         if metadata_error:
-                            technical_rejects += 1
-                            errors.append({
-                                "phase": "metadata_filter",
-                                "clip_id": cand.clip_id,
-                                "source": src.name,
-                                "error": metadata_error,
-                            })
+                            register_technical_reject(
+                                phase="metadata_filter",
+                                clip_id=cand.clip_id,
+                                source=src.name,
+                                error=metadata_error,
+                            )
                             continue
 
                         if timed_out():
@@ -629,13 +646,12 @@ class DirectClipSearch(BaseTool):
                                     clip_id=clip_id,
                                 )
                             except Exception as e:
-                                technical_rejects += 1
-                                errors.append({
-                                    "phase": "validation",
-                                    "clip_id": clip_id,
-                                    "source": src.name,
-                                    "error": f"{type(e).__name__}: {e}",
-                                })
+                                register_technical_reject(
+                                    phase="validation",
+                                    clip_id=clip_id,
+                                    source=src.name,
+                                    error=f"{type(e).__name__}: {e}",
+                                )
                                 _cleanup_file(clip_path)
                                 _cleanup_file(thumbs_dir / f"{clip_id}.jpg")
                                 continue
@@ -713,13 +729,12 @@ class DirectClipSearch(BaseTool):
                             )
                         except _MediaValidationError as e:
                             _cleanup_file(partial_path)
-                            technical_rejects += 1
-                            errors.append({
-                                "phase": "validation",
-                                "clip_id": clip_id,
-                                "source": src.name,
-                                "error": str(e),
-                            })
+                            register_technical_reject(
+                                phase="validation",
+                                clip_id=clip_id,
+                                source=src.name,
+                                error=str(e),
+                            )
                             continue
                         except Exception as e:
                             _cleanup_file(partial_path)
