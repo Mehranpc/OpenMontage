@@ -11,10 +11,12 @@ from tests.lib.test_persian_video_workflow import BASE, _checkpoint, _review_rea
 
 def _hook_audit() -> dict:
     return {
-        "version": "1.0",
+        "version": "2.0",
+        "required": True,
         "disposition": "acceptable",
         "problems": [],
         "advisories": [],
+        "semanticAuthority": "authored-claim-awaiting-rendered-review",
     }
 
 
