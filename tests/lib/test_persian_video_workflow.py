@@ -526,6 +526,16 @@ def test_asset_result_is_bound_to_issued_request_and_remaining_budget(tmp_path):
 def test_second_asset_pass_is_sorted_by_scene_importance_order(tmp_path):
     _bootstrap(tmp_path)
     _advance_to(tmp_path, "plan_scenes_moments")
+    (tmp_path / "run" / "checkpoint_scene_plan.json").write_text(
+        json.dumps({
+            "version": "1.0", "project_id": "run", "pipeline_type": "persian-footage",
+            "stage": "scene_plan", "status": "completed",
+            "timestamp": BASE.isoformat(), "checkpoint_policy": "guided",
+            "human_approval_required": False, "human_approved": False,
+            "artifacts": {"scene_plan": {"version": "1.0", "scenes": []}},
+        }),
+        encoding="utf-8",
+    )
     record_phase_attempt("run", "plan_scenes_moments", pipeline_dir=tmp_path, now=BASE)
     complete_phase(
         "run", "plan_scenes_moments",
@@ -553,6 +563,16 @@ def test_second_asset_pass_is_sorted_by_scene_importance_order(tmp_path):
 def test_second_asset_pass_rejects_slots_outside_scene_importance_order(tmp_path):
     _bootstrap(tmp_path)
     _advance_to(tmp_path, "plan_scenes_moments")
+    (tmp_path / "run" / "checkpoint_scene_plan.json").write_text(
+        json.dumps({
+            "version": "1.0", "project_id": "run", "pipeline_type": "persian-footage",
+            "stage": "scene_plan", "status": "completed",
+            "timestamp": BASE.isoformat(), "checkpoint_policy": "guided",
+            "human_approval_required": False, "human_approved": False,
+            "artifacts": {"scene_plan": {"version": "1.0", "scenes": []}},
+        }),
+        encoding="utf-8",
+    )
     record_phase_attempt("run", "plan_scenes_moments", pipeline_dir=tmp_path, now=BASE)
     complete_phase(
         "run", "plan_scenes_moments", evidence={"sourcing_order": ["event-1"]},
