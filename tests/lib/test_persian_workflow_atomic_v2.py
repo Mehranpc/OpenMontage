@@ -58,8 +58,8 @@ def test_mp4_file_alone_never_fast_forwards_render_lifecycle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _bootstrap(tmp_path)
-    _advance_to(tmp_path, "render_final_candidate")
     _assume_valid_prerequisite_checkpoints(monkeypatch)
+    _advance_to(tmp_path, "render_final_candidate")
     candidate = tmp_path / "run" / "renders" / "candidate.mp4"
     candidate.parent.mkdir(parents=True, exist_ok=True)
     candidate.write_bytes(b"render exists but lifecycle is incomplete")
@@ -75,8 +75,8 @@ def test_valid_digest_bound_compose_checkpoint_recovers_render_without_presentat
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _bootstrap(tmp_path)
-    _advance_to(tmp_path, "render_final_candidate")
     _assume_valid_prerequisite_checkpoints(monkeypatch)
+    _advance_to(tmp_path, "render_final_candidate")
     project = tmp_path / "run"
     candidate = project / "renders" / "candidate.mp4"
     candidate.parent.mkdir(parents=True, exist_ok=True)
@@ -100,8 +100,8 @@ def test_digest_mismatch_refuses_recovery_fast_forward(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _bootstrap(tmp_path)
-    _advance_to(tmp_path, "render_final_candidate")
     _assume_valid_prerequisite_checkpoints(monkeypatch)
+    _advance_to(tmp_path, "render_final_candidate")
     project = tmp_path / "run"
     candidate = project / "renders" / "candidate.mp4"
     candidate.parent.mkdir(parents=True, exist_ok=True)
