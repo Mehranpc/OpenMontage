@@ -633,6 +633,16 @@ def _write_final_review(project: Path, candidate: Path) -> Path:
             "audio_spotcheck": {
                 "narration_present": True, "music_present": True, "unexpected_silence": False,
                 "clipping_detected": False, "mix_intelligible": True, "issues": [],
+                "policyVersion": "1.0",
+                "measurementSource": "rendered_mp4_plus_mix_policy",
+                "candidateSha256": hashlib.sha256(candidate.read_bytes()).hexdigest(),
+                "outputIntegratedLufs": -13.0,
+                "truePeakDbfs": -1.4,
+                "narrationLufs": -13.2,
+                "musicLufs": -10.3,
+                "speechMusicGain": 0.226,
+                "speechMusicSeparationLu": 10.0,
+                "separationMethod": "source_lufs_plus_render_gain",
             },
             "promise_preservation": {
                 "delivery_promise_honored": True, "renderer_family_used": "persian-footage",
