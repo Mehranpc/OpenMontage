@@ -331,7 +331,7 @@ def _music_diagnostics(
                     ContractDiagnostic(
                         code,
                         "/persian/audio/musicDuckVolume",
-                        f"authored speech-time music gain predicts {mix['predictedSeparationLu']:.1f} LU separation, {relation} the {boundary:.1f} LU policy boundary",
+                        f"authored speech-time music gain predicts a {mix['predictedSeparationLu']:.1f} LU gap, {relation} the {boundary:.1f} LU policy boundary",
                         "remove the fixed musicDuckVolume and let the versioned loudness policy derive speech-time gain from measured narration/music LUFS",
                     )
                 )
