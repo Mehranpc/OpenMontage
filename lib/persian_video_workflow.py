@@ -538,7 +538,8 @@ def assert_within_wall_time(
     limit = int((state.get("budgets") or {}).get("max_wall_time_minutes", 0))
     if limit <= 0 or elapsed_minutes > limit:
         raise PersianVideoWorkflowError(
-            f"{basis} budget exceeded: {elapsed_minutes:.1f}m > {limit}m"
+            f"workflow wall-time budget exceeded on {basis} accounting: "
+            f"{elapsed_minutes:.1f}m > {limit}m"
         )
 
 def record_phase_attempt(
