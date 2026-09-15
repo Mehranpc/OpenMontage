@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import lib.persian_video_workflow as workflow
 from lib.persian_video_workflow import (
     PersianVideoWorkflowError,
     complete_phase,
@@ -20,6 +21,17 @@ from tests.lib.test_persian_video_workflow import (
     _prepare_inputs_evidence,
     _report,
 )
+
+
+def _assume_valid_prerequisite_checkpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    original = workflow.read_checkpoint
+
+    def fake_read(projects_root, project_id, stage):
+        if stage in {"script", "scene_plan", "assets", "edit"}:
+            return {"status": "completed", "stage": stage, "project_id": project_id}
+        return original(projects_root, project_id, stage)
+
+    monkeypatch.setattr(workflow, "read_checkpoint", fake_read)
 
 
 def test_checkpoint_backed_phase_cannot_advance_state_before_checkpoint(tmp_path: Path) -> None:
@@ -42,9 +54,12 @@ def test_checkpoint_backed_phase_cannot_advance_state_before_checkpoint(tmp_path
     assert "align_script_timing" not in persisted["completed_phases"]
 
 
-def test_mp4_file_alone_never_fast_forwards_render_lifecycle(tmp_path: Path) -> None:
+def test_mp4_file_alone_never_fast_forwards_render_lifecycle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _bootstrap(tmp_path)
     _advance_to(tmp_path, "render_final_candidate")
+    _assume_valid_prerequisite_checkpoints(monkeypatch)
     candidate = tmp_path / "run" / "renders" / "candidate.mp4"
     candidate.parent.mkdir(parents=True, exist_ok=True)
     candidate.write_bytes(b"render exists but lifecycle is incomplete")
@@ -56,9 +71,12 @@ def test_mp4_file_alone_never_fast_forwards_render_lifecycle(tmp_path: Path) -> 
     assert reconciled["status"] == "active"
 
 
-def test_valid_digest_bound_compose_checkpoint_recovers_render_without_presentation(tmp_path: Path) -> None:
+def test_valid_digest_bound_compose_checkpoint_recovers_render_without_presentation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _bootstrap(tmp_path)
     _advance_to(tmp_path, "render_final_candidate")
+    _assume_valid_prerequisite_checkpoints(monkeypatch)
     project = tmp_path / "run"
     candidate = project / "renders" / "candidate.mp4"
     candidate.parent.mkdir(parents=True, exist_ok=True)
@@ -78,9 +96,12 @@ def test_valid_digest_bound_compose_checkpoint_recovers_render_without_presentat
     assert recovery[-1]["candidateSha256"] == report["outputs"][0]["sha256"]
 
 
-def test_digest_mismatch_refuses_recovery_fast_forward(tmp_path: Path) -> None:
+def test_digest_mismatch_refuses_recovery_fast_forward(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _bootstrap(tmp_path)
     _advance_to(tmp_path, "render_final_candidate")
+    _assume_valid_prerequisite_checkpoints(monkeypatch)
     project = tmp_path / "run"
     candidate = project / "renders" / "candidate.mp4"
     candidate.parent.mkdir(parents=True, exist_ok=True)
