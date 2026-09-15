@@ -218,6 +218,7 @@ def phase_time_accounting(
     *,
     now: datetime | None = None,
     since: datetime | None = None,
+    include_open: bool = False,
 ) -> dict[str, float]:
     """Sum phase telemetry without charging external/durable time as editorial time."""
     current = now or datetime.now(timezone.utc)
@@ -247,9 +248,11 @@ def phase_time_accounting(
                     try:
                         finished = _parse_timestamp(finished_raw)
                     except PersianVideoWorkflowError:
-                        finished = current
-                else:
+                        continue
+                elif include_open:
                     finished = current
+                else:
+                    continue
                 duration = max(0.0, (finished - started).total_seconds())
             if str(entry.get("execution_class") or "editorial") == "external_durable":
                 external += duration
@@ -524,7 +527,7 @@ def assert_within_wall_time(
     telemetry = state.get("phase_telemetry")
     if isinstance(telemetry, Mapping) and telemetry:
         elapsed_minutes = phase_time_accounting(
-            state, now=current, since=started
+            state, now=current, since=started, include_open=True
         )["active_editorial_seconds"] / 60.0
         basis = "active editorial"
     else:
