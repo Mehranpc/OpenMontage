@@ -46,10 +46,13 @@ def test_mix_inspection_exposes_measured_and_derived_policy_evidence(tmp_path: P
 
 
 def test_production_draft_materializes_derived_gain_before_compose(
-    tmp_path: Path, staging: Path, clip: Path, monkeypatch
+    tmp_path: Path, monkeypatch
 ) -> None:
+    staging = tmp_path / "staging"
+    clip = tmp_path / "clip.mp4"
     narration = tmp_path / "vo.wav"
     bed = tmp_path / "bed.mp3"
+    clip.write_bytes(b"clip")
     narration.write_bytes(b"audio")
     bed.write_bytes(b"music")
     persian = _persian(
