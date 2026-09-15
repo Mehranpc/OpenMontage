@@ -618,6 +618,27 @@ def complete_phase(
     if phase == "awaiting_human":
         phase_evidence.update(_validate_awaiting_human_candidate(state))
 
+    # Checkpoint-backed phases are transaction-like: durable checkpoint truth must
+    # exist before workflow state is allowed to advance. The specialized edit
+    # preflight validator above already verifies digest binding, but the generic
+    # stage checkpoint remains the commit point for the lifecycle.
+    stage = _PHASE_CHECKPOINT.get(phase)
+    if stage is not None:
+        try:
+            checkpoint = read_checkpoint(
+                Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve(),
+                project_id,
+                stage,
+            )
+        except (CheckpointValidationError, OSError, json.JSONDecodeError) as exc:
+            raise PersianVideoWorkflowError(
+                f"checkpoint_{stage}.json must be valid before {phase} can complete"
+            ) from exc
+        if not checkpoint or checkpoint.get("status") != "completed":
+            raise PersianVideoWorkflowError(
+                f"checkpoint_{stage}.json must be completed before {phase} can complete"
+            )
+
     completed = list(state.get("completed_phases") or [])
     if phase not in completed:
         completed.append(phase)
@@ -683,6 +704,7 @@ def reconcile_workflow_state(
                 rewind_to = phase
 
     archived: list[str] = []
+    recovered: list[dict[str, Any]] = []
     if rewind_to is not None:
         target_index = _phase_index(rewind_to)
         state["completed_phases"] = [p for p in completed if _phase_index(p) < target_index]
@@ -693,12 +715,50 @@ def reconcile_workflow_state(
         archived = _invalidate_checkpoints_for_rewind(
             state, rewind_to, reason="workflow/checkpoint reconciliation after missing or incomplete prerequisite checkpoint",
         )
+    elif state.get("next_phase") == "render_final_candidate":
+        # A render process may finish successfully after the controlling process
+        # disappears. Recover only from the durable compose checkpoint and the
+        # exact digest-bound MP4 it names. Mere MP4 presence never advances state.
+        compose_path = _project_root(state) / "checkpoint_compose.json"
+        if compose_path.is_file():
+            try:
+                candidate = _validate_awaiting_human_candidate(
+                    state, require_final_review=False
+                )
+            except PersianVideoWorkflowError as exc:
+                problems.append({
+                    "phase": "render_final_candidate",
+                    "stage": "compose",
+                    "problem": str(exc),
+                })
+            else:
+                completed_now = list(state.get("completed_phases") or [])
+                if "render_final_candidate" not in completed_now:
+                    completed_now.append("render_final_candidate")
+                state["completed_phases"] = completed_now
+                state["next_phase"] = "final_review"
+                state["status"] = "active"
+                all_evidence = dict(state.get("evidence") or {})
+                all_evidence["render_final_candidate"] = {
+                    "candidate_path": candidate["candidate_path"],
+                    "candidate_sha256": candidate["candidate_sha256"],
+                    "checkpoint": candidate["checkpoint"],
+                    "recovered": True,
+                }
+                state["evidence"] = all_evidence
+                recovered.append({
+                    "phase": "render_final_candidate",
+                    "candidatePath": candidate["candidate_path"],
+                    "candidateSha256": candidate["candidate_sha256"],
+                    "checkpoint": candidate["checkpoint"],
+                })
 
     reconciliation = {
         "at": datetime.now(timezone.utc).isoformat(),
         "rewoundTo": rewind_to,
         "problems": problems,
         "archivedCheckpoints": archived,
+        "recoveredPhases": recovered,
     }
     state["last_reconciliation"] = reconciliation
     _write_state(_project_root(state), state)
