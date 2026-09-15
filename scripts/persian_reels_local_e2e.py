@@ -279,6 +279,13 @@ def _edit_decisions(narration: Path, words: list[dict[str, Any]], clips: dict[st
             "id": f"shot-{index + 1}", "semanticBeatId": "beat-1" if index < 2 else "beat-2",
             "visualEventId": event["id"], "transitionIn": "cut", "changeType": changes[index],
             "narrativeRole": roles[index], "humanPresence": False,
+            "showsSubject": bool(event.get("shows_subject")),
+            **({
+                "semanticRole": "hook_subject",
+                "semanticDirection": "moving light visibly changes direction during the opening hook",
+                "openingSemanticMatch": True,
+                "selectionReason": "The moving-light subject is clearly visible and changes direction in the selected opening window.",
+            } if index == 0 else {}),
             "source": str(clips[str(event["id"])]), "startSeconds": start,
             "endSeconds": start + float(event["duration_seconds"]), "sourceInSeconds": 0.0,
             "camera": event["camera"], "attribution": DISCLAIMER,
