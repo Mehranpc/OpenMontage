@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from lib.persian_edit_contract import collect_persian_edit_diagnostics, inspect_persian_audio_mix
+from lib.persian_edit_workspace import stage_edit_draft
 from tests.lib.test_persian_edit_contract import _add_audible_music_fixture, _edit
 from tests.tools.test_persian_compose_props import _build, _persian
 
@@ -43,7 +45,7 @@ def test_mix_inspection_exposes_measured_and_derived_policy_evidence(tmp_path: P
     assert evidence["gainSource"] == "derived_loudness_policy"
 
 
-def test_compose_uses_derived_gain_instead_of_fixed_duck(
+def test_production_draft_materializes_derived_gain_before_compose(
     tmp_path: Path, staging: Path, clip: Path, monkeypatch
 ) -> None:
     narration = tmp_path / "vo.wav"
@@ -64,9 +66,12 @@ def test_compose_uses_derived_gain_instead_of_fixed_duck(
             "contentIdRisk": {"level": "low", "reason": "fixture"},
         },
     )
-    monkeypatch.setattr("tools.video.persian_compose.measure_integrated_loudness", _loudness)
+    monkeypatch.setattr("lib.persian_edit_contract.measure_integrated_loudness", _loudness)
 
-    props, _ = _build(persian, staging)
+    staged = stage_edit_draft(tmp_path / "project", "mix-v2", {"persian": persian})
+    draft = json.loads(Path(staged["draftPath"]).read_text(encoding="utf-8"))
+    props, _ = _build(draft["persian"], staging)
 
+    assert draft["persian"]["audio"]["musicDuckVolume"] == pytest.approx(0.226, abs=0.005)
     assert props["audio"]["musicDuckVolume"] == pytest.approx(0.226, abs=0.005)
     assert props["audio"]["musicDuckVolume"] != pytest.approx(0.55)
