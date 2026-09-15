@@ -187,6 +187,104 @@ def _production_input_mode(*, has_script: bool, has_narration: bool) -> str:
     )
 
 
+_EXTERNAL_DURABLE_PHASES = frozenset({"acquire_assets", "render_final_candidate"})
+
+
+def alignment_execution_policy(state: Mapping[str, Any]) -> dict[str, Any]:
+    """Choose the lightest adequate alignment path from script authority."""
+    input_record = state.get("input") if isinstance(state.get("input"), Mapping) else {}
+    authority = str(input_record.get("script_authority") or "spoken_narration")
+    if authority == "approved_script":
+        return {
+            "mode": "timing_oriented",
+            "scriptAuthority": "approved_script",
+            "primaryModelClass": "smallest_adequate_word_timing",
+            "heavyTranscriptionRecoveryOnly": True,
+        }
+    return {
+        "mode": "transcription_oriented",
+        "scriptAuthority": authority,
+        "primaryModelClass": "speech_transcription",
+        "heavyTranscriptionRecoveryOnly": False,
+    }
+
+
+def _execution_class_for_phase(phase: str) -> str:
+    return "external_durable" if phase in _EXTERNAL_DURABLE_PHASES else "editorial"
+
+
+def phase_time_accounting(
+    state: Mapping[str, Any],
+    *,
+    now: datetime | None = None,
+    since: datetime | None = None,
+) -> dict[str, float]:
+    """Sum phase telemetry without charging external/durable time as editorial time."""
+    current = now or datetime.now(timezone.utc)
+    editorial = 0.0
+    external = 0.0
+    telemetry = state.get("phase_telemetry")
+    if not isinstance(telemetry, Mapping):
+        telemetry = {}
+    for entries in telemetry.values():
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                continue
+            try:
+                started = _parse_timestamp(str(entry.get("started_at") or ""))
+            except PersianVideoWorkflowError:
+                continue
+            if since is not None and started < since:
+                continue
+            raw_duration = entry.get("duration_seconds")
+            if isinstance(raw_duration, (int, float)) and not isinstance(raw_duration, bool):
+                duration = max(0.0, float(raw_duration))
+            else:
+                finished_raw = str(entry.get("finished_at") or "").strip()
+                if finished_raw:
+                    try:
+                        finished = _parse_timestamp(finished_raw)
+                    except PersianVideoWorkflowError:
+                        finished = current
+                else:
+                    finished = current
+                duration = max(0.0, (finished - started).total_seconds())
+            if str(entry.get("execution_class") or "editorial") == "external_durable":
+                external += duration
+            else:
+                editorial += duration
+    return {
+        "active_editorial_seconds": round(editorial, 3),
+        "external_durable_seconds": round(external, 3),
+        "total_observed_seconds": round(editorial + external, 3),
+    }
+
+
+def _finish_phase_telemetry(
+    state: dict[str, Any], phase: str, *, outcome: str, now: datetime | None = None
+) -> None:
+    telemetry = dict(state.get("phase_telemetry") or {})
+    entries = list(telemetry.get(phase) or [])
+    if not entries or not isinstance(entries[-1], Mapping):
+        return
+    entry = dict(entries[-1])
+    if entry.get("finished_at"):
+        return
+    finished = now or datetime.now(timezone.utc)
+    try:
+        started = _parse_timestamp(str(entry.get("started_at") or ""))
+    except PersianVideoWorkflowError:
+        started = finished
+    entry["finished_at"] = finished.isoformat()
+    entry["duration_seconds"] = round(max(0.0, (finished - started).total_seconds()), 3)
+    entry["outcome"] = outcome
+    entries[-1] = entry
+    telemetry[phase] = entries
+    state["phase_telemetry"] = telemetry
+
+
 def _state_path(project_dir: Path) -> Path:
     return project_dir / STATE_FILENAME
 
@@ -290,6 +388,8 @@ def bootstrap_persian_video(
             "budgets": asdict(get_workflow_budgets()),
             "attempts": {},
             "send_backs": 0,
+            "phase_telemetry": {},
+            "alignment_policy": alignment_execution_policy({"input": input_record}),
             "projects_root": str(projects_root),
             "read_allowlist": {
                 "project_root": str(project_dir.resolve()),
@@ -421,13 +521,22 @@ def assert_within_wall_time(
         str(state.get("budget_window_started_at") or state.get("created_at") or "")
     )
     current = now or datetime.now(timezone.utc)
-    elapsed_minutes = max(0.0, (current - started).total_seconds() / 60.0)
+    telemetry = state.get("phase_telemetry")
+    if isinstance(telemetry, Mapping) and telemetry:
+        elapsed_minutes = phase_time_accounting(
+            state, now=current, since=started
+        )["active_editorial_seconds"] / 60.0
+        basis = "active editorial"
+    else:
+        # Legacy states have no phase telemetry, so retain the historical guard
+        # until their first instrumented attempt establishes the new accounting.
+        elapsed_minutes = max(0.0, (current - started).total_seconds() / 60.0)
+        basis = "workflow wall-time"
     limit = int((state.get("budgets") or {}).get("max_wall_time_minutes", 0))
     if limit <= 0 or elapsed_minutes > limit:
         raise PersianVideoWorkflowError(
-            f"workflow wall-time budget exceeded: {elapsed_minutes:.1f}m > {limit}m"
+            f"{basis} budget exceeded: {elapsed_minutes:.1f}m > {limit}m"
         )
-
 
 def record_phase_attempt(
     project_id: str,
@@ -451,6 +560,19 @@ def record_phase_attempt(
         )
     attempts[phase] = count
     state["attempts"] = attempts
+    effective_now = now or datetime.now(timezone.utc)
+    telemetry = dict(state.get("phase_telemetry") or {})
+    entries = list(telemetry.get(phase) or [])
+    entries.append({
+        "attempt": count,
+        "started_at": effective_now.isoformat(),
+        "finished_at": None,
+        "duration_seconds": None,
+        "execution_class": _execution_class_for_phase(phase),
+        "outcome": "running",
+    })
+    telemetry[phase] = entries
+    state["phase_telemetry"] = telemetry
     _write_state(Path(state["read_allowlist"]["project_root"]), state)
     return state
 
@@ -565,7 +687,7 @@ def _validate_no_copy_preflight_completion(
     }
 
 
-def complete_phase(
+def _complete_phase_impl(
     project_id: str,
     phase: str,
     *,
@@ -652,8 +774,32 @@ def complete_phase(
         state["next_phase"] = None
     else:
         state["next_phase"] = PHASES[_phase_index(phase) + 1]
+    _finish_phase_telemetry(state, phase, outcome="succeeded", now=now)
     _write_state(_project_root(state), state)
     return state
+
+
+def complete_phase(
+    project_id: str,
+    phase: str,
+    *,
+    evidence: Mapping[str, Any] | None = None,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Complete one phase and persist success/failure timing without inventing progress."""
+    try:
+        return _complete_phase_impl(
+            project_id, phase, evidence=evidence, pipeline_dir=pipeline_dir, now=now
+        )
+    except Exception:
+        try:
+            state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+            _finish_phase_telemetry(state, phase, outcome="failed", now=now)
+            _write_state(_project_root(state), state)
+        except Exception:
+            pass
+        raise
 
 
 def _archive_stale_checkpoint(project_root: Path, stage: str, *, reason: str) -> str | None:
@@ -927,9 +1073,11 @@ def bounded_asset_search_request(
         raise PersianVideoWorkflowError("clips_per_query is fixed at 1 for Persian production")
     bounded["clips_per_query"] = policy["clips_per_query"]
 
-    used_candidates = int(usage.get("candidates_considered", 0))
+    used_semantic_candidates = int(
+        usage.get("semantic_candidates_reviewed", usage.get("candidates_considered", 0))
+    )
     used_bytes = int(usage.get("bytes_downloaded", 0))
-    remaining_candidates = policy["max_candidates_total"] - used_candidates
+    remaining_candidates = policy["max_candidates_total"] - used_semantic_candidates
     remaining_bytes = policy["max_total_download_bytes"] - used_bytes
     if remaining_candidates <= 0 or remaining_bytes <= 0:
         raise PersianVideoWorkflowError("shared asset download/candidate budget is exhausted")
@@ -1015,8 +1163,25 @@ def record_asset_search_result(
         ) from exc
     if candidates < 0 or downloaded_bytes < 0:
         raise PersianVideoWorkflowError("asset usage counters must be non-negative")
-    if candidates > int(pending_limits["max_candidates_total"]):
-        raise PersianVideoWorkflowError("asset result exceeded its issued candidate ceiling")
+    semantic_raw = result_data.get("semantic_candidates_reviewed")
+    technical_raw = result_data.get("technical_rejects", 0)
+    duplicate_raw = result_data.get("duplicate_technical_rejects", 0)
+    try:
+        semantic_candidates = candidates if semantic_raw is None else int(semantic_raw)
+        technical_rejects = int(technical_raw)
+        duplicate_technical_rejects = int(duplicate_raw)
+    except (TypeError, ValueError) as exc:
+        raise PersianVideoWorkflowError(
+            "asset semantic/technical candidate counters must be integers"
+        ) from exc
+    if min(semantic_candidates, technical_rejects, duplicate_technical_rejects) < 0:
+        raise PersianVideoWorkflowError("asset semantic/technical candidate counters must be non-negative")
+    if semantic_candidates > candidates:
+        raise PersianVideoWorkflowError("semantic_candidates_reviewed cannot exceed candidates_considered")
+    if technical_rejects > candidates:
+        raise PersianVideoWorkflowError("technical_rejects cannot exceed candidates_considered")
+    if semantic_candidates > int(pending_limits["max_candidates_total"]):
+        raise PersianVideoWorkflowError("asset result exceeded its issued semantic candidate ceiling")
     if downloaded_bytes > int(pending_limits["max_total_download_bytes"]):
         raise PersianVideoWorkflowError("asset result exceeded its issued download-byte ceiling")
     clip_ceiling = int(pending_limits["max_bytes_per_clip"])
@@ -1060,9 +1225,14 @@ def record_asset_search_result(
             raise PersianVideoWorkflowError("asset result exceeded its issued per-clip byte ceiling")
 
     candidates += int(usage.get("candidates_considered", 0))
+    semantic_candidates += int(
+        usage.get("semantic_candidates_reviewed", usage.get("candidates_considered", 0))
+    )
+    technical_rejects += int(usage.get("technical_rejects", 0))
+    duplicate_technical_rejects += int(usage.get("duplicate_technical_rejects", 0))
     downloaded_bytes += int(usage.get("bytes_downloaded", 0))
-    if candidates > policy["max_candidates_total"]:
-        raise PersianVideoWorkflowError("asset candidate budget exceeded")
+    if semantic_candidates > policy["max_candidates_total"]:
+        raise PersianVideoWorkflowError("asset semantic candidate budget exceeded")
     if downloaded_bytes > policy["max_total_download_bytes"]:
         raise PersianVideoWorkflowError("asset download-byte budget exceeded")
     usage.pop("pending_pass", None)
@@ -1071,6 +1241,9 @@ def record_asset_search_result(
     usage.update(
         completed_passes=completed_passes + [retry_pass],
         candidates_considered=candidates,
+        semantic_candidates_reviewed=semantic_candidates,
+        technical_rejects=technical_rejects,
+        duplicate_technical_rejects=duplicate_technical_rejects,
         bytes_downloaded=downloaded_bytes,
     )
     state["asset_usage"] = usage
@@ -1368,6 +1541,8 @@ def workflow_status(
         "attempts": state.get("attempts", {}),
         "send_backs": state.get("send_backs", 0),
         "asset_usage": state.get("asset_usage", {}),
+        "alignment_policy": state.get("alignment_policy") or alignment_execution_policy(state),
+        "time_accounting": phase_time_accounting(state),
     }
 
 
