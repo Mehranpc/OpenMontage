@@ -26,14 +26,21 @@ def _judgements(**levels: str) -> dict:
 
 def _hook(**overrides) -> dict:
     value = {
-        "version": "1.0",
-        "valueProposition": {"atSeconds": 0.45, "evidence": "The viewer knows the concrete benefit immediately."},
+        "version": "2.0",
+        "viewerValue": {
+            "atSeconds": 0.45,
+            "evidence": "The viewer knows the concrete benefit immediately.",
+        },
         "semanticTension": {
             "kind": "contradiction",
             "atSeconds": 0.7,
             "evidence": "The opening states a specific expectation-breaking claim.",
         },
-        "firstProof": {"atSeconds": 1.45, "evidence": "A concrete example starts inside the opening."},
+        "firstProof": {
+            "kind": "example",
+            "atSeconds": 1.45,
+            "evidence": "A concrete example starts inside the opening.",
+        },
         "judgements": _judgements(),
         "flags": {"metaIntroDelay": False, "vagueGap": False, "fullConclusionRevealed": False},
         "perceptualChanges": [
@@ -58,11 +65,12 @@ def _run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, hook: dict) -> dict:
     return aggregate_preflight_edit_decisions(payload, base_dir=tmp_path)
 
 
-def test_specific_contradiction_with_prompt_proof_is_strong(monkeypatch, tmp_path):
+def test_specific_contradiction_with_prompt_proof_is_acceptable_preflight(monkeypatch, tmp_path):
     report = _run(monkeypatch, tmp_path, _hook())
     assert report["ok"] is True, report
     audit = report["evidence"]["hookQualityAudit"]
-    assert audit["disposition"] == "strong"
+    assert audit["disposition"] == "acceptable"
+    assert audit["semanticAuthority"] == "authored-claim-awaiting-rendered-review"
     assert audit["problems"] == []
     assert audit["timing"]["timeToFirstProofSeconds"] == 1.45
 
@@ -77,7 +85,7 @@ def test_semantically_strong_but_visually_static_hook_is_acceptable(monkeypatch,
     assert any("no evidenced meaningful" in item for item in audit["advisories"])
 
 
-def test_specific_question_gap_can_be_strong(monkeypatch, tmp_path):
+def test_specific_question_gap_is_acceptable_pending_rendered_review(monkeypatch, tmp_path):
     hook = _hook(
         semanticTension={
             "kind": "question",
@@ -87,7 +95,7 @@ def test_specific_question_gap_can_be_strong(monkeypatch, tmp_path):
     )
     report = _run(monkeypatch, tmp_path, hook)
     assert report["ok"] is True, report
-    assert report["evidence"]["hookQualityAudit"]["disposition"] == "strong"
+    assert report["evidence"]["hookQualityAudit"]["disposition"] == "acceptable"
 
 
 @pytest.mark.parametrize(
@@ -102,8 +110,12 @@ def test_specific_question_gap_can_be_strong(monkeypatch, tmp_path):
             "visualVoiceAlignment is weak",
         ),
         (
-            _hook(firstProof={"atSeconds": 6.5, "evidence": "The first example is delayed."}),
-            "first proof/example arrives",
+            _hook(firstProof={
+                "kind": "example",
+                "atSeconds": 6.5,
+                "evidence": "The first example is delayed.",
+            }),
+            "first concrete proof/payoff arrives",
         ),
         (
             _hook(

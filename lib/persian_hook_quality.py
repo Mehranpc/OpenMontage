@@ -1,15 +1,15 @@
-"""Evidence-backed hook-quality audit for Persian short-form production.
+"""Hook Quality v2 audit for Persian short-form production.
 
-Timing and perceptual facts are deterministic. Semantic qualities are authored
-judgements with rationale; this module never pretends to infer psychology from
-pixels or timestamps alone.
+The preflight audit owns deterministic timing/evidence-shape checks and records
+semantic claims, but it deliberately does not certify rendered hook strength.
+Final strength belongs to an independent review of the rendered MP4.
 """
 from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
 
-HOOK_QUALITY_VERSION = "1.0"
+HOOK_QUALITY_VERSION = "2.0"
 SHORT_FORM_TARGETS = frozenset({"instagram-reels", "tiktok", "youtube-shorts"})
 OPENING_WINDOW_SECONDS = 3.0
 VALUE_WARNING_SECONDS = 2.0
@@ -23,6 +23,9 @@ MAX_MEANINGFUL_CHANGES_FIRST_3S = 4
 TENSION_KINDS = frozenset(
     {"question", "specific_gap", "contradiction", "consequence", "micro_suspense", "direct_benefit"}
 )
+CONCRETE_PROOF_KINDS = frozenset(
+    {"answer", "result", "example", "demonstration", "evidence", "mechanism"}
+)
 JUDGEMENT_FIELDS = (
     "semanticPredictionError",
     "audienceRelevance",
@@ -34,10 +37,10 @@ JUDGEMENT_LEVELS = frozenset({"weak", "acceptable", "strong"})
 PERCEPTUAL_CHANGE_KINDS = frozenset(
     {"action", "reaction", "reveal", "detail", "scale_change", "punch_in", "subject_motion"}
 )
+_CONCEPT_LABELS = ("viewerValue", "semanticTension", "firstProof")
 
 
 def _target(edit: Mapping[str, Any], persian: Mapping[str, Any], metadata: Mapping[str, Any]) -> str:
-    """Resolve the delivery target from current and historical production fields."""
     del edit
     return str(
         persian.get("platformTarget")
@@ -65,6 +68,7 @@ def _seconds(record: object, *, label: str, duration: float, problems: list[str]
 
 
 def _judgements(raw: object, problems: list[str]) -> dict[str, dict[str, str]]:
+    """Validate authored semantic claims without treating them as final authority."""
     result: dict[str, dict[str, str]] = {}
     if not isinstance(raw, Mapping):
         problems.append("hook quality requires semantic judgements")
@@ -83,6 +87,107 @@ def _judgements(raw: object, problems: list[str]) -> dict[str, dict[str, str]]:
             problems.append(f"hook judgement {field} requires rationale")
         result[field] = {"level": level, "rationale": rationale}
     return result
+
+
+def _evidence_identity(record: object) -> tuple[str, float | None, str] | None:
+    if not isinstance(record, Mapping):
+        return None
+    evidence_id = str(record.get("evidenceId") or "").strip()
+    at = record.get("atSeconds")
+    at_value = float(at) if isinstance(at, (int, float)) and not isinstance(at, bool) else None
+    text = " ".join(str(record.get("evidence") or "").split()).casefold()
+    return evidence_id, at_value, text
+
+
+def _shared_justifications(hook: Mapping[str, Any], problems: list[str]) -> dict[str, list[dict[str, Any]]]:
+    raw = hook.get("sharedEvidenceJustifications") or []
+    if not isinstance(raw, list):
+        problems.append("hookQuality.sharedEvidenceJustifications must be an array when present")
+        return {}
+    result: dict[str, list[dict[str, Any]]] = {}
+    for index, item in enumerate(raw):
+        if not isinstance(item, Mapping):
+            problems.append(f"shared evidence justification {index} must be an object")
+            continue
+        evidence_id = str(item.get("evidenceId") or "").strip()
+        concepts = item.get("concepts")
+        justification = str(item.get("justification") or "").strip()
+        if not evidence_id:
+            problems.append(f"shared evidence justification {index} requires evidenceId")
+            continue
+        if not isinstance(concepts, list) or len(set(str(x) for x in concepts)) < 2:
+            problems.append(f"shared evidence justification {index} must name at least two concepts")
+            continue
+        clean = [str(x) for x in concepts]
+        if any(concept not in _CONCEPT_LABELS for concept in clean):
+            problems.append(f"shared evidence justification {index} names an unsupported concept")
+            continue
+        if not justification:
+            problems.append(f"shared evidence justification {index} requires justification")
+            continue
+        result.setdefault(evidence_id, []).append(
+            {"concepts": clean, "justification": justification}
+        )
+    return result
+
+
+def _has_shared_justification(
+    justifications: Mapping[str, list[dict[str, Any]]], evidence_id: str, left: str, right: str
+) -> bool:
+    if not evidence_id:
+        return False
+    pair = {left, right}
+    return any(pair.issubset(set(item["concepts"])) for item in justifications.get(evidence_id, []))
+
+
+def _validate_distinct_semantic_evidence(
+    hook: Mapping[str, Any], records: Mapping[str, object], problems: list[str]
+) -> dict[str, list[dict[str, Any]]]:
+    justifications = _shared_justifications(hook, problems)
+    labels = list(records)
+    for index, left in enumerate(labels):
+        left_identity = _evidence_identity(records[left])
+        if left_identity is None:
+            continue
+        left_id, left_at, left_text = left_identity
+        for right in labels[index + 1 :]:
+            right_identity = _evidence_identity(records[right])
+            if right_identity is None:
+                continue
+            right_id, right_at, right_text = right_identity
+            same_id = bool(left_id and right_id and left_id == right_id)
+            same_observation = (
+                left_at is not None
+                and right_at is not None
+                and abs(left_at - right_at) <= 1e-6
+                and bool(left_text)
+                and left_text == right_text
+            )
+            if not (same_id or same_observation):
+                continue
+            evidence_id = left_id if same_id else ""
+            if not _has_shared_justification(justifications, evidence_id, left, right):
+                problems.append(
+                    f"{left} and {right} use shared evidence without an explicit justification; "
+                    "distinct editorial functions cannot be double-counted automatically"
+                )
+    return justifications
+
+
+def _concrete_proof_seconds(
+    record: object, *, duration: float, problems: list[str]
+) -> float | None:
+    value = _seconds(record, label="first proof", duration=duration, problems=problems)
+    if not isinstance(record, Mapping):
+        return None
+    kind = str(record.get("kind") or "").strip()
+    if kind not in CONCRETE_PROOF_KINDS:
+        problems.append(
+            "first proof must be a concrete answer, result, example, demonstration, evidence, or mechanism; "
+            "authority/setup language such as 'research shows' is not concrete proof"
+        )
+        return None
+    return value
 
 
 def _perceptual_evidence(
@@ -159,6 +264,7 @@ def _perceptual_evidence(
 
 def _policy() -> dict[str, Any]:
     return {
+        "version": HOOK_QUALITY_VERSION,
         "openingWindowSeconds": OPENING_WINDOW_SECONDS,
         "valueWarningSeconds": VALUE_WARNING_SECONDS,
         "valueBlockSeconds": VALUE_BLOCK_SECONDS,
@@ -168,11 +274,13 @@ def _policy() -> dict[str, Any]:
         "proofBlockSeconds": PROOF_BLOCK_SECONDS,
         "maxMeaningfulChangesFirst3Seconds": MAX_MEANINGFUL_CHANGES_FIRST_3S,
         "thresholdStatus": "initial-conservative-calibration",
+        "predictsVirality": False,
+        "renderedReviewRequiredForFinalStrength": True,
     }
 
 
 def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
-    """Audit short-form hook evidence before browser/render work."""
+    """Audit Hook Quality v2 planning evidence before browser/render work."""
     persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
     metadata = edit.get("metadata") if isinstance(edit.get("metadata"), Mapping) else {}
     duration = float(persian.get("durationSeconds") or 0.0)
@@ -206,29 +314,51 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
             "perceptual": perceptual,
             "judgements": {},
             "flags": {},
+            "semanticAuthority": "authored-claim-awaiting-rendered-review",
             "policy": _policy(),
         }
 
     if str(hook.get("version") or "") != HOOK_QUALITY_VERSION:
         problems.append(f"metadata.hookQuality.version must be {HOOK_QUALITY_VERSION}")
 
-    value = _seconds(hook.get("valueProposition"), label="value proposition", duration=duration, problems=problems)
-    tension = _seconds(hook.get("semanticTension"), label="semantic tension", duration=duration, problems=problems)
-    proof = _seconds(hook.get("firstProof"), label="first proof", duration=duration, problems=problems)
+    viewer_value_record = hook.get("viewerValue")
+    if viewer_value_record is None and hook.get("valueProposition") is not None:
+        problems.append("Hook Quality v2 requires viewerValue; valueProposition is legacy v1 metadata")
+        viewer_value_record = hook.get("valueProposition")
+    value = _seconds(
+        viewer_value_record,
+        label="viewer value",
+        duration=duration,
+        problems=problems,
+    )
     tension_record = hook.get("semanticTension")
+    tension = _seconds(tension_record, label="semantic tension", duration=duration, problems=problems)
+    proof_record = hook.get("firstProof")
+    proof = _concrete_proof_seconds(proof_record, duration=duration, problems=problems)
+
     tension_kind = str(tension_record.get("kind") or "").strip() if isinstance(tension_record, Mapping) else ""
     if tension_kind not in TENSION_KINDS:
         problems.append(
             "semantic tension kind must identify a specific gap, contradiction, consequence, suspense, or benefit"
         )
 
+    _validate_distinct_semantic_evidence(
+        hook,
+        {
+            "viewerValue": viewer_value_record,
+            "semanticTension": tension_record,
+            "firstProof": proof_record,
+        },
+        problems,
+    )
+
     if value is not None:
         if value > VALUE_BLOCK_SECONDS:
             problems.append(
-                f"value proposition arrives at {value:.2f}s, after the {VALUE_BLOCK_SECONDS:.1f}s initial blocking ceiling"
+                f"viewer value arrives at {value:.2f}s, after the {VALUE_BLOCK_SECONDS:.1f}s initial blocking ceiling"
             )
         elif value > VALUE_WARNING_SECONDS:
-            advisories.append(f"value proposition arrives late at {value:.2f}s")
+            advisories.append(f"viewer value arrives late at {value:.2f}s")
     if tension is not None:
         if tension > TENSION_BLOCK_SECONDS:
             problems.append(
@@ -239,10 +369,10 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
     if proof is not None:
         if proof > PROOF_BLOCK_SECONDS:
             problems.append(
-                f"first proof/example arrives at {proof:.2f}s, after the {PROOF_BLOCK_SECONDS:.1f}s initial blocking ceiling"
+                f"first concrete proof/payoff arrives at {proof:.2f}s, after the {PROOF_BLOCK_SECONDS:.1f}s initial blocking ceiling"
             )
         elif proof > PROOF_WARNING_SECONDS:
-            advisories.append(f"first proof/example arrives late at {proof:.2f}s")
+            advisories.append(f"first concrete proof/payoff arrives late at {proof:.2f}s")
 
     judgements = _judgements(hook.get("judgements"), problems)
     for field in ("audienceRelevance", "hookBodyAlignment", "visualVoiceAlignment"):
@@ -274,16 +404,9 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
         )
 
     perceptual = _perceptual_evidence(persian, hook, advisories, problems)
-    if problems:
-        disposition = "weak"
-    elif advisories:
-        disposition = "acceptable"
-    else:
-        key_levels = [
-            (judgements.get(field) or {}).get("level")
-            for field in ("audienceRelevance", "hookBodyAlignment", "visualVoiceAlignment")
-        ]
-        disposition = "strong" if key_levels and all(level == "strong" for level in key_levels) else "acceptable"
+    # Authored prose is planning evidence only. It may block obviously weak work,
+    # but it can never self-certify a production as strong before rendered review.
+    disposition = "weak" if problems else "acceptable"
 
     return {
         "version": HOOK_QUALITY_VERSION,
@@ -301,8 +424,14 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
         "perceptual": perceptual,
         "judgements": judgements,
         "flags": flags,
+        "semanticAuthority": "authored-claim-awaiting-rendered-review",
         "policy": _policy(),
     }
 
 
-__all__ = ["HOOK_QUALITY_VERSION", "SHORT_FORM_TARGETS", "audit_persian_hook_quality"]
+__all__ = [
+    "HOOK_QUALITY_VERSION",
+    "SHORT_FORM_TARGETS",
+    "CONCRETE_PROOF_KINDS",
+    "audit_persian_hook_quality",
+]

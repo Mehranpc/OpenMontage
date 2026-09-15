@@ -10,10 +10,18 @@ from tests.lib.test_persian_preflight_contract import _payload
 
 def _base_hook() -> dict:
     return {
-        "version": "1.0",
-        "valueProposition": {"atSeconds": 0.5, "evidence": "Concrete value is visible."},
-        "semanticTension": {"kind": "contradiction", "atSeconds": 0.7, "evidence": "Specific contradiction."},
-        "firstProof": {"atSeconds": 1.4, "evidence": "Concrete proof begins."},
+        "version": "2.0",
+        "viewerValue": {"atSeconds": 0.5, "evidence": "Concrete value is visible."},
+        "semanticTension": {
+            "kind": "contradiction",
+            "atSeconds": 0.7,
+            "evidence": "Specific contradiction.",
+        },
+        "firstProof": {
+            "kind": "example",
+            "atSeconds": 1.4,
+            "evidence": "Concrete proof begins.",
+        },
         "judgements": {
             key: {"level": "strong", "rationale": f"strong {key}"}
             for key in (
@@ -55,9 +63,16 @@ def test_visual_voice_mismatch_requests_visual_revision(monkeypatch, tmp_path):
 
 def test_late_proof_requests_timing_revision(monkeypatch, tmp_path):
     hook = _base_hook()
-    hook["firstProof"] = {"atSeconds": 7.0, "evidence": "Proof starts too late."}
+    hook["firstProof"] = {
+        "kind": "example",
+        "atSeconds": 7.0,
+        "evidence": "Proof starts too late.",
+    }
     report = _report(monkeypatch, tmp_path, hook)
-    issue = next(item for item in report["blockingIssues"] if "first proof/example" in item["message"])
+    issue = next(
+        item for item in report["blockingIssues"]
+        if "first concrete proof/payoff arrives" in item["message"]
+    )
     assert issue["recoveryClass"] == "HOOK_TIMING"
 
 

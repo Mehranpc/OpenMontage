@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
@@ -10,16 +11,21 @@ from tests.lib.test_persian_video_workflow import BASE, _checkpoint, _review_rea
 
 def _hook_audit() -> dict:
     return {
-        "version": "1.0",
+        "version": "2.0",
+        "required": True,
         "disposition": "acceptable",
         "problems": [],
         "advisories": [],
+        "semanticAuthority": "authored-claim-awaiting-rendered-review",
     }
 
 
-def _hook_review(**overrides) -> dict:
+def _hook_review(candidate, **overrides) -> dict:
     value = {
-        "version": "1.0",
+        "version": "2.0",
+        "reviewSource": "rendered_mp4",
+        "reviewerRole": "independent_reviewer",
+        "reviewedCandidateSha256": hashlib.sha256(candidate.read_bytes()).hexdigest(),
         "strength": "acceptable",
         "rationale": "The rendered opening establishes a concrete gap immediately.",
         "observations": [
@@ -28,6 +34,9 @@ def _hook_review(**overrides) -> dict:
         ],
         "mutedHookDirectionConfirmed": True,
         "visualVoiceAlignment": "acceptable",
+        "actualPayoffSeconds": 4.8,
+        "concretePayoffKind": "result",
+        "payoffEvidence": "The concrete result reaches the viewer at 4.8 seconds.",
         "payoffBeginsPromptly": True,
     }
     value.update(overrides)
@@ -40,7 +49,7 @@ def test_current_hook_audit_requires_evidence_backed_final_hook_review(tmp_path)
     review["metadata"] = {"hookQualityAudit": _hook_audit()}
     review_path.write_text(json.dumps(review), encoding="utf-8")
 
-    with pytest.raises(PersianVideoWorkflowError, match="hook-quality review"):
+    with pytest.raises(PersianVideoWorkflowError, match="hook-quality review|visual/voice alignment"):
         complete_phase(
             "run",
             "final_review",
@@ -51,11 +60,12 @@ def test_current_hook_audit_requires_evidence_backed_final_hook_review(tmp_path)
 
 
 def test_evidence_backed_hook_review_requires_rendered_alignment_and_prompt_payoff(tmp_path):
-    _, _, review_path, _ = _review_ready_project(tmp_path)
+    _, candidate, review_path, _ = _review_ready_project(tmp_path)
     review = json.loads(review_path.read_text(encoding="utf-8"))
     review["metadata"] = {
         "hookQualityAudit": _hook_audit(),
         "hookQualityReview": _hook_review(
+            candidate,
             visualVoiceAlignment="weak",
             payoffBeginsPromptly=False,
         ),
@@ -73,11 +83,11 @@ def test_evidence_backed_hook_review_requires_rendered_alignment_and_prompt_payo
 
 
 def test_valid_evidence_backed_hook_review_allows_existing_final_review_contract(tmp_path):
-    _, _, review_path, report = _review_ready_project(tmp_path)
+    _, candidate, review_path, report = _review_ready_project(tmp_path)
     review = json.loads(review_path.read_text(encoding="utf-8"))
     review["metadata"] = {
         "hookQualityAudit": _hook_audit(),
-        "hookQualityReview": _hook_review(),
+        "hookQualityReview": _hook_review(candidate),
     }
     review_path.write_text(json.dumps(review), encoding="utf-8")
     report["hook_strength"] = "acceptable"
@@ -96,11 +106,11 @@ def test_valid_evidence_backed_hook_review_allows_existing_final_review_contract
 
 
 def test_hook_quality_review_strength_must_match_render_report_hook_strength(tmp_path):
-    _, _, review_path, report = _review_ready_project(tmp_path)
+    _, candidate, review_path, report = _review_ready_project(tmp_path)
     review = json.loads(review_path.read_text(encoding="utf-8"))
     review["metadata"] = {
         "hookQualityAudit": _hook_audit(),
-        "hookQualityReview": _hook_review(strength="acceptable"),
+        "hookQualityReview": _hook_review(candidate, strength="acceptable"),
     }
     review_path.write_text(json.dumps(review), encoding="utf-8")
     report["hook_strength"] = "strong"
@@ -119,13 +129,14 @@ def test_hook_quality_review_strength_must_match_render_report_hook_strength(tmp
 
 
 def test_weak_rendered_hook_can_be_persisted_as_revision_evidence(tmp_path):
-    _, _, review_path, _ = _review_ready_project(tmp_path)
+    _, candidate, review_path, _ = _review_ready_project(tmp_path)
     review = json.loads(review_path.read_text(encoding="utf-8"))
     review["status"] = "revise"
     review["recommended_action"] = "revise_edit"
     review["metadata"] = {
         "hookQualityAudit": _hook_audit(),
         "hookQualityReview": _hook_review(
+            candidate,
             strength="weak",
             mutedHookDirectionConfirmed=False,
             visualVoiceAlignment="weak",
@@ -141,4 +152,72 @@ def test_weak_rendered_hook_can_be_persisted_as_revision_evidence(tmp_path):
             evidence={"final_review_path": str(review_path)},
             pipeline_dir=tmp_path,
             now=BASE,
+        )
+
+
+def test_final_review_rejects_authoring_agent_self_certification(tmp_path):
+    _, candidate, review_path, report = _review_ready_project(tmp_path)
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["metadata"] = {
+        "hookQualityAudit": _hook_audit(),
+        "hookQualityReview": _hook_review(candidate, reviewerRole="authoring_agent"),
+    }
+    review_path.write_text(json.dumps(review), encoding="utf-8")
+    report["hook_strength"] = "acceptable"
+    (tmp_path / "run" / "checkpoint_compose.json").write_text(
+        json.dumps(_checkpoint(report)), encoding="utf-8"
+    )
+
+    with pytest.raises(PersianVideoWorkflowError, match="independent|hook-quality review"):
+        complete_phase(
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
+        )
+
+
+def test_final_review_rejects_mix_intelligible_without_numeric_audio_evidence(tmp_path):
+    _, candidate, review_path, report = _review_ready_project(tmp_path)
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["metadata"] = {
+        "hookQualityAudit": _hook_audit(),
+        "hookQualityReview": _hook_review(candidate),
+    }
+    review["checks"]["audio_spotcheck"] = {
+        "narration_present": True,
+        "music_present": True,
+        "unexpected_silence": False,
+        "clipping_detected": False,
+        "mix_intelligible": True,
+        "issues": [],
+    }
+    review_path.write_text(json.dumps(review), encoding="utf-8")
+    report["hook_strength"] = "acceptable"
+    (tmp_path / "run" / "checkpoint_compose.json").write_text(
+        json.dumps(_checkpoint(report)), encoding="utf-8"
+    )
+
+    with pytest.raises(PersianVideoWorkflowError, match="audio.*evidence|policyVersion|rendered audio"):
+        complete_phase(
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
+        )
+
+
+def test_final_review_binds_rendered_hook_review_to_actual_candidate_digest(tmp_path):
+    _, candidate, review_path, report = _review_ready_project(tmp_path)
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["metadata"] = {
+        "hookQualityAudit": _hook_audit(),
+        "hookQualityReview": _hook_review(candidate, reviewedCandidateSha256="b" * 64),
+    }
+    review_path.write_text(json.dumps(review), encoding="utf-8")
+    report["hook_strength"] = "acceptable"
+    (tmp_path / "run" / "checkpoint_compose.json").write_text(
+        json.dumps(_checkpoint(report)), encoding="utf-8"
+    )
+
+    with pytest.raises(PersianVideoWorkflowError, match="digest"):
+        complete_phase(
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
         )

@@ -52,10 +52,11 @@ def _validate_final_review_hook_quality(data: dict[str, Any]) -> None:
         return
 
     audit = metadata.get("hookQualityAudit")
-    if not isinstance(audit, dict) or str(audit.get("version") or "") != "1.0":
-        raise jsonschema.ValidationError(
-            "hook-quality review requires a version 1.0 hookQualityAudit"
-        )
+    if not isinstance(audit, dict):
+        raise jsonschema.ValidationError("hook-quality review requires hookQualityAudit evidence")
+    audit_version = str(audit.get("version") or "")
+    if audit_version not in {"1.0", "2.0"}:
+        raise jsonschema.ValidationError("hook-quality audit version must be 1.0 or 2.0")
     audit_disposition = str(audit.get("disposition") or "")
     if audit_disposition not in {"weak", "acceptable", "strong", "unassessed"}:
         raise jsonschema.ValidationError("hook-quality audit disposition is invalid")
@@ -65,6 +66,23 @@ def _validate_final_review_hook_quality(data: dict[str, Any]) -> None:
         raise jsonschema.ValidationError(
             "hook-quality review evidence is required when hookQualityAudit is present"
         )
+
+    if audit_version == "2.0":
+        from lib.persian_rendered_review import (
+            PersianRenderedReviewError,
+            validate_rendered_hook_review,
+        )
+
+        try:
+            validate_rendered_hook_review(
+                review,
+                candidate_sha256=str(review.get("reviewedCandidateSha256") or ""),
+                require_pass=data.get("status") == "pass",
+            )
+        except PersianRenderedReviewError as exc:
+            raise jsonschema.ValidationError(str(exc)) from exc
+        return
+
     if str(review.get("version") or "") != "1.0":
         raise jsonschema.ValidationError("hook-quality review version must be 1.0")
     strength = str(review.get("strength") or "")

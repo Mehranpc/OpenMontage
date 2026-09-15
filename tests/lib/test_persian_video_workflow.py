@@ -69,9 +69,11 @@ def _advance_to(tmp_path: Path, target: str, *, project_id: str = "run") -> dict
         phase = state.get("next_phase")
         assert phase is not None
         state = record_phase_attempt(project_id, phase, pipeline_dir=tmp_path, now=BASE)
-        if phase == "no_copy_preflight":
-            # This helper builds unrelated terminal-review fixtures. Dedicated tests
-            # below exercise the real digest-bound no-copy completion contract.
+        if phase in workflow._PHASE_CHECKPOINT:
+            # This helper builds fixtures for tests unrelated to checkpoint
+            # persistence. Dedicated lifecycle tests exercise the real atomic
+            # checkpoint contract, so bypass checkpoint-backed phases here rather
+            # than weakening production complete_phase().
             completed = list(state.get("completed_phases") or [])
             completed.append(phase)
             state["completed_phases"] = completed
@@ -524,6 +526,20 @@ def test_asset_result_is_bound_to_issued_request_and_remaining_budget(tmp_path):
 def test_second_asset_pass_is_sorted_by_scene_importance_order(tmp_path):
     _bootstrap(tmp_path)
     _advance_to(tmp_path, "plan_scenes_moments")
+    (tmp_path / "run" / "checkpoint_scene_plan.json").write_text(
+        json.dumps({
+            "version": "1.0", "project_id": "run", "pipeline_type": "persian-footage",
+            "stage": "scene_plan", "status": "completed",
+            "timestamp": BASE.isoformat(), "checkpoint_policy": "guided",
+            "human_approval_required": False, "human_approved": False,
+            "artifacts": {"scene_plan": {"version": "1.0", "scenes": [{
+                    "id": "fixture-scene", "type": "broll",
+                    "description": "checkpoint fixture",
+                    "start_seconds": 0.0, "end_seconds": 1.0,
+                }]}},
+        }),
+        encoding="utf-8",
+    )
     record_phase_attempt("run", "plan_scenes_moments", pipeline_dir=tmp_path, now=BASE)
     complete_phase(
         "run", "plan_scenes_moments",
@@ -551,6 +567,20 @@ def test_second_asset_pass_is_sorted_by_scene_importance_order(tmp_path):
 def test_second_asset_pass_rejects_slots_outside_scene_importance_order(tmp_path):
     _bootstrap(tmp_path)
     _advance_to(tmp_path, "plan_scenes_moments")
+    (tmp_path / "run" / "checkpoint_scene_plan.json").write_text(
+        json.dumps({
+            "version": "1.0", "project_id": "run", "pipeline_type": "persian-footage",
+            "stage": "scene_plan", "status": "completed",
+            "timestamp": BASE.isoformat(), "checkpoint_policy": "guided",
+            "human_approval_required": False, "human_approved": False,
+            "artifacts": {"scene_plan": {"version": "1.0", "scenes": [{
+                    "id": "fixture-scene", "type": "broll",
+                    "description": "checkpoint fixture",
+                    "start_seconds": 0.0, "end_seconds": 1.0,
+                }]}},
+        }),
+        encoding="utf-8",
+    )
     record_phase_attempt("run", "plan_scenes_moments", pipeline_dir=tmp_path, now=BASE)
     complete_phase(
         "run", "plan_scenes_moments", evidence={"sourcing_order": ["event-1"]},
@@ -603,6 +633,16 @@ def _write_final_review(project: Path, candidate: Path) -> Path:
             "audio_spotcheck": {
                 "narration_present": True, "music_present": True, "unexpected_silence": False,
                 "clipping_detected": False, "mix_intelligible": True, "issues": [],
+                "policyVersion": "1.0",
+                "measurementSource": "rendered_mp4_plus_mix_policy",
+                "candidateSha256": hashlib.sha256(candidate.read_bytes()).hexdigest(),
+                "outputIntegratedLufs": -13.0,
+                "truePeakDbfs": -1.4,
+                "narrationLufs": -13.2,
+                "musicLufs": -10.3,
+                "speechMusicGain": 0.226,
+                "speechMusicSeparationLu": 10.0,
+                "separationMethod": "source_lufs_plus_render_gain",
             },
             "promise_preservation": {
                 "delivery_promise_honored": True, "renderer_family_used": "persian-footage",

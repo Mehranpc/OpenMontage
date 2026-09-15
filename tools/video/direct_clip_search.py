@@ -444,6 +444,27 @@ class DirectClipSearch(BaseTool):
             per_source_counts: dict[str, int] = {s.name: 0 for s in sources}
             queries_started = 0
             candidates_considered = 0
+            semantic_candidates_reviewed = 0
+            technical_rejects = 0
+            duplicate_technical_rejects = 0
+            seen_technical_rejects: set[tuple[str, str, str, str]] = set()
+
+            def register_technical_reject(
+                *, phase: str, source: str, clip_id: str, error: str
+            ) -> None:
+                nonlocal technical_rejects, duplicate_technical_rejects
+                identity = (source, clip_id, phase, error)
+                if identity in seen_technical_rejects:
+                    duplicate_technical_rejects += 1
+                else:
+                    seen_technical_rejects.add(identity)
+                    technical_rejects += 1
+                errors.append({
+                    "phase": phase,
+                    "clip_id": clip_id,
+                    "source": source,
+                    "error": error,
+                })
 
             def progress_data() -> dict[str, Any]:
                 return {
@@ -459,6 +480,9 @@ class DirectClipSearch(BaseTool):
                     "clips": downloaded,
                     "errors": errors[:25],
                     "candidates_considered": candidates_considered,
+                    "semantic_candidates_reviewed": semantic_candidates_reviewed,
+                    "technical_rejects": technical_rejects,
+                    "duplicate_technical_rejects": duplicate_technical_rejects,
                     "bytes_downloaded": download_budget.total_bytes,
                     "max_candidates_total": max_candidates_total,
                     "max_bytes_per_clip": max_bytes_per_clip,
@@ -566,7 +590,7 @@ class DirectClipSearch(BaseTool):
                     for cand in candidates:
                         if collected_for_query >= clips_per_query:
                             break
-                        if candidates_considered >= max_candidates_total:
+                        if semantic_candidates_reviewed >= max_candidates_total:
                             return limit_result(
                                 _DownloadQuotaExceeded(
                                     f"candidate cap {max_candidates_total} reached",
@@ -580,12 +604,12 @@ class DirectClipSearch(BaseTool):
 
                         metadata_error = _candidate_filter_error(cand, filters)
                         if metadata_error:
-                            errors.append({
-                                "phase": "metadata_filter",
-                                "clip_id": cand.clip_id,
-                                "source": src.name,
-                                "error": metadata_error,
-                            })
+                            register_technical_reject(
+                                phase="metadata_filter",
+                                clip_id=cand.clip_id,
+                                source=src.name,
+                                error=metadata_error,
+                            )
                             continue
 
                         if timed_out():
@@ -622,16 +646,17 @@ class DirectClipSearch(BaseTool):
                                     clip_id=clip_id,
                                 )
                             except Exception as e:
-                                errors.append({
-                                    "phase": "validation",
-                                    "clip_id": clip_id,
-                                    "source": src.name,
-                                    "error": f"{type(e).__name__}: {e}",
-                                })
+                                register_technical_reject(
+                                    phase="validation",
+                                    clip_id=clip_id,
+                                    source=src.name,
+                                    error=f"{type(e).__name__}: {e}",
+                                )
                                 _cleanup_file(clip_path)
                                 _cleanup_file(thumbs_dir / f"{clip_id}.jpg")
                                 continue
 
+                            semantic_candidates_reviewed += 1
                             skipped += 1
                             thumb_path = thumbs_dir / f"{clip_id}.jpg"
                             downloaded.append({
@@ -704,12 +729,12 @@ class DirectClipSearch(BaseTool):
                             )
                         except _MediaValidationError as e:
                             _cleanup_file(partial_path)
-                            errors.append({
-                                "phase": "validation",
-                                "clip_id": clip_id,
-                                "source": src.name,
-                                "error": str(e),
-                            })
+                            register_technical_reject(
+                                phase="validation",
+                                clip_id=clip_id,
+                                source=src.name,
+                                error=str(e),
+                            )
                             continue
                         except Exception as e:
                             _cleanup_file(partial_path)
@@ -735,6 +760,7 @@ class DirectClipSearch(BaseTool):
                                 pass
                             continue
 
+                        semantic_candidates_reviewed += 1
                         downloaded_record = {
                             "clip_id": clip_id,
                             "source": cand.source,

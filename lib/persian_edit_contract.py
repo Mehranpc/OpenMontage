@@ -1,26 +1,25 @@
 """Actionable contract checks for Persian edit artifacts.
 
-This module sits before compose/browser preparation.  It intentionally does not
-repair inputs or weaken any render gate: it turns contract drift into deterministic
+This module sits before compose/browser preparation. It intentionally does not
+repair inputs or weaken render gates: it turns contract drift into deterministic
 JSON-pointer diagnostics while the author still has enough context to fix the edit.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
 import jsonschema
 
-from schemas.artifacts import load_schema
 from lib.paths import REPO_ROOT
 from lib.persian_music import (
-    DEFAULT_MUSIC_DUCK_VOLUME,
-    MAX_DUCKED_MUSIC_GAP_LU,
     MUSIC_AUDIBILITY_FLOOR_LUFS,
-    effective_music_loudness,
+    derive_loudness_aware_mix,
+    evaluate_music_separation,
     measure_integrated_loudness,
 )
+from schemas.artifacts import load_schema
 
 
 @dataclass(frozen=True)
@@ -81,9 +80,6 @@ def _schema_diagnostics(edit: dict[str, Any]) -> list[ContractDiagnostic]:
         path = base + list(error.absolute_path)
         hint = None
         if error.validator == "additionalProperties":
-            # jsonschema's message contains the unexpected property name, but its
-            # path stops at the containing object. Recover common stale aliases so
-            # callers get a copy/pasteable fix instead of an opaque schema dump.
             container = error.instance if isinstance(error.instance, dict) else {}
             allowed = set((error.schema.get("properties") or {}).keys())
             unexpected = [key for key in container if key not in allowed]
@@ -159,7 +155,6 @@ def _region_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnostic]:
     return diagnostics
 
 
-
 def _shot_source_window_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnostic]:
     """Refuse visibly repeated source time, while allowing distinct windows of one clip."""
     diagnostics: list[ContractDiagnostic] = []
@@ -179,7 +174,7 @@ def _shot_source_window_diagnostics(persian: dict[str, Any]) -> list[ContractDia
         source_end = source_start + duration
         source = str(shot["source"])
         shot_id = str(shot.get("id") or f"shot-{index}")
-        for prior_index, prior_id, prior_start, prior_end in by_source.get(source, []):
+        for _prior_index, prior_id, prior_start, prior_end in by_source.get(source, []):
             overlap = min(source_end, prior_end) - max(source_start, prior_start)
             if overlap > 0.10:
                 diagnostics.append(
@@ -193,7 +188,67 @@ def _shot_source_window_diagnostics(persian: dict[str, Any]) -> list[ContractDia
         by_source.setdefault(source, []).append((index, shot_id, source_start, source_end))
     return diagnostics
 
-def _music_diagnostics(persian: dict[str, Any], *, base_dir: Path | None = None) -> list[ContractDiagnostic]:
+
+def _resolved_media_paths(
+    persian: dict[str, Any], *, base_dir: Path | None
+) -> tuple[Path, Path] | None:
+    if base_dir is None:
+        return None
+    audio = persian.get("audio") if isinstance(persian.get("audio"), dict) else {}
+    track = persian.get("musicTrack") if isinstance(persian.get("musicTrack"), dict) else None
+    if not track or not track.get("path") or not audio.get("narration"):
+        return None
+    root = base_dir.expanduser().resolve()
+    music_raw = Path(str(track["path"])).expanduser()
+    narration_raw = Path(str(audio["narration"])).expanduser()
+    music_path = music_raw.resolve() if music_raw.is_absolute() else (root / music_raw).resolve()
+    narration_path = (
+        narration_raw.resolve()
+        if narration_raw.is_absolute()
+        else (root / narration_raw).resolve()
+    )
+    if not music_path.is_file() or not narration_path.is_file():
+        return None
+    return narration_path, music_path
+
+
+def inspect_persian_audio_mix(
+    edit: dict[str, Any], *, base_dir: Path | None = None
+) -> dict[str, Any] | None:
+    """Return versioned measured/derived mix evidence for production preflight."""
+    persian = edit.get("persian")
+    if not isinstance(persian, dict):
+        return None
+    paths = _resolved_media_paths(persian, base_dir=base_dir)
+    if paths is None:
+        return None
+    narration_path, music_path = paths
+    narration_lufs = measure_integrated_loudness(narration_path)
+    music_lufs = measure_integrated_loudness(music_path)
+    audio = persian.get("audio") if isinstance(persian.get("audio"), dict) else {}
+    if audio.get("musicDuckVolume") is not None:
+        try:
+            authored_gain = float(audio["musicDuckVolume"])
+        except (TypeError, ValueError):
+            return None
+        result = evaluate_music_separation(
+            narration_lufs=narration_lufs,
+            music_lufs=music_lufs,
+            music_gain=authored_gain,
+        )
+        result["gainSource"] = "authored_legacy_override"
+        return result
+    result = derive_loudness_aware_mix(
+        narration_lufs=narration_lufs,
+        music_lufs=music_lufs,
+    )
+    result["gainSource"] = "derived_loudness_policy"
+    return result
+
+
+def _music_diagnostics(
+    persian: dict[str, Any], *, base_dir: Path | None = None
+) -> list[ContractDiagnostic]:
     diagnostics: list[ContractDiagnostic] = []
     audio = persian.get("audio") if isinstance(persian.get("audio"), dict) else {}
     if persian.get("musicTrack") and audio.get("music"):
@@ -223,57 +278,69 @@ def _music_diagnostics(persian: dict[str, Any], *, base_dir: Path | None = None)
                 "move it to /persian/acknowledgeUnknownMusicRisk",
             )
         )
+
+    paths = _resolved_media_paths(persian, base_dir=base_dir)
     track = persian.get("musicTrack") if isinstance(persian.get("musicTrack"), dict) else None
     if track and base_dir is not None and track.get("path"):
-        raw = Path(str(track["path"])).expanduser()
         root = base_dir.expanduser().resolve()
-        resolved = raw.resolve() if raw.is_absolute() else (root / raw).resolve()
-        if resolved.is_file():
+        music_raw = Path(str(track["path"])).expanduser()
+        music_path = music_raw.resolve() if music_raw.is_absolute() else (root / music_raw).resolve()
+        if music_path.is_file():
             try:
-                loudness = measure_integrated_loudness(resolved)
+                music_lufs = measure_integrated_loudness(music_path)
             except RuntimeError as exc:
-                diagnostics.append(ContractDiagnostic(
-                    "music.loudness_unmeasurable", "/persian/musicTrack/path",
-                    str(exc), "repair or replace the music file; production preflight must verify audible signal",
-                ))
+                diagnostics.append(
+                    ContractDiagnostic(
+                        "music.loudness_unmeasurable",
+                        "/persian/musicTrack/path",
+                        str(exc),
+                        "repair or replace the music file; production preflight must verify audible signal",
+                    )
+                )
             else:
-                if loudness < MUSIC_AUDIBILITY_FLOOR_LUFS:
-                    diagnostics.append(ContractDiagnostic(
-                        "music.near_silent", "/persian/musicTrack/path",
-                        f"music integrated loudness is {loudness:.1f} LUFS, below the {MUSIC_AUDIBILITY_FLOOR_LUFS:.1f} LUFS audibility floor",
-                        "normalize or replace the bed before preflight; presence of an almost-silent audio file does not satisfy the music requirement",
-                    ))
-                elif audio.get("narration"):
-                    narration_raw = Path(str(audio["narration"])).expanduser()
-                    narration_path = narration_raw.resolve() if narration_raw.is_absolute() else (root / narration_raw).resolve()
-                    if narration_path.is_file():
-                        try:
-                            narration_loudness = measure_integrated_loudness(narration_path)
-                        except RuntimeError as exc:
-                            diagnostics.append(ContractDiagnostic(
-                                "music.mix_unmeasurable", "/persian/audio/narration",
-                                str(exc), "repair the narration input; production preflight must verify the speech/music balance",
-                            ))
-                        else:
-                            try:
-                                duck_volume = float(audio.get("musicDuckVolume", DEFAULT_MUSIC_DUCK_VOLUME))
-                            except (TypeError, ValueError):
-                                duck_volume = DEFAULT_MUSIC_DUCK_VOLUME
-                            effective_loudness = effective_music_loudness(loudness, duck_volume)
-                            gap = narration_loudness - effective_loudness
-                            if gap > MAX_DUCKED_MUSIC_GAP_LU:
-                                diagnostics.append(ContractDiagnostic(
-                                    "music.mix_too_quiet", "/persian/audio/musicDuckVolume",
-                                    f"ducked music is effectively {effective_loudness:.1f} LUFS against narration at {narration_loudness:.1f} LUFS ({gap:.1f} LU gap > {MAX_DUCKED_MUSIC_GAP_LU:.1f} LU maximum)",
-                                    "normalize the bed or raise the authored/default duck level so background music remains perceptible under speech; do not rely on file presence alone",
-                                ))
+                if music_lufs < MUSIC_AUDIBILITY_FLOOR_LUFS:
+                    diagnostics.append(
+                        ContractDiagnostic(
+                            "music.near_silent",
+                            "/persian/musicTrack/path",
+                            f"music integrated loudness is {music_lufs:.1f} LUFS, below the {MUSIC_AUDIBILITY_FLOOR_LUFS:.1f} LUFS audibility floor",
+                            "normalize or replace the bed before preflight; presence of an almost-silent audio file does not satisfy the music requirement",
+                        )
+                    )
+
+    if paths is not None:
+        narration_path, _music_path = paths
+        try:
+            mix = inspect_persian_audio_mix({"persian": persian}, base_dir=base_dir)
+        except RuntimeError as exc:
+            diagnostics.append(
+                ContractDiagnostic(
+                    "music.mix_unmeasurable",
+                    "/persian/audio/narration",
+                    str(exc),
+                    "repair the narration/music input; production preflight must verify the speech/music balance",
+                )
+            )
+        else:
+            if mix is not None and mix.get("gainSource") == "authored_legacy_override" and not mix.get("passed"):
+                reason = str(mix.get("reason") or "")
+                code = "music.mix_too_loud" if reason == "music_too_loud" else "music.mix_too_quiet"
+                relation = "below" if reason == "music_too_loud" else "above"
+                boundary = mix["minSeparationLu"] if reason == "music_too_loud" else mix["maxSeparationLu"]
+                diagnostics.append(
+                    ContractDiagnostic(
+                        code,
+                        "/persian/audio/musicDuckVolume",
+                        f"authored speech-time music gain predicts a {mix['predictedSeparationLu']:.1f} LU gap, {relation} the {boundary:.1f} LU policy boundary",
+                        "remove the fixed musicDuckVolume and let the versioned loudness policy derive speech-time gain from measured narration/music LUFS",
+                    )
+                )
     return diagnostics
 
 
-def _path_diagnostics(persian: dict[str, Any], *, base_dir: Path | None) -> list[ContractDiagnostic]:
-    # Pure contract validation may be used without filesystem context. Production
-    # preflight always passes REPO_ROOT, making authored relative paths repository-
-    # relative and independent of the caller's cwd. Absolute paths stay readable.
+def _path_diagnostics(
+    persian: dict[str, Any], *, base_dir: Path | None
+) -> list[ContractDiagnostic]:
     if base_dir is None:
         return []
     root = base_dir.expanduser().resolve()
@@ -316,8 +383,6 @@ def collect_persian_edit_diagnostics(
         diagnostics.extend(_music_diagnostics(persian, base_dir=base_dir))
         diagnostics.extend(_path_diagnostics(persian, base_dir=base_dir))
 
-    # Alias errors can be reported by both the strict schema and semantic pass;
-    # keep one stable diagnostic per code/pointer/message tuple.
     deduped: list[ContractDiagnostic] = []
     seen: set[tuple[str, str, str]] = set()
     for item in diagnostics:

@@ -2,7 +2,8 @@
 
 Job state lives inside the project, is atomically updated, and can be reconciled
 after the controlling chat/terminal disappears. Idempotence keys prevent duplicate
-execution of the same logical stage attempt.
+execution of the same logical stage attempt. Execution truth is persisted separately
+from best-effort reporting so reporting/serialization cannot erase expensive work.
 """
 from __future__ import annotations
 
@@ -18,9 +19,11 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
+from lib.json_safe import to_json_safe
 from lib.paths import REPO_ROOT
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+_PYTHON_LAUNCHERS = frozenset({"python", "python3", "python.exe", "python3.exe"})
 
 
 class DurableJobError(ValueError):
@@ -31,10 +34,30 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _canonical_env() -> dict[str, str]:
+    """Return the deterministic child environment for repo-local durable work."""
+    env = dict(os.environ)
+    repo = str(REPO_ROOT.resolve())
+    existing = str(env.get("PYTHONPATH") or "")
+    entries = [item for item in existing.split(os.pathsep) if item]
+    entries = [item for item in entries if Path(item).expanduser().resolve() != REPO_ROOT.resolve()]
+    env["PYTHONPATH"] = os.pathsep.join([repo, *entries])
+    env["PYTHONUNBUFFERED"] = "1"
+    return env
+
+
+def _normalize_command(argv: Sequence[str]) -> list[str]:
+    command = list(argv)
+    if command and Path(command[0]).name.lower() in _PYTHON_LAUNCHERS:
+        command[0] = sys.executable
+    return command
+
+
 def _atomic_json(path: Path, value: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(dict(value), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    payload = to_json_safe(dict(value))
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     tmp.replace(path)
 
 
@@ -75,7 +98,9 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _command_digest(argv: Sequence[str]) -> str:
-    return hashlib.sha256(json.dumps(list(argv), ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+    return hashlib.sha256(
+        json.dumps(list(argv), ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 def load_job(project_dir: Path, job_id: str) -> dict[str, Any]:
@@ -94,14 +119,19 @@ def start_job(
     """Persist one logical job and detach a heartbeat worker exactly once."""
     if not argv or not all(isinstance(item, str) and item for item in argv):
         raise DurableJobError("argv must contain at least one non-empty string")
-    _validate_id(job_id, "job_id"); _validate_id(phase, "phase"); _validate_id(idempotence_key, "idempotence_key")
-    root = _root(project_dir); root.mkdir(parents=True, exist_ok=True)
+    _validate_id(job_id, "job_id")
+    _validate_id(phase, "phase")
+    _validate_id(idempotence_key, "idempotence_key")
+    command = _normalize_command(argv)
+    env = _canonical_env()
+    root = _root(project_dir)
+    root.mkdir(parents=True, exist_ok=True)
     index_path = _index_path(project_dir)
     index = _read_json(index_path) if index_path.exists() else {}
     existing_id = index.get(idempotence_key)
     if existing_id:
         existing = load_job(project_dir, str(existing_id))
-        if existing.get("commandSha256") != _command_digest(argv):
+        if existing.get("commandSha256") != _command_digest(command):
             raise DurableJobError("idempotence_key already belongs to a different command")
         return {**existing, "idempotentReuse": True}
 
@@ -109,27 +139,51 @@ def start_job(
     if state_path.exists():
         raise DurableJobError("job_id already exists; reuse its state or choose a new job_id")
     state = {
-        "version": 1, "jobId": job_id, "phase": phase, "idempotenceKey": idempotence_key,
-        "status": "queued", "command": list(argv), "commandSha256": _command_digest(argv),
-        "createdAt": _now(), "heartbeatAt": None, "workerPid": None,
-        "resultPath": str(_result_path(project_dir, job_id)), "logPath": str(_log_path(project_dir, job_id)),
+        "version": 2,
+        "jobId": job_id,
+        "phase": phase,
+        "idempotenceKey": idempotence_key,
+        "status": "queued",
+        "executionOutcome": "pending",
+        "reportingOutcome": "pending",
+        "command": command,
+        "commandSha256": _command_digest(command),
+        "createdAt": _now(),
+        "heartbeatAt": None,
+        "workerPid": None,
+        "resultPath": str(_result_path(project_dir, job_id)),
+        "logPath": str(_log_path(project_dir, job_id)),
+        "executionContext": {
+            "cwd": str(REPO_ROOT.resolve()),
+            "interpreter": str(Path(sys.executable).resolve()),
+            "pythonPath": env["PYTHONPATH"],
+        },
     }
     _atomic_json(state_path, state)
-    index[idempotence_key] = job_id; _atomic_json(index_path, index)
+    index[idempotence_key] = job_id
+    _atomic_json(index_path, index)
     if not launch:
         return state
 
-    log = _log_path(project_dir, job_id); log.parent.mkdir(parents=True, exist_ok=True)
+    log = _log_path(project_dir, job_id)
+    log.parent.mkdir(parents=True, exist_ok=True)
     handle = log.open("ab")
     try:
         worker = subprocess.Popen(
             [sys.executable, "-m", "lib.persian_durable_job", "_worker", str(state_path)],
-            cwd=REPO_ROOT, stdin=subprocess.DEVNULL, stdout=handle, stderr=subprocess.STDOUT,
-            start_new_session=True, close_fds=True,
+            cwd=REPO_ROOT,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            close_fds=True,
         )
     finally:
         handle.close()
-    state["workerPid"] = worker.pid; state["status"] = "starting"; state["heartbeatAt"] = _now()
+    state["workerPid"] = worker.pid
+    state["status"] = "starting"
+    state["heartbeatAt"] = _now()
     _atomic_json(state_path, state)
     return state
 
@@ -138,19 +192,14 @@ def _pid_alive(pid: object) -> bool:
     if not isinstance(pid, int) or pid <= 0:
         return False
     try:
-        os.kill(pid, 0); return True
+        os.kill(pid, 0)
+        return True
     except OSError:
         return False
 
 
 def _child_alive_for_job(state: Mapping[str, Any]) -> bool:
-    """Return true only while this job's recorded child still appears alive.
-
-    The detached worker is a session/process-group leader. Its child inherits
-    that group. Checking the recorded group as well as the PID makes a later PID
-    reuse much less likely to be mistaken for the original long-running command.
-    Older state without a processGroupId remains conservatively PID-based.
-    """
+    """Return true only while this job's recorded child still appears alive."""
     child_pid = state.get("childPid")
     if not _pid_alive(child_pid):
         return False
@@ -164,13 +213,27 @@ def _child_alive_for_job(state: Mapping[str, Any]) -> bool:
 
 
 def reconcile_job(project_dir: Path, job_id: str) -> dict[str, Any]:
-    state_path = _state_path(project_dir, job_id); state = _read_json(state_path)
+    state_path = _state_path(project_dir, job_id)
+    state = _read_json(state_path)
     result_path = _result_path(project_dir, job_id)
     if result_path.exists():
         result = _read_json(result_path)
-        state.update({k: result[k] for k in ("status", "exitCode", "finishedAt") if k in result})
+        state.update(
+            {
+                key: result[key]
+                for key in (
+                    "status",
+                    "exitCode",
+                    "finishedAt",
+                    "executionOutcome",
+                    "reportingOutcome",
+                )
+                if key in result
+            }
+        )
         state["heartbeatAt"] = result.get("heartbeatAt", state.get("heartbeatAt"))
-        _atomic_json(state_path, state); return state
+        _atomic_json(state_path, state)
+        return state
     active = {"queued", "starting", "running", "orphaned_running"}
     if state.get("status") in active and not _pid_alive(state.get("workerPid")):
         if _child_alive_for_job(state):
@@ -181,50 +244,121 @@ def reconcile_job(project_dir: Path, job_id: str) -> dict[str, Any]:
             )
             _atomic_json(state_path, state)
             return state
-        state["status"] = "interrupted"; state["finishedAt"] = _now()
-        state["recoveryAction"] = "Inspect job.log, then retry with a new idempotence key if the stage did not commit its output."
+        state["status"] = "interrupted"
+        state["executionOutcome"] = "interrupted"
+        state["finishedAt"] = _now()
+        state["recoveryAction"] = (
+            "Inspect job.log, then retry with a new idempotence key if the stage did not commit its output."
+        )
         _atomic_json(state_path, state)
+    return state
+
+
+def _record_finished_execution(
+    state_path: Path, *, exit_code: int, heartbeat_at: str | None = None
+) -> dict[str, Any]:
+    """Persist execution truth first; reporting may fail without changing it."""
+    state = _read_json(state_path)
+    result_path = state_path.with_name("result.json")
+    status = "succeeded" if int(exit_code) == 0 else "failed"
+    finished = {
+        "status": status,
+        "executionOutcome": status,
+        "exitCode": int(exit_code),
+        "finishedAt": _now(),
+        "heartbeatAt": heartbeat_at or state.get("heartbeatAt") or _now(),
+    }
+    state.update(finished)
+    state["reportingOutcome"] = "pending"
+    _atomic_json(state_path, state)
+
+    try:
+        report = {**finished, "reportingOutcome": "succeeded"}
+        _atomic_json(result_path, report)
+    except Exception as exc:
+        state["reportingOutcome"] = "failed"
+        state["reportingError"] = str(exc)
+        _atomic_json(state_path, state)
+        return state
+
+    state["reportingOutcome"] = "succeeded"
+    state.pop("reportingError", None)
+    _atomic_json(state_path, state)
     return state
 
 
 def _worker(state_path: Path) -> int:
     state = _read_json(state_path)
-    result_path = state_path.with_name("result.json"); log_path = state_path.with_name("job.log")
-    state["status"] = "running"; state["workerPid"] = os.getpid(); state["startedAt"] = _now(); state["heartbeatAt"] = _now()
+    log_path = state_path.with_name("job.log")
+    state["status"] = "running"
+    state["executionOutcome"] = "running"
+    state["workerPid"] = os.getpid()
+    state["startedAt"] = _now()
+    state["heartbeatAt"] = _now()
     _atomic_json(state_path, state)
     with log_path.open("ab") as log:
-        child = subprocess.Popen(state["command"], cwd=REPO_ROOT, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, close_fds=True)
+        child = subprocess.Popen(
+            state["command"],
+            cwd=REPO_ROOT,
+            env=_canonical_env(),
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            close_fds=True,
+        )
         state["childPid"] = child.pid
         state["processGroupId"] = os.getpgid(child.pid)
         _atomic_json(state_path, state)
         while True:
             code = child.poll()
-            state["heartbeatAt"] = _now(); _atomic_json(state_path, state)
+            state["heartbeatAt"] = _now()
+            _atomic_json(state_path, state)
             if code is not None:
                 break
             time.sleep(1.0)
-    status = "succeeded" if code == 0 else "failed"
-    result = {"status": status, "exitCode": int(code), "finishedAt": _now(), "heartbeatAt": state["heartbeatAt"]}
-    _atomic_json(result_path, result); state.update(result); _atomic_json(state_path, state)
+    _record_finished_execution(
+        state_path,
+        exit_code=int(code),
+        heartbeat_at=str(state.get("heartbeatAt") or _now()),
+    )
     return int(code)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="persian-durable-job")
     sub = parser.add_subparsers(dest="command", required=True)
-    start = sub.add_parser("start"); start.add_argument("project_dir", type=Path); start.add_argument("job_id"); start.add_argument("--phase", required=True); start.add_argument("--idempotence-key", required=True); start.add_argument("argv", nargs=argparse.REMAINDER)
-    status = sub.add_parser("status"); status.add_argument("project_dir", type=Path); status.add_argument("job_id")
-    worker = sub.add_parser("_worker"); worker.add_argument("state_path", type=Path)
+    start = sub.add_parser("start")
+    start.add_argument("project_dir", type=Path)
+    start.add_argument("job_id")
+    start.add_argument("--phase", required=True)
+    start.add_argument("--idempotence-key", required=True)
+    start.add_argument("argv", nargs=argparse.REMAINDER)
+    status = sub.add_parser("status")
+    status.add_argument("project_dir", type=Path)
+    status.add_argument("job_id")
+    worker = sub.add_parser("_worker")
+    worker.add_argument("state_path", type=Path)
     args = parser.parse_args(argv)
-    if args.command == "_worker": return _worker(args.state_path)
+    if args.command == "_worker":
+        return _worker(args.state_path)
     try:
         if args.command == "start":
-            command = list(args.argv); command = command[1:] if command[:1] == ["--"] else command
-            result = start_job(args.project_dir, job_id=args.job_id, phase=args.phase, argv=command, idempotence_key=args.idempotence_key)
-        else: result = reconcile_job(args.project_dir, args.job_id)
+            command = list(args.argv)
+            command = command[1:] if command[:1] == ["--"] else command
+            result = start_job(
+                args.project_dir,
+                job_id=args.job_id,
+                phase=args.phase,
+                argv=command,
+                idempotence_key=args.idempotence_key,
+            )
+        else:
+            result = reconcile_job(args.project_dir, args.job_id)
     except (OSError, ValueError, TypeError, KeyError) as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2)); return 2
-    print(json.dumps({"ok": True, **result}, ensure_ascii=False, indent=2)); return 0
+        print(json.dumps(to_json_safe({"ok": False, "error": str(exc)}), ensure_ascii=False, indent=2))
+        return 2
+    print(json.dumps(to_json_safe({"ok": True, **result}), ensure_ascii=False, indent=2))
+    return 0
 
 
 if __name__ == "__main__":
