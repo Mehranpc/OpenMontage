@@ -279,6 +279,7 @@ def _report(
     evidence: dict[str, Any] | None = None,
     watermark_diagnostics: dict[str, Any] | None = None,
     next_actions: list[str] | None = None,
+    diagnostic_layers: list[str] | None = None,
 ) -> dict[str, Any]:
     return {
         "version": 1,
@@ -289,6 +290,7 @@ def _report(
         "warnings": list(warnings or []),
         "watermarkDiagnostics": watermark_diagnostics,
         "nextActions": list(next_actions or []),
+        "diagnosticLayers": list(diagnostic_layers or []),
         "mediaCopies": 0,
         "evidence": evidence or {},
     }
@@ -311,10 +313,80 @@ def _hook_recovery_class(problem: str) -> str:
     return "HOOK_AUTHORING"
 
 
+def _merge_intervals(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    merged: list[list[float]] = []
+    for start, end in sorted(intervals):
+        if end <= start:
+            continue
+        if merged and start <= merged[-1][1] + 1e-9:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return [(item[0], item[1]) for item in merged]
+
+
+def _early_watermark_feasibility(edit: dict[str, Any]) -> dict[str, Any] | None:
+    """Conservatively detect timeline-wide watermark impossibility before Chromium.
+
+    This cheap gate only treats near-full-frame avoid regions as globally blocking.
+    Partial subject regions still require the real Film Type geometry planner, so this
+    cannot create false confidence or replace browser validation.
+    """
+    persian = edit.get("persian")
+    if not isinstance(persian, dict):
+        return None
+    duration = float(persian.get("durationSeconds") or 0.0)
+    watermark = persian.get("watermark") if isinstance(persian.get("watermark"), dict) else {}
+    minimum = float(watermark.get("minCoverageRatio") or 0.0)
+    intro = max(0.0, min(duration, float(watermark.get("introDelaySeconds") or 0.0)))
+    if duration <= 0 or minimum <= 0:
+        return None
+
+    blocked: list[tuple[float, float]] = []
+    for shot in persian.get("shots") or []:
+        if not isinstance(shot, dict):
+            continue
+        shot_start = float(shot.get("startSeconds") or 0.0)
+        shot_end = float(shot.get("endSeconds") or duration)
+        for region in shot.get("avoidRegions") or []:
+            if not isinstance(region, dict):
+                continue
+            try:
+                x = float(region.get("x", 0.0)); y = float(region.get("y", 0.0))
+                w = float(region.get("w", 0.0)); h = float(region.get("h", 0.0))
+            except (TypeError, ValueError):
+                continue
+            # Only an almost-full-frame region is a deterministic global blocker.
+            if x > 0.01 or y > 0.01 or x + w < 0.99 or y + h < 0.99:
+                continue
+            start = max(intro, float(region.get("startSeconds", shot_start)))
+            end = min(duration, float(region.get("endSeconds", shot_end)))
+            if end > start:
+                blocked.append((start, end))
+
+    merged = _merge_intervals(blocked)
+    blocked_seconds = sum(end - start for start, end in merged)
+    possible_seconds = max(0.0, duration - intro - blocked_seconds)
+    max_ratio = possible_seconds / duration
+    floor = min(minimum, max(0.0, duration - intro) / duration) if duration < 20.0 else minimum
+    return {
+        "durationSeconds": round(duration, 3),
+        "introDelaySeconds": round(intro, 3),
+        "coverageFloor": round(floor, 6),
+        "maxTheoreticalCoverageRatio": round(max_ratio, 6),
+        "globalBlockedIntervals": [
+            {"startSeconds": round(start, 3), "endSeconds": round(end, 3)}
+            for start, end in merged
+        ],
+        "feasible": max_ratio + 1e-9 >= floor,
+        "calculation": "conservative-full-frame-avoid-region-v1",
+    }
+
+
 def aggregate_preflight_edit_decisions(
     payload: dict[str, Any], *, base_dir: Path | None = None
 ) -> dict[str, Any]:
-    """Run every cheap gate first, then one browser pass, returning one durable report."""
+    """Aggregate independent cheap blockers, then run at most one browser-heavy pass."""
     root = (base_dir or REPO_ROOT).resolve()
     try:
         edit = extract_edit_decisions(payload)
@@ -323,11 +395,18 @@ def aggregate_preflight_edit_decisions(
             ok=False, edit=None,
             blocking=[{"code": "INPUT_SHAPE", "message": str(exc), "recoveryClass": "EDIT_ARTIFACT"}],
             next_actions=["Provide an edit_decisions artifact or Persian edit block."],
+            diagnostic_layers=["input"],
         )
+
+    blocking: list[dict[str, Any]] = []
+    actions: list[str] = []
+    evidence: dict[str, Any] = {}
+    layers: list[str] = []
 
     contract = collect_persian_edit_diagnostics(edit, base_dir=root)
     if contract:
-        issues = [
+        layers.append("contract")
+        blocking.extend(
             {
                 "code": item.code,
                 "path": item.pointer,
@@ -336,42 +415,78 @@ def aggregate_preflight_edit_decisions(
                 **({"hint": item.hint} if item.hint else {}),
             }
             for item in contract
-        ]
-        actions = [item.hint for item in contract if item.hint]
-        return _report(ok=False, edit=edit, blocking=issues, next_actions=list(dict.fromkeys(actions)))
-
-    retention = audit_persian_retention(edit["persian"])
-    if retention["problems"]:
-        return _report(
-            ok=False, edit=edit,
-            blocking=[
-                {"code": "RETENTION_GATE", "message": problem, "recoveryClass": "EDIT_ARTIFACT"}
-                for problem in retention["problems"]
-            ],
-            evidence={"retentionAudit": retention},
-            next_actions=["Revise the edit decisions; do not weaken the retention gate."],
         )
+        actions.extend(item.hint for item in contract if item.hint)
 
-    hook_quality = audit_persian_hook_quality(edit)
-    if hook_quality["problems"]:
-        return _report(
-            ok=False, edit=edit,
-            blocking=[
+    retention: dict[str, Any] | None = None
+    persian = edit.get("persian")
+    if isinstance(persian, dict):
+        try:
+            retention = audit_persian_retention(persian)
+        except (ValueError, TypeError, KeyError):
+            retention = None
+        if retention is not None:
+            evidence["retentionAudit"] = retention
+            if retention.get("problems"):
+                layers.append("retention")
+                blocking.extend(
+                    {"code": "RETENTION_GATE", "message": problem, "recoveryClass": "EDIT_ARTIFACT"}
+                    for problem in retention["problems"]
+                )
+                actions.append("Revise the edit decisions; do not weaken the retention gate.")
+
+    hook_quality: dict[str, Any] | None = None
+    try:
+        hook_quality = audit_persian_hook_quality(edit)
+    except (ValueError, TypeError, KeyError):
+        hook_quality = None
+    if hook_quality is not None:
+        evidence["hookQualityAudit"] = hook_quality
+        if hook_quality.get("problems"):
+            layers.append("hook")
+            blocking.extend(
                 {
                     "code": "HOOK_QUALITY_GATE",
                     "message": problem,
                     "recoveryClass": _hook_recovery_class(problem),
                 }
                 for problem in hook_quality["problems"]
-            ],
-            evidence={"retentionAudit": retention, "hookQualityAudit": hook_quality},
-            next_actions=[
+            )
+            actions.append(
                 "Revise the opening hook evidence/copy/edit; do not substitute decorative pattern interrupts for semantic value."
-            ],
+            )
+
+    watermark_feasibility = _early_watermark_feasibility(edit)
+    if watermark_feasibility is not None:
+        evidence["watermarkGlobalFeasibility"] = watermark_feasibility
+        if not watermark_feasibility["feasible"]:
+            layers.append("watermark")
+            blocking.append({
+                "code": "WATERMARK_GLOBAL_FEASIBILITY",
+                "message": (
+                    "watermark coverage is globally infeasible before browser layout: "
+                    f"maximum theoretical coverage {watermark_feasibility['maxTheoreticalCoverageRatio']:.3f} "
+                    f"< floor {watermark_feasibility['coverageFloor']:.3f}"
+                ),
+                "recoveryClass": "WATERMARK_TIMING",
+            })
+            actions.append(
+                "Change shot/avoid-region timing or footage so watermark coverage is feasible; keep the configured coverage floor unchanged."
+            )
+
+    if blocking:
+        return _report(
+            ok=False,
+            edit=edit,
+            blocking=blocking,
+            evidence=evidence,
+            watermark_diagnostics=watermark_feasibility,
+            next_actions=list(dict.fromkeys(actions)),
+            diagnostic_layers=list(dict.fromkeys(layers)),
         )
 
     try:
-        evidence = preflight_edit_decisions(edit, base_dir=root)
+        browser_evidence = preflight_edit_decisions(edit, base_dir=root)
     except FilmTypePreflightError as exc:
         actions = [
             "Use watermarkDiagnostics.topBlockers and suppressionGaps to re-edit timing/placement or footage.",
@@ -385,21 +500,28 @@ def aggregate_preflight_edit_decisions(
                 "recoveryClass": "FILM_TYPE_LAYOUT",
                 **({"details": exc.diagnostics} if exc.diagnostics else {}),
             }],
-            evidence={"retentionAudit": retention, "hookQualityAudit": hook_quality},
-            watermark_diagnostics=exc.diagnostics or None,
+            evidence=evidence,
+            watermark_diagnostics=exc.diagnostics or watermark_feasibility,
             next_actions=actions,
+            diagnostic_layers=["browser"],
         )
     except (OSError, ValueError, TypeError, KeyError) as exc:
         return _report(
             ok=False, edit=edit,
             blocking=[{"code": "PREFLIGHT_RUNTIME", "message": str(exc), "recoveryClass": "PREFLIGHT_RUNTIME"}],
-            evidence={"retentionAudit": retention, "hookQualityAudit": hook_quality},
+            evidence=evidence,
             next_actions=["Fix the reported preflight runtime/input failure, then rerun the same draft."],
+            diagnostic_layers=["browser"],
         )
 
     return _report(
-        ok=True, edit=edit, blocking=[], warnings=evidence.get("warnings") or [], evidence=evidence,
-        watermark_diagnostics=evidence.get("watermarkDiagnostics"),
+        ok=True,
+        edit=edit,
+        blocking=[],
+        warnings=browser_evidence.get("warnings") or [],
+        evidence=browser_evidence,
+        watermark_diagnostics=browser_evidence.get("watermarkDiagnostics") or watermark_feasibility,
+        diagnostic_layers=["contract", "retention", "hook", "watermark", "browser"],
     )
 
 
@@ -410,11 +532,11 @@ def _atomic_write_report(path: Path, report: dict[str, Any]) -> None:
     temp.replace(path)
 
 
-def _default_report_path(input_path: Path) -> Path | None:
+def _default_report_path(input_path: Path) -> Path:
     resolved = input_path.expanduser().resolve()
     if resolved.parent.name == "artifacts":
         return resolved.parent.parent / ".preflight" / "preflight_report.json"
-    return None
+    return resolved.parent / f".{resolved.stem}.preflight-report.json"
 
 
 def main(argv=None) -> int:
@@ -432,10 +554,20 @@ def main(argv=None) -> int:
         )
     else:
         report = aggregate_preflight_edit_decisions(payload, base_dir=REPO_ROOT)
-    output = args.output or _default_report_path(args.input)
-    if output is not None:
-        _atomic_write_report(output, report)
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    output = (args.output or _default_report_path(args.input)).expanduser().resolve()
+    _atomic_write_report(output, report)
+    report_sha = hashlib.sha256(output.read_bytes()).hexdigest()
+    summary = {
+        "status": report["status"],
+        "ok": report["ok"],
+        "artifactSha256": report.get("artifactSha256"),
+        "blockingCount": len(report.get("blockingIssues") or []),
+        "warningCount": len(report.get("warnings") or []),
+        "diagnosticLayers": report.get("diagnosticLayers") or [],
+        "reportPath": str(output),
+        "reportSha256": report_sha,
+    }
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0 if report["ok"] else 2
 
 
