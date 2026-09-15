@@ -56,6 +56,11 @@ def _fake_compose(_self, inputs: dict):
     candidate = Path(inputs["output_path"])
     candidate.parent.mkdir(parents=True, exist_ok=True)
     candidate.write_bytes(b"rendered-candidate" * 500)
+    subtitle = candidate.with_suffix(".srt")
+    subtitle.write_text(
+        "1\n00:00:00,000 --> 00:00:03,000\nشروع با یک تغییر کوچک روشن می‌شود.\n",
+        encoding="utf-8",
+    )
     return SimpleNamespace(
         success=True,
         error=None,
@@ -67,7 +72,7 @@ def _fake_compose(_self, inputs: dict):
             "text_coverage": 0.0,
             "caption_mode": "hybrid",
             "burned_caption_count": 3,
-            "subtitle_path": None,
+            "subtitle_path": str(subtitle),
             "subtitle_advisories": [],
             "attributions": [e2e.DISCLAIMER],
             "post_render_motion_qa": {
@@ -130,14 +135,6 @@ def test_full_front_door_reaches_awaiting_human_with_v2_evidence(monkeypatch, tm
             "outputIntegratedLufs": -16.0,
             "truePeakDbfs": -1.5,
         },
-        raising=False,
-    )
-    # Compatibility stub for the pre-v2 harness; the migrated front door must use
-    # the edit-workspace API above instead of this direct preflight call.
-    monkeypatch.setattr(
-        e2e,
-        "preflight_edit_decisions",
-        lambda _edit: {"retentionAudit": {"problems": []}},
         raising=False,
     )
 
