@@ -38,10 +38,16 @@ class ScriptAlignedPersianCompose(PersianCompose):
             return None
         runtime_persian = dict(persian)
         runtime_persian.pop("_approvedSubtitleScript", None)
+        runtime_persian.pop("_hookCaptionHandoff", None)
         metadata = edit_decisions.get("metadata") or {}
         approved_script = metadata.get("persianSubtitleScript") if isinstance(metadata, dict) else None
+        hook_handoff = metadata.get("hookCaptionHandoff") if isinstance(metadata, dict) else None
         if approved_script is not None:
             runtime_persian["_approvedSubtitleScript"] = approved_script
+        if hook_handoff is not None:
+            # Runtime-only injection keeps the public edit schema stable while making
+            # the explicit handoff available before burned-caption geometry freezes.
+            runtime_persian["_hookCaptionHandoff"] = hook_handoff
         return runtime_persian
 
     def execute(self, inputs: dict[str, Any]):
@@ -106,11 +112,11 @@ class ScriptAlignedPersianCompose(PersianCompose):
         cue may not straddle the end of the hook and expose only its hidden remainder.
         The sidecar SRT remains complete in both modes.
         """
-        raw = persian.get("hookCaptionHandoff")
+        raw = persian.get("_hookCaptionHandoff")
         if raw is None:
             return list(cues)
         if not isinstance(raw, dict):
-            raise ValueError("CAPTION_HANDOFF_INVALID: hookCaptionHandoff must be an object")
+            raise ValueError("CAPTION_HANDOFF_INVALID: metadata.hookCaptionHandoff must be an object")
         mode = str(raw.get("mode") or "").strip()
         if mode not in {"semantic_replacement", "exact_continuation"}:
             raise ValueError(
@@ -118,7 +124,7 @@ class ScriptAlignedPersianCompose(PersianCompose):
             )
         window = ScriptAlignedPersianCompose._hook_window(persian)
         if window is None:
-            raise ValueError("CAPTION_HANDOFF_INVALID: a hookCaptionHandoff requires a hook moment")
+            raise ValueError("CAPTION_HANDOFF_INVALID: hookCaptionHandoff requires a hook moment")
         _, hook_end = window
 
         if mode == "semantic_replacement":
@@ -132,13 +138,10 @@ class ScriptAlignedPersianCompose(PersianCompose):
                 raise ValueError(
                     "CAPTION_HANDOFF_INVALID: resumeAtSeconds must be finite and at/after the hook end"
                 )
-            # Drop entire cues that begin before the next complete semantic unit. Never
-            # crop a cue into a fragment: authoritative cue text/timing remains intact.
+            # Drop entire cues before the next complete semantic unit. Never crop a
+            # cue into a fragment: authoritative wording/timing remains intact.
             return [cue for cue in cues if cue.start_seconds >= resume - 1e-6]
 
-        # Exact continuation is only safe when the first cue visible after the hook
-        # begins at the handoff boundary. A cue that started under the plate would show
-        # only a hidden tail once the plate disappears (the 2026-09-16 regression).
         visible = [cue for cue in cues if cue.end_seconds > hook_end + 1e-6]
         if visible:
             first = visible[0]
