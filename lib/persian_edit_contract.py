@@ -46,6 +46,10 @@ class PersianEditContractError(ValueError):
         super().__init__("Persian edit contract refused:\n" + body)
 
 
+PERSIAN_FRAME_RATE = 30
+_SHORT_FORM_TARGETS = frozenset({"instagram", "instagram-reels", "tiktok"})
+
+
 _ALIAS_HINTS = {
     "width": ("w", "avoid-region rectangles use normalized x/y/w/h"),
     "height": ("h", "avoid-region rectangles use normalized x/y/w/h"),
@@ -186,6 +190,101 @@ def _shot_source_window_diagnostics(persian: dict[str, Any]) -> list[ContractDia
                     )
                 )
         by_source.setdefault(source, []).append((index, shot_id, source_start, source_end))
+    return diagnostics
+
+
+def _frame_grid_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnostic]:
+    """Refuse viewer-visible frame holes/shot overlaps before Chromium/render work.
+
+    Remotion converts every visual boundary with ``round(seconds * 30)``. A timeline
+    that looks contiguous in decimal seconds can therefore still produce a positive
+    one-frame hole or overlap. New short-form productions are audited on that exact
+    executable grid; typographic beats count as legitimate visual coverage.
+    """
+    target = str(persian.get("platformTarget") or "").strip().lower().replace("_", "-")
+    if target not in _SHORT_FORM_TARGETS:
+        return []
+    try:
+        duration = float(persian.get("durationSeconds") or 0.0)
+    except (TypeError, ValueError):
+        return []
+    total_frames = round(duration * PERSIAN_FRAME_RATE)
+    if total_frames <= 0:
+        return []
+
+    diagnostics: list[ContractDiagnostic] = []
+    spans: list[tuple[int, int, str, str]] = []
+    shots = [item for item in (persian.get("shots") or []) if isinstance(item, dict)]
+    for index, shot in enumerate(shots):
+        try:
+            start = round(float(shot.get("startSeconds") or 0.0) * PERSIAN_FRAME_RATE)
+            end = round(float(shot.get("endSeconds") or 0.0) * PERSIAN_FRAME_RATE)
+        except (TypeError, ValueError):
+            continue
+        if end <= start:
+            diagnostics.append(ContractDiagnostic(
+                "TIMELINE_FRAME_EMPTY",
+                _pointer(["persian", "shots", index]),
+                f"shot {shot.get('id') or index!r} collapses to {end-start} frames at 30fps",
+                "retime the visual boundary on the canonical 30fps frame grid",
+            ))
+        spans.append((max(0, start), min(total_frames, end), "shot", str(index)))
+
+    for index, beat in enumerate(persian.get("typographicBeats") or []):
+        if not isinstance(beat, dict):
+            continue
+        try:
+            start = round(float(beat.get("startSeconds") or 0.0) * PERSIAN_FRAME_RATE)
+            end = round(float(beat.get("endSeconds") or 0.0) * PERSIAN_FRAME_RATE)
+        except (TypeError, ValueError):
+            continue
+        spans.append((max(0, start), min(total_frames, end), "typographicBeat", str(index)))
+
+    # Shot-vs-shot overlap is never a layering decision: later array order wins and
+    # silently hides frames. Typographic plates are excluded because they intentionally
+    # replace footage for their declared window.
+    ordered_shots = sorted(
+        [(round(float(s.get("startSeconds") or 0.0) * PERSIAN_FRAME_RATE),
+          round(float(s.get("endSeconds") or 0.0) * PERSIAN_FRAME_RATE), i, s)
+         for i, s in enumerate(shots)],
+        key=lambda item: (item[0], item[1]),
+    )
+    for prior, current in zip(ordered_shots, ordered_shots[1:]):
+        if current[0] < prior[1]:
+            overlap = prior[1] - current[0]
+            diagnostics.append(ContractDiagnostic(
+                "TIMELINE_FRAME_OVERLAP",
+                _pointer(["persian", "shots", current[2], "startSeconds"]),
+                f"shot {current[3].get('id') or current[2]!r} overlaps the prior shot by {overlap} frame(s) at 30fps",
+                "quantize adjacent shot boundaries to the same canonical frame; do not rely on array order",
+            ))
+
+    # Merge all paintable visual spans and reject any uncovered positive frame.
+    merged: list[list[int]] = []
+    for start, end, _kind, _index in sorted(spans, key=lambda item: (item[0], item[1])):
+        if end <= start:
+            continue
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    cursor = 0
+    for start, end in merged:
+        if start > cursor:
+            diagnostics.append(ContractDiagnostic(
+                "TIMELINE_FRAME_GAP",
+                "/persian/shots",
+                f"visual timeline has an uncovered {start-cursor}-frame gap at frames {cursor}-{start-1}",
+                "quantize adjacent boundaries or cover the interval with an explicit typographic beat",
+            ))
+        cursor = max(cursor, end)
+    if cursor < total_frames:
+        diagnostics.append(ContractDiagnostic(
+            "TIMELINE_FRAME_GAP",
+            "/persian/durationSeconds",
+            f"visual timeline ends {total_frames-cursor} frame(s) before the declared duration",
+            "extend the final shot/typographic beat to the canonical final frame",
+        ))
     return diagnostics
 
 
@@ -380,6 +479,7 @@ def collect_persian_edit_diagnostics(
     if isinstance(persian, dict):
         diagnostics.extend(_region_diagnostics(persian))
         diagnostics.extend(_shot_source_window_diagnostics(persian))
+        diagnostics.extend(_frame_grid_diagnostics(persian))
         diagnostics.extend(_music_diagnostics(persian, base_dir=base_dir))
         diagnostics.extend(_path_diagnostics(persian, base_dir=base_dir))
 

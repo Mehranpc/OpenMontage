@@ -219,13 +219,13 @@ def test_registry_discovers_the_stricter_existing_tool_name() -> None:
     registry.discover("tools.video")
     selected = registry.get("persian_compose")
     assert isinstance(selected, ScriptAlignedPersianCompose)
-    assert selected.version == "0.4.0"
+    assert selected.version == "0.5.0"
 
 
 def test_registered_tool_name_and_version_are_preserved() -> None:
     assert issubclass(ScriptAlignedPersianCompose, PersianCompose)
     assert ScriptAlignedPersianCompose.name == "persian_compose"
-    assert ScriptAlignedPersianCompose.version == "0.4.0"
+    assert ScriptAlignedPersianCompose.version == "0.5.0"
 
 
 def test_burned_only_mode_writes_no_sidecar(tmp_path) -> None:

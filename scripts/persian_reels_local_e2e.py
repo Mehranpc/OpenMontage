@@ -24,7 +24,7 @@ if str(ROOT) not in sys.path:
 
 from lib.checkpoint import write_checkpoint
 from lib.persian_assets import assert_video_only, audit_asset_manifest
-from lib.persian_rendered_review import measure_rendered_audio_output
+from lib.persian_rendered_review import build_cold_viewer_review_input, measure_rendered_audio_output
 from lib.persian_retention import audit_persian_retention
 from lib.persian_scenes import audit_scene_plan
 from lib.persian_srt_alignment import build_script_aligned_cues
@@ -123,6 +123,12 @@ def _hook_quality_metadata() -> dict[str, Any]:
                 "evidence": "The second visual event changes direction before the 3s opening window closes.",
             }
         ],
+        "semanticIntegrity": {
+            "sourceText": "شروع با یک تغییر کوچک روشن می‌شود.",
+            "requiredTopicAnchors": ["تغییر"],
+            "anchorDelivery": "visual",
+            "visualAnchorEvidence": "The reviewed opening shot visibly establishes the moving-light change.",
+        },
     }
 
 
@@ -501,6 +507,7 @@ def _advance_to_assets(
 def _build_final_review(
     candidate: Path,
     frames: list[str],
+    cold_frames: list[str],
     srt_path: str | None,
     probe: dict[str, Any],
     project: Path,
@@ -511,6 +518,19 @@ def _build_final_review(
     video = next((s for s in streams if s.get("codec_type") == "video"), {})
     audio = next((s for s in streams if s.get("codec_type") == "audio"), {})
     duration = float((probe.get("format") or {}).get("duration") or 0.0)
+    cold_input = build_cold_viewer_review_input(
+        candidate_sha256=_sha(candidate),
+        opening_evidence={
+            "framePaths": list(cold_frames),
+            "startSeconds": 0.0,
+            "endSeconds": 3.0,
+        },
+    )
+    cold_input_path = _write_json(
+        project / "artifacts" / "cold_viewer_review_input.json", cold_input
+    )
+    cold_input_sha = _sha(cold_input_path)
+
     audio_review = {
         **rendered_audio,
         "measurementSource": "rendered_mp4_plus_mix_policy",
@@ -542,6 +562,15 @@ def _build_final_review(
         "concretePayoffKind": "demonstration",
         "payoffEvidence": "The second rendered event visibly changes direction at 2.4s.",
         "payoffBeginsPromptly": True,
+        "coldViewer": {
+            "evidenceSource": "rendered_opening_only",
+            "contextIsolated": True,
+            "inferredTopic": "تغییر جهت یک الگوی نور متحرک",
+            "inferredClaim": "افتتاحیه یک تغییر دیداری مشخص را مطرح می‌کند",
+            "continuationReason": "می‌خواهم ببینم این تغییر چطور کامل می‌شود",
+            "unresolvedReferents": [],
+            "reviewInputSha256": cold_input_sha,
+        },
     }
     review = {
         "version": "1.0",
@@ -595,6 +624,10 @@ def _build_final_review(
             "disclaimer": DISCLAIMER,
             "hookQualityAudit": hook_audit,
             "hookQualityReview": hook_review,
+            "coldViewerReviewInput": {
+                "path": str(cold_input_path),
+                "sha256": cold_input_sha,
+            },
         },
     }
     validate_artifact("final_review", review)
@@ -762,6 +795,8 @@ def run_local(root: Path) -> dict[str, Any]:
         probe = _probe(candidate)
         review_frames = _extract_frames(candidate, project / "artifacts" / "final-review-frames",
                                         [0.5, 3.2, 6.2, 9.5], "review")
+        cold_frames = _extract_frames(candidate, project / "artifacts" / "cold-review-frames",
+                                      [0.25, 1.0, 2.0, 2.8], "cold")
         caption_frames = _extract_frames(candidate, project / "artifacts" / "caption-review-frames",
                                          [1.0, 5.6, 9.0], "caption")
         rendered_audio = measure_rendered_audio_output(candidate)
@@ -771,7 +806,7 @@ def run_local(root: Path) -> dict[str, Any]:
                 "front-door preflight did not persist required Hook Quality v2 evidence"
             )
         review_path = _build_final_review(
-            candidate, review_frames, data.get("subtitle_path"), probe, project,
+            candidate, review_frames, cold_frames, data.get("subtitle_path"), probe, project,
             hook_audit, rendered_audio,
         )
         report = _render_report(data, candidate, retention, review_path, review_frames,

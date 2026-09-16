@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from pathlib import Path
 import re
@@ -11,13 +12,13 @@ from typing import Any, Mapping
 
 from lib.persian_hook_quality import CONCRETE_PROOF_KINDS, PROOF_BLOCK_SECONDS
 from lib.persian_music import (
-    LOUDNESS_MIX_POLICY_VERSION,
     MAX_MUSIC_SEPARATION_LU,
     MIN_MUSIC_SEPARATION_LU,
     effective_music_loudness,
 )
 
 HOOK_RENDER_REVIEW_VERSION = "2.0"
+COLD_VIEWER_POLICY_VERSION = "1.0"
 RENDERED_AUDIO_POLICY_VERSION = "1.0"
 MIN_OUTPUT_INTEGRATED_LUFS = -20.0
 MAX_OUTPUT_INTEGRATED_LUFS = -9.0
@@ -44,10 +45,119 @@ def _digest(value: object, label: str) -> str:
     return text
 
 
+_COLD_VIEWER_EVIDENCE_FIELDS = frozenset(
+    {"framePaths", "excerptPath", "startSeconds", "endSeconds"}
+)
+
+
+def build_cold_viewer_review_input(
+    *, candidate_sha256: str, opening_evidence: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Build the only payload a blind muted-opening reviewer may receive.
+
+    The allowlist is intentionally narrow. Approved script, hook metadata, author
+    rationale, scene-plan labels, and semantic annotations cannot enter this object
+    accidentally because unknown evidence keys are refused rather than forwarded.
+    """
+    digest = _digest(candidate_sha256, "candidate digest")
+    if not isinstance(opening_evidence, Mapping):
+        raise PersianRenderedReviewError("cold-viewer opening evidence must be an object")
+    unsupported = sorted(set(opening_evidence) - _COLD_VIEWER_EVIDENCE_FIELDS)
+    if unsupported:
+        raise PersianRenderedReviewError(
+            "cold-viewer opening evidence contains unsupported authoring context fields: "
+            + ", ".join(unsupported)
+        )
+    frames = opening_evidence.get("framePaths")
+    excerpt = str(opening_evidence.get("excerptPath") or "").strip()
+    if frames is not None and (
+        not isinstance(frames, list)
+        or not frames
+        or any(not isinstance(item, str) or not item.strip() for item in frames)
+    ):
+        raise PersianRenderedReviewError("cold-viewer framePaths must be a non-empty array of paths")
+    if not frames and not excerpt:
+        raise PersianRenderedReviewError(
+            "cold-viewer review requires rendered opening frames or a muted opening excerpt"
+        )
+    clean: dict[str, Any] = {}
+    if frames:
+        clean["framePaths"] = [str(item).strip() for item in frames]
+    if excerpt:
+        clean["excerptPath"] = excerpt
+    for key in ("startSeconds", "endSeconds"):
+        if key in opening_evidence:
+            clean[key] = _number(opening_evidence[key], f"cold-viewer {key}")
+    if "startSeconds" in clean and "endSeconds" in clean:
+        if clean["endSeconds"] <= clean["startSeconds"]:
+            raise PersianRenderedReviewError("cold-viewer opening interval must have positive duration")
+    return {
+        "policyVersion": COLD_VIEWER_POLICY_VERSION,
+        "candidateSha256": digest,
+        "reviewScope": "muted_opening",
+        "evidenceSource": "rendered_opening_only",
+        "openingEvidence": clean,
+        "instructions": [
+            "Infer only what a muted cold viewer can recover from the rendered opening.",
+            "Record the apparent topic/referent, claim/question, reason to continue, and unresolved referents.",
+        ],
+    }
+
+
+def validate_cold_viewer_review_input(
+    payload: Mapping[str, Any], *, candidate_sha256: str
+) -> None:
+    """Validate the exact context-isolated payload shown to a cold reviewer."""
+    if not isinstance(payload, Mapping):
+        raise PersianRenderedReviewError("cold-viewer review input must be a JSON object")
+    evidence = payload.get("openingEvidence")
+    if not isinstance(evidence, Mapping):
+        raise PersianRenderedReviewError("cold-viewer review input requires openingEvidence")
+    expected = build_cold_viewer_review_input(
+        candidate_sha256=candidate_sha256, opening_evidence=evidence
+    )
+    extras = sorted(set(payload) - set(expected))
+    if extras:
+        raise PersianRenderedReviewError(
+            "cold-viewer review input contains unsupported authoring context fields: "
+            + ", ".join(extras)
+        )
+    if dict(payload) != expected:
+        raise PersianRenderedReviewError(
+            "cold-viewer review input does not match the canonical context-isolated payload"
+        )
+
+
+def _validate_cold_viewer(review: Mapping[str, Any]) -> bool:
+    """Validate context-isolated muted-opening evidence and return comprehension."""
+    raw = review.get("coldViewer")
+    if not isinstance(raw, Mapping):
+        raise PersianRenderedReviewError(
+            "rendered hook review requires cold-viewer evidence isolated from authoring context"
+        )
+    if str(raw.get("evidenceSource") or "") != "rendered_opening_only":
+        raise PersianRenderedReviewError(
+            "cold-viewer evidenceSource must be rendered_opening_only"
+        )
+    if raw.get("contextIsolated") is not True:
+        raise PersianRenderedReviewError(
+            "cold-viewer review must be context-isolated from script, hook metadata, rationale, and scene labels"
+        )
+    topic = str(raw.get("inferredTopic") or "").strip()
+    claim = str(raw.get("inferredClaim") or "").strip()
+    continuation = str(raw.get("continuationReason") or "").strip()
+    unresolved = raw.get("unresolvedReferents")
+    if not isinstance(unresolved, list) or any(not isinstance(item, str) for item in unresolved):
+        raise PersianRenderedReviewError("cold-viewer unresolvedReferents must be an array of strings")
+    # A failed/revise review is still persistable; comprehension simply evaluates
+    # false. Passing review enforces this result below.
+    return bool(topic and claim and continuation and not [item for item in unresolved if item.strip()])
+
+
 def validate_rendered_hook_review(
     review: Mapping[str, Any], *, candidate_sha256: str, require_pass: bool
 ) -> None:
-    """Validate independent review of what the viewer actually receives in the MP4."""
+    """Validate independent review of what a cold viewer actually receives."""
     if str(review.get("version") or "") != HOOK_RENDER_REVIEW_VERSION:
         raise PersianRenderedReviewError("rendered hook review version must be 2.0")
     if str(review.get("reviewSource") or "") != "rendered_mp4":
@@ -67,6 +177,15 @@ def validate_rendered_hook_review(
         raise PersianRenderedReviewError("rendered hook review requires at least two opening observations")
     if not str(review.get("rationale") or "").strip():
         raise PersianRenderedReviewError("rendered hook review requires rationale")
+
+    cold_comprehension = _validate_cold_viewer(review)
+    declared_muted = review.get("mutedHookDirectionConfirmed")
+    if not isinstance(declared_muted, bool):
+        raise PersianRenderedReviewError("mutedHookDirectionConfirmed must be boolean")
+    if declared_muted != cold_comprehension:
+        raise PersianRenderedReviewError(
+            "mutedHookDirectionConfirmed must be derived from structured cold-viewer evidence"
+        )
 
     strength = str(review.get("strength") or "")
     if strength not in {"weak", "acceptable", "strong"}:
@@ -88,8 +207,10 @@ def validate_rendered_hook_review(
     if require_pass:
         if strength not in {"acceptable", "strong"}:
             raise PersianRenderedReviewError("passing rendered hook review must be acceptable or strong")
-        if review.get("mutedHookDirectionConfirmed") is not True:
-            raise PersianRenderedReviewError("passing rendered hook review requires muted comprehension")
+        if not cold_comprehension:
+            raise PersianRenderedReviewError(
+                "passing rendered hook review requires cold-viewer topic/referent comprehension"
+            )
         if visual_alignment not in {"acceptable", "strong"}:
             raise PersianRenderedReviewError("passing rendered hook review requires visual/voice alignment")
         if review.get("payoffBeginsPromptly") is not True or payoff_seconds > PROOF_BLOCK_SECONDS:
@@ -176,8 +297,16 @@ def measure_rendered_audio_output(path: Path, *, timeout: int = 180) -> dict[str
         raise PersianRenderedReviewError("ffmpeg is required for rendered audio QA")
     completed = subprocess.run(
         [
-            ffmpeg, "-hide_banner", "-nostats", "-i", str(candidate),
-            "-af", "ebur128=peak=true:framelog=verbose", "-f", "null", "-",
+            ffmpeg,
+            "-hide_banner",
+            "-nostats",
+            "-i",
+            str(candidate),
+            "-af",
+            "ebur128=peak=true:framelog=verbose",
+            "-f",
+            "null",
+            "-",
         ],
         capture_output=True,
         text=True,
@@ -203,11 +332,14 @@ def measure_rendered_audio_output(path: Path, *, timeout: int = 180) -> dict[str
 
 __all__ = [
     "HOOK_RENDER_REVIEW_VERSION",
+    "COLD_VIEWER_POLICY_VERSION",
     "RENDERED_AUDIO_POLICY_VERSION",
     "MIN_OUTPUT_INTEGRATED_LUFS",
     "MAX_OUTPUT_INTEGRATED_LUFS",
     "MAX_TRUE_PEAK_DBFS",
     "PersianRenderedReviewError",
+    "build_cold_viewer_review_input",
+    "validate_cold_viewer_review_input",
     "validate_rendered_hook_review",
     "validate_rendered_audio_review",
     "measure_rendered_audio_output",

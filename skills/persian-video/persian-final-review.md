@@ -19,12 +19,15 @@ For every current production whose persisted preflight evidence says Hook Qualit
 - `strength`: `weak`, `acceptable`, or `strong`;
 - a non-empty rationale;
 - at least two opening-specific observations made from the rendered candidate;
-- `mutedHookDirectionConfirmed` from actually watching muted;
+- `coldViewer` structured evidence from a context-isolated opening-only review, including `evidenceSource: "rendered_opening_only"`, `contextIsolated: true`, non-empty `inferredTopic`, `inferredClaim`, `continuationReason`, and an `unresolvedReferents` array;
+- `mutedHookDirectionConfirmed` derived from that structured cold-viewer evidence, not supplied as an independent self-certifying boolean;
 - `visualVoiceAlignment` as `weak` / `acceptable` / `strong`;
 - `concretePayoffKind` as `answer`, `result`, `example`, `demonstration`, `evidence`, or `mechanism`;
 - `actualPayoffSeconds` measured from when the concrete answer/result/example/evidence actually reaches the viewer;
 - non-empty `payoffEvidence` describing that concrete rendered event;
 - `payoffBeginsPromptly`.
+
+The cold-viewer review input must contain only the rendered opening evidence and neutral review instructions. Build it with `lib.persian_rendered_review.build_cold_viewer_review_input`, persist it inside the current project as a JSON artifact, and record `metadata.coldViewerReviewInput.path` plus its exact `sha256`. The reviewer result must repeat that digest as `coldViewer.reviewInputSha256`. Final-review validation re-reads the artifact, re-hashes it, rebuilds the canonical allowlisted payload, and rejects hidden authoring context before presentation. Do not expose approved script, hook metadata, scene-plan labels, author rationale, topic labels, or other hidden production context to that reviewer. `contextIsolated: true` is valid only when this persisted input artifact passes the allowlist validator.
 
 Do not count setup/authority phrases such as “research shows” as payoff. Timeline metadata cannot certify rendered comprehension. A weak review, failed muted direction, weak visual/voice alignment, non-concrete payoff, digest mismatch, or payoff after the blocking ceiling may be persisted honestly as failed/revise evidence, but it blocks presentation. Historical v1 artifacts remain readable only as history; new productions must use v2.
 

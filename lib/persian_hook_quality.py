@@ -1,15 +1,19 @@
 """Hook Quality v2 audit for Persian short-form production.
 
-The preflight audit owns deterministic timing/evidence-shape checks and records
-semantic claims, but it deliberately does not certify rendered hook strength.
-Final strength belongs to an independent review of the rendered MP4.
+Deterministic preflight owns timing/evidence shape plus Issue #26 semantic-integrity
+checks. Authored rationale remains planning evidence only; rendered cold-view review
+is still the final semantic authority.
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any
 
+from lib.persian_text import visible_length
+
 HOOK_QUALITY_VERSION = "2.0"
+SEMANTIC_INTEGRITY_POLICY_VERSION = "1.0"
 SHORT_FORM_TARGETS = frozenset({"instagram-reels", "tiktok", "youtube-shorts"})
 OPENING_WINDOW_SECONDS = 3.0
 VALUE_WARNING_SECONDS = 2.0
@@ -19,6 +23,10 @@ TENSION_BLOCK_SECONDS = 4.0
 PROOF_WARNING_SECONDS = 4.0
 PROOF_BLOCK_SECONDS = 6.0
 MAX_MEANINGFUL_CHANGES_FIRST_3S = 4
+TYPOGRAPHIC_HOOK_READ_CPS = 11.0
+TYPOGRAPHIC_HOOK_FIXATION_SECONDS = 0.45
+TYPOGRAPHIC_HOOK_HOLD_MARGIN_SECONDS = 0.75
+TYPOGRAPHIC_HOOK_MIN_SECONDS = 2.4
 
 TENSION_KINDS = frozenset(
     {"question", "specific_gap", "contradiction", "consequence", "micro_suspense", "direct_benefit"}
@@ -38,6 +46,7 @@ PERCEPTUAL_CHANGE_KINDS = frozenset(
     {"action", "reaction", "reveal", "detail", "scale_change", "punch_in", "subject_motion"}
 )
 _CONCEPT_LABELS = ("viewerValue", "semanticTension", "firstProof")
+_PUNCT_RE = re.compile(r"[\s\u200c\-–—_:؛،,.!?؟!«»\"'()\[\]{}]+")
 
 
 def _target(edit: Mapping[str, Any], persian: Mapping[str, Any], metadata: Mapping[str, Any]) -> str:
@@ -47,7 +56,7 @@ def _target(edit: Mapping[str, Any], persian: Mapping[str, Any], metadata: Mappi
         or metadata.get("target_platform")
         or metadata.get("targetPlatform")
         or ""
-    ).strip()
+    ).strip().lower().replace("_", "-")
 
 
 def _seconds(record: object, *, label: str, duration: float, problems: list[str]) -> float | None:
@@ -68,7 +77,6 @@ def _seconds(record: object, *, label: str, duration: float, problems: list[str]
 
 
 def _judgements(raw: object, problems: list[str]) -> dict[str, dict[str, str]]:
-    """Validate authored semantic claims without treating them as final authority."""
     result: dict[str, dict[str, str]] = {}
     if not isinstance(raw, Mapping):
         problems.append("hook quality requires semantic judgements")
@@ -125,24 +133,13 @@ def _shared_justifications(hook: Mapping[str, Any], problems: list[str]) -> dict
         if not justification:
             problems.append(f"shared evidence justification {index} requires justification")
             continue
-        result.setdefault(evidence_id, []).append(
-            {"concepts": clean, "justification": justification}
-        )
+        result.setdefault(evidence_id, []).append({"concepts": clean, "justification": justification})
     return result
-
-
-def _has_shared_justification(
-    justifications: Mapping[str, list[dict[str, Any]]], evidence_id: str, left: str, right: str
-) -> bool:
-    if not evidence_id:
-        return False
-    pair = {left, right}
-    return any(pair.issubset(set(item["concepts"])) for item in justifications.get(evidence_id, []))
 
 
 def _validate_distinct_semantic_evidence(
     hook: Mapping[str, Any], records: Mapping[str, object], problems: list[str]
-) -> dict[str, list[dict[str, Any]]]:
+) -> None:
     justifications = _shared_justifications(hook, problems)
     labels = list(records)
     for index, left in enumerate(labels):
@@ -166,17 +163,18 @@ def _validate_distinct_semantic_evidence(
             if not (same_id or same_observation):
                 continue
             evidence_id = left_id if same_id else ""
-            if not _has_shared_justification(justifications, evidence_id, left, right):
+            pair = {left, right}
+            justified = bool(evidence_id) and any(
+                pair.issubset(set(item["concepts"])) for item in justifications.get(evidence_id, [])
+            )
+            if not justified:
                 problems.append(
                     f"{left} and {right} use shared evidence without an explicit justification; "
                     "distinct editorial functions cannot be double-counted automatically"
                 )
-    return justifications
 
 
-def _concrete_proof_seconds(
-    record: object, *, duration: float, problems: list[str]
-) -> float | None:
+def _concrete_proof_seconds(record: object, *, duration: float, problems: list[str]) -> float | None:
     value = _seconds(record, label="first proof", duration=duration, problems=problems)
     if not isinstance(record, Mapping):
         return None
@@ -191,22 +189,14 @@ def _concrete_proof_seconds(
 
 
 def _perceptual_evidence(
-    persian: Mapping[str, Any],
-    hook: Mapping[str, Any] | None,
-    advisories: list[str],
-    problems: list[str],
+    persian: Mapping[str, Any], hook: Mapping[str, Any] | None, advisories: list[str], problems: list[str]
 ) -> dict[str, Any]:
     changes: list[dict[str, Any]] = []
-    shots = sorted(
-        list(persian.get("shots") or []),
-        key=lambda shot: float(shot.get("startSeconds") or 0.0),
-    )
+    shots = sorted(list(persian.get("shots") or []), key=lambda shot: float(shot.get("startSeconds") or 0.0))
     for shot in shots:
         start = float(shot.get("startSeconds") or 0.0)
         if 1e-6 < start < OPENING_WINDOW_SECONDS:
-            changes.append(
-                {"kind": "shot_change", "atSeconds": start, "source": str(shot.get("id") or "shot")}
-            )
+            changes.append({"kind": "shot_change", "atSeconds": start, "source": str(shot.get("id") or "shot")})
 
     if hook is not None:
         authored = hook.get("perceptualChanges") or []
@@ -234,10 +224,7 @@ def _perceptual_evidence(
                 changes.append({"kind": kind, "atSeconds": at, "source": "authored", "evidence": evidence})
 
     changes.sort(key=lambda item: float(item["atSeconds"]))
-    moments = sorted(
-        list(persian.get("moments") or []),
-        key=lambda moment: float(moment.get("startSeconds") or 0.0),
-    )
+    moments = sorted(list(persian.get("moments") or []), key=lambda moment: float(moment.get("startSeconds") or 0.0))
     overlays = [
         {"id": moment.get("id"), "atSeconds": float(moment.get("startSeconds") or 0.0)}
         for moment in moments
@@ -262,9 +249,181 @@ def _perceptual_evidence(
     }
 
 
+def _normalize_semantic_text(value: object) -> str:
+    text = str(value or "").replace("ي", "ی").replace("ك", "ک").casefold()
+    return " ".join(part for part in _PUNCT_RE.split(text) if part)
+
+
+def _delivered_hook(persian: Mapping[str, Any]) -> tuple[Mapping[str, Any] | None, str]:
+    moments = [item for item in (persian.get("moments") or []) if isinstance(item, Mapping) and item.get("kind") == "hook"]
+    if not moments:
+        return None, ""
+    moment = sorted(moments, key=lambda item: float(item.get("startSeconds") or 0.0))[0]
+    text = " ".join(
+        str(segment.get("text") or "").strip()
+        for segment in (moment.get("segments") or [])
+        if isinstance(segment, Mapping) and segment.get("role") != "source" and str(segment.get("text") or "").strip()
+    ).strip()
+    return moment, text
+
+
+def _covered_by_typographic_plate(persian: Mapping[str, Any], moment: Mapping[str, Any] | None) -> bool:
+    if moment is None:
+        return False
+    start = float(moment.get("startSeconds") or 0.0)
+    end = float(moment.get("endSeconds") or 0.0)
+    return any(
+        isinstance(beat, Mapping)
+        and float(beat.get("startSeconds") or 0.0) <= start + 1e-6
+        and float(beat.get("endSeconds") or 0.0) >= end - 1e-6
+        for beat in (persian.get("typographicBeats") or [])
+    )
+
+
+def _typographic_duration(
+    persian: Mapping[str, Any], hook: Mapping[str, Any], problems: list[str]
+) -> dict[str, Any]:
+    moment, display_text = _delivered_hook(persian)
+    typographic_only = _covered_by_typographic_plate(persian, moment)
+    if not typographic_only or moment is None:
+        return {
+            "required": False,
+            "actualSeconds": None,
+            "recommendedMaxSeconds": None,
+            "justified": False,
+        }
+
+    actual = max(0.0, float(moment.get("endSeconds") or 0.0) - float(moment.get("startSeconds") or 0.0))
+    chars = visible_length(display_text)
+    reading = chars / TYPOGRAPHIC_HOOK_READ_CPS if chars else 0.0
+    recommended = max(
+        TYPOGRAPHIC_HOOK_MIN_SECONDS,
+        TYPOGRAPHIC_HOOK_FIXATION_SECONDS + reading + TYPOGRAPHIC_HOOK_HOLD_MARGIN_SECONDS,
+    )
+    # A deliberate editorial hold may exceed the text-derived budget, but it must
+    # be explicit so geometry/layout pressure cannot silently turn into dead air.
+    justification = str(hook.get("typographicDurationJustification") or "").strip()
+    justified = bool(justification)
+    if actual > recommended + 1e-6 and not justified:
+        problems.append(
+            "[HOOK_TYPOGRAPHIC_DURATION_EXCESS] typographic-only hook holds for "
+            f"{actual:.2f}s although its text-derived reading budget is {recommended:.2f}s; "
+            "shorten the hold or record an explicit editorial justification"
+        )
+    return {
+        "required": True,
+        "actualSeconds": round(actual, 3),
+        "recommendedMaxSeconds": round(recommended, 3),
+        "visibleChars": chars,
+        "readCps": TYPOGRAPHIC_HOOK_READ_CPS,
+        "justified": justified,
+        **({"justification": justification} if justified else {}),
+    }
+
+
+def _semantic_integrity(
+    persian: Mapping[str, Any], hook: Mapping[str, Any], problems: list[str]
+) -> dict[str, Any]:
+    moment, display_text = _delivered_hook(persian)
+    typographic_only = _covered_by_typographic_plate(persian, moment)
+    raw = hook.get("semanticIntegrity")
+    required = typographic_only
+    if raw is None:
+        if required:
+            problems.append(
+                "[HOOK_SEMANTIC_INTEGRITY_REQUIRED] typographic-only hooks require "
+                "hookQuality.semanticIntegrity so viewer-critical topic anchors survive layout/edit compression"
+            )
+        return {
+            "policyVersion": SEMANTIC_INTEGRITY_POLICY_VERSION,
+            "required": required,
+            "typographicOnly": typographic_only,
+            "displayText": display_text,
+            "sourceText": None,
+            "requiredTopicAnchors": [],
+            "missingAnchors": [],
+            "anchorSatisfiedBy": None,
+        }
+    if not isinstance(raw, Mapping):
+        problems.append("[HOOK_SEMANTIC_INTEGRITY_INVALID] hookQuality.semanticIntegrity must be an object")
+        return {
+            "policyVersion": SEMANTIC_INTEGRITY_POLICY_VERSION,
+            "required": required,
+            "typographicOnly": typographic_only,
+            "displayText": display_text,
+            "sourceText": None,
+            "requiredTopicAnchors": [],
+            "missingAnchors": [],
+            "anchorSatisfiedBy": None,
+        }
+
+    source_text = str(raw.get("sourceText") or "").strip()
+    anchors_raw = raw.get("requiredTopicAnchors")
+    delivery = str(raw.get("anchorDelivery") or "").strip()
+    anchors = [str(value).strip() for value in anchors_raw] if isinstance(anchors_raw, list) else []
+    anchors = [value for value in anchors if value]
+    if not source_text:
+        problems.append("[HOOK_SEMANTIC_INTEGRITY_INVALID] semanticIntegrity.sourceText is required")
+    if not anchors:
+        problems.append("[HOOK_SEMANTIC_INTEGRITY_INVALID] semanticIntegrity.requiredTopicAnchors requires at least one anchor")
+    if delivery not in {"text", "visual", "text_or_visual"}:
+        problems.append("[HOOK_SEMANTIC_INTEGRITY_INVALID] semanticIntegrity.anchorDelivery is invalid")
+
+    normalized_display = _normalize_semantic_text(display_text)
+    normalized_source = _normalize_semantic_text(source_text)
+    missing_from_source = [anchor for anchor in anchors if _normalize_semantic_text(anchor) not in normalized_source]
+    if missing_from_source:
+        problems.append(
+            "[HOOK_SEMANTIC_INTEGRITY_INVALID] required topic anchors are absent from semanticIntegrity.sourceText: "
+            + ", ".join(missing_from_source)
+        )
+
+    text_missing = [anchor for anchor in anchors if _normalize_semantic_text(anchor) not in normalized_display]
+    opening_shots = [
+        shot for shot in (persian.get("shots") or [])
+        if isinstance(shot, Mapping)
+        and str(shot.get("narrativeRole") or "") == "hook"
+        and float(shot.get("startSeconds") or 0.0) < OPENING_WINDOW_SECONDS
+        and shot.get("openingSemanticMatch") is True
+    ]
+    visual_evidence = bool(opening_shots) and bool(str(raw.get("visualAnchorEvidence") or "").strip())
+
+    missing = list(text_missing)
+    satisfied_by: str | None = None
+    if not text_missing:
+        satisfied_by = "text"
+        missing = []
+    elif delivery in {"visual", "text_or_visual"} and visual_evidence and not typographic_only:
+        satisfied_by = "visual"
+        missing = []
+
+    if missing:
+        problems.append(
+            "[HOOK_TOPIC_ANCHOR_MISSING] delivered hook does not make required topic/referent visible: "
+            + ", ".join(missing)
+        )
+    if typographic_only and delivery == "visual" and anchors:
+        problems.append(
+            "[HOOK_TOPIC_ANCHOR_MISSING] typographic-only hook cannot satisfy a required topic anchor through hidden visual metadata"
+        )
+
+    return {
+        "policyVersion": SEMANTIC_INTEGRITY_POLICY_VERSION,
+        "required": required,
+        "typographicOnly": typographic_only,
+        "displayText": display_text,
+        "sourceText": source_text or None,
+        "requiredTopicAnchors": anchors,
+        "missingAnchors": missing,
+        "anchorDelivery": delivery or None,
+        "anchorSatisfiedBy": satisfied_by,
+    }
+
+
 def _policy() -> dict[str, Any]:
     return {
         "version": HOOK_QUALITY_VERSION,
+        "semanticIntegrityPolicyVersion": SEMANTIC_INTEGRITY_POLICY_VERSION,
         "openingWindowSeconds": OPENING_WINDOW_SECONDS,
         "valueWarningSeconds": VALUE_WARNING_SECONDS,
         "valueBlockSeconds": VALUE_BLOCK_SECONDS,
@@ -296,9 +455,7 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
     if hook is None:
         perceptual = _perceptual_evidence(persian, None, advisories, problems)
         if required:
-            problems.append(
-                f"{target} production requires metadata.hookQuality evidence before browser preflight"
-            )
+            problems.append(f"{target} production requires metadata.hookQuality evidence before browser preflight")
         return {
             "version": HOOK_QUALITY_VERSION,
             "required": required,
@@ -306,12 +463,19 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
             "disposition": "weak" if problems else "unassessed",
             "problems": problems,
             "advisories": advisories,
-            "timing": {
-                "timeToValueSeconds": None,
-                "timeToSemanticTensionSeconds": None,
-                "timeToFirstProofSeconds": None,
-            },
+            "timing": {"timeToValueSeconds": None, "timeToSemanticTensionSeconds": None, "timeToFirstProofSeconds": None},
             "perceptual": perceptual,
+            "typographicDuration": {"required": False, "actualSeconds": None, "recommendedMaxSeconds": None, "justified": False},
+            "semanticIntegrity": {
+                "policyVersion": SEMANTIC_INTEGRITY_POLICY_VERSION,
+                "required": False,
+                "typographicOnly": False,
+                "displayText": "",
+                "sourceText": None,
+                "requiredTopicAnchors": [],
+                "missingAnchors": [],
+                "anchorSatisfiedBy": None,
+            },
             "judgements": {},
             "flags": {},
             "semanticAuthority": "authored-claim-awaiting-rendered-review",
@@ -321,16 +485,13 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
     if str(hook.get("version") or "") != HOOK_QUALITY_VERSION:
         problems.append(f"metadata.hookQuality.version must be {HOOK_QUALITY_VERSION}")
 
+    semantic_integrity = _semantic_integrity(persian, hook, problems)
+    typographic_duration = _typographic_duration(persian, hook, problems)
     viewer_value_record = hook.get("viewerValue")
     if viewer_value_record is None and hook.get("valueProposition") is not None:
         problems.append("Hook Quality v2 requires viewerValue; valueProposition is legacy v1 metadata")
         viewer_value_record = hook.get("valueProposition")
-    value = _seconds(
-        viewer_value_record,
-        label="viewer value",
-        duration=duration,
-        problems=problems,
-    )
+    value = _seconds(viewer_value_record, label="viewer value", duration=duration, problems=problems)
     tension_record = hook.get("semanticTension")
     tension = _seconds(tension_record, label="semantic tension", duration=duration, problems=problems)
     proof_record = hook.get("firstProof")
@@ -338,39 +499,27 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
 
     tension_kind = str(tension_record.get("kind") or "").strip() if isinstance(tension_record, Mapping) else ""
     if tension_kind not in TENSION_KINDS:
-        problems.append(
-            "semantic tension kind must identify a specific gap, contradiction, consequence, suspense, or benefit"
-        )
+        problems.append("semantic tension kind must identify a specific gap, contradiction, consequence, suspense, or benefit")
 
     _validate_distinct_semantic_evidence(
         hook,
-        {
-            "viewerValue": viewer_value_record,
-            "semanticTension": tension_record,
-            "firstProof": proof_record,
-        },
+        {"viewerValue": viewer_value_record, "semanticTension": tension_record, "firstProof": proof_record},
         problems,
     )
 
     if value is not None:
         if value > VALUE_BLOCK_SECONDS:
-            problems.append(
-                f"viewer value arrives at {value:.2f}s, after the {VALUE_BLOCK_SECONDS:.1f}s initial blocking ceiling"
-            )
+            problems.append(f"viewer value arrives at {value:.2f}s, after the {VALUE_BLOCK_SECONDS:.1f}s initial blocking ceiling")
         elif value > VALUE_WARNING_SECONDS:
             advisories.append(f"viewer value arrives late at {value:.2f}s")
     if tension is not None:
         if tension > TENSION_BLOCK_SECONDS:
-            problems.append(
-                f"semantic tension arrives at {tension:.2f}s, after the {TENSION_BLOCK_SECONDS:.1f}s initial blocking ceiling"
-            )
+            problems.append(f"semantic tension arrives at {tension:.2f}s, after the {TENSION_BLOCK_SECONDS:.1f}s initial blocking ceiling")
         elif tension > TENSION_WARNING_SECONDS:
             advisories.append(f"semantic tension arrives late at {tension:.2f}s")
     if proof is not None:
         if proof > PROOF_BLOCK_SECONDS:
-            problems.append(
-                f"first concrete proof/payoff arrives at {proof:.2f}s, after the {PROOF_BLOCK_SECONDS:.1f}s initial blocking ceiling"
-            )
+            problems.append(f"first concrete proof/payoff arrives at {proof:.2f}s, after the {PROOF_BLOCK_SECONDS:.1f}s initial blocking ceiling")
         elif proof > PROOF_WARNING_SECONDS:
             advisories.append(f"first concrete proof/payoff arrives late at {proof:.2f}s")
 
@@ -399,15 +548,10 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
     if flags.get("vagueGap"):
         problems.append("hook information gap is too vague to identify a reachable missing answer")
     if flags.get("fullConclusionRevealed"):
-        advisories.append(
-            "opening reveals the full conclusion; verify that another concrete reason to continue remains"
-        )
+        advisories.append("opening reveals the full conclusion; verify that another concrete reason to continue remains")
 
     perceptual = _perceptual_evidence(persian, hook, advisories, problems)
-    # Authored prose is planning evidence only. It may block obviously weak work,
-    # but it can never self-certify a production as strong before rendered review.
     disposition = "weak" if problems else "acceptable"
-
     return {
         "version": HOOK_QUALITY_VERSION,
         "required": required,
@@ -422,6 +566,8 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
             "semanticTensionKind": tension_kind or None,
         },
         "perceptual": perceptual,
+        "semanticIntegrity": semantic_integrity,
+        "typographicDuration": typographic_duration,
         "judgements": judgements,
         "flags": flags,
         "semanticAuthority": "authored-claim-awaiting-rendered-review",
@@ -431,6 +577,7 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
 
 __all__ = [
     "HOOK_QUALITY_VERSION",
+    "SEMANTIC_INTEGRITY_POLICY_VERSION",
     "SHORT_FORM_TARGETS",
     "CONCRETE_PROOF_KINDS",
     "audit_persian_hook_quality",

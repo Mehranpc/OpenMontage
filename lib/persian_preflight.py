@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 import tempfile
 from typing import Any
@@ -17,6 +18,12 @@ from lib.persian_edit_contract import (
     PersianEditContractError, collect_persian_edit_diagnostics, validate_persian_edit_contract,
 )
 from lib.persian_film_type import FilmTypePreflightError
+from lib.persian_recovery_policy import (
+    recovery_class_for_code, recovery_policy_for_issue,
+)
+
+PREFLIGHT_POLICY_VERSION = "2.0"
+_DIAGNOSTIC_PREFIX_RE = re.compile(r"^\[([A-Z0-9_]+)\]\s*")
 
 
 class NoCopyPersianCompose(ScriptAlignedPersianCompose):
@@ -281,12 +288,23 @@ def _report(
     next_actions: list[str] | None = None,
     diagnostic_layers: list[str] | None = None,
 ) -> dict[str, Any]:
+    enriched: list[dict[str, Any]] = []
+    recovery_budgets: dict[str, int] = {}
+    for raw in blocking:
+        issue = dict(raw)
+        plan = recovery_policy_for_issue(issue)
+        issue["recoveryClass"] = plan["recoveryClass"]
+        issue["recoveryPlan"] = plan
+        recovery_budgets[plan["recoveryClass"]] = plan["maxAttempts"]
+        enriched.append(issue)
     return {
         "version": 1,
+        "policyVersion": PREFLIGHT_POLICY_VERSION,
         "ok": ok,
         "status": "pass" if ok else "refused",
         "artifactSha256": _artifact_sha256(edit) if edit is not None else None,
-        "blockingIssues": blocking,
+        "blockingIssues": enriched,
+        "recoveryBudgets": recovery_budgets,
         "warnings": list(warnings or []),
         "watermarkDiagnostics": watermark_diagnostics,
         "nextActions": list(next_actions or []),
@@ -294,6 +312,11 @@ def _report(
         "mediaCopies": 0,
         "evidence": evidence or {},
     }
+
+
+def _problem_code(problem: object, fallback: str) -> str:
+    match = _DIAGNOSTIC_PREFIX_RE.match(str(problem or "").strip())
+    return match.group(1) if match else fallback
 
 
 def _hook_recovery_class(problem: str) -> str:
@@ -444,14 +467,15 @@ def aggregate_preflight_edit_decisions(
         evidence["hookQualityAudit"] = hook_quality
         if hook_quality.get("problems"):
             layers.append("hook")
-            blocking.extend(
-                {
-                    "code": "HOOK_QUALITY_GATE",
+            for problem in hook_quality["problems"]:
+                code = _problem_code(problem, "HOOK_QUALITY_GATE")
+                blocking.append({
+                    "code": code,
                     "message": problem,
-                    "recoveryClass": _hook_recovery_class(problem),
-                }
-                for problem in hook_quality["problems"]
-            )
+                    "recoveryClass": recovery_class_for_code(
+                        code, _hook_recovery_class(problem)
+                    ),
+                })
             actions.append(
                 "Revise the opening hook evidence/copy/edit; do not substitute decorative pattern interrupts for semantic value."
             )
@@ -506,11 +530,14 @@ def aggregate_preflight_edit_decisions(
             diagnostic_layers=["browser"],
         )
     except (OSError, ValueError, TypeError, KeyError) as exc:
+        message = str(exc)
+        code = _problem_code(message, "PREFLIGHT_RUNTIME")
+        recovery_class = recovery_class_for_code(code, "PREFLIGHT_RUNTIME")
         return _report(
             ok=False, edit=edit,
-            blocking=[{"code": "PREFLIGHT_RUNTIME", "message": str(exc), "recoveryClass": "PREFLIGHT_RUNTIME"}],
+            blocking=[{"code": code, "message": message, "recoveryClass": recovery_class}],
             evidence=evidence,
-            next_actions=["Fix the reported preflight runtime/input failure, then rerun the same draft."],
+            next_actions=["Apply only the named deterministic recovery strategy, then rerun the same draft dependency set."],
             diagnostic_layers=["browser"],
         )
 

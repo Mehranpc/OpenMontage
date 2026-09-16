@@ -7,6 +7,7 @@ import pytest
 
 from lib.persian_rendered_review import (
     PersianRenderedReviewError,
+    build_cold_viewer_review_input,
     measure_rendered_audio_output,
     validate_rendered_audio_review,
     validate_rendered_hook_review,
@@ -29,6 +30,14 @@ def _hook_review(**overrides) -> dict:
             "The first concrete result is spoken while matching footage is visible.",
         ],
         "mutedHookDirectionConfirmed": True,
+        "coldViewer": {
+            "evidenceSource": "rendered_opening_only",
+            "contextIsolated": True,
+            "inferredTopic": "بازی‌های ویدیویی",
+            "inferredClaim": "بازی شاید فقط وقت تلف کردن نباشد",
+            "continuationReason": "پاسخ تناقض هنوز کامل نشده است",
+            "unresolvedReferents": [],
+        },
         "visualVoiceAlignment": "acceptable",
         "actualPayoffSeconds": 4.8,
         "concretePayoffKind": "result",
@@ -98,6 +107,23 @@ def test_rendered_hook_v2_uses_actual_concrete_payoff_not_meta_authority() -> No
         )
 
 
+def test_rendered_hook_v2_rejects_context_leak_or_unresolved_referent() -> None:
+    leaked = _hook_review()
+    leaked["coldViewer"] = {**leaked["coldViewer"], "contextIsolated": False}
+    with pytest.raises(PersianRenderedReviewError, match="context-isolated"):
+        validate_rendered_hook_review(leaked, candidate_sha256=DIGEST, require_pass=True)
+
+    unresolved = _hook_review()
+    unresolved["coldViewer"] = {
+        **unresolved["coldViewer"],
+        "inferredTopic": "",
+        "unresolvedReferents": ["چه چیزی فقط وقت تلف کردنه؟"],
+    }
+    unresolved["mutedHookDirectionConfirmed"] = False
+    with pytest.raises(PersianRenderedReviewError, match="cold-viewer"):
+        validate_rendered_hook_review(unresolved, candidate_sha256=DIGEST, require_pass=True)
+
+
 def test_audio_mix_intelligible_requires_numeric_evidence_and_safe_separation() -> None:
     validate_rendered_audio_review(_audio_review(), candidate_sha256=DIGEST, require_pass=True)
 
@@ -108,10 +134,7 @@ def test_audio_mix_intelligible_requires_numeric_evidence_and_safe_separation() 
 
     with pytest.raises(PersianRenderedReviewError, match="too loud"):
         validate_rendered_audio_review(
-            _audio_review(
-                speechMusicGain=0.55,
-                speechMusicSeparationLu=2.3,
-            ),
+            _audio_review(speechMusicGain=0.55, speechMusicSeparationLu=2.3),
             candidate_sha256=DIGEST,
             require_pass=True,
         )
@@ -142,10 +165,26 @@ def test_measure_rendered_audio_output_reads_real_mp4_when_ffmpeg_available(tmp_
     video = tmp_path / "candidate.mp4"
     subprocess.run(
         [
-            ffmpeg, "-y", "-loglevel", "error",
-            "-f", "lavfi", "-i", "color=c=black:s=320x568:d=2:r=30",
-            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
-            "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(video),
+            ffmpeg,
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=320x568:d=2:r=30",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=2",
+            "-shortest",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            str(video),
         ],
         check=True,
     )
@@ -153,3 +192,31 @@ def test_measure_rendered_audio_output_reads_real_mp4_when_ffmpeg_available(tmp_
     assert evidence["candidateSha256"] == hashlib.sha256(video.read_bytes()).hexdigest()
     assert isinstance(evidence["outputIntegratedLufs"], float)
     assert isinstance(evidence["truePeakDbfs"], float)
+
+
+def test_cold_viewer_input_builder_is_structurally_isolated_from_authoring_context() -> None:
+    payload = build_cold_viewer_review_input(
+        candidate_sha256=DIGEST,
+        opening_evidence={
+            "framePaths": ["opening-01.jpg", "opening-02.jpg"],
+            "excerptPath": "opening-muted.mp4",
+            "startSeconds": 0.0,
+            "endSeconds": 3.0,
+        },
+    )
+
+    assert payload["candidateSha256"] == DIGEST
+    assert payload["reviewScope"] == "muted_opening"
+    assert payload["evidenceSource"] == "rendered_opening_only"
+    serialized = repr(payload)
+    for forbidden in ("script", "hookQuality", "rationale", "scenePlan", "semanticLabel"):
+        assert forbidden not in serialized
+
+    with pytest.raises(PersianRenderedReviewError, match="authoring context|unsupported"):
+        build_cold_viewer_review_input(
+            candidate_sha256=DIGEST,
+            opening_evidence={
+                "framePaths": ["opening.jpg"],
+                "script": "hidden approved narration",
+            },
+        )

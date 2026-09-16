@@ -31,12 +31,25 @@ from lib.persian_rendered_review import (
     PersianRenderedReviewError,
     validate_rendered_audio_review,
     validate_rendered_hook_review,
+    validate_cold_viewer_review_input,
 )
+from lib.persian_workflow_telemetry import reconcile_phase_telemetry
+from lib.persian_recovery_policy import recovery_policy_for_issue
 from schemas.artifacts import validate_artifact
 from jsonschema.exceptions import ValidationError
 
 WORKFLOW_VERSION = "2.0"
 STATE_FILENAME = "persian-video-workflow.json"
+PHASE_SLO_SECONDS = {
+    "align_script_timing": 8 * 60,
+    "plan_scenes_moments": 5 * 60,
+    "acquire_assets": 10 * 60,
+    "no_copy_preflight": 5 * 60,
+    "render_final_candidate": 15 * 60,
+    "final_review": 3 * 60,
+}
+END_TO_END_SLO_SECONDS = 45 * 60
+
 PHASES = (
     "validate_input",
     "create_project",
@@ -288,6 +301,10 @@ def _finish_phase_telemetry(
     entry["finished_at"] = finished.isoformat()
     entry["duration_seconds"] = round(max(0.0, (finished - started).total_seconds()), 3)
     entry["outcome"] = outcome
+    slo = PHASE_SLO_SECONDS.get(phase)
+    if slo is not None:
+        entry["slo_seconds"] = slo
+        entry["slo_exceeded"] = entry["duration_seconds"] > slo
     entries[-1] = entry
     telemetry[phase] = entries
     state["phase_telemetry"] = telemetry
@@ -396,7 +413,13 @@ def bootstrap_persian_video(
             "budgets": asdict(get_workflow_budgets()),
             "attempts": {},
             "send_backs": 0,
+            "recovery_attempts": {},
             "phase_telemetry": {},
+            "performance_slo": {
+                "phaseSeconds": dict(PHASE_SLO_SECONDS),
+                "endToEndSeconds": END_TO_END_SLO_SECONDS,
+                "policy": "engineering-target-not-correctness-shortcut",
+            },
             "alignment_policy": alignment_execution_policy({"input": input_record}),
             "projects_root": str(projects_root),
             "read_allowlist": {
@@ -582,6 +605,10 @@ def record_phase_attempt(
     })
     telemetry[phase] = entries
     state["phase_telemetry"] = telemetry
+    # A fresh attempt explicitly supersedes any stale unfinished predecessor at
+    # this same phase. This prevents crash/restart history from accumulating
+    # phantom `running` attempts while leaving the newest attempt genuinely open.
+    reconcile_phase_telemetry(state, now=effective_now)
     _write_state(Path(state["read_allowlist"]["project_root"]), state)
     return state
 
@@ -828,6 +855,25 @@ def _complete_phase_impl(
     else:
         state["next_phase"] = PHASES[_phase_index(phase) + 1]
     _finish_phase_telemetry(state, phase, outcome="succeeded", now=now)
+    if phase == "awaiting_human":
+        accounting = phase_time_accounting(state)
+        state["performance_summary"] = {
+            **accounting,
+            "endToEndSloSeconds": END_TO_END_SLO_SECONDS,
+            "endToEndSloExceeded": accounting["total_observed_seconds"] > END_TO_END_SLO_SECONDS,
+            "phaseSloExceeded": {
+                name: any(
+                    bool(item.get("slo_exceeded"))
+                    for item in entries if isinstance(item, Mapping)
+                )
+                for name, entries in (state.get("phase_telemetry") or {}).items()
+                if isinstance(entries, list)
+            },
+        }
+    # Phase completion reconciles any older unfinished attempts that a crash may
+    # have left behind. At the terminal transition this also asserts that the
+    # workflow cannot ship with historical attempts still marked `running`.
+    reconcile_phase_telemetry(state, now=now)
     _write_state(_project_root(state), state)
     return state
 
@@ -945,6 +991,12 @@ def reconcile_workflow_state(
                     "recovered": True,
                 }
                 state["evidence"] = all_evidence
+                # The expensive render itself succeeded; only the controller/report
+                # path disappeared. Preserve that fact instead of labelling the
+                # recovered attempt failed or merely superseded.
+                _finish_phase_telemetry(
+                    state, "render_final_candidate", outcome="succeeded"
+                )
                 recovered.append({
                     "phase": "render_final_candidate",
                     "candidatePath": candidate["candidate_path"],
@@ -960,6 +1012,72 @@ def reconcile_workflow_state(
         "recoveredPhases": recovered,
     }
     state["last_reconciliation"] = reconciliation
+    reconcile_phase_telemetry(state)
+    _write_state(_project_root(state), state)
+    return state
+
+
+def record_recovery_attempt(
+    project_id: str,
+    *,
+    diagnostic_code: str,
+    recovery_class: str | None = None,
+    strategy: str,
+    artifact_sha256: str | None = None,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Record one bounded deterministic repair attempt for no-copy preflight.
+
+    Calling after the class budget is exhausted persists an explicit terminal
+    ``needs_revision`` state. New user feedback can reopen a fresh bounded cycle
+    through ``request_send_back(..., user_directed_revision=True)``.
+    """
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    if state.get("status") != "active" or state.get("next_phase") != "no_copy_preflight":
+        raise PersianVideoWorkflowError(
+            "deterministic recovery attempts are recorded only during active no_copy_preflight"
+        )
+    plan = recovery_policy_for_issue({
+        "code": diagnostic_code,
+        "recoveryClass": recovery_class or "",
+    })
+    recovery_class = str(plan["recoveryClass"])
+    history = dict(state.get("recovery_attempts") or {})
+    entries = list(history.get(recovery_class) or [])
+    max_attempts = int(plan["maxAttempts"])
+    stamp = now or datetime.now(timezone.utc)
+    if len(entries) >= max_attempts:
+        state["status"] = "needs_revision"
+        state["next_phase"] = None
+        state["recovery_stop"] = {
+            "at": stamp.isoformat(),
+            "diagnosticCode": str(diagnostic_code),
+            "recoveryClass": recovery_class,
+            "attemptsUsed": len(entries),
+            "maxAttempts": max_attempts,
+            "outcome": "needs_human_editorial_revision",
+        }
+        reconcile_phase_telemetry(state, now=stamp)
+        _write_state(_project_root(state), state)
+        return state
+    if strategy not in plan["strategies"]:
+        raise PersianVideoWorkflowError(
+            f"strategy {strategy!r} is not allowed for {recovery_class}; "
+            f"allowed={plan['strategies']}"
+        )
+    if artifact_sha256 is not None and not _valid_sha256(artifact_sha256):
+        raise PersianVideoWorkflowError("recovery artifact_sha256 must be a lowercase sha256")
+    entries.append({
+        "attempt": len(entries) + 1,
+        "at": stamp.isoformat(),
+        "diagnosticCode": str(diagnostic_code),
+        "strategy": strategy,
+        "policyVersion": plan["version"],
+        **({"artifactSha256": artifact_sha256} if artifact_sha256 else {}),
+    })
+    history[recovery_class] = entries
+    state["recovery_attempts"] = history
     _write_state(_project_root(state), state)
     return state
 
@@ -989,6 +1107,10 @@ def request_send_back(
     if not reason.strip():
         raise PersianVideoWorkflowError("send-back requires a non-empty reason")
     current = state.get("next_phase")
+    # Rewinding abandons the currently open attempt by definition. Close it as
+    # superseded before changing the phase pointer so telemetry has no zombie work.
+    if isinstance(current, str):
+        _finish_phase_telemetry(state, current, outcome="superseded", now=effective_now)
     current_index = len(PHASES) if current is None else _phase_index(str(current))
     target_index = _phase_index(target_phase)
     if target_index >= current_index:
@@ -1005,6 +1127,8 @@ def request_send_back(
         state["user_revision_cycles"] = int(state.get("user_revision_cycles", 0)) + 1
         state["send_backs"] = 0
         state["budget_window_started_at"] = effective_now.isoformat()
+        state["recovery_attempts"] = {}
+        state.pop("recovery_stop", None)
         state["attempts"] = {
             key: value for key, value in previous_attempts.items()
             if key in PHASES and _phase_index(key) < target_index
@@ -1394,6 +1518,43 @@ def _required_preflight_hook_quality(state: Mapping[str, Any]) -> dict[str, Any]
     return dict(audit)
 
 
+def _validate_cold_viewer_input_artifact(
+    state: Mapping[str, Any], metadata: Mapping[str, Any], hook_review: Mapping[str, Any],
+    *, candidate_sha256: str,
+) -> dict[str, str]:
+    ref = metadata.get("coldViewerReviewInput")
+    if not isinstance(ref, Mapping):
+        raise PersianVideoWorkflowError(
+            "passing Hook Quality v2 review requires a digest-bound cold-viewer review input artifact"
+        )
+    path = _project_file(state, ref.get("path"), label="cold-viewer review input")
+    actual_sha = _hash_file(path)
+    declared_sha = str(ref.get("sha256") or "").strip().lower()
+    if declared_sha != actual_sha:
+        raise PersianVideoWorkflowError(
+            "cold-viewer review input sha256 does not match the persisted artifact bytes"
+        )
+    cold = hook_review.get("coldViewer")
+    if not isinstance(cold, Mapping):
+        raise PersianVideoWorkflowError("hook review is missing cold-viewer evidence")
+    reviewed_input_sha = str(cold.get("reviewInputSha256") or "").strip().lower()
+    if reviewed_input_sha != actual_sha:
+        raise PersianVideoWorkflowError(
+            "cold-viewer review result is not bound to the persisted review input digest"
+        )
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PersianVideoWorkflowError("cold-viewer review input is unreadable JSON") from exc
+    if not isinstance(payload, Mapping):
+        raise PersianVideoWorkflowError("cold-viewer review input must be a JSON object")
+    try:
+        validate_cold_viewer_review_input(payload, candidate_sha256=candidate_sha256)
+    except PersianRenderedReviewError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+    return {"path": str(path), "sha256": actual_sha}
+
+
 def _validate_final_review_completion(
     state: Mapping[str, Any], evidence: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -1519,11 +1680,23 @@ def _validate_final_review_completion(
     if report_ref != review_path:
         raise PersianVideoWorkflowError("render_report.final_review_ref does not point at the reviewed artifact")
 
+    cold_input: dict[str, str] | None = None
+    if isinstance(hook_review, Mapping) and str(hook_review.get("version") or "") == "2.0":
+        if not isinstance(metadata, Mapping):
+            raise PersianVideoWorkflowError("Hook Quality v2 final review requires metadata")
+        cold_input = _validate_cold_viewer_input_artifact(
+            state, metadata, hook_review, candidate_sha256=candidate["candidate_sha256"]
+        )
+
     return {
         "final_review_path": str(review_path),
         "final_review_sha256": _hash_file(review_path),
         "candidate_path": candidate["candidate_path"],
         "candidate_sha256": candidate["candidate_sha256"],
+        **({
+            "cold_viewer_input_path": cold_input["path"],
+            "cold_viewer_input_sha256": cold_input["sha256"],
+        } if cold_input is not None else {}),
     }
 
 
@@ -1617,9 +1790,13 @@ def workflow_status(
         "completed_phases": state.get("completed_phases", []),
         "attempts": state.get("attempts", {}),
         "send_backs": state.get("send_backs", 0),
+        "recovery_attempts": state.get("recovery_attempts", {}),
+        "recovery_stop": state.get("recovery_stop"),
         "asset_usage": state.get("asset_usage", {}),
         "alignment_policy": state.get("alignment_policy") or alignment_execution_policy(state),
         "time_accounting": phase_time_accounting(state),
+        "performance_slo": state.get("performance_slo"),
+        "performance_summary": state.get("performance_summary"),
     }
 
 
@@ -1793,6 +1970,13 @@ def build_parser() -> argparse.ArgumentParser:
     complete.add_argument("--phase")
     complete.add_argument("--evidence-json")
 
+    recovery = sub.add_parser("recovery-attempt", help="record one bounded deterministic preflight repair")
+    recovery.add_argument("project_id")
+    recovery.add_argument("--code", required=True)
+    recovery.add_argument("--class", dest="recovery_class")
+    recovery.add_argument("--strategy", required=True)
+    recovery.add_argument("--artifact-sha256")
+
     send_back = sub.add_parser("send-back", help="rewind within the send-back budget")
     send_back.add_argument("project_id")
     send_back.add_argument("target_phase")
@@ -1889,6 +2073,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise PersianVideoWorkflowError("workflow has no next phase")
             evidence = _read_json(args.evidence_json) if args.evidence_json else None
             _print_json(complete_phase(args.project_id, str(phase), evidence=evidence))
+        elif args.command == "recovery-attempt":
+            _print_json(record_recovery_attempt(
+                args.project_id, diagnostic_code=args.code,
+                recovery_class=args.recovery_class, strategy=args.strategy,
+                artifact_sha256=args.artifact_sha256,
+            ))
         elif args.command == "send-back":
             _print_json(
                 request_send_back(

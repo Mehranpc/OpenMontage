@@ -4,17 +4,12 @@ This module intentionally registers a later, stricter implementation under the
 existing ``persian_compose`` tool name. Tool discovery is lexical, so it first
 registers ``tools.video.persian_compose.PersianCompose`` and then replaces that
 entry with :class:`ScriptAlignedPersianCompose`. The renderer itself is inherited;
-only the sidecar contract changes.
-
-The authoritative subtitle record lives at
-``edit_decisions.metadata.persianSubtitleScript`` so existing artifact schemas stay
-backward-readable. It contains ``text``, ``sha256``, ``matchPolicy`` and optional
-``maxCps``. Raw ``persian.audio.wordTimings`` remain the timing signal used by the
-sync gate. They are never copied into delivery text.
+this layer owns approved captions plus Issue #26 hook/caption presentation contracts.
 """
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -26,65 +21,102 @@ from lib.persian_captions import (
     resolve_caption_mode,
 )
 from lib.persian_design import resolve_design
-from lib.persian_srt_alignment import (
-    SubtitleAlignmentError,
-    build_script_aligned_cues,
-)
+from lib.persian_srt_alignment import SubtitleAlignmentError, build_script_aligned_cues
 from tools.video.persian_compose import PersianCompose
 
 
 class ScriptAlignedPersianCompose(PersianCompose):
-    """PersianCompose with a pre-render, script-authoritative SRT gate."""
+    """PersianCompose with pre-render script and hook-presentation gates."""
 
-    # Same public tool identity: registry discovery loads this module after
-    # persian_compose.py and deliberately replaces the older implementation.
     name = "persian_compose"
-    version = "0.4.0"
+    version = "0.5.0"
 
     @staticmethod
     def _runtime_persian(edit_decisions: dict[str, Any]) -> dict[str, Any] | None:
-        """Return the internal Persian block used by render and no-copy preflight.
-
-        The persisted artifact keeps approved delivery copy in metadata so the public
-        schema stays stable. Both execution paths must inject that same record before
-        subtitle/caption alignment; duplicating the injection let preflight disagree
-        with the render it was supposed to predict.
-        """
         persian = edit_decisions.get("persian")
         if not isinstance(persian, dict):
             return None
         runtime_persian = dict(persian)
         runtime_persian.pop("_approvedSubtitleScript", None)
+        runtime_persian.pop("_hookCaptionHandoff", None)
         metadata = edit_decisions.get("metadata") or {}
-        approved_script = (
-            metadata.get("persianSubtitleScript")
-            if isinstance(metadata, dict)
-            else None
-        )
+        approved_script = metadata.get("persianSubtitleScript") if isinstance(metadata, dict) else None
+        hook_handoff = metadata.get("hookCaptionHandoff") if isinstance(metadata, dict) else None
         if approved_script is not None:
-            # Private runtime-only key. It is never written into render props and is
-            # not part of the persisted artifact schema.
             runtime_persian["_approvedSubtitleScript"] = approved_script
+        if hook_handoff is not None:
+            # Runtime-only injection keeps the public edit schema stable while making
+            # the explicit handoff available before burned-caption geometry freezes.
+            runtime_persian["_hookCaptionHandoff"] = hook_handoff
         return runtime_persian
 
     def execute(self, inputs: dict[str, Any]):
-        """Inject the schema-valid metadata record into an internal render copy."""
         edit_decisions = inputs.get("edit_decisions")
         if not isinstance(edit_decisions, dict):
             return super().execute(inputs)
         runtime_persian = self._runtime_persian(edit_decisions)
         if runtime_persian is None:
             return super().execute(inputs)
-
         runtime_inputs = dict(inputs)
         runtime_decisions = dict(edit_decisions)
         runtime_decisions["persian"] = runtime_persian
         runtime_inputs["edit_decisions"] = runtime_decisions
         return super().execute(runtime_inputs)
 
-    def _build_caption_props(
-        self, persian: dict[str, Any]
-    ) -> tuple[str, list[dict[str, Any]]]:
+    @staticmethod
+    def _prepare_typographic_only_composition(persian: dict[str, Any]) -> dict[str, Any]:
+        """Derive a center-biased full-canvas layout for text-only opening hooks.
+
+        This is deliberately runtime-only. The authored artifact still records
+        ``placement=auto``; the renderer resolves that auto request differently when
+        the entire hook is backed by a typographic plate rather than footage. Explicit
+        authored placement remains authoritative.
+        """
+        beats = [item for item in (persian.get("typographicBeats") or []) if isinstance(item, dict)]
+        if not beats:
+            return persian
+        changed = False
+        moments: list[Any] = []
+        for raw in persian.get("moments") or []:
+            if not isinstance(raw, dict) or raw.get("kind") != "hook":
+                moments.append(raw)
+                continue
+            start = float(raw.get("startSeconds") or 0.0)
+            end = float(raw.get("endSeconds") or 0.0)
+            covered = any(
+                float(beat.get("startSeconds") or 0.0) <= start + 1e-6
+                and float(beat.get("endSeconds") or 0.0) >= end - 1e-6
+                for beat in beats
+            )
+            if not covered:
+                moments.append(raw)
+                continue
+            presentation = dict(raw.get("presentation") or {})
+            if presentation.get("placement") not in {None, "auto"}:
+                moments.append(raw)
+                continue
+            presentation["placement"] = "center"
+            moment = dict(raw)
+            moment["presentation"] = presentation
+            moments.append(moment)
+            changed = True
+        if not changed:
+            return persian
+        resolved = dict(persian)
+        resolved["moments"] = moments
+        return resolved
+
+    def _build_props(
+        self,
+        persian: dict[str, Any],
+        staging_dir: Path,
+        run_id: str,
+    ) -> tuple[dict[str, Any], list[str]]:
+        """Resolve typographic-only composition before browser Film Type layout."""
+        runtime = self._prepare_typographic_only_composition(persian)
+        return super()._build_props(runtime, staging_dir, run_id)
+
+    def _build_caption_props(self, persian: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
         """Build approved-script captions before Film Type freezes layout."""
         mode = resolve_caption_mode(
             persian.get("captionMode"), platform_target=persian.get("platformTarget")
@@ -103,24 +135,77 @@ class ScriptAlignedPersianCompose(PersianCompose):
                 require_words=True,
                 min_connector_words=8 if profile_version == "2.14.0" else 0,
             )
-            burned = self._suppress_stranded_burned_cues(
-                burned, persian.get("moments") or []
-            )
+            burned = self._apply_hook_caption_handoff(burned, persian)
+            burned = self._suppress_stranded_burned_cues(burned, persian.get("moments") or [])
             return mode, build_burned_caption_props(burned)
 
-        # Sidecar-only still validates approved-script alignment before browser work.
         self._aligned_subtitle_cues(persian)
         return mode, []
 
+    @staticmethod
+    def _hook_window(persian: dict[str, Any]) -> tuple[float, float] | None:
+        hooks = [
+            item
+            for item in (persian.get("moments") or [])
+            if isinstance(item, dict) and item.get("kind") == "hook"
+        ]
+        if not hooks:
+            return None
+        start = min(float(item.get("startSeconds", 0.0)) for item in hooks)
+        end = max(float(item.get("endSeconds", 0.0)) for item in hooks)
+        return start, end
+
+    @staticmethod
+    def _apply_hook_caption_handoff(cues, persian: dict[str, Any]):
+        """Apply the explicit semantic contract between a typographic hook and captions.
+
+        ``semantic_replacement`` means the hook has replaced the opening semantic unit;
+        burned captions therefore resume only at the explicitly authored next complete
+        unit. ``exact_continuation`` means captions continue the spoken sentence, but a
+        cue may not straddle the end of the hook and expose only its hidden remainder.
+        The sidecar SRT remains complete in both modes.
+        """
+        raw = persian.get("_hookCaptionHandoff")
+        if raw is None:
+            return list(cues)
+        if not isinstance(raw, dict):
+            raise ValueError("CAPTION_HANDOFF_INVALID: metadata.hookCaptionHandoff must be an object")
+        mode = str(raw.get("mode") or "").strip()
+        if mode not in {"semantic_replacement", "exact_continuation"}:
+            raise ValueError(
+                "CAPTION_HANDOFF_INVALID: mode must be semantic_replacement or exact_continuation"
+            )
+        window = ScriptAlignedPersianCompose._hook_window(persian)
+        if window is None:
+            raise ValueError("CAPTION_HANDOFF_INVALID: hookCaptionHandoff requires a hook moment")
+        _, hook_end = window
+
+        if mode == "semantic_replacement":
+            raw_resume = raw.get("resumeAtSeconds")
+            if not isinstance(raw_resume, (int, float)) or isinstance(raw_resume, bool):
+                raise ValueError(
+                    "CAPTION_HANDOFF_INVALID: semantic_replacement requires numeric resumeAtSeconds"
+                )
+            resume = float(raw_resume)
+            if not math.isfinite(resume) or resume < hook_end - 1e-6:
+                raise ValueError(
+                    "CAPTION_HANDOFF_INVALID: resumeAtSeconds must be finite and at/after the hook end"
+                )
+            return [cue for cue in cues if cue.start_seconds >= resume - 1e-6]
+
+        visible = [cue for cue in cues if cue.end_seconds > hook_end + 1e-6]
+        if visible:
+            first = visible[0]
+            if first.start_seconds < hook_end - 1e-6:
+                raise ValueError(
+                    "CAPTION_HANDOFF_FRAGMENT: exact_continuation would reveal only the remainder "
+                    "of a cue that began under the typographic hook"
+                )
+        return list(cues)
 
     @staticmethod
     def _suppress_stranded_burned_cues(cues, moments, *, fragment_seconds: float = 1.0):
-        """Drop a burned cue when all paintable time outside moments is a flash.
-
-        Sidecar subtitles remain complete. Editorial moments own overlapping frames;
-        if the remaining burned-caption visibility across the cue is under one second,
-        painting it creates a flash rather than a readable caption.
-        """
+        """Drop a burned cue when all paintable time outside moments is a flash."""
         kept = []
         for cue in cues:
             intervals = [(cue.start_seconds, cue.end_seconds)]
@@ -144,7 +229,6 @@ class ScriptAlignedPersianCompose(PersianCompose):
             visible = sum(max(0.0, b - a) for a, b in intervals)
             if visible >= fragment_seconds:
                 kept.append(cue)
-            # Less than fragment_seconds of paintable time is a flash; sidecar remains.
         return kept
 
     @staticmethod
@@ -165,7 +249,6 @@ class ScriptAlignedPersianCompose(PersianCompose):
                     "approved script text can be aligned to the spoken audio"
                 )
             return []
-
         try:
             return build_script_aligned_cues(
                 persian.get("_approvedSubtitleScript"),
@@ -182,25 +265,17 @@ class ScriptAlignedPersianCompose(PersianCompose):
             ) from exc
 
     @staticmethod
-    def _write_subtitles(
-        persian: dict[str, Any], output_path: Path
-    ) -> tuple[str | None, list[str]]:
+    def _write_subtitles(persian: dict[str, Any], output_path: Path) -> tuple[str | None, list[str]]:
         mode = resolve_caption_mode(
             persian.get("captionMode"), platform_target=persian.get("platformTarget")
         )
         if mode == "burned_captions":
             return None, []
-
         cues = ScriptAlignedPersianCompose._aligned_subtitle_cues(persian)
         if not cues:
             return None, []
-
         srt_path = output_path.with_suffix(".srt")
-        # Keep the existing BOM policy for Persian player compatibility.
         srt_path.write_text(render_srt(cues), encoding="utf-8-sig")
-        # Alignment, lexical equality, speech coverage, overlap, and reading speed
-        # are hard gates. A sidecar that was written therefore has no suppressed
-        # advisory.
         return str(srt_path), []
 
 

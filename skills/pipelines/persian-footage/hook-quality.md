@@ -58,7 +58,12 @@ For new short-form production, persist top-level `metadata.hookQuality` inside `
   },
   "perceptualChanges": [
     {"kind": "action", "atSeconds": 0.9, "evidence": "Visible subject action changes the information on screen"}
-  ]
+  ],
+  "semanticIntegrity": {
+    "sourceText": "بازی فقط وقت تلف کردنه؟",
+    "requiredTopicAnchors": ["بازی"],
+    "anchorDelivery": "text"
+  }
 }
 ```
 
@@ -69,6 +74,16 @@ Setup/authority language such as “research shows”, “scientists found”, �
 Judgement levels are `weak`, `acceptable`, or `strong` and always require rationale, but authored judgements are planning claims rather than final authority. Hook Quality v2 preflight may block weak/malformed evidence but cannot self-certify the production as `strong`; rendered independent review owns final hook strength.
 
 Allowed authored within-shot perceptual-change kinds are `action`, `reaction`, `reveal`, `detail`, `scale_change`, `punch_in`, and `subject_motion`. Shot changes are derived from the actual timeline and must never be authored as evidence. Frame zero is the starting state, not a change. Do not count a typographic moment as the same thing as a meaningful shot/action/reveal change.
+
+## Viewer-visible semantic integrity
+
+For typographic-only hooks, `hookQuality.semanticIntegrity` is required. It records the authored/source meaning and the topic anchors a cold viewer must be able to recover. `requiredTopicAnchors` are checked against the delivered hook text, or against explicit opening visual evidence only when `anchorDelivery` allows visual delivery and the opening is not a text-only plate. Hidden script/metadata never satisfies the viewer-visible contract. A regression such as `بازی فقط وقت تلف کردنه؟` -> `فقط وقت تلف کردنه؟` is a blocking `HOOK_TOPIC_ANCHOR_MISSING`, not a harmless layout compression.
+
+Layout should adapt before meaning is deleted. If a true editorial rewrite is necessary, it must be explicit and evidence-backed rather than performed implicitly to make text fit.
+
+Typographic-only hook duration is also text-aware. Preflight derives a conservative reading-time ceiling from visible characters plus fixation/hold margin. A hold beyond that ceiling is `HOOK_TYPOGRAPHIC_DURATION_EXCESS` unless `typographicDurationJustification` records an intentional editorial reason. This prevents a short black-card hook from sitting static for several seconds merely because its scene span was long.
+
+When a typographic hook overlaps the first spoken sentence, burned captions must use an explicit `hookCaptionHandoff`: `semantic_replacement` resumes at the next complete semantic unit, while `exact_continuation` may continue only if it does not expose a cue fragment that began under the hook. The sidecar SRT remains complete and authoritative in either mode.
 
 ## Timing policy
 

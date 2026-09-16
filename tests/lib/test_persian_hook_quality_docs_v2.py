@@ -14,6 +14,10 @@ def test_hook_quality_skill_documents_v2_semantics() -> None:
     assert '"kind": "result"' in text
     assert '"sharedEvidenceJustifications"' in text
     assert "research shows" in text
+    for field in ("semanticIntegrity", "requiredTopicAnchors", "anchorDelivery", "typographicDurationJustification"):
+        assert field in text
+    assert "HOOK_TOPIC_ANCHOR_MISSING" in text
+    assert "HOOK_TYPOGRAPHIC_DURATION_EXCESS" in text
     assert "cannot" in text and "strong" in text and "rendered" in text
 
 
@@ -27,6 +31,12 @@ def test_final_review_skill_requires_independent_sha_bound_v2_evidence() -> None
         "concretePayoffKind",
         "actualPayoffSeconds",
         "payoffEvidence",
+        "coldViewer",
+        "rendered_opening_only",
+        "contextIsolated",
+        "unresolvedReferents",
+        "coldViewerReviewInput",
+        "reviewInputSha256",
         "outputIntegratedLufs",
         "truePeakDbfs",
         "speechMusicSeparationLu",
