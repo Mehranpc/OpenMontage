@@ -131,10 +131,10 @@ def layout_caption_lines(text: str) -> list[str]:
     """Lay one approved cue into one or two phrase-aware lines without changing words."""
     words = [word for word in str(text).split(" ") if word]
     if not words:
-        raise ValueError("burned caption text is empty")
+        raise ValueError("[CAPTION_WRAP_EMPTY] burned caption text is empty")
     if visible_length(text) > BURNED_CAPTION_MAX_VISIBLE_CHARS:
         raise ValueError(
-            f"burned caption has {visible_length(text)} visible chars, above the "
+            f"[CAPTION_WRAP_NO_FIT] burned caption has {visible_length(text)} visible chars, above the "
             f"{BURNED_CAPTION_MAX_VISIBLE_CHARS}-character display ceiling"
         )
     if _line_length(words) <= BURNED_CAPTION_MAX_LINE_VISIBLE_CHARS:
@@ -159,8 +159,8 @@ def layout_caption_lines(text: str) -> list[str]:
         )
     if not candidates:
         raise ValueError(
-            "burned caption cannot fit two conservative lines without changing "
-            "approved wording; tighten cue grouping rather than shrinking type"
+            "[CAPTION_WRAP_NO_FIT] burned caption cannot fit two conservative lines without changing "
+            "approved wording; regroup cue boundaries rather than shrinking type or rewriting copy"
         )
     return min(candidates, key=lambda item: item[:4])[4]
 
