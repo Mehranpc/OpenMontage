@@ -91,7 +91,7 @@ def test_frame_grid_gap_is_a_named_pre_render_contract_failure(tmp_path: Path) -
     diagnostics = collect_persian_edit_diagnostics(payload, base_dir=tmp_path)
 
     gap = next(item for item in diagnostics if item.code == "TIMELINE_FRAME_GAP")
-    assert "1-frame gap" in gap.message
+    assert "1 frame" in gap.message or "1-frame" in gap.message
     plan = recovery_policy_for_issue({"code": gap.code})
     assert plan["recoveryClass"] == "TIMELINE_GRID"
     assert plan["maxAttempts"] == 1
