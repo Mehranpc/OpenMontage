@@ -20,6 +20,17 @@ def _hook_audit() -> dict:
     }
 
 
+def _cold_viewer(*, understood: bool = True) -> dict:
+    return {
+        "evidenceSource": "rendered_opening_only",
+        "contextIsolated": True,
+        "inferredTopic": "موضوع مشخص افتتاحیه" if understood else "",
+        "inferredClaim": "ادعای مشخص افتتاحیه" if understood else "",
+        "continuationReason": "پاسخ هنوز کامل نشده است" if understood else "",
+        "unresolvedReferents": [] if understood else ["مرجع افتتاحیه نامشخص است"],
+    }
+
+
 def _hook_review(candidate, **overrides) -> dict:
     value = {
         "version": "2.0",
@@ -33,6 +44,7 @@ def _hook_review(candidate, **overrides) -> dict:
             "The first visible action supports the spoken contradiction.",
         ],
         "mutedHookDirectionConfirmed": True,
+        "coldViewer": _cold_viewer(),
         "visualVoiceAlignment": "acceptable",
         "actualPayoffSeconds": 4.8,
         "concretePayoffKind": "result",
@@ -51,11 +63,8 @@ def test_current_hook_audit_requires_evidence_backed_final_hook_review(tmp_path)
 
     with pytest.raises(PersianVideoWorkflowError, match="hook-quality review|visual/voice alignment"):
         complete_phase(
-            "run",
-            "final_review",
-            evidence={"final_review_path": str(review_path)},
-            pipeline_dir=tmp_path,
-            now=BASE,
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
         )
 
 
@@ -74,11 +83,8 @@ def test_evidence_backed_hook_review_requires_rendered_alignment_and_prompt_payo
 
     with pytest.raises(PersianVideoWorkflowError, match="hook-quality review"):
         complete_phase(
-            "run",
-            "final_review",
-            evidence={"final_review_path": str(review_path)},
-            pipeline_dir=tmp_path,
-            now=BASE,
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
         )
 
 
@@ -96,11 +102,8 @@ def test_valid_evidence_backed_hook_review_allows_existing_final_review_contract
     )
 
     state = complete_phase(
-        "run",
-        "final_review",
-        evidence={"final_review_path": str(review_path)},
-        pipeline_dir=tmp_path,
-        now=BASE,
+        "run", "final_review", evidence={"final_review_path": str(review_path)},
+        pipeline_dir=tmp_path, now=BASE,
     )
     assert state["next_phase"] == "awaiting_human"
 
@@ -120,11 +123,8 @@ def test_hook_quality_review_strength_must_match_render_report_hook_strength(tmp
 
     with pytest.raises(PersianVideoWorkflowError, match="hook_strength"):
         complete_phase(
-            "run",
-            "final_review",
-            evidence={"final_review_path": str(review_path)},
-            pipeline_dir=tmp_path,
-            now=BASE,
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
         )
 
 
@@ -139,6 +139,7 @@ def test_weak_rendered_hook_can_be_persisted_as_revision_evidence(tmp_path):
             candidate,
             strength="weak",
             mutedHookDirectionConfirmed=False,
+            coldViewer=_cold_viewer(understood=False),
             visualVoiceAlignment="weak",
             payoffBeginsPromptly=False,
         ),
@@ -147,11 +148,8 @@ def test_weak_rendered_hook_can_be_persisted_as_revision_evidence(tmp_path):
 
     with pytest.raises(PersianVideoWorkflowError, match="must pass"):
         complete_phase(
-            "run",
-            "final_review",
-            evidence={"final_review_path": str(review_path)},
-            pipeline_dir=tmp_path,
-            now=BASE,
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
         )
 
 
