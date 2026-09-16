@@ -10,6 +10,8 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from lib.persian_text import visible_length
+
 HOOK_QUALITY_VERSION = "2.0"
 SEMANTIC_INTEGRITY_POLICY_VERSION = "1.0"
 SHORT_FORM_TARGETS = frozenset({"instagram-reels", "tiktok", "youtube-shorts"})
@@ -21,6 +23,10 @@ TENSION_BLOCK_SECONDS = 4.0
 PROOF_WARNING_SECONDS = 4.0
 PROOF_BLOCK_SECONDS = 6.0
 MAX_MEANINGFUL_CHANGES_FIRST_3S = 4
+TYPOGRAPHIC_HOOK_READ_CPS = 11.0
+TYPOGRAPHIC_HOOK_FIXATION_SECONDS = 0.45
+TYPOGRAPHIC_HOOK_HOLD_MARGIN_SECONDS = 0.75
+TYPOGRAPHIC_HOOK_MIN_SECONDS = 2.4
 
 TENSION_KINDS = frozenset(
     {"question", "specific_gap", "contradiction", "consequence", "micro_suspense", "direct_benefit"}
@@ -274,6 +280,47 @@ def _covered_by_typographic_plate(persian: Mapping[str, Any], moment: Mapping[st
     )
 
 
+def _typographic_duration(
+    persian: Mapping[str, Any], hook: Mapping[str, Any], problems: list[str]
+) -> dict[str, Any]:
+    moment, display_text = _delivered_hook(persian)
+    typographic_only = _covered_by_typographic_plate(persian, moment)
+    if not typographic_only or moment is None:
+        return {
+            "required": False,
+            "actualSeconds": None,
+            "recommendedMaxSeconds": None,
+            "justified": False,
+        }
+
+    actual = max(0.0, float(moment.get("endSeconds") or 0.0) - float(moment.get("startSeconds") or 0.0))
+    chars = visible_length(display_text)
+    reading = chars / TYPOGRAPHIC_HOOK_READ_CPS if chars else 0.0
+    recommended = max(
+        TYPOGRAPHIC_HOOK_MIN_SECONDS,
+        TYPOGRAPHIC_HOOK_FIXATION_SECONDS + reading + TYPOGRAPHIC_HOOK_HOLD_MARGIN_SECONDS,
+    )
+    # A deliberate editorial hold may exceed the text-derived budget, but it must
+    # be explicit so geometry/layout pressure cannot silently turn into dead air.
+    justification = str(hook.get("typographicDurationJustification") or "").strip()
+    justified = bool(justification)
+    if actual > recommended + 1e-6 and not justified:
+        problems.append(
+            "[HOOK_TYPOGRAPHIC_DURATION_EXCESS] typographic-only hook holds for "
+            f"{actual:.2f}s although its text-derived reading budget is {recommended:.2f}s; "
+            "shorten the hold or record an explicit editorial justification"
+        )
+    return {
+        "required": True,
+        "actualSeconds": round(actual, 3),
+        "recommendedMaxSeconds": round(recommended, 3),
+        "visibleChars": chars,
+        "readCps": TYPOGRAPHIC_HOOK_READ_CPS,
+        "justified": justified,
+        **({"justification": justification} if justified else {}),
+    }
+
+
 def _semantic_integrity(
     persian: Mapping[str, Any], hook: Mapping[str, Any], problems: list[str]
 ) -> dict[str, Any]:
@@ -418,6 +465,7 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
             "advisories": advisories,
             "timing": {"timeToValueSeconds": None, "timeToSemanticTensionSeconds": None, "timeToFirstProofSeconds": None},
             "perceptual": perceptual,
+            "typographicDuration": {"required": False, "actualSeconds": None, "recommendedMaxSeconds": None, "justified": False},
             "semanticIntegrity": {
                 "policyVersion": SEMANTIC_INTEGRITY_POLICY_VERSION,
                 "required": False,
@@ -438,6 +486,7 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
         problems.append(f"metadata.hookQuality.version must be {HOOK_QUALITY_VERSION}")
 
     semantic_integrity = _semantic_integrity(persian, hook, problems)
+    typographic_duration = _typographic_duration(persian, hook, problems)
     viewer_value_record = hook.get("viewerValue")
     if viewer_value_record is None and hook.get("valueProposition") is not None:
         problems.append("Hook Quality v2 requires viewerValue; valueProposition is legacy v1 metadata")
@@ -518,6 +567,7 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
         },
         "perceptual": perceptual,
         "semanticIntegrity": semantic_integrity,
+        "typographicDuration": typographic_duration,
         "judgements": judgements,
         "flags": flags,
         "semanticAuthority": "authored-claim-awaiting-rendered-review",
