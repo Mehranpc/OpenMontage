@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from pathlib import Path
 import re
@@ -101,6 +102,30 @@ def build_cold_viewer_review_input(
             "Record the apparent topic/referent, claim/question, reason to continue, and unresolved referents.",
         ],
     }
+
+
+def validate_cold_viewer_review_input(
+    payload: Mapping[str, Any], *, candidate_sha256: str
+) -> None:
+    """Validate the exact context-isolated payload shown to a cold reviewer."""
+    if not isinstance(payload, Mapping):
+        raise PersianRenderedReviewError("cold-viewer review input must be a JSON object")
+    evidence = payload.get("openingEvidence")
+    if not isinstance(evidence, Mapping):
+        raise PersianRenderedReviewError("cold-viewer review input requires openingEvidence")
+    expected = build_cold_viewer_review_input(
+        candidate_sha256=candidate_sha256, opening_evidence=evidence
+    )
+    extras = sorted(set(payload) - set(expected))
+    if extras:
+        raise PersianRenderedReviewError(
+            "cold-viewer review input contains unsupported authoring context fields: "
+            + ", ".join(extras)
+        )
+    if dict(payload) != expected:
+        raise PersianRenderedReviewError(
+            "cold-viewer review input does not match the canonical context-isolated payload"
+        )
 
 
 def _validate_cold_viewer(review: Mapping[str, Any]) -> bool:
@@ -314,6 +339,7 @@ __all__ = [
     "MAX_TRUE_PEAK_DBFS",
     "PersianRenderedReviewError",
     "build_cold_viewer_review_input",
+    "validate_cold_viewer_review_input",
     "validate_rendered_hook_review",
     "validate_rendered_audio_review",
     "measure_rendered_audio_output",

@@ -31,6 +31,7 @@ from lib.persian_rendered_review import (
     PersianRenderedReviewError,
     validate_rendered_audio_review,
     validate_rendered_hook_review,
+    validate_cold_viewer_review_input,
 )
 from lib.persian_workflow_telemetry import reconcile_phase_telemetry
 from lib.persian_recovery_policy import recovery_policy_for_issue
@@ -1517,6 +1518,43 @@ def _required_preflight_hook_quality(state: Mapping[str, Any]) -> dict[str, Any]
     return dict(audit)
 
 
+def _validate_cold_viewer_input_artifact(
+    state: Mapping[str, Any], metadata: Mapping[str, Any], hook_review: Mapping[str, Any],
+    *, candidate_sha256: str,
+) -> dict[str, str]:
+    ref = metadata.get("coldViewerReviewInput")
+    if not isinstance(ref, Mapping):
+        raise PersianVideoWorkflowError(
+            "passing Hook Quality v2 review requires a digest-bound cold-viewer review input artifact"
+        )
+    path = _project_file(state, ref.get("path"), label="cold-viewer review input")
+    actual_sha = _hash_file(path)
+    declared_sha = str(ref.get("sha256") or "").strip().lower()
+    if declared_sha != actual_sha:
+        raise PersianVideoWorkflowError(
+            "cold-viewer review input sha256 does not match the persisted artifact bytes"
+        )
+    cold = hook_review.get("coldViewer")
+    if not isinstance(cold, Mapping):
+        raise PersianVideoWorkflowError("hook review is missing cold-viewer evidence")
+    reviewed_input_sha = str(cold.get("reviewInputSha256") or "").strip().lower()
+    if reviewed_input_sha != actual_sha:
+        raise PersianVideoWorkflowError(
+            "cold-viewer review result is not bound to the persisted review input digest"
+        )
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PersianVideoWorkflowError("cold-viewer review input is unreadable JSON") from exc
+    if not isinstance(payload, Mapping):
+        raise PersianVideoWorkflowError("cold-viewer review input must be a JSON object")
+    try:
+        validate_cold_viewer_review_input(payload, candidate_sha256=candidate_sha256)
+    except PersianRenderedReviewError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+    return {"path": str(path), "sha256": actual_sha}
+
+
 def _validate_final_review_completion(
     state: Mapping[str, Any], evidence: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -1642,11 +1680,23 @@ def _validate_final_review_completion(
     if report_ref != review_path:
         raise PersianVideoWorkflowError("render_report.final_review_ref does not point at the reviewed artifact")
 
+    cold_input: dict[str, str] | None = None
+    if isinstance(hook_review, Mapping) and str(hook_review.get("version") or "") == "2.0":
+        if not isinstance(metadata, Mapping):
+            raise PersianVideoWorkflowError("Hook Quality v2 final review requires metadata")
+        cold_input = _validate_cold_viewer_input_artifact(
+            state, metadata, hook_review, candidate_sha256=candidate["candidate_sha256"]
+        )
+
     return {
         "final_review_path": str(review_path),
         "final_review_sha256": _hash_file(review_path),
         "candidate_path": candidate["candidate_path"],
         "candidate_sha256": candidate["candidate_sha256"],
+        **({
+            "cold_viewer_input_path": cold_input["path"],
+            "cold_viewer_input_sha256": cold_input["sha256"],
+        } if cold_input is not None else {}),
     }
 
 

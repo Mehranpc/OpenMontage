@@ -35,6 +35,8 @@ def test_final_review_skill_requires_independent_sha_bound_v2_evidence() -> None
         "rendered_opening_only",
         "contextIsolated",
         "unresolvedReferents",
+        "coldViewerReviewInput",
+        "reviewInputSha256",
         "outputIntegratedLufs",
         "truePeakDbfs",
         "speechMusicSeparationLu",

@@ -5,6 +5,7 @@ import json
 
 import pytest
 
+from lib.persian_rendered_review import build_cold_viewer_review_input
 from lib.persian_video_workflow import PersianVideoWorkflowError, complete_phase
 from tests.lib.test_persian_video_workflow import BASE, _checkpoint, _review_ready_project
 
@@ -55,6 +56,27 @@ def _hook_review(candidate, **overrides) -> dict:
     return value
 
 
+
+
+def _bind_cold_viewer_input(review: dict, candidate, project, *, extra_context: dict | None = None):
+    frames = sorted(str(path) for path in (project / "artifacts" / "final-review-frames").glob("*.jpg"))[:3]
+    payload = build_cold_viewer_review_input(
+        candidate_sha256=hashlib.sha256(candidate.read_bytes()).hexdigest(),
+        opening_evidence={
+            "framePaths": frames,
+            "startSeconds": 0.0,
+            "endSeconds": 3.0,
+        },
+    )
+    if extra_context:
+        payload.update(extra_context)
+    path = project / "artifacts" / "cold_viewer_review_input.json"
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    review["metadata"]["coldViewerReviewInput"] = {"path": str(path), "sha256": digest}
+    review["metadata"]["hookQualityReview"]["coldViewer"]["reviewInputSha256"] = digest
+    return path
+
 def test_current_hook_audit_requires_evidence_backed_final_hook_review(tmp_path):
     _, _, review_path, _ = _review_ready_project(tmp_path)
     review = json.loads(review_path.read_text(encoding="utf-8"))
@@ -95,6 +117,7 @@ def test_valid_evidence_backed_hook_review_allows_existing_final_review_contract
         "hookQualityAudit": _hook_audit(),
         "hookQualityReview": _hook_review(candidate),
     }
+    _bind_cold_viewer_input(review, candidate, tmp_path / "run")
     review_path.write_text(json.dumps(review), encoding="utf-8")
     report["hook_strength"] = "acceptable"
     (tmp_path / "run" / "checkpoint_compose.json").write_text(
@@ -106,6 +129,50 @@ def test_valid_evidence_backed_hook_review_allows_existing_final_review_contract
         pipeline_dir=tmp_path, now=BASE,
     )
     assert state["next_phase"] == "awaiting_human"
+
+
+def test_passing_final_review_requires_digest_bound_cold_viewer_input_artifact(tmp_path):
+    _, candidate, review_path, report = _review_ready_project(tmp_path)
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["metadata"] = {
+        "hookQualityAudit": _hook_audit(),
+        "hookQualityReview": _hook_review(candidate),
+    }
+    review_path.write_text(json.dumps(review), encoding="utf-8")
+    report["hook_strength"] = "acceptable"
+    (tmp_path / "run" / "checkpoint_compose.json").write_text(
+        json.dumps(_checkpoint(report)), encoding="utf-8"
+    )
+
+    with pytest.raises(PersianVideoWorkflowError, match="cold-viewer review input"):
+        complete_phase(
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
+        )
+
+
+def test_passing_final_review_rejects_cold_viewer_input_with_authoring_context(tmp_path):
+    _, candidate, review_path, report = _review_ready_project(tmp_path)
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["metadata"] = {
+        "hookQualityAudit": _hook_audit(),
+        "hookQualityReview": _hook_review(candidate),
+    }
+    _bind_cold_viewer_input(
+        review, candidate, tmp_path / "run",
+        extra_context={"approvedScript": "hidden authoring context must never reach blind review"},
+    )
+    review_path.write_text(json.dumps(review), encoding="utf-8")
+    report["hook_strength"] = "acceptable"
+    (tmp_path / "run" / "checkpoint_compose.json").write_text(
+        json.dumps(_checkpoint(report)), encoding="utf-8"
+    )
+
+    with pytest.raises(PersianVideoWorkflowError, match="unsupported authoring context"):
+        complete_phase(
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
+        )
 
 
 def test_hook_quality_review_strength_must_match_render_report_hook_strength(tmp_path):
