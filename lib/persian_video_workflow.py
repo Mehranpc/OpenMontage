@@ -33,11 +33,22 @@ from lib.persian_rendered_review import (
     validate_rendered_hook_review,
 )
 from lib.persian_workflow_telemetry import reconcile_phase_telemetry
+from lib.persian_recovery_policy import recovery_policy_for_issue
 from schemas.artifacts import validate_artifact
 from jsonschema.exceptions import ValidationError
 
 WORKFLOW_VERSION = "2.0"
 STATE_FILENAME = "persian-video-workflow.json"
+PHASE_SLO_SECONDS = {
+    "align_script_timing": 8 * 60,
+    "plan_scenes_moments": 5 * 60,
+    "acquire_assets": 10 * 60,
+    "no_copy_preflight": 5 * 60,
+    "render_final_candidate": 15 * 60,
+    "final_review": 3 * 60,
+}
+END_TO_END_SLO_SECONDS = 45 * 60
+
 PHASES = (
     "validate_input",
     "create_project",
@@ -289,6 +300,10 @@ def _finish_phase_telemetry(
     entry["finished_at"] = finished.isoformat()
     entry["duration_seconds"] = round(max(0.0, (finished - started).total_seconds()), 3)
     entry["outcome"] = outcome
+    slo = PHASE_SLO_SECONDS.get(phase)
+    if slo is not None:
+        entry["slo_seconds"] = slo
+        entry["slo_exceeded"] = entry["duration_seconds"] > slo
     entries[-1] = entry
     telemetry[phase] = entries
     state["phase_telemetry"] = telemetry
@@ -397,7 +412,13 @@ def bootstrap_persian_video(
             "budgets": asdict(get_workflow_budgets()),
             "attempts": {},
             "send_backs": 0,
+            "recovery_attempts": {},
             "phase_telemetry": {},
+            "performance_slo": {
+                "phaseSeconds": dict(PHASE_SLO_SECONDS),
+                "endToEndSeconds": END_TO_END_SLO_SECONDS,
+                "policy": "engineering-target-not-correctness-shortcut",
+            },
             "alignment_policy": alignment_execution_policy({"input": input_record}),
             "projects_root": str(projects_root),
             "read_allowlist": {
@@ -833,6 +854,21 @@ def _complete_phase_impl(
     else:
         state["next_phase"] = PHASES[_phase_index(phase) + 1]
     _finish_phase_telemetry(state, phase, outcome="succeeded", now=now)
+    if phase == "awaiting_human":
+        accounting = phase_time_accounting(state)
+        state["performance_summary"] = {
+            **accounting,
+            "endToEndSloSeconds": END_TO_END_SLO_SECONDS,
+            "endToEndSloExceeded": accounting["total_observed_seconds"] > END_TO_END_SLO_SECONDS,
+            "phaseSloExceeded": {
+                name: any(
+                    bool(item.get("slo_exceeded"))
+                    for item in entries if isinstance(item, Mapping)
+                )
+                for name, entries in (state.get("phase_telemetry") or {}).items()
+                if isinstance(entries, list)
+            },
+        }
     # Phase completion reconciles any older unfinished attempts that a crash may
     # have left behind. At the terminal transition this also asserts that the
     # workflow cannot ship with historical attempts still marked `running`.
@@ -980,6 +1016,71 @@ def reconcile_workflow_state(
     return state
 
 
+def record_recovery_attempt(
+    project_id: str,
+    *,
+    diagnostic_code: str,
+    recovery_class: str | None = None,
+    strategy: str,
+    artifact_sha256: str | None = None,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Record one bounded deterministic repair attempt for no-copy preflight.
+
+    Calling after the class budget is exhausted persists an explicit terminal
+    ``needs_revision`` state. New user feedback can reopen a fresh bounded cycle
+    through ``request_send_back(..., user_directed_revision=True)``.
+    """
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    if state.get("status") != "active" or state.get("next_phase") != "no_copy_preflight":
+        raise PersianVideoWorkflowError(
+            "deterministic recovery attempts are recorded only during active no_copy_preflight"
+        )
+    plan = recovery_policy_for_issue({
+        "code": diagnostic_code,
+        "recoveryClass": recovery_class or "",
+    })
+    recovery_class = str(plan["recoveryClass"])
+    history = dict(state.get("recovery_attempts") or {})
+    entries = list(history.get(recovery_class) or [])
+    max_attempts = int(plan["maxAttempts"])
+    stamp = now or datetime.now(timezone.utc)
+    if len(entries) >= max_attempts:
+        state["status"] = "needs_revision"
+        state["next_phase"] = None
+        state["recovery_stop"] = {
+            "at": stamp.isoformat(),
+            "diagnosticCode": str(diagnostic_code),
+            "recoveryClass": recovery_class,
+            "attemptsUsed": len(entries),
+            "maxAttempts": max_attempts,
+            "outcome": "needs_human_editorial_revision",
+        }
+        reconcile_phase_telemetry(state, now=stamp)
+        _write_state(_project_root(state), state)
+        return state
+    if strategy not in plan["strategies"]:
+        raise PersianVideoWorkflowError(
+            f"strategy {strategy!r} is not allowed for {recovery_class}; "
+            f"allowed={plan['strategies']}"
+        )
+    if artifact_sha256 is not None and not _valid_sha256(artifact_sha256):
+        raise PersianVideoWorkflowError("recovery artifact_sha256 must be a lowercase sha256")
+    entries.append({
+        "attempt": len(entries) + 1,
+        "at": stamp.isoformat(),
+        "diagnosticCode": str(diagnostic_code),
+        "strategy": strategy,
+        "policyVersion": plan["version"],
+        **({"artifactSha256": artifact_sha256} if artifact_sha256 else {}),
+    })
+    history[recovery_class] = entries
+    state["recovery_attempts"] = history
+    _write_state(_project_root(state), state)
+    return state
+
+
 def request_send_back(
     project_id: str,
     target_phase: str,
@@ -1025,6 +1126,8 @@ def request_send_back(
         state["user_revision_cycles"] = int(state.get("user_revision_cycles", 0)) + 1
         state["send_backs"] = 0
         state["budget_window_started_at"] = effective_now.isoformat()
+        state["recovery_attempts"] = {}
+        state.pop("recovery_stop", None)
         state["attempts"] = {
             key: value for key, value in previous_attempts.items()
             if key in PHASES and _phase_index(key) < target_index
@@ -1637,9 +1740,13 @@ def workflow_status(
         "completed_phases": state.get("completed_phases", []),
         "attempts": state.get("attempts", {}),
         "send_backs": state.get("send_backs", 0),
+        "recovery_attempts": state.get("recovery_attempts", {}),
+        "recovery_stop": state.get("recovery_stop"),
         "asset_usage": state.get("asset_usage", {}),
         "alignment_policy": state.get("alignment_policy") or alignment_execution_policy(state),
         "time_accounting": phase_time_accounting(state),
+        "performance_slo": state.get("performance_slo"),
+        "performance_summary": state.get("performance_summary"),
     }
 
 
@@ -1813,6 +1920,13 @@ def build_parser() -> argparse.ArgumentParser:
     complete.add_argument("--phase")
     complete.add_argument("--evidence-json")
 
+    recovery = sub.add_parser("recovery-attempt", help="record one bounded deterministic preflight repair")
+    recovery.add_argument("project_id")
+    recovery.add_argument("--code", required=True)
+    recovery.add_argument("--class", dest="recovery_class")
+    recovery.add_argument("--strategy", required=True)
+    recovery.add_argument("--artifact-sha256")
+
     send_back = sub.add_parser("send-back", help="rewind within the send-back budget")
     send_back.add_argument("project_id")
     send_back.add_argument("target_phase")
@@ -1909,6 +2023,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise PersianVideoWorkflowError("workflow has no next phase")
             evidence = _read_json(args.evidence_json) if args.evidence_json else None
             _print_json(complete_phase(args.project_id, str(phase), evidence=evidence))
+        elif args.command == "recovery-attempt":
+            _print_json(record_recovery_attempt(
+                args.project_id, diagnostic_code=args.code,
+                recovery_class=args.recovery_class, strategy=args.strategy,
+                artifact_sha256=args.artifact_sha256,
+            ))
         elif args.command == "send-back":
             _print_json(
                 request_send_back(
