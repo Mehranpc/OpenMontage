@@ -32,6 +32,7 @@ from lib.persian_rendered_review import (
     validate_rendered_audio_review,
     validate_rendered_hook_review,
 )
+from lib.persian_workflow_telemetry import reconcile_phase_telemetry
 from schemas.artifacts import validate_artifact
 from jsonschema.exceptions import ValidationError
 
@@ -582,6 +583,10 @@ def record_phase_attempt(
     })
     telemetry[phase] = entries
     state["phase_telemetry"] = telemetry
+    # A fresh attempt explicitly supersedes any stale unfinished predecessor at
+    # this same phase. This prevents crash/restart history from accumulating
+    # phantom `running` attempts while leaving the newest attempt genuinely open.
+    reconcile_phase_telemetry(state, now=effective_now)
     _write_state(Path(state["read_allowlist"]["project_root"]), state)
     return state
 
@@ -828,6 +833,10 @@ def _complete_phase_impl(
     else:
         state["next_phase"] = PHASES[_phase_index(phase) + 1]
     _finish_phase_telemetry(state, phase, outcome="succeeded", now=now)
+    # Phase completion reconciles any older unfinished attempts that a crash may
+    # have left behind. At the terminal transition this also asserts that the
+    # workflow cannot ship with historical attempts still marked `running`.
+    reconcile_phase_telemetry(state, now=now)
     _write_state(_project_root(state), state)
     return state
 
@@ -945,6 +954,12 @@ def reconcile_workflow_state(
                     "recovered": True,
                 }
                 state["evidence"] = all_evidence
+                # The expensive render itself succeeded; only the controller/report
+                # path disappeared. Preserve that fact instead of labelling the
+                # recovered attempt failed or merely superseded.
+                _finish_phase_telemetry(
+                    state, "render_final_candidate", outcome="succeeded"
+                )
                 recovered.append({
                     "phase": "render_final_candidate",
                     "candidatePath": candidate["candidate_path"],
@@ -960,6 +975,7 @@ def reconcile_workflow_state(
         "recoveredPhases": recovered,
     }
     state["last_reconciliation"] = reconciliation
+    reconcile_phase_telemetry(state)
     _write_state(_project_root(state), state)
     return state
 
@@ -989,6 +1005,10 @@ def request_send_back(
     if not reason.strip():
         raise PersianVideoWorkflowError("send-back requires a non-empty reason")
     current = state.get("next_phase")
+    # Rewinding abandons the currently open attempt by definition. Close it as
+    # superseded before changing the phase pointer so telemetry has no zombie work.
+    if isinstance(current, str):
+        _finish_phase_telemetry(state, current, outcome="superseded", now=effective_now)
     current_index = len(PHASES) if current is None else _phase_index(str(current))
     target_index = _phase_index(target_phase)
     if target_index >= current_index:
