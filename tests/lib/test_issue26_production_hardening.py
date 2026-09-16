@@ -6,7 +6,7 @@ from lib.persian_captions import layout_caption_lines
 from lib.persian_hook_quality import audit_persian_hook_quality
 from lib.persian_rendered_review import PersianRenderedReviewError, validate_rendered_hook_review
 from lib.persian_srt import PersianCue
-from lib.persian_video_workflow import reconcile_phase_telemetry
+from lib.persian_workflow_telemetry import reconcile_phase_telemetry
 from tools.video.persian_compose_script_aligned import ScriptAlignedPersianCompose
 
 
@@ -101,6 +101,24 @@ def test_phrase_aware_caption_wrap_avoids_splitting_auxiliary_phrase() -> None:
     assert not (lines[0].endswith("جمع") and lines[1].startswith("باشه"))
 
 
+def test_runtime_injects_schema_compatible_hook_caption_handoff() -> None:
+    runtime = ScriptAlignedPersianCompose._runtime_persian(
+        {
+            "metadata": {
+                "hookCaptionHandoff": {
+                    "mode": "semantic_replacement",
+                    "resumeAtSeconds": 5.38,
+                }
+            },
+            "persian": {"moments": []},
+        }
+    )
+
+    assert runtime is not None
+    assert runtime["_hookCaptionHandoff"]["mode"] == "semantic_replacement"
+    assert "hookCaptionHandoff" not in runtime
+
+
 def test_semantic_replacement_caption_handoff_skips_remainder_of_replaced_sentence() -> None:
     cues = [
         PersianCue("caption-1", "بزرگ‌ترین اشتباه درباره بازی‌های ویدیویی اینه که فکر", 0.0, 3.08),
@@ -108,7 +126,7 @@ def test_semantic_replacement_caption_handoff_skips_remainder_of_replaced_senten
         PersianCue("caption-3", "بررسی‌های علمی نشون می‌دن بازی کردن می‌تونه بعضی", 5.38, 8.26),
     ]
     persian = {
-        "hookCaptionHandoff": {"mode": "semantic_replacement", "resumeAtSeconds": 5.38},
+        "_hookCaptionHandoff": {"mode": "semantic_replacement", "resumeAtSeconds": 5.38},
         "moments": [{"kind": "hook", "startSeconds": 0.0, "endSeconds": 2.93}],
     }
 
@@ -149,7 +167,11 @@ def test_passing_rendered_hook_review_requires_context_isolated_cold_viewer_evid
     validate_rendered_hook_review(_hook_review(), candidate_sha256="a" * 64, require_pass=True)
 
     broken = _hook_review()
-    broken["coldViewer"] = {**broken["coldViewer"], "inferredTopic": "", "unresolvedReferents": ["چه چیزی وقت تلف کردنه؟"]}
+    broken["coldViewer"] = {
+        **broken["coldViewer"],
+        "inferredTopic": "",
+        "unresolvedReferents": ["چه چیزی وقت تلف کردنه؟"],
+    }
     broken["mutedHookDirectionConfirmed"] = False
 
     with pytest.raises(PersianRenderedReviewError, match="cold-viewer"):
