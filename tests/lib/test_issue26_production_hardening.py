@@ -88,6 +88,25 @@ def test_self_contained_typographic_hook_preserves_required_topic_anchor() -> No
     assert audit["semanticIntegrity"]["anchorSatisfiedBy"] == "text"
 
 
+
+def test_typographic_only_hook_duration_is_text_aware_and_refuses_unjustified_long_hold() -> None:
+    edit = _hook_edit("بازی؟", source_text="بازی؟", anchors=["بازی"])
+    edit["persian"]["moments"][0]["endSeconds"] = 5.0
+    edit["persian"]["typographicBeats"][0]["endSeconds"] = 5.0
+
+    audit = audit_persian_hook_quality(edit)
+
+    assert audit["disposition"] == "weak"
+    assert audit["typographicDuration"]["actualSeconds"] == 5.0
+    assert audit["typographicDuration"]["recommendedMaxSeconds"] < 5.0
+    assert any("HOOK_TYPOGRAPHIC_DURATION_EXCESS" in problem for problem in audit["problems"])
+
+    edit["metadata"]["hookQuality"]["typographicDurationJustification"] = (
+        "User-directed deliberate hold for an opening title card."
+    )
+    justified = audit_persian_hook_quality(edit)
+    assert not any("HOOK_TYPOGRAPHIC_DURATION_EXCESS" in problem for problem in justified["problems"])
+
 def test_phrase_aware_caption_wrap_keeps_compound_predicate_together() -> None:
     lines = layout_caption_lines("کنیم فقط وقت تلف کردنه و سرگرمی!")
 
