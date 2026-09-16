@@ -44,6 +44,65 @@ def _digest(value: object, label: str) -> str:
     return text
 
 
+_COLD_VIEWER_EVIDENCE_FIELDS = frozenset(
+    {"framePaths", "excerptPath", "startSeconds", "endSeconds"}
+)
+
+
+def build_cold_viewer_review_input(
+    *, candidate_sha256: str, opening_evidence: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Build the only payload a blind muted-opening reviewer may receive.
+
+    The allowlist is intentionally narrow. Approved script, hook metadata, author
+    rationale, scene-plan labels, and semantic annotations cannot enter this object
+    accidentally because unknown evidence keys are refused rather than forwarded.
+    """
+    digest = _digest(candidate_sha256, "candidate digest")
+    if not isinstance(opening_evidence, Mapping):
+        raise PersianRenderedReviewError("cold-viewer opening evidence must be an object")
+    unsupported = sorted(set(opening_evidence) - _COLD_VIEWER_EVIDENCE_FIELDS)
+    if unsupported:
+        raise PersianRenderedReviewError(
+            "cold-viewer opening evidence contains unsupported authoring context fields: "
+            + ", ".join(unsupported)
+        )
+    frames = opening_evidence.get("framePaths")
+    excerpt = str(opening_evidence.get("excerptPath") or "").strip()
+    if frames is not None and (
+        not isinstance(frames, list)
+        or not frames
+        or any(not isinstance(item, str) or not item.strip() for item in frames)
+    ):
+        raise PersianRenderedReviewError("cold-viewer framePaths must be a non-empty array of paths")
+    if not frames and not excerpt:
+        raise PersianRenderedReviewError(
+            "cold-viewer review requires rendered opening frames or a muted opening excerpt"
+        )
+    clean: dict[str, Any] = {}
+    if frames:
+        clean["framePaths"] = [str(item).strip() for item in frames]
+    if excerpt:
+        clean["excerptPath"] = excerpt
+    for key in ("startSeconds", "endSeconds"):
+        if key in opening_evidence:
+            clean[key] = _number(opening_evidence[key], f"cold-viewer {key}")
+    if "startSeconds" in clean and "endSeconds" in clean:
+        if clean["endSeconds"] <= clean["startSeconds"]:
+            raise PersianRenderedReviewError("cold-viewer opening interval must have positive duration")
+    return {
+        "policyVersion": COLD_VIEWER_POLICY_VERSION,
+        "candidateSha256": digest,
+        "reviewScope": "muted_opening",
+        "evidenceSource": "rendered_opening_only",
+        "openingEvidence": clean,
+        "instructions": [
+            "Infer only what a muted cold viewer can recover from the rendered opening.",
+            "Record the apparent topic/referent, claim/question, reason to continue, and unresolved referents.",
+        ],
+    }
+
+
 def _validate_cold_viewer(review: Mapping[str, Any]) -> bool:
     """Validate context-isolated muted-opening evidence and return comprehension."""
     raw = review.get("coldViewer")
@@ -254,6 +313,7 @@ __all__ = [
     "MAX_OUTPUT_INTEGRATED_LUFS",
     "MAX_TRUE_PEAK_DBFS",
     "PersianRenderedReviewError",
+    "build_cold_viewer_review_input",
     "validate_rendered_hook_review",
     "validate_rendered_audio_review",
     "measure_rendered_audio_output",
