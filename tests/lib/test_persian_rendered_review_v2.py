@@ -7,6 +7,7 @@ import pytest
 
 from lib.persian_rendered_review import (
     PersianRenderedReviewError,
+    build_cold_viewer_review_input,
     measure_rendered_audio_output,
     validate_rendered_audio_review,
     validate_rendered_hook_review,
@@ -191,3 +192,31 @@ def test_measure_rendered_audio_output_reads_real_mp4_when_ffmpeg_available(tmp_
     assert evidence["candidateSha256"] == hashlib.sha256(video.read_bytes()).hexdigest()
     assert isinstance(evidence["outputIntegratedLufs"], float)
     assert isinstance(evidence["truePeakDbfs"], float)
+
+
+def test_cold_viewer_input_builder_is_structurally_isolated_from_authoring_context() -> None:
+    payload = build_cold_viewer_review_input(
+        candidate_sha256=DIGEST,
+        opening_evidence={
+            "framePaths": ["opening-01.jpg", "opening-02.jpg"],
+            "excerptPath": "opening-muted.mp4",
+            "startSeconds": 0.0,
+            "endSeconds": 3.0,
+        },
+    )
+
+    assert payload["candidateSha256"] == DIGEST
+    assert payload["reviewScope"] == "muted_opening"
+    assert payload["evidenceSource"] == "rendered_opening_only"
+    serialized = repr(payload)
+    for forbidden in ("script", "hookQuality", "rationale", "scenePlan", "semanticLabel"):
+        assert forbidden not in serialized
+
+    with pytest.raises(PersianRenderedReviewError, match="authoring context|unsupported"):
+        build_cold_viewer_review_input(
+            candidate_sha256=DIGEST,
+            opening_evidence={
+                "framePaths": ["opening.jpg"],
+                "script": "hidden approved narration",
+            },
+        )
