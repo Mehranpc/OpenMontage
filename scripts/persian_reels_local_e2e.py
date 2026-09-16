@@ -123,6 +123,12 @@ def _hook_quality_metadata() -> dict[str, Any]:
                 "evidence": "The second visual event changes direction before the 3s opening window closes.",
             }
         ],
+        "semanticIntegrity": {
+            "sourceText": "شروع با یک تغییر کوچک روشن می‌شود.",
+            "requiredTopicAnchors": ["تغییر"],
+            "anchorDelivery": "visual",
+            "visualAnchorEvidence": "The reviewed opening shot visibly establishes the moving-light change.",
+        },
     }
 
 
@@ -542,6 +548,14 @@ def _build_final_review(
         "concretePayoffKind": "demonstration",
         "payoffEvidence": "The second rendered event visibly changes direction at 2.4s.",
         "payoffBeginsPromptly": True,
+        "coldViewer": {
+            "evidenceSource": "rendered_opening_only",
+            "contextIsolated": True,
+            "inferredTopic": "تغییر جهت یک الگوی نور متحرک",
+            "inferredClaim": "افتتاحیه یک تغییر دیداری مشخص را مطرح می‌کند",
+            "continuationReason": "می‌خواهم ببینم این تغییر چطور کامل می‌شود",
+            "unresolvedReferents": [],
+        },
     }
     review = {
         "version": "1.0",
