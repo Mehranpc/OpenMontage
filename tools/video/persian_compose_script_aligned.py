@@ -4,7 +4,7 @@ This module intentionally registers a later, stricter implementation under the
 existing ``persian_compose`` tool name. Tool discovery is lexical, so it first
 registers ``tools.video.persian_compose.PersianCompose`` and then replaces that
 entry with :class:`ScriptAlignedPersianCompose`. The renderer itself is inherited;
-only the sidecar/caption authority and hook handoff contracts change.
+this layer owns approved captions plus Issue #26 hook/caption presentation contracts.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from tools.video.persian_compose import PersianCompose
 
 
 class ScriptAlignedPersianCompose(PersianCompose):
-    """PersianCompose with a pre-render, script-authoritative subtitle gate."""
+    """PersianCompose with pre-render script and hook-presentation gates."""
 
     name = "persian_compose"
     version = "0.5.0"
@@ -62,6 +62,59 @@ class ScriptAlignedPersianCompose(PersianCompose):
         runtime_decisions["persian"] = runtime_persian
         runtime_inputs["edit_decisions"] = runtime_decisions
         return super().execute(runtime_inputs)
+
+    @staticmethod
+    def _prepare_typographic_only_composition(persian: dict[str, Any]) -> dict[str, Any]:
+        """Derive a center-biased full-canvas layout for text-only opening hooks.
+
+        This is deliberately runtime-only. The authored artifact still records
+        ``placement=auto``; the renderer resolves that auto request differently when
+        the entire hook is backed by a typographic plate rather than footage. Explicit
+        authored placement remains authoritative.
+        """
+        beats = [item for item in (persian.get("typographicBeats") or []) if isinstance(item, dict)]
+        if not beats:
+            return persian
+        changed = False
+        moments: list[Any] = []
+        for raw in persian.get("moments") or []:
+            if not isinstance(raw, dict) or raw.get("kind") != "hook":
+                moments.append(raw)
+                continue
+            start = float(raw.get("startSeconds") or 0.0)
+            end = float(raw.get("endSeconds") or 0.0)
+            covered = any(
+                float(beat.get("startSeconds") or 0.0) <= start + 1e-6
+                and float(beat.get("endSeconds") or 0.0) >= end - 1e-6
+                for beat in beats
+            )
+            if not covered:
+                moments.append(raw)
+                continue
+            presentation = dict(raw.get("presentation") or {})
+            if presentation.get("placement") not in {None, "auto"}:
+                moments.append(raw)
+                continue
+            presentation["placement"] = "center"
+            moment = dict(raw)
+            moment["presentation"] = presentation
+            moments.append(moment)
+            changed = True
+        if not changed:
+            return persian
+        resolved = dict(persian)
+        resolved["moments"] = moments
+        return resolved
+
+    def _build_props(
+        self,
+        persian: dict[str, Any],
+        staging_dir: Path,
+        run_id: str,
+    ) -> tuple[dict[str, Any], list[str]]:
+        """Resolve typographic-only composition before browser Film Type layout."""
+        runtime = self._prepare_typographic_only_composition(persian)
+        return super()._build_props(runtime, staging_dir, run_id)
 
     def _build_caption_props(self, persian: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
         """Build approved-script captions before Film Type freezes layout."""
@@ -138,8 +191,6 @@ class ScriptAlignedPersianCompose(PersianCompose):
                 raise ValueError(
                     "CAPTION_HANDOFF_INVALID: resumeAtSeconds must be finite and at/after the hook end"
                 )
-            # Drop entire cues before the next complete semantic unit. Never crop a
-            # cue into a fragment: authoritative wording/timing remains intact.
             return [cue for cue in cues if cue.start_seconds >= resume - 1e-6]
 
         visible = [cue for cue in cues if cue.end_seconds > hook_end + 1e-6]
