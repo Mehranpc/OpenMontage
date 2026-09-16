@@ -16,7 +16,9 @@ from typing import Any, Mapping, Sequence
 
 from lib.paths import REPO_ROOT
 from lib.persian_audio_policy import materialize_loudness_aware_mix
-from lib.persian_preflight import aggregate_preflight_edit_decisions, extract_edit_decisions
+from lib.persian_preflight import (
+    PREFLIGHT_POLICY_VERSION, aggregate_preflight_edit_decisions, extract_edit_decisions,
+)
 
 _ATTEMPT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 
@@ -61,6 +63,19 @@ def _paths(project_dir: Path, attempt_id: str) -> tuple[Path, Path, Path]:
     return draft, report, canonical
 
 
+def _cache_path(project_dir: Path, digest: str) -> Path:
+    return project_dir.expanduser().resolve() / ".preflight" / "cache" / "edit" / f"{digest}.json"
+
+
+def _valid_cached_report(value: object, *, digest: str) -> bool:
+    return (
+        isinstance(value, dict)
+        and value.get("artifactSha256") == digest
+        and value.get("policyVersion") == PREFLIGHT_POLICY_VERSION
+        and isinstance(value.get("ok"), bool)
+    )
+
+
 def stage_edit_draft(
     project_dir: Path, attempt_id: str, payload: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -95,7 +110,33 @@ def preflight_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
     if not draft.is_file():
         raise PersianEditWorkspaceError(f"edit draft does not exist: {draft}")
     payload = json.loads(draft.read_text(encoding="utf-8"))
-    report = aggregate_preflight_edit_decisions(payload, base_dir=REPO_ROOT)
+    digest = artifact_sha256(payload)
+    cache_path = _cache_path(project_dir, digest)
+
+    cached: dict[str, Any] | None = None
+    if cache_path.is_file():
+        try:
+            candidate = json.loads(cache_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            candidate = None
+        if _valid_cached_report(candidate, digest=digest):
+            cached = dict(candidate)
+
+    if cached is None:
+        computed = aggregate_preflight_edit_decisions(payload, base_dir=REPO_ROOT)
+        if computed.get("artifactSha256") != digest:
+            raise PersianEditWorkspaceError(
+                "preflight report digest does not match the staged edit bytes"
+            )
+        computed["cacheHit"] = False
+        computed["cacheKey"] = digest
+        _atomic_json(cache_path, computed)
+        report = dict(computed)
+    else:
+        report = cached
+        report["cacheHit"] = True
+        report["cacheKey"] = digest
+
     report["attemptId"] = attempt_id
     report["draftPath"] = str(draft)
     _atomic_json(report_path, report)
