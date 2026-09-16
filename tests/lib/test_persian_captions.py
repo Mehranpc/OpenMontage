@@ -82,4 +82,5 @@ def test_burned_props_preserve_approved_text_and_timing() -> None:
         "lines": [cue.text],
         "startSeconds": 1.25,
         "endSeconds": 3.5,
+        "wrapPolicyVersion": "2.0",
     }]
