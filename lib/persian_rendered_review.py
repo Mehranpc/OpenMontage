@@ -20,6 +20,12 @@ from lib.persian_music import (
 HOOK_RENDER_REVIEW_VERSION = "2.0"
 COLD_VIEWER_POLICY_VERSION = "1.0"
 RENDERED_AUDIO_POLICY_VERSION = "1.0"
+VISUAL_TYPOGRAPHY_POLICY_VERSION = "1.0"
+VISUAL_TYPOGRAPHY_RECIPES = frozenset({"editorial-hero-balanced", "editorial-hero-compact", "editorial-callout-balanced"})
+MIN_VISUAL_OCCUPANCY_RATIO = 0.16
+MAX_VISUAL_OCCUPANCY_RATIO = 0.58
+MIN_VISUAL_HOLD_SECONDS = 1.5
+MAX_VISUAL_HOLD_SECONDS = 6.0
 MIN_OUTPUT_INTEGRATED_LUFS = -20.0
 MAX_OUTPUT_INTEGRATED_LUFS = -9.0
 MAX_TRUE_PEAK_DBFS = -1.0
@@ -149,9 +155,37 @@ def _validate_cold_viewer(review: Mapping[str, Any]) -> bool:
     unresolved = raw.get("unresolvedReferents")
     if not isinstance(unresolved, list) or any(not isinstance(item, str) for item in unresolved):
         raise PersianRenderedReviewError("cold-viewer unresolvedReferents must be an array of strings")
-    # A failed/revise review is still persistable; comprehension simply evaluates
-    # false. Passing review enforces this result below.
     return bool(topic and claim and continuation and not [item for item in unresolved if item.strip()])
+
+
+def _validate_visual_typography(review: Mapping[str, Any], *, require_pass: bool) -> bool:
+    raw = review.get("visualTypography")
+    if not isinstance(raw, Mapping):
+        if require_pass:
+            raise PersianRenderedReviewError("passing rendered hook review requires visual typography evidence")
+        return False
+    if str(raw.get("policyVersion") or "") != VISUAL_TYPOGRAPHY_POLICY_VERSION:
+        raise PersianRenderedReviewError("visual typography policyVersion must be 1.0")
+    if str(raw.get("evidenceSource") or "") != "rendered_opening_pixels":
+        raise PersianRenderedReviewError("visual typography evidence must come from rendered opening pixels")
+    recipe = str(raw.get("recipeId") or "")
+    if recipe not in VISUAL_TYPOGRAPHY_RECIPES:
+        raise PersianRenderedReviewError("visual typography recipe must be one of the curated recipes")
+    occupancy = _number(raw.get("occupancyRatio"), "visual typography occupancy ratio")
+    duration = _number(raw.get("durationSeconds"), "visual typography duration")
+    passed = (
+        raw.get("hierarchyPassed") is True
+        and MIN_VISUAL_OCCUPANCY_RATIO <= occupancy <= MAX_VISUAL_OCCUPANCY_RATIO
+        and raw.get("emphasisPassed") is True
+        and raw.get("lineBalancePassed") is True
+        and raw.get("opticalPlacementPassed") is True
+        and MIN_VISUAL_HOLD_SECONDS <= duration <= MAX_VISUAL_HOLD_SECONDS
+    )
+    if require_pass and not passed:
+        raise PersianRenderedReviewError(
+            "visual typography failed rendered-pixel hierarchy, occupancy, emphasis, line balance, optical placement, or duration QA"
+        )
+    return passed
 
 
 def validate_rendered_hook_review(
@@ -203,6 +237,8 @@ def validate_rendered_hook_review(
         raise PersianRenderedReviewError("actual rendered payoff seconds cannot be negative")
     if not str(review.get("payoffEvidence") or "").strip():
         raise PersianRenderedReviewError("rendered hook review requires concrete payoff evidence")
+
+    _validate_visual_typography(review, require_pass=require_pass)
 
     if require_pass:
         if strength not in {"acceptable", "strong"}:
@@ -334,6 +370,8 @@ __all__ = [
     "HOOK_RENDER_REVIEW_VERSION",
     "COLD_VIEWER_POLICY_VERSION",
     "RENDERED_AUDIO_POLICY_VERSION",
+    "VISUAL_TYPOGRAPHY_POLICY_VERSION",
+    "VISUAL_TYPOGRAPHY_RECIPES",
     "MIN_OUTPUT_INTEGRATED_LUFS",
     "MAX_OUTPUT_INTEGRATED_LUFS",
     "MAX_TRUE_PEAK_DBFS",
