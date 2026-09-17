@@ -534,7 +534,7 @@ def aggregate_preflight_edit_decisions(
         edit=edit,
         blocking=[],
         warnings=browser_evidence.get("warnings") or [],
-        evidence=browser_evidence,
+        evidence={**evidence, **browser_evidence},
         watermark_diagnostics=browser_evidence.get("watermarkDiagnostics") or watermark_feasibility,
         diagnostic_layers=["contract", "retention", "hook", "watermark", "browser"],
     )
