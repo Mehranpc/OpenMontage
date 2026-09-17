@@ -1,16 +1,15 @@
 """Deterministic recovery policy for Persian production preflight.
 
-Issue #26 makes recovery a bounded engineering contract rather than an open-ended
-agent loop. Diagnostics map to one recovery class, a finite ordered strategy list,
-and a hard per-class attempt ceiling. The policy never edits artifacts itself; it
-constrains the orchestrator so unrelated dimensions stay frozen during repair.
+Issue #28 keeps recovery bounded *and* gives every class an explicit mutation
+surface. A recovery strategy may not spend an unrelated editorial budget simply
+because its own constraint is difficult to satisfy.
 """
 from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
 
-RECOVERY_POLICY_VERSION = "1.0"
+RECOVERY_POLICY_VERSION = "2.0"
 
 _CLASS_POLICIES: dict[str, dict[str, Any]] = {
     "HOOK_SEMANTIC": {
@@ -19,22 +18,26 @@ _CLASS_POLICIES: dict[str, dict[str, Any]] = {
             "restore_required_topic_anchor_in_viewer_visible_hook",
             "establish_required_anchor_with_reviewed_opening_visual_if_not_typographic_only",
         ],
-        "preserve": ["approved_script", "narration", "assets", "audio_mix"],
+        "mutationSurface": ["hook.semantic_copy", "hook.semantic_evidence", "opening.existing_asset_selection"],
+        "preserve": ["approved_script", "narration", "asset_budget", "audio_mix"],
     },
     "HOOK_AUTHORING": {
         "maxAttempts": 2,
         "strategies": ["revise_hook_copy_only", "revise_hook_semantic_evidence_only"],
+        "mutationSurface": ["hook.semantic_copy", "hook.semantic_evidence"],
         "preserve": ["approved_script", "narration", "assets", "audio_mix"],
     },
     "HOOK_TIMING": {
         "maxAttempts": 2,
         "strategies": ["retime_hook_window_only", "retime_first_payoff_only"],
+        "mutationSurface": ["hook.duration", "hook.payoff_timing"],
         "preserve": ["approved_script", "narration", "assets", "audio_mix"],
     },
     "HOOK_VISUAL_ALIGNMENT": {
         "maxAttempts": 2,
         "strategies": ["select_already_acquired_opening_asset", "adjust_opening_source_window"],
-        "preserve": ["approved_script", "narration", "audio_mix"],
+        "mutationSurface": ["opening.existing_asset_selection", "opening.source_window"],
+        "preserve": ["approved_script", "narration", "audio_mix", "asset_budget"],
     },
     "CAPTION_CONTINUITY": {
         "maxAttempts": 2,
@@ -42,49 +45,62 @@ _CLASS_POLICIES: dict[str, dict[str, Any]] = {
             "set_semantic_replacement_resume_to_next_complete_unit",
             "regroup_opening_caption_semantic_boundary",
         ],
+        "mutationSurface": ["captions.semantic_handoff", "captions.cue_grouping"],
         "preserve": ["approved_script", "narration", "assets", "audio_mix"],
     },
     "CAPTION_WRAP": {
         "maxAttempts": 2,
         "strategies": ["regroup_caption_cue_boundaries", "choose_alternate_phrase_safe_line_break"],
+        "mutationSurface": ["captions.cue_grouping", "captions.line_breaks"],
         "preserve": ["approved_script", "narration", "assets", "audio_mix"],
     },
     "TIMELINE_GRID": {
         "maxAttempts": 1,
         "strategies": ["quantize_visual_timeline_boundaries_to_30fps_grid"],
+        "mutationSurface": ["timeline.frame_boundaries"],
         "preserve": ["approved_script", "narration", "assets", "audio_mix"],
     },
     "WATERMARK_TIMING": {
-        "maxAttempts": 3,
+        "maxAttempts": 2,
         "strategies": [
-            "use_planner_best_schedule",
-            "adjust_watermark_safe_timing_without_lowering_coverage_floor",
-            "replace_only_blocking_footage_window_if_required",
+            "use_approved_fixed_anchor_schedule",
+            "suppress_minimum_subtitle_collision_interval",
         ],
-        "preserve": ["approved_script", "narration", "audio_mix"],
+        "mutationSurface": ["watermark.schedule", "watermark.suppression"],
+        "preserve": [
+            "approved_script", "narration", "assets", "audio_mix", "scenes",
+            "subject_regions", "typography", "copy",
+        ],
     },
     "FILM_TYPE_LAYOUT": {
         "maxAttempts": 3,
         "strategies": [
-            "apply_deterministic_layout_alternative",
-            "adjust_text_placement_or_width_without_rewriting_copy",
-            "replace_only_geometry_blocking_asset_if_required",
+            "select_curated_typography_recipe",
+            "rebalance_measured_line_plan",
+            "adjust_editorial_hold_within_policy",
         ],
-        "preserve": ["approved_script", "narration", "audio_mix"],
+        "mutationSurface": ["typography.recipe", "typography.line_plan", "typography.duration"],
+        "preserve": [
+            "approved_script", "narration", "assets", "audio_mix", "scenes",
+            "subject_regions", "watermark",
+        ],
     },
     "ASSET_SELECTION": {
         "maxAttempts": 2,
         "strategies": ["use_authored_alternate_query", "stop_for_editorial_revision"],
-        "preserve": ["approved_script", "narration", "audio_mix"],
+        "mutationSurface": ["assets.selection", "assets.query"],
+        "preserve": ["approved_script", "narration", "audio_mix", "copy"],
     },
     "PREFLIGHT_RUNTIME": {
         "maxAttempts": 1,
         "strategies": ["retry_same_digest_after_runtime_or_reporting_repair"],
+        "mutationSurface": ["runtime.reporting"],
         "preserve": ["approved_script", "narration", "assets", "edit_digest"],
     },
     "EDIT_ARTIFACT": {
         "maxAttempts": 2,
         "strategies": ["repair_reported_contract_field_only", "stop_for_editorial_revision"],
+        "mutationSurface": ["diagnostic.named_contract_field"],
         "preserve": ["unrelated_artifacts"],
     },
 }
@@ -118,6 +134,7 @@ def recovery_policy_for_issue(issue: Mapping[str, Any]) -> dict[str, Any]:
         "recoveryClass": recovery_class,
         "maxAttempts": int(policy["maxAttempts"]),
         "strategies": list(policy["strategies"]),
+        "mutationSurface": list(policy["mutationSurface"]),
         "preserve": list(policy["preserve"]),
         "exhaustedOutcome": "needs_human_editorial_revision",
     }
