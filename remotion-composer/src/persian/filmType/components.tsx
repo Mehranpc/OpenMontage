@@ -29,7 +29,7 @@ function shadowFilter(s: {color:string;nearOffsetPx:number;nearBlurPx:number;nea
   return `drop-shadow(0 ${s.nearOffsetPx}px ${s.nearBlurPx}px ${rgba(s.nearAlpha)}) drop-shadow(0 0 ${s.haloBlurPx}px ${rgba(s.haloAlpha)})`;
 }
 export function glyphShadowFilter(p: FilmProfile): string | undefined {
-  if (p.profileVersion !== "2.10.0" && p.profileVersion !== "2.11.0") return undefined;
+  if (p.profileVersion !== "2.10.0" && p.profileVersion !== "2.11.0" && p.profileVersion !== "2.15.0") return undefined;
   const s = p.contrast.glyphShadow;
   if (!s) throw new Error("Film Type 2.10 requires explicit glyph shadow tokens.");
   return shadowFilter(s);
@@ -39,7 +39,7 @@ export function glyphShadowFilter(p: FilmProfile): string | undefined {
  * strokes than hero type, so it needs a denser shadow for the same contrast.
  * Same two layers as text; the field behind the brand stays unpainted. */
 export function watermarkGlyphShadowFilter(p: FilmProfile): string | undefined {
-  if (p.profileVersion !== "2.11.0") return undefined;
+  if (p.profileVersion !== "2.11.0" && p.profileVersion !== "2.15.0") return undefined;
   const s = p.watermark.glyphShadow;
   if (!s) throw new Error("Film Type 2.11 requires explicit watermark glyph shadow tokens.");
   return shadowFilter(s);
@@ -90,7 +90,7 @@ const CompactFilmField: React.FC<{rect:Rect;format:PersianFormat;design:PersianD
 const DiffuseField: React.FC<{layout:FilmMomentLayout;format:PersianFormat;design:PersianDesignSnapshot;opacity:number;travel:number;anchor:number;align:"left"|"right"|"center"}>=({layout,format,design,opacity,travel,anchor,align})=>{
  const id=useId(),p=filmProfile(design),d=FORMAT_DIMENSIONS[format],cfg=p.contrast.diffuseField!;
  const dark=layout.contrastMode==="dark",peak=layout.fieldPeakAlpha??p.contrast.strengths[layout.strength];
- const bounded=p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0")) ? {width:d.width,height:d.height} : undefined;
+ const bounded=p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0")) ? {width:d.width,height:d.height} : undefined;
  const left=layout.rect.x*d.width, top=layout.rect.y*d.height;
  const fields=cfg.perRow
   ? layout.rows.map(row=>{
@@ -129,8 +129,8 @@ export const PersianFilmTypeMoment: React.FC<{
   if (!layout || layout.id !== moment.id) throw new Error(`Missing measured Film Type layout for ${moment.id}; run persian_compose.`);
   const span = durationFrames / fps, seconds = frame / fps;
   const firstReveal = Math.min(...layout.rows.map(row => row.revealAfterSeconds));
-  const modern=p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0"))))),lifeAt=modern?gentleLife:filmLife;
-  const diffuse=p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0"));
+  const modern=p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0"))))),lifeAt=modern?gentleLife:filmLife;
+  const diffuse=p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0"));
   const fieldEnter=modern?(moment.presentation?.motion === "cut-in"?p.motion.cutInSeconds:p.motion.enterSeconds):p.motion.scrimEnterSeconds;
   const fieldLife = lifeAt(seconds,span,firstReveal,fieldEnter,p.motion.exitSeconds);
   const dark = layout.contrastMode === "dark";
@@ -173,7 +173,7 @@ export const PersianFilmTypeWatermark: React.FC<{
   // lockups during relocation. Exit to zero, then enter the next safe slot.
   const entry=plan.find(slot=>seconds>=slot.startSeconds&&seconds<slot.endSeconds);
   if(!entry) return null;
-  const opacity=p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0"))))) ? gentleLife(seconds-entry.startSeconds,entry.endSeconds-entry.startSeconds,0,p.watermark.transitionSeconds,p.watermark.transitionSeconds).opacity
+  const opacity=p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0"))))) ? gentleLife(seconds-entry.startSeconds,entry.endSeconds-entry.startSeconds,0,p.watermark.transitionSeconds,p.watermark.transitionSeconds).opacity
     : Math.min(1,(seconds-entry.startSeconds)/p.watermark.transitionSeconds,(entry.endSeconds-seconds)/p.watermark.transitionSeconds);
   const align = entry.zone.endsWith("left") ? "left" : "right";
   const anchor = align === "left" ? p.watermark.paddingPx : lockup.widthPx-p.watermark.paddingPx;
@@ -182,7 +182,7 @@ export const PersianFilmTypeWatermark: React.FC<{
       plateau={p.contrast.plateauStop} paddingPx={p.watermark.fieldPaddingPx} opacity={opacity} kind="brand"/>}
     <svg data-film-type-watermark="lockup" width={lockup.widthPx} height={lockup.heightPx}
       viewBox={`0 0 ${lockup.widthPx} ${lockup.heightPx}`}
-      style={{position:"absolute",left:entry.rect.x*dims.width,top:entry.rect.y*dims.height,overflow:"visible",opacity,zIndex:3,filter:(p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0")) ? watermarkGlyphShadowFilter(p) : glyphShadowFilter(p)}}>
+      style={{position:"absolute",left:entry.rect.x*dims.width,top:entry.rect.y*dims.height,overflow:"visible",opacity,zIndex:3,filter:(p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0")) ? watermarkGlyphShadowFilter(p) : glyphShadowFilter(p)}}>
       {lockup.rows.map((row,index)=><Run key={index} row={row} x={anchor} align={align} color={p.typography.ink} accent={p.typography.accent} emphasis={false}/>)}
     </svg>
   </AbsoluteFill>;

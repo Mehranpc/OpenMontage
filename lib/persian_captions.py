@@ -51,7 +51,7 @@ _TOKEN_EDGE_RE = re.compile(r"^[\s\"'«»“”‘’()\[\]{}،؛:!?؟.]+|[\s\"'
 
 def burned_caption_max_visible_chars(profile_version: str | None = None) -> int:
     """Return the cue-grouping budget for the resolved caption geometry."""
-    if str(profile_version or "") == "2.14.0":
+    if str(profile_version or "") in {"2.14.0", "2.15.0"}:
         return BURNED_CAPTION_214_MAX_VISIBLE_CHARS
     if str(profile_version or "") == "2.13.0":
         return BURNED_CAPTION_213_MAX_VISIBLE_CHARS
@@ -188,13 +188,13 @@ def caption_band_rect(
     bottom = float(raw.get("bottom", fallback["bottom"]))
     left = float(raw.get("left", side))
     right = float(raw.get("right", side))
-    refined = profile_version == "2.14.0"
+    refined = profile_version in {"2.14.0", "2.15.0"}
     font_px = (46 if video_format == "vertical" else 38) if refined else CAPTION_FONT_PX[video_format]
     line_height = 1.32 if refined else CAPTION_LINE_HEIGHT
     vertical_padding = 10 if refined else CAPTION_VERTICAL_PADDING_PX
     line_box = font_px * line_height
     h = (2 * line_box + 2 * vertical_padding) / height
-    if profile_version in {"2.13.0", "2.14.0"}:
+    if profile_version in {"2.13.0", "2.14.0", "2.15.0"}:
         caption_side = max(left, right)
         x = caption_side + CAPTION_EDGE_GAP_FRACTION
         w = max(0.0, 1 - 2 * x)

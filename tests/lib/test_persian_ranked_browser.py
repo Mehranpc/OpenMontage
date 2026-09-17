@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import unittest
 from lib.persian_brand import exact_text_record
-from lib.persian_design import resolve_design, SUPPORTED_FILM_TYPE_28_HASH, SUPPORTED_FILM_TYPE_211_HASH, SUPPORTED_FILM_TYPE_212_HASH
+from lib.persian_design import resolve_design, SUPPORTED_FILM_TYPE_28_HASH, SUPPORTED_FILM_TYPE_211_HASH, SUPPORTED_FILM_TYPE_212_HASH, SUPPORTED_FILM_TYPE_HASH
 from lib.persian_film_type import FilmTypePreflightError, prepare_film_type_props
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -41,6 +41,10 @@ class RankedBrowserContracts(unittest.TestCase):
         profile=json.loads((ROOT/'styles/persian-footage/film-type-2.12.0.json').read_text(encoding='utf-8'))
         return {'version':2,'profile':'film-type','seed':'regression','profileVersion':'2.12.0',
                 'contentHash':SUPPORTED_FILM_TYPE_212_HASH,'resolved':profile}
+    def pinned_214(self):
+        profile=json.loads((ROOT/'styles/persian-footage/film-type-2.14.0.json').read_text(encoding='utf-8'))
+        return {'version':2,'profile':'film-type','seed':'regression','profileVersion':'2.14.0',
+                'contentHash':SUPPORTED_FILM_TYPE_HASH,'resolved':profile}
     def prepare(self, p):
         return prepare_film_type_props(p, ROOT/'remotion-composer')
     def test_ranked_long_copy_preserves_content_and_frozen_geometry(self):
@@ -110,7 +114,7 @@ class RankedBrowserContracts(unittest.TestCase):
     def test_default_profile_refuses_the_reviewed_m1_face_collision(self):
         p=self.props();p['moments'][0]['presentation']['placement']='upper-right'
         p['shots'][0]['avoidRegions']=[{'x':0.27,'y':0.28,'w':0.39,'h':0.21}]
-        with self.assertRaisesRegex(ValueError,'no readable'):self.prepare(p)
+        with self.assertRaisesRegex(ValueError,'no curated adaptive editorial recipe'):self.prepare(p)
     def test_28_pin_still_refuses_missing_reviews_and_obstructed_frames(self):
         p=self.props(design=self.pinned_28());p['shots'][0].pop('avoidRegions')
         p['moments'][0]['presentation']['placement']='upper-right'
@@ -182,7 +186,7 @@ class RankedBrowserContracts(unittest.TestCase):
         self.assertTrue(any('watermark-suppressed-for-text-clearance' in w for w in q['filmType']['warnings']))
 
     def test_214_context_hook_can_use_upper_center_negative_space(self):
-        p=self.props();p['durationSeconds']=20
+        p=self.props(design=self.pinned_214());p['durationSeconds']=20
         p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':20,
                      'avoidRegions':[{'x':0.0,'y':0.36,'w':0.4,'h':0.52},
                                      {'x':0.76,'y':0.4,'w':0.24,'h':0.55}]}]
@@ -197,7 +201,7 @@ class RankedBrowserContracts(unittest.TestCase):
         self.assertEqual(q['filmType']['moments']['hook']['fieldPeakAlpha'],.46)
 
     def test_214_vertical_diversity_may_use_one_shorter_safe_dwell(self):
-        p=self.props();p['durationSeconds']=47;p['moments']=[]
+        p=self.props(design=self.pinned_214());p['durationSeconds']=47;p['moments']=[]
         blocker={'x':0,'y':0.35,'w':1,'h':0.65}
         p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':47,
                      'avoidRegions':[{**blocker,'startSeconds':0,'endSeconds':23},
@@ -239,7 +243,7 @@ class RankedBrowserContracts(unittest.TestCase):
         )
 
     def test_214_long_form_brand_meets_coverage_relocation_and_vertical_diversity(self):
-        p=self.props();p['durationSeconds']=47;p['moments']=[]
+        p=self.props(design=self.pinned_214());p['durationSeconds']=47;p['moments']=[]
         p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':47,'avoidRegions':[]}]
         p['watermark']={'persianText':'طریقت تسلیم','latinText':'Pathway_of_Surrender'}
         q=self.prepare(p);plan=q['watermarkPlan']
@@ -252,12 +256,39 @@ class RankedBrowserContracts(unittest.TestCase):
         self.assertGreaterEqual(plan[0]['startSeconds'],5)
 
     def test_214_refuses_an_isolated_eight_second_brand_dwell(self):
-        p=self.props();p['durationSeconds']=47;p['moments']=[]
+        p=self.props(design=self.pinned_214());p['durationSeconds']=47;p['moments']=[]
         p['shots']=[{'id':'s','source':'unused.mp4','startSeconds':0,'endSeconds':47,
                      'avoidRegions':[{'x':0,'y':0,'w':1,'h':1,'startSeconds':0,'endSeconds':10},
                                      {'x':0,'y':0,'w':1,'h':1,'startSeconds':18,'endSeconds':47}]}]
         p['watermark']={'persianText':'طریقت تسلیم','latinText':'Pathway_of_Surrender'}
         with self.assertRaisesRegex(ValueError,'coverage'):self.prepare(p)
+
+    def test_215_adaptive_recipe_is_browser_measured(self):
+        text="این عبارت عمداً از سقف قدیمی سی نویسه بلندتر است"
+        p=self.props(text=text)
+        p["moments"][0]["segments"]=[{"role":"hero","text":text}]
+        p["moments"][0]["presentation"]["recipeId"]="editorial-callout-balanced"
+        q=self.prepare(p)
+        layout=q["filmType"]["moments"]["m"]
+        self.assertEqual(layout["recipeId"], "editorial-callout-balanced")
+        recipe=q["design"]["resolved"]["typography"]["recipes"]["editorial-callout-balanced"]
+        self.assertLessEqual(layout["occupancyRatio"], recipe["occupancyMax"])
+        self.assertGreaterEqual(layout["lineBalanceRatio"], 0)
+
+    def test_215_watermark_ignores_subject_regions_and_uses_fixed_anchors(self):
+        def prepared(region):
+            p=self.props();p["durationSeconds"]=47;p["moments"]=[]
+            p["shots"]=[{"id":"s","source":"unused.mp4","startSeconds":0,"endSeconds":47,"avoidRegions":region}]
+            p["watermark"]={"persianText":"طریقت تسلیم","latinText":"Pathway_of_Surrender"}
+            return self.prepare(p)
+        plain=prepared([])
+        blocked=prepared([{"x":0,"y":0,"w":1,"h":1}])
+        self.assertEqual(blocked["watermarkPlan"], plain["watermarkPlan"])
+        approved={"upper-left","upper-right","lower-left","lower-right"}
+        self.assertTrue(blocked["watermarkPlan"])
+        self.assertTrue(all(slot["zone"] in approved for slot in blocked["watermarkPlan"]))
+        diagnostics=blocked["watermarkDiagnostics"]
+        self.assertFalse(any(item["blockerType"]=="subject-region" for item in diagnostics["rejectedIntervals"]))
 
     def test_strict_rows_preserve_arabic_codepoints_quotes_and_zwnj(self):
         exact="مي‌روم؛ “همین”"

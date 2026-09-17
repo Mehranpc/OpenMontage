@@ -666,12 +666,25 @@
               },
               "changeType": {
                 "type": "string",
-                "enum": ["establish", "action", "reaction", "detail", "scale_change", "punch_in"],
+                "enum": [
+                  "establish",
+                  "action",
+                  "reaction",
+                  "detail",
+                  "scale_change",
+                  "punch_in"
+                ],
                 "description": "Why this hard cut changes the viewer's visual information. New visual-event edits state one of the executable cut-grammar roles; this is editorial metadata, not a transition effect."
               },
               "narrativeRole": {
                 "type": "string",
-                "enum": ["hook", "exposition", "conflict", "turn", "resolution"],
+                "enum": [
+                  "hook",
+                  "exposition",
+                  "conflict",
+                  "turn",
+                  "resolution"
+                ],
                 "description": "Narrative job of this visual event. The retention gate requires a visible hook in the first 3 seconds and a resolution event in the final quarter for new visual-event edits."
               },
               "humanPresence": {
@@ -919,6 +932,15 @@
                       "strong"
                     ],
                     "description": "Film Type only: stable local contrast strength for the full moment. This is an authored decision, not automatic footage analysis."
+                  },
+                  "recipeId": {
+                    "type": "string",
+                    "enum": [
+                      "editorial-hero-balanced",
+                      "editorial-hero-compact",
+                      "editorial-callout-balanced"
+                    ],
+                    "description": "Curated Film Type editorial recipe. Arbitrary CSS/style objects are not accepted."
                   }
                 },
                 "additionalProperties": false
@@ -1300,19 +1322,29 @@
   "allOf": [
     {
       "if": {
-        "required": ["renderer_family"],
+        "required": [
+          "renderer_family"
+        ],
         "properties": {
-          "renderer_family": {"const": "persian-footage"}
+          "renderer_family": {
+            "const": "persian-footage"
+          }
         }
       },
       "then": {
-        "required": ["persian"],
+        "required": [
+          "persian"
+        ],
         "properties": {
-          "cuts": {"maxItems": 0}
+          "cuts": {
+            "maxItems": 0
+          }
         }
       },
       "else": {
-        "required": ["cuts"]
+        "required": [
+          "cuts"
+        ]
       }
     }
   ],

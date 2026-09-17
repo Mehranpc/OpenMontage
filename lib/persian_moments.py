@@ -194,6 +194,13 @@ MAX_FLAT_HERO_CHARS = 60
 #: exists to prevent, restated in colour instead of size.
 MAX_ACCENT_WORDS = 3
 
+CURATED_EDITORIAL_RECIPES: frozenset[str] = frozenset({
+    "editorial-hero-balanced", "editorial-hero-compact", "editorial-callout-balanced",
+})
+_PRESENTATION_KEYS: frozenset[str] = frozenset({
+    "treatment", "placement", "motion", "emphasis", "contrastMode", "contrastStrength", "recipeId",
+})
+
 #: Silhouette band a hook's lines must read inside, as a fraction.
 #:
 #: The silhouette ratio is the narrowest painted line width divided by the
@@ -649,6 +656,12 @@ def build_moments(
         raw_presentation = raw.get("presentation") or {}
         if not isinstance(raw_presentation, dict):
             raise ValueError(f"{where} presentation must be an object")
+        unsupported_presentation = sorted(set(raw_presentation) - _PRESENTATION_KEYS)
+        if unsupported_presentation:
+            raise ValueError(f"{where} presentation contains unsupported freeform style keys: " + ", ".join(unsupported_presentation) + ". Use a curated recipe instead of agent-generated CSS.")
+        recipe = raw_presentation.get("recipeId")
+        if recipe is not None and recipe not in CURATED_EDITORIAL_RECIPES:
+            raise ValueError(f"{where} presentation recipe {recipe!r} is unsupported; expected one of {sorted(CURATED_EDITORIAL_RECIPES)}")
 
         moments.append(
             PersianMoment(
@@ -799,7 +812,7 @@ def is_flat_display_hook(moment: PersianMoment) -> bool:
     )
 
 
-def _audit_one(moment: PersianMoment) -> list[str]:
+def _audit_one(moment: PersianMoment, *, adaptive_pixel_typography: bool = False) -> list[str]:
     """Faults internal to a single moment."""
     problems: list[str] = []
 
@@ -922,6 +935,8 @@ def _audit_one(moment: PersianMoment) -> list[str]:
 
     for segment in moment.segments:
         chars = segment.visible_chars
+        if adaptive_pixel_typography:
+            continue
         if segment.role == "hero" and not segment.accent_words and chars > MAX_HERO_CHARS:
             problems.append(
                 f"{moment.id}: hero is {chars} visible chars, above {MAX_HERO_CHARS}. "
@@ -994,7 +1009,8 @@ def _audit_one(moment: PersianMoment) -> list[str]:
 
 
 def audit_moments(
-    moments: list[PersianMoment], *, duration_seconds: float, v2: bool = False
+    moments: list[PersianMoment], *, duration_seconds: float, v2: bool = False,
+    adaptive_pixel_typography: bool = False,
 ) -> MomentAudit:
     """Audit a moment set against every rule that can be checked without rendering.
 
@@ -1016,7 +1032,7 @@ def audit_moments(
         return audit
 
     for moment in moments:
-        audit.problems.extend(_audit_one(moment))
+        audit.problems.extend(_audit_one(moment, adaptive_pixel_typography=adaptive_pixel_typography))
 
     ordered = sorted(moments, key=lambda moment: moment.start_seconds)
 
