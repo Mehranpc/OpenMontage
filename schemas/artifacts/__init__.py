@@ -1,11 +1,12 @@
-"""Artifact schema loading and validation utilities."""
+"""Artifact schema loading, contract discovery, and validation utilities."""
 
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import jsonschema
 
@@ -37,12 +38,52 @@ ARTIFACT_NAMES = [
 
 
 def load_schema(name: str) -> dict:
-    """Load a JSON schema by artifact name."""
+    """Load the single machine-readable contract for an artifact."""
     path = SCHEMA_DIR / f"{name}.schema.json"
     if not path.exists():
         raise FileNotFoundError(f"Schema not found: {path}")
     with open(path, encoding="utf-8") as f:
         return json.load(f)
+
+
+def artifact_contract(name: str) -> dict[str, Any]:
+    """Expose validator/builder/CLI metadata derived only from the JSON schema.
+
+    Agents and CLIs can inspect this compact representation instead of reading
+    Python validator source to discover required fields.
+    """
+    schema = load_schema(name)
+    properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+    required = [str(item) for item in schema.get("required") or []]
+    rows: list[str] = []
+    for field in required:
+        definition = properties.get(field) if isinstance(properties.get(field), dict) else {}
+        kind = definition.get("type") or "value"
+        description = str(definition.get("description") or "").strip()
+        rows.append(f"--{field.replace('_', '-')} <{kind}>" + (f" — {description}" if description else ""))
+    return {
+        "name": name,
+        "schemaPath": str((SCHEMA_DIR / f"{name}.schema.json").resolve()),
+        "schemaVersion": schema.get("$schema"),
+        "title": schema.get("title") or name,
+        "description": schema.get("description") or "",
+        "requiredFields": required,
+        "properties": deepcopy(properties),
+        "cliHelp": rows or ["No top-level required fields."],
+    }
+
+
+def build_artifact(name: str, values: Mapping[str, Any] | None = None, /, **fields: Any) -> dict[str, Any]:
+    """Build and validate an artifact from the same schema used at runtime."""
+    if values is not None and not isinstance(values, Mapping):
+        raise TypeError("artifact values must be a mapping")
+    payload = dict(values or {})
+    overlap = set(payload).intersection(fields)
+    if overlap:
+        raise ValueError("artifact fields supplied twice: " + ", ".join(sorted(overlap)))
+    payload.update(fields)
+    validate_artifact(name, payload)
+    return payload
 
 
 def _validate_final_review_hook_quality(data: dict[str, Any]) -> None:
@@ -182,6 +223,7 @@ def _validate_post_publish_performance(data: dict[str, Any]) -> None:
             raise jsonschema.ValidationError("post-publish captured_at timestamps must increase")
         previous_hours = hours
         previous_captured = captured
+
 
 def validate_artifact(name: str, data: dict[str, Any]) -> None:
     """Validate artifact data against its schema. Raises on failure."""
