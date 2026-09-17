@@ -220,6 +220,9 @@ def test_local_e2e_opening_shot_and_typography_carry_film_type_contract(tmp_path
     hook = edit["persian"]["moments"][0]
     assert hook["kind"] == "hook"
     assert [segment["role"] for segment in hook["segments"]] == ["lead", "hero", "tail"]
+    assert hook["purpose"] == "hook-pattern-interrupt"
+    assert "accentWords" not in hook["segments"][1]
+    assert hook["presentation"]["recipeId"] == "editorial-hero-balanced"
 
     built = build_moments(edit["persian"]["moments"])
     audit = audit_moments(
