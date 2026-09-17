@@ -41,7 +41,7 @@ def test_preflight_aggregates_independent_cheap_blockers_before_browser(monkeypa
     assert report["diagnosticLayers"] == ["contract", "retention", "hook"]
 
 
-def test_obviously_impossible_watermark_coverage_blocks_before_browser(monkeypatch, tmp_path: Path) -> None:
+def test_subject_regions_never_create_early_watermark_feasibility_blocker(monkeypatch, tmp_path: Path) -> None:
     source = tmp_path / "clip.mp4"
     source.write_bytes(b"fixture")
     payload = _payload(str(source))
@@ -50,15 +50,15 @@ def test_obviously_impossible_watermark_coverage_blocks_before_browser(monkeypat
     payload["persian"]["shots"][0]["avoidRegions"] = [
         {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0, "startSeconds": 5.0, "endSeconds": 20.0}
     ]
-    payload["persian"]["watermark"].update({"introDelaySeconds": 5.0, "minCoverageRatio": 0.7})
     monkeypatch.setattr(preflight, "audit_persian_retention", lambda _: {"problems": []})
     monkeypatch.setattr(preflight, "audit_persian_hook_quality", lambda _: {"version": "2.0", "required": False, "problems": [], "advisories": []})
-    monkeypatch.setattr(preflight, "preflight_edit_decisions", lambda *a, **k: pytest.fail("browser-heavy preflight must not run"))
+    monkeypatch.setattr(preflight, "preflight_edit_decisions", lambda *a, **k: {"ok": True, "watermarkDiagnostics": {"source": "browser"}})
 
     report = preflight.aggregate_preflight_edit_decisions(payload, base_dir=tmp_path)
-    assert report["ok"] is False
-    assert any(item["code"] == "WATERMARK_GLOBAL_FEASIBILITY" for item in report["blockingIssues"])
-    assert report["watermarkDiagnostics"]["maxTheoreticalCoverageRatio"] < 0.7
+    assert report["ok"] is True
+    assert not any(item["code"] == "WATERMARK_GLOBAL_FEASIBILITY" for item in report["blockingIssues"])
+    assert report["evidence"]["watermarkPolicy"]["subjectGeometryAgnostic"] is True
+    assert report["evidence"]["watermarkPolicy"]["collisionInputs"] == ["subtitle", "editorial_text"]
 
 
 def test_asset_technical_rejects_do_not_consume_semantic_candidate_budget(tmp_path: Path) -> None:

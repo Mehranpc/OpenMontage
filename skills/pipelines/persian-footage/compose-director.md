@@ -1,9 +1,9 @@
 ## Film Type is the active visual profile
 
-Film Type 2.14.0 / layout 14 is the default for every persian-footage run.
+Film Type 2.15.0 / layout 15 is the default for every persian-footage run.
 **This file does not restate the profile's rules.** Read
 `skills/pipelines/persian-footage/film-type.md` for the active contract, and
-`docs/persian-film-type-2.14-patch.md` for what the current version changed.
+`docs/persian-film-type-2.15-patch.md` for what the current version changed.
 Guidance for older pins lives in
 `skills/pipelines/persian-footage/film-type-history.md` — archive only.
 
@@ -158,7 +158,7 @@ The burned track is limited to one or two lines in the conservative platform-saf
 and its component returns nothing whenever an editorial moment is active. The watermark
 planner reserves that band as text geometry. Inspect actual caption frames in
 burned/hybrid mode; schema-valid props are not evidence that a phone-sized caption is
-comfortable to read. On Film Type 2.14 the Python planner and renderer use the same
+comfortable to read. On Film Type 2.15 the Python planner and renderer retain the same
 physically centered caption band. `python -m lib.persian_preflight` reports the band
 center/symmetry and hard sentence-boundary audit; treat those fields as machine
 evidence, then inspect the actual caption pixels.
@@ -607,12 +607,12 @@ remedy: an ablation render.
 two positions from `WATERMARK_TOP_FRACTION` and four phases. On Film Type it *moves*:
 `planMovingBrand` in `remotion-composer/src/persian/filmType/watermark24.ts:7–44`
 schedules slots around the prepared moment rects, bounded by `maxRelocations` 5,
-the active profile's dwell/transition policy. Film Type 2.12 introduced measured
-edge-to-edge brand/text clearance and current 2.14 retains it. 2.14 additionally
-measures whole-film visible coverage after the clean intro and treats long-form
-relocation as a target rather than a safety override. If no legal slot remains, the
-brand is explicitly absent for that interval and `filmType.warnings` records it; it is
-never grouped with the moment.
+the active profile's dwell/transition policy. Film Type 2.15 keeps measured edge-to-edge brand/text clearance and whole-film
+coverage after the clean intro, but deliberately removes subject/face/body geometry
+from watermark planning. The mark may move only among the four approved corner anchors
+and only editorial text/caption geometry may block a slot. If no legal text-clear slot
+remains, the brand is explicitly absent for that interval and `filmType.warnings`
+records it; watermark recovery never swaps footage or rewrites a scene.
 There is no single expected top fraction to pass in — take the slot boundaries from the
 prepared geometry, sample one frame inside each slot, and check the mark is where the
 schedule says and clear of that moment's rect. A single frame proves one slot, not the
@@ -789,7 +789,7 @@ the type is not in or asserting a contrast the scrim no longer guarantees.
 |---|---|---|
 | Hangs, no frames | `delayRender` never resolved — font missing | Confirm `public/fonts/estedad/` exists and `--public-dir` was not overridden |
 | "does not fit" throw | A moment's stack exceeds the height budget even at the smallest rung | Shorten it at the edit stage — split the moment, or cut the lead; the ladder bottoms out at its last rung (`HERO_LADDER_PX` in `tokens.ts` on Legacy, the profile ladders in `film-type.json` on Film Type) and the fitter throws instead of going below it |
-| "No safe moving watermark schedule" | No hard-safe watermark dwell exists under the active Film Type subject/text safety contract | Fix the edit, reviewed regions, or brand input; never weaken a truthful region or edit a frozen sidecar |
+| "No safe moving watermark schedule" | No approved Film Type 2.15 corner anchor remains clear of the safe area and measured editorial text/captions for a legal dwell | Adjust the approved anchor schedule or allow suppression for that interval; never change footage, subject regions, scenes, or frozen sidecars for watermark recovery |
 | "Unsupported Film Type tokens" | The resolved profile hash is not in the renderer's version map | The new version needs explicit versioned renderer support; do not force the hash |
 | Refused before rendering | A gate caught retired props, bad pacing, unanchored timings, or a missing music record | Read which rule the error names; fix the edit decisions, not the gate. Sync refusals → `retime_moments`; music refusals → the licence record |
 | Black beats | A shot's `source` did not resolve | `persian_compose` raises `FileNotFoundError` rather than rendering it; fix the path in the edit decisions |

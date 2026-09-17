@@ -16,9 +16,11 @@ curated `recipeId` values registered in the Film Type profile. The initial set i
 `editorial-hero-balanced`, `editorial-hero-compact`, and
 `editorial-callout-balanced`.
 
-Each recipe constrains column fractions, hero/support line counts, and an
-occupancy band. The browser still searches the versioned type-size ladder and
-rejects the moment if no measured candidate fits. Existing 2.14 and older pins
+Each recipe constrains column fractions and hero/support line counts. The upper
+occupancy bound is a hard fit limit; the target and lower occupancy preference
+rank otherwise legal candidates instead of deleting copy. The browser still
+searches the versioned type-size ladder and rejects the moment if no measured
+candidate fits. Existing 2.14 and older pins
 retain their historical character-limit and layout behavior.
 
 ## Fixed-anchor watermark planning

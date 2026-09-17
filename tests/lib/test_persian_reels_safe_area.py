@@ -10,10 +10,15 @@ class ReelsSafeAreaContracts(unittest.TestCase):
         p=resolve_design({'version':2,'profile':'film-type','seed':'test'})['resolved']
         old=json.loads((ROOT/'styles/persian-footage/film-type-2.7.0.json').read_text())
         self.assertEqual(p['contrast']['defaultStrength'],'strong')
-        # Ink/field colours and type scale stay frozen: the look must not drift.
+        # Ink/field colours and base font treatment stay frozen. 2.15 intentionally
+        # versions the display ladders/recipes for adaptive editorial hierarchy.
         for key in ('darkField','lightField'):
             self.assertEqual(p['contrast'][key],old['contrast'][key])
-        self.assertEqual(p['typography'],old['typography'])
+        for key in ('fontFamily','heroWeight','supportWeight','ink','darkInk','accent',
+                    'contextPx','supportPx','sourcePx','persianLetterSpacing','glow',
+                    'decorativeRule','supportOpacity','inlineEmphasis'):
+            self.assertEqual(p['typography'][key],old['typography'][key])
+        self.assertIn('recipes',p['typography'])
         # The field may only get softer/smaller than the 2.7 baseline, never darker
         # or larger, and it must stay a diffuse ellipse (no plate, no frame grade).
         for key,value in p['contrast']['strengths'].items():
