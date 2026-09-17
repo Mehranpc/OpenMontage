@@ -217,6 +217,9 @@ def test_local_e2e_opening_shot_and_typography_carry_film_type_contract(tmp_path
     assert opening["semanticDirection"]
     assert opening["openingSemanticMatch"] is True
     assert opening["selectionReason"]
+    for shot in edit["persian"]["shots"]:
+        assert "avoidRegions" in shot
+        assert isinstance(shot["avoidRegions"], list)
     hook = edit["persian"]["moments"][0]
     assert hook["kind"] == "hook"
     assert [segment["role"] for segment in hook["segments"]] == ["lead", "hero", "tail"]
