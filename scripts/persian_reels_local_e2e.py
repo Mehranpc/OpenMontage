@@ -301,6 +301,10 @@ def _edit_decisions(narration: Path, words: list[dict[str, Any]], clips: dict[st
             "source": str(clips[str(event["id"])]), "startSeconds": start,
             "endSeconds": start + float(event["duration_seconds"]), "sourceInSeconds": 0.0,
             "camera": event["camera"], "attribution": DISCLAIMER,
+            # Synthetic fixture shots have no protected foreground subject after
+            # explicit review. Film Type requires the reviewed geometry to be
+            # durable even when the truthful result is an empty region list.
+            "avoidRegions": [],
         })
     return {
         "version": "1.0", "cuts": [], "renderer_family": "persian-footage",
