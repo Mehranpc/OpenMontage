@@ -55,7 +55,8 @@ def _fake_aggregate(payload: dict, *, base_dir=None) -> dict:
 def _fake_compose(_self, inputs: dict):
     candidate = Path(inputs["output_path"])
     candidate.parent.mkdir(parents=True, exist_ok=True)
-    candidate.write_bytes(b"rendered-candidate" * 500)
+    payload = b"opening-candidate" if inputs.get("frames") else b"rendered-candidate"
+    candidate.write_bytes(payload * 500)
     subtitle = candidate.with_suffix(".srt")
     subtitle.write_text(
         "1\n00:00:00,000 --> 00:00:03,000\nشروع با یک تغییر کوچک روشن می‌شود.\n",
@@ -68,8 +69,8 @@ def _fake_compose(_self, inputs: dict):
             "composition_id": "PersianSubtitleVideo",
             "duration_seconds": 10.5,
             "shot_count": 4,
-            "moment_count": 0,
-            "text_coverage": 0.0,
+            "moment_count": 1,
+            "text_coverage": 0.30,
             "caption_mode": "hybrid",
             "burned_caption_count": 3,
             "subtitle_path": str(subtitle),
@@ -101,7 +102,10 @@ def _fake_extract(_candidate: Path, target: Path, times: list[float], prefix: st
     return paths
 
 
-def test_full_front_door_reaches_awaiting_human_with_v2_evidence(monkeypatch, tmp_path: Path) -> None:
+def test_full_front_door_reaches_awaiting_human_with_opening_gate_and_mastering(monkeypatch, tmp_path: Path) -> None:
+    compose_calls: list[str] = []
+    master_calls: list[str] = []
+
     def assert_phase_running(phase: str) -> None:
         state = e2e.load_workflow_state(e2e.PROJECT_ID, pipeline_dir=tmp_path)
         entry = state["phase_telemetry"][phase][-1]
@@ -122,11 +126,36 @@ def test_full_front_door_reaches_awaiting_human_with_v2_evidence(monkeypatch, tm
         return _fake_aggregate(payload, base_dir=base_dir)
 
     def fake_compose(self, inputs: dict):
-        assert_phase_running("render_final_candidate")
+        if inputs.get("frames"):
+            assert_phase_running("render_opening_candidate")
+            compose_calls.append("opening")
+        else:
+            assert_phase_running("render_final_candidate")
+            state = e2e.load_workflow_state(e2e.PROJECT_ID, pipeline_dir=tmp_path)
+            assert "opening_review" in state["completed_phases"]
+            compose_calls.append("full")
         return _fake_compose(self, inputs)
 
+    def fake_master(source: Path, output: Path) -> dict:
+        assert_phase_running("master_final_candidate")
+        master_calls.append("master")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(source.read_bytes() + b"-mastered")
+        return {
+            "policyVersion": "1.0",
+            "inputPath": str(source),
+            "inputSha256": e2e._sha(source),
+            "candidatePath": str(output),
+            "candidateSha256": e2e._sha(output),
+            "reencoded": True,
+            "reused": False,
+            "outputIntegratedLufs": -16.0,
+            "truePeakDbfs": -1.6,
+        }
+
     def fake_extract(candidate: Path, target: Path, times: list[float], prefix: str) -> list[str]:
-        assert_phase_running("final_review")
+        expected = "opening_review" if prefix.startswith("opening") else "final_review"
+        assert_phase_running(expected)
         return _fake_extract(candidate, target, times, prefix)
 
     monkeypatch.setattr(e2e, "_make_narration", fake_narration)
@@ -135,6 +164,7 @@ def test_full_front_door_reaches_awaiting_human_with_v2_evidence(monkeypatch, tm
     monkeypatch.setattr(e2e, "_make_synthetic_clips", _fake_clips)
     monkeypatch.setattr(edit_workspace, "aggregate_preflight_edit_decisions", fake_aggregate)
     monkeypatch.setattr(e2e.ScriptAlignedPersianCompose, "execute", fake_compose)
+    monkeypatch.setattr(e2e, "master_final_candidate", fake_master, raising=False)
     monkeypatch.setattr(
         e2e,
         "_probe",
@@ -155,23 +185,26 @@ def test_full_front_door_reaches_awaiting_human_with_v2_evidence(monkeypatch, tm
             "measurementSource": "rendered_mp4",
             "candidateSha256": e2e._sha(candidate),
             "outputIntegratedLufs": -16.0,
-            "truePeakDbfs": -1.5,
+            "truePeakDbfs": -1.6,
         },
         raising=False,
     )
 
     result = e2e.run_local(tmp_path)
 
+    assert compose_calls == ["opening", "full"]
+    assert master_calls == ["master"]
     assert result["workflow_status"] == "awaiting_human"
     assert result["next_phase"] is None
     assert result["alignment_policy"]["mode"] == "timing_oriented"
     assert result["alignment_policy"]["heavyTranscriptionRecoveryOnly"] is True
     assert result["preflight_report_path"]
+    assert result["opening_review_path"]
     assert result["final_review_path"]
-    assert result["candidate_sha256"]
+    assert result["candidate_sha256"] == result["mastering"]["candidateSha256"]
 
 
-def test_local_e2e_opening_shot_carries_film_type_semantic_contract(tmp_path: Path) -> None:
+def test_local_e2e_opening_shot_and_typography_carry_film_type_contract(tmp_path: Path) -> None:
     narration = tmp_path / "narration.wav"
     narration.write_bytes(b"audio")
     clips = _fake_clips(tmp_path)
@@ -183,3 +216,7 @@ def test_local_e2e_opening_shot_carries_film_type_semantic_contract(tmp_path: Pa
     assert opening["semanticDirection"]
     assert opening["openingSemanticMatch"] is True
     assert opening["selectionReason"]
+    hook = edit["persian"]["moments"][0]
+    assert hook["kind"] == "hook"
+    assert [segment["role"] for segment in hook["segments"]] == ["lead", "hero", "tail"]
+    assert hook["segments"][1]["accentWords"]
