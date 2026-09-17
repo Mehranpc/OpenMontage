@@ -45,7 +45,10 @@ PHASE_SLO_SECONDS = {
     "plan_scenes_moments": 5 * 60,
     "acquire_assets": 10 * 60,
     "no_copy_preflight": 5 * 60,
+    "render_opening_candidate": 4 * 60,
+    "opening_review": 3 * 60,
     "render_final_candidate": 15 * 60,
+    "master_final_candidate": 5 * 60,
     "final_review": 3 * 60,
 }
 END_TO_END_SLO_SECONDS = 45 * 60
@@ -60,7 +63,10 @@ PHASES = (
     "acquire_assets",
     "review_subject_regions",
     "no_copy_preflight",
+    "render_opening_candidate",
+    "opening_review",
     "render_final_candidate",
+    "master_final_candidate",
     "final_review",
     "awaiting_human",
 )
@@ -81,7 +87,10 @@ _REWIND_INVALIDATES = {
     "acquire_assets": ("assets", "edit", "compose"),
     "review_subject_regions": ("edit", "compose"),
     "no_copy_preflight": ("edit", "compose"),
+    "render_opening_candidate": ("compose",),
+    "opening_review": ("compose",),
     "render_final_candidate": ("compose",),
+    "master_final_candidate": ("compose",),
     "final_review": ("compose",),
 }
 
@@ -205,7 +214,9 @@ def _production_input_mode(*, has_script: bool, has_narration: bool) -> str:
     )
 
 
-_EXTERNAL_DURABLE_PHASES = frozenset({"acquire_assets", "render_final_candidate"})
+_EXTERNAL_DURABLE_PHASES = frozenset({
+    "acquire_assets", "render_opening_candidate", "render_final_candidate", "master_final_candidate"
+})
 
 
 def alignment_execution_policy(state: Mapping[str, Any]) -> dict[str, Any]:
@@ -225,6 +236,41 @@ def alignment_execution_policy(state: Mapping[str, Any]) -> dict[str, Any]:
         "primaryModelClass": "speech_transcription",
         "heavyTranscriptionRecoveryOnly": False,
     }
+
+
+def repair_trivial_zero_length_timings(
+    timings: Sequence[Mapping[str, Any]], *, epsilon_seconds: float = 0.08
+) -> list[dict[str, Any]]:
+    """Repair exact zero-length word timings only when the next boundary proves room.
+
+    This deterministic repair never overlaps the following word and deliberately
+    leaves ambiguous/reversed timings untouched so heavy alignment remains a real
+    fallback rather than the default response to harmless quantization.
+    """
+    if epsilon_seconds <= 0:
+        raise PersianVideoWorkflowError("epsilon_seconds must be positive")
+    repaired = [dict(item) for item in timings]
+    for index, item in enumerate(repaired):
+        pair = ("start", "end") if "start" in item or "end" in item else ("startSeconds", "endSeconds")
+        start_key, end_key = pair
+        try:
+            start = float(item[start_key]); end = float(item[end_key])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if abs(end - start) > 1e-9:
+            continue
+        next_start = None
+        if index + 1 < len(repaired):
+            nxt = repaired[index + 1]
+            next_key = "start" if "start" in nxt else "startSeconds"
+            try:
+                next_start = float(nxt[next_key])
+            except (KeyError, TypeError, ValueError):
+                next_start = None
+        if next_start is None or next_start <= start + 1e-9:
+            continue
+        item[end_key] = round(min(next_start, start + epsilon_seconds), 6)
+    return repaired
 
 
 def _execution_class_for_phase(phase: str) -> str:
@@ -276,10 +322,29 @@ def phase_time_accounting(
                 external += duration
             else:
                 editorial += duration
+    accounting_lag = 0.0
+    telemetry = state.get("phase_telemetry")
+    if isinstance(telemetry, Mapping):
+        for entries in telemetry.values():
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if isinstance(entry, Mapping):
+                    raw = entry.get("accounting_lag_seconds")
+                    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+                        accounting_lag += max(0.0, float(raw))
+    total = editorial + external
     return {
+        # Issue #28 canonical names. These dimensions are intentionally not
+        # collapsed into one wall-time number.
+        "job_runtime_seconds": round(total, 3),
+        "provider_wait_seconds": round(external, 3),
+        "accounting_lag_seconds": round(accounting_lag, 3),
+        "editorial_wall_seconds": round(editorial, 3),
+        # Backward-compatible aliases consumed by older reports/tests.
         "active_editorial_seconds": round(editorial, 3),
         "external_durable_seconds": round(external, 3),
-        "total_observed_seconds": round(editorial + external, 3),
+        "total_observed_seconds": round(total, 3),
     }
 
 
