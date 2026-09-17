@@ -319,12 +319,12 @@ def _edit_decisions(narration: Path, words: list[dict[str, Any]], clips: dict[st
             "moments": [{
                 "id": "hook-1",
                 "kind": "hook",
-                "purpose": "hook-adaptive-editorial",
+                "purpose": "hook-pattern-interrupt",
                 "startSeconds": 0.0,
                 "endSeconds": 4.6,
                 "segments": [
                     {"role": "lead", "text": "شروع با"},
-                    {"role": "hero", "text": "یک تغییر کوچک", "accentWords": ["تغییر"]},
+                    {"role": "hero", "text": "یک تغییر کوچک"},
                     {"role": "tail", "text": "روشن می‌شود."},
                 ],
                 "presentation": {
@@ -333,6 +333,7 @@ def _edit_decisions(narration: Path, words: list[dict[str, Any]], clips: dict[st
                     "motion": "soft-reveal",
                     "emphasis": "inline",
                     "contrastStrength": "strong",
+                    "recipeId": "editorial-hero-balanced",
                 },
             }],
             "typographicBeats": [],

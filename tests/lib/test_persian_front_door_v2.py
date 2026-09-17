@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import lib.persian_edit_workspace as edit_workspace
 from lib.persian_hook_quality import audit_persian_hook_quality
+from lib.persian_moments import audit_moments, build_moments
 from lib.persian_edit_workspace import artifact_sha256
 import scripts.persian_reels_local_e2e as e2e
 
@@ -219,4 +220,15 @@ def test_local_e2e_opening_shot_and_typography_carry_film_type_contract(tmp_path
     hook = edit["persian"]["moments"][0]
     assert hook["kind"] == "hook"
     assert [segment["role"] for segment in hook["segments"]] == ["lead", "hero", "tail"]
-    assert hook["segments"][1]["accentWords"]
+    assert hook["purpose"] == "hook-pattern-interrupt"
+    assert "accentWords" not in hook["segments"][1]
+    assert hook["presentation"]["recipeId"] == "editorial-hero-balanced"
+
+    built = build_moments(edit["persian"]["moments"])
+    audit = audit_moments(
+        built,
+        duration_seconds=float(edit["persian"]["durationSeconds"]),
+        v2=True,
+        adaptive_pixel_typography=True,
+    )
+    assert audit.problems == []
