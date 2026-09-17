@@ -72,7 +72,6 @@ def test_watermark_preflight_is_subject_geometry_agnostic(monkeypatch, tmp_path:
     payload["persian"]["shots"][0]["avoidRegions"] = [
         {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0, "startSeconds": 5.0, "endSeconds": 20.0}
     ]
-    payload["persian"]["watermark"].update({"introDelaySeconds": 5.0, "minCoverageRatio": 0.7})
     monkeypatch.setattr(preflight, "audit_persian_retention", lambda _: {"problems": []})
     monkeypatch.setattr(preflight, "audit_persian_hook_quality", lambda _: {"version": "2.0", "required": False, "problems": [], "advisories": []})
     monkeypatch.setattr(preflight, "preflight_edit_decisions", lambda *a, **k: {"warnings": [], "watermarkDiagnostics": None})
@@ -80,6 +79,7 @@ def test_watermark_preflight_is_subject_geometry_agnostic(monkeypatch, tmp_path:
     report = preflight.aggregate_preflight_edit_decisions(payload, base_dir=tmp_path)
 
     assert report["ok"] is True
+    assert report["evidence"]["watermarkPolicy"]["subjectGeometryAgnostic"] is True
     assert not any(item["code"] == "WATERMARK_GLOBAL_FEASIBILITY" for item in report["blockingIssues"])
 
 
