@@ -273,6 +273,81 @@ def repair_trivial_zero_length_timings(
     return repaired
 
 
+def validate_scene_plan_budget(
+    scene_plan: Mapping[str, Any], *, max_semantic_candidates: int, rejection_margin: float = 0.25
+) -> dict[str, Any]:
+    """Reject plans whose mandatory distinct events consume the sourcing safety margin."""
+    if max_semantic_candidates <= 0:
+        raise PersianVideoWorkflowError("max_semantic_candidates must be positive")
+    if not 0 <= rejection_margin < 1:
+        raise PersianVideoWorkflowError("rejection_margin must be in [0, 1)")
+    metadata = scene_plan.get("metadata") if isinstance(scene_plan, Mapping) else None
+    beats = metadata.get("beats") if isinstance(metadata, Mapping) else []
+    event_ids: list[str] = []
+    for beat in beats or []:
+        if not isinstance(beat, Mapping):
+            continue
+        for event in beat.get("visual_events") or []:
+            if not isinstance(event, Mapping):
+                continue
+            event_id = str(event.get("id") or "").strip()
+            if event_id and event_id not in event_ids:
+                event_ids.append(event_id)
+    mandatory = len(event_ids)
+    allowed = int(max_semantic_candidates * (1.0 - rejection_margin))
+    headroom = max_semantic_candidates - mandatory
+    if mandatory > allowed:
+        raise PersianVideoWorkflowError(
+            "scene plan consumes too much semantic candidate budget: "
+            f"{mandatory} mandatory distinct events leave only {headroom} candidate(s); "
+            f"policy requires at least {max_semantic_candidates - allowed} rejection-margin candidate(s)"
+        )
+    return {
+        "policyVersion": "1.0",
+        "mandatoryDistinctEvents": mandatory,
+        "maxSemanticCandidates": max_semantic_candidates,
+        "semanticCandidateHeadroom": headroom,
+        "requiredRejectionMargin": rejection_margin,
+        "eventIds": event_ids,
+    }
+
+
+def validate_scene_plan_duration(
+    scene_plan: Mapping[str, Any], *, narration_duration_seconds: float, fps: float = 30.0
+) -> dict[str, Any]:
+    """Bind the scene-plan tail to authoritative narration within one frame."""
+    if narration_duration_seconds <= 0 or fps <= 0:
+        raise PersianVideoWorkflowError("authoritative narration duration and fps must be positive")
+    scenes = scene_plan.get("scenes") if isinstance(scene_plan, Mapping) else None
+    if not isinstance(scenes, list) or not scenes:
+        raise PersianVideoWorkflowError("scene plan requires at least one scene for duration validation")
+    ends: list[float] = []
+    for scene in scenes:
+        if not isinstance(scene, Mapping):
+            raise PersianVideoWorkflowError("scene plan scenes must be objects")
+        try:
+            ends.append(float(scene["end_seconds"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PersianVideoWorkflowError("scene plan scene end_seconds must be numeric") from exc
+    plan_end = max(ends)
+    delta = abs(plan_end - float(narration_duration_seconds))
+    tolerance = 1.0 / float(fps)
+    if delta > tolerance + 1e-9:
+        raise PersianVideoWorkflowError(
+            "scene-plan end time does not match authoritative narration duration: "
+            f"plan={plan_end:.3f}s narration={narration_duration_seconds:.3f}s "
+            f"tolerance={tolerance:.3f}s"
+        )
+    return {
+        "policyVersion": "1.0",
+        "scenePlanEndSeconds": round(plan_end, 6),
+        "narrationDurationSeconds": round(float(narration_duration_seconds), 6),
+        "deltaSeconds": round(delta, 6),
+        "frameToleranceSeconds": round(tolerance, 6),
+        "withinFrameTolerance": True,
+    }
+
+
 def _execution_class_for_phase(phase: str) -> str:
     return "external_durable" if phase in _EXTERNAL_DURABLE_PHASES else "editorial"
 
