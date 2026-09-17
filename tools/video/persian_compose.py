@@ -665,7 +665,7 @@ class PersianCompose(BaseTool):
                 }
             )
 
-        if film_type and design_snapshot.get("profileVersion") in {"2.13.0", "2.14.0"}:
+        if film_type and design_snapshot.get("profileVersion") in {"2.13.0", "2.14.0", "2.15.0"}:
             opening_problems = audit_opening_semantic_shots(shots)
             if opening_problems:
                 raise ValueError(
@@ -748,8 +748,15 @@ class PersianCompose(BaseTool):
 
         duration_seconds = float(persian["durationSeconds"])
         resolved_persian = {**persian, "watermark": watermark}
-        moments = (self._build_moments(resolved_persian, duration_seconds, v2=True, measure_layout=False) if film_type
-                   else self._build_moments(resolved_persian, duration_seconds, v2=design_snapshot is not None))
+        adaptive_pixel_typography = bool(
+            film_type and design_snapshot and design_snapshot.get("profileVersion") == "2.15.0"
+        )
+        moments = (self._build_moments(
+            resolved_persian, duration_seconds, v2=True, measure_layout=False,
+            adaptive_pixel_typography=adaptive_pixel_typography,
+        ) if film_type else self._build_moments(
+            resolved_persian, duration_seconds, v2=design_snapshot is not None
+        ))
         # Film Type 2.14 adds one explicit pattern-interrupt shape: lead + hero +
         # tail, so a small context word can sit above the claim without shrinking
         # the whole hook. Older pins remain exact and refuse that new authored shape.
@@ -762,9 +769,9 @@ class PersianCompose(BaseTool):
                     and moment.get("purpose") == "hook-pattern-interrupt"
                     and roles == ["lead", "hero", "tail"]
                 )
-                if contextual_hook and profile_version != "2.14.0":
+                if contextual_hook and profile_version not in {"2.14.0", "2.15.0"}:
                     raise ValueError(
-                        "context+claim+qualifier hooks require Film Type 2.14.0; "
+                        "context+claim+qualifier hooks require Film Type 2.14.0+; "
                         "pinned older profiles keep their historical hook contract"
                     )
         # The browser bridge returns the exact lockup geometry used by the V2 planner.
@@ -902,7 +909,7 @@ class PersianCompose(BaseTool):
 
     @staticmethod
     def _build_moments(
-        persian: dict[str, Any], duration_seconds: float, *, v2: bool = False, measure_layout: bool = True
+        persian: dict[str, Any], duration_seconds: float, *, v2: bool = False, measure_layout: bool = True, adaptive_pixel_typography: bool = False
     ) -> list[dict[str, Any]]:
         """Normalize, audit, and return the typographic moments.
 
@@ -965,7 +972,7 @@ class PersianCompose(BaseTool):
         lockup_measurement = None
         if v2 and measure_layout and not __import__("os").environ.get("PERSIAN_SKIP_OPTIONAL_BRIDGE"):
             lockup_measurement = _maybe_attach_stack_heights(built, str(persian.get("format") or "vertical"), enforce_silhouette=v2, watermark=persian.get("watermark") or {})
-        audit = audit_moments(built, duration_seconds=duration_seconds, v2=v2)
+        audit = audit_moments(built, duration_seconds=duration_seconds, v2=v2, adaptive_pixel_typography=adaptive_pixel_typography)
         if not audit.passed:
             raise ValueError(
                 "the moment set breaks its pacing rules, so it is refused before "

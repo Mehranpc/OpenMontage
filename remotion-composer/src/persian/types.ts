@@ -139,12 +139,14 @@ export type PersianV2Placement = "upper-left" | "upper-right" | "mid-left" | "mi
 export type PersianV2Motion = "soft-reveal" | "cut-in";
 export type PersianV2Emphasis = "none" | "inline";
 export type PersianV2ContrastMode = "dark" | "light";
+export type PersianEditorialRecipe = "editorial-hero-balanced" | "editorial-hero-compact" | "editorial-callout-balanced";
 export type PersianPresentation = {
   readonly treatment?: PersianV2Treatment;
   readonly placement?: PersianV2Placement;
   readonly motion?: PersianV2Motion;
   readonly emphasis?: PersianV2Emphasis;
   readonly contrastMode?: PersianV2ContrastMode;
+  readonly recipeId?: PersianEditorialRecipe;
   /** Film Type only; stable for the entire moment, not frame-adaptive. */
   readonly contrastStrength?: "soft" | "standard" | "strong";
 };

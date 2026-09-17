@@ -21,7 +21,7 @@ export type CaptionPaintStyle = {
 export function captionPaintStyle(
   format: PersianFormat, design?: PersianDesignSnapshot,
 ): CaptionPaintStyle {
-  const refined = design?.profile === "film-type" && design.profileVersion === "2.14.0";
+  const refined = design?.profile === "film-type" && (design.profileVersion === "2.14.0" || design.profileVersion === "2.15.0");
   return {
     fontPx: refined ? (format === "vertical" ? 46 : 38) : CAPTION_FONT_PX[format],
     fontWeight: refined ? 600 : 700,
@@ -72,7 +72,7 @@ export function captionBandRect(
   // right for Reels UI), so centring within the raw safe-area span would leave the
   // panel visibly left-shifted. Use the stricter side inset symmetrically; older
   // pinned profiles keep their exact historical rectangle.
-  const physicallyCentered = design?.profile === "film-type" && (design.profileVersion === "2.13.0" || design.profileVersion === "2.14.0");
+  const physicallyCentered = design?.profile === "film-type" && (design.profileVersion === "2.13.0" || design.profileVersion === "2.14.0" || design.profileVersion === "2.15.0");
   const x = physicallyCentered
     ? Math.max(safe.left, safe.right) + CAPTION_EDGE_GAP_FRACTION
     : safe.left + CAPTION_EDGE_GAP_FRACTION;

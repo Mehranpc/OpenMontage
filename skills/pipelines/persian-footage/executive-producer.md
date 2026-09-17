@@ -1,9 +1,9 @@
 ## Film Type is the active visual profile
 
-Film Type 2.14.0 / layout 14 is the default for every persian-footage run.
+Film Type 2.15.0 / layout 15 is the default for every persian-footage run.
 **This file does not restate the profile's rules.** Read
 `skills/pipelines/persian-footage/film-type.md` for the active contract, and
-`docs/persian-film-type-2.14-patch.md` for what the current version changed.
+`docs/persian-film-type-2.15-patch.md` for what the current version changed.
 Guidance for older pins lives in
 `skills/pipelines/persian-footage/film-type-history.md` — archive only.
 
@@ -84,10 +84,12 @@ Real stock footage carrying **designed typographic moments**, plus platform-nati
 - **A semantic opening contract.** Hook footage carries reviewed semantic direction,
   subject/human presence, and selected-window evidence; a visually reversed action is
   rejected rather than accepted as generic emotional stock.
-- **A coverage-aware moving brand watermark.** Safety geometry is authoritative;
-  unsafe intervals may remain blank and long-form relocation remains a target rather
-  than permission to violate text/subject clearance. `WATERMARK_TOP_FRACTION` is a
-  Legacy model, not the Film Type watermark model.
+- **A bounded fixed-anchor brand watermark.** On Film Type 2.15 the planner may
+  use only the four approved corner anchors. Safe-area plus measured editorial
+  text/caption geometry are authoritative; subject/face/body regions are deliberately
+  ignored by watermark planning. Unsafe text-collision intervals may remain blank,
+  and watermark recovery never swaps footage or rewrites a scene.
+  `WATERMARK_TOP_FRACTION` is a Legacy model, not the Film Type watermark model.
 - **Motion** from a defined grammar: four spring weights, arrival/exit verbs, and
   a living-hold that never transforms settled glyphs.
 

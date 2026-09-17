@@ -219,7 +219,7 @@ def test_read_allowlist_permits_current_source_and_contracts_but_not_siblings(tm
     required_contracts = [
         ROOT / "skills" / "persian-video" / "SKILL.md",
         ROOT / "skills" / "meta" / "reviewer.md",
-        ROOT / "docs" / "persian-film-type-2.14-patch.md",
+        ROOT / "docs" / "persian-film-type-2.15-patch.md",
         ROOT / "docs" / "film-type-visual-regression.md",
         ROOT / "styles" / "persian-footage" / "film-type.json",
         ROOT / ".agents" / "skills" / "music" / "SKILL.md",
@@ -277,7 +277,8 @@ def test_phase_order_is_exact_and_skips_are_refused(tmp_path):
     assert PHASES == (
         "validate_input", "create_project", "open_backlot", "prepare_inputs",
         "align_script_timing", "plan_scenes_moments", "acquire_assets",
-        "review_subject_regions", "no_copy_preflight", "render_final_candidate",
+        "review_subject_regions", "no_copy_preflight", "render_opening_candidate",
+        "opening_review", "render_final_candidate", "master_final_candidate",
         "final_review", "awaiting_human",
     )
     state, _ = _bootstrap(tmp_path)

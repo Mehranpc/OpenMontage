@@ -1,9 +1,9 @@
 ## Film Type is the active visual profile
 
-Film Type 2.14.0 / layout 14 is the default for every persian-footage run.
+Film Type 2.15.0 / layout 15 is the default for every persian-footage run.
 **This file does not restate the profile's rules.** Read
 `skills/pipelines/persian-footage/film-type.md` for the active contract, and
-`docs/persian-film-type-2.14-patch.md` for what the current version changed.
+`docs/persian-film-type-2.15-patch.md` for what the current version changed.
 Guidance for older pins lives in
 `skills/pipelines/persian-footage/film-type-history.md` — archive only.
 
@@ -224,26 +224,23 @@ gap, its two-beat arrival, and — on Legacy only — the silhouette gate), beca
 opening frame that had to look like its content to be recognised would not be
 declared at all. `kind` also selects which Film Type ladder applies.
 
-### Character ceilings, per role
+### Copy length: pixel-fit on active 2.15
 
-Ceilings are per segment, enforced by `audit_moments` — the values live in
-`lib/persian_moments.py` (`MAX_HERO_CHARS`, `MAX_SUPPORT_CHARS`,
-`MAX_SOURCE_CHARS`, `MAX_FLAT_HERO_CHARS`), which is their single source of truth:
+Film Type 2.15 deliberately does **not** use the historical per-role character
+ceilings as a render-acceptance proxy. `persian_compose` calls
+`audit_moments(..., adaptive_pixel_typography=True)` for the active profile, so a
+longer authored phrase survives to the browser and is accepted or refused by real
+Estedad measurement, safe-area geometry, line budgets, and a curated recipe.
 
-- `hero` ≤ the hero ceiling.
-- `lead` / `tail` ≤ the support ceiling.
-- `source` ≤ the source ceiling.
-- A flat-hook hero (one hero carrying `accentWords`, a whole sentence at one size)
-  ≤ the flat-hero ceiling — a longer sentence is a paragraph, not a hook.
+The `MAX_*_CHARS` constants remain authoritative for Legacy and pinned older Film
+Type versions; they are reproduction behavior, not the 2.15 editorial contract. Do
+not shorten a 2.15 hook or callout merely to satisfy those historical numbers.
 
-These ceilings apply to every profile. They are enforced in
-`lib/persian_moments.py:820–841`, outside any `v2` branch, and the audit runs before
-every render.
-
-These are generous enough for a full phrase and tight enough that the type ladder
-(see below) never has to shrink the emphasis into invisibility. A statement that
-needs more than the hero ceiling for its hero is two moments, or a poster line that has
-not been cut yet.
+On 2.15 choose one registered `presentation.recipeId` when an explicit recipe is
+needed: `editorial-hero-balanced`, `editorial-hero-compact`, or
+`editorial-callout-balanced`. Agents cannot invent CSS, font sizes, or arbitrary
+recipe names. If no measured candidate fits, revise the editorial structure, crop,
+placement, or timing explicitly; never apply an automatic word-count truncation.
 
 ### Hook refusals
 
@@ -354,7 +351,7 @@ common right edge and no single band, so do not describe the layout to a reviewe
 a spine.
 
 What holds in both: the position is computed, never authored for aesthetic reasons.
-Film Type 2.12 introduced binding explicit placement; current 2.14 retains it. Missing
+Film Type 2.12 introduced binding explicit placement; current 2.15 retains it. Missing
 reviewed avoid regions is a refusal, and a blocked authored zone is a refusal.
 
 Contrast is profile-specific. The `5.6:1` floor is Legacy (`lib/persian_verify.py:193`);
@@ -623,7 +620,7 @@ do not certify semantics from a single thumbnail.
 
 A moment lands on a shot. Prefer a shot whose subject is low or left in frame, or
 whose motion has settled. Neither profile detects subjects. Film Type 2.12 introduced conservative machine-estimated
-`avoidRegions` on every overlapping shot and current 2.14 retains that requirement (use `[]` only after the agent checks the
+`avoidRegions` on every overlapping shot and current 2.15 retains that typography requirement (use `[]` only after the agent checks the
 whole crop/camera move) and rejects intersecting candidates. Human approval applies
 to the complete rendered candidate. A wide
 block over a centre-framed face therefore goes back to the edit for shorter copy, a
@@ -703,8 +700,9 @@ before committing to the whole render.
 What editing alone does **not** do: the checkpoint copy and any props snapshot are
 not render inputs, so changing them without re-running `persian_compose` changes
 nothing on screen. And expect the same refusals a fresh edit meets — retired keys,
-the reading-time ceiling, the per-role character caps (`MAX_*_CHARS` in
-`lib/persian_moments.py`), the sync-drift tolerance in `lib/persian_sync.py`, the
+the reading-time ceiling, measured adaptive pixel fit on Film Type 2.15 (historical
+`MAX_*_CHARS` caps only on Legacy/older pins), the sync-drift tolerance in
+`lib/persian_sync.py`, the
 silhouette band on Legacy (`HOOK_SILHOUETTE_*` in `tokens.ts`), and the music record
 gate in `lib/persian_music.py`. The check names its constants; the values live in
 code, not here.
@@ -789,7 +787,8 @@ sometimes, which is exactly why a machine cannot decide it.
   ≤ 0.6s.
 - Every moment is one phrase: ordered `segments`, exactly one `hero` per reveal
   step, at most one `source` and it is last.
-- No segment over its ceiling: hero 30, lead/tail 42, source 40 visible characters.
+- On Film Type 2.15, copy passes the curated browser pixel-fit contract; no hard
+  character ceiling substitutes for measurement. Legacy/older pins keep their caps.
 - No retired keys anywhere: `text`, `label`, `kicker`, `unit`, `highlight` on
   moments; `cues`, `hookText` in the block.
 - Narrated mode: canonical `persian.musicTrack` (or an explicit `omitMusicReason`); compose derives runtime `audio.music`;

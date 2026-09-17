@@ -249,8 +249,6 @@ def preflight_edit_decisions(
     payload: dict[str, Any], *, base_dir: Path | None = None
 ) -> dict[str, Any]:
     edit = extract_edit_decisions(payload)
-    # Contract validation is intentionally first: schema/path/music drift should
-    # fail before retention logic or Chromium can turn it into a secondary error.
     validate_persian_edit_contract(edit, base_dir=base_dir)
     retention = audit_persian_retention(edit["persian"])
     if retention["problems"]:
@@ -349,11 +347,11 @@ def _merge_intervals(intervals: list[tuple[float, float]]) -> list[tuple[float, 
 
 
 def _early_watermark_feasibility(edit: dict[str, Any]) -> dict[str, Any] | None:
-    """Conservatively detect timeline-wide watermark impossibility before Chromium.
+    """Legacy conservative subject-geometry feasibility helper.
 
-    This cheap gate only treats near-full-frame avoid regions as globally blocking.
-    Partial subject regions still require the real Film Type geometry planner, so this
-    cannot create false confidence or replace browser validation.
+    Retained for compatibility with callers that import it directly, but Issue #28
+    removes it from the production aggregate path: watermark placement is now
+    subject/face/body/footage agnostic.
     """
     persian = edit.get("persian")
     if not isinstance(persian, dict):
@@ -364,7 +362,6 @@ def _early_watermark_feasibility(edit: dict[str, Any]) -> dict[str, Any] | None:
     intro = max(0.0, min(duration, float(watermark.get("introDelaySeconds") or 0.0)))
     if duration <= 0 or minimum <= 0:
         return None
-
     blocked: list[tuple[float, float]] = []
     for shot in persian.get("shots") or []:
         if not isinstance(shot, dict):
@@ -379,14 +376,12 @@ def _early_watermark_feasibility(edit: dict[str, Any]) -> dict[str, Any] | None:
                 w = float(region.get("w", 0.0)); h = float(region.get("h", 0.0))
             except (TypeError, ValueError):
                 continue
-            # Only an almost-full-frame region is a deterministic global blocker.
             if x > 0.01 or y > 0.01 or x + w < 0.99 or y + h < 0.99:
                 continue
             start = max(intro, float(region.get("startSeconds", shot_start)))
             end = min(duration, float(region.get("endSeconds", shot_end)))
             if end > start:
                 blocked.append((start, end))
-
     merged = _merge_intervals(blocked)
     blocked_seconds = sum(end - start for start, end in merged)
     possible_seconds = max(0.0, duration - intro - blocked_seconds)
@@ -402,7 +397,7 @@ def _early_watermark_feasibility(edit: dict[str, Any]) -> dict[str, Any] | None:
             for start, end in merged
         ],
         "feasible": max_ratio + 1e-9 >= floor,
-        "calculation": "conservative-full-frame-avoid-region-v1",
+        "calculation": "legacy-conservative-full-frame-avoid-region-v1",
     }
 
 
@@ -480,23 +475,16 @@ def aggregate_preflight_edit_decisions(
                 "Revise the opening hook evidence/copy/edit; do not substitute decorative pattern interrupts for semantic value."
             )
 
-    watermark_feasibility = _early_watermark_feasibility(edit)
-    if watermark_feasibility is not None:
-        evidence["watermarkGlobalFeasibility"] = watermark_feasibility
-        if not watermark_feasibility["feasible"]:
-            layers.append("watermark")
-            blocking.append({
-                "code": "WATERMARK_GLOBAL_FEASIBILITY",
-                "message": (
-                    "watermark coverage is globally infeasible before browser layout: "
-                    f"maximum theoretical coverage {watermark_feasibility['maxTheoreticalCoverageRatio']:.3f} "
-                    f"< floor {watermark_feasibility['coverageFloor']:.3f}"
-                ),
-                "recoveryClass": "WATERMARK_TIMING",
-            })
-            actions.append(
-                "Change shot/avoid-region timing or footage so watermark coverage is feasible; keep the configured coverage floor unchanged."
-            )
+    # Issue #28: watermark is deliberately footage/subject agnostic. Shot
+    # avoidRegions describe editorial subject safety and must never create a
+    # watermark blocker, asset swap, or scene rewrite. The browser planner may
+    # only diagnose collisions against actual text/subtitle geometry.
+    watermark_feasibility = None
+    evidence["watermarkPolicy"] = {
+        "placement": "approved-fixed-anchors",
+        "subjectGeometryAgnostic": True,
+        "collisionInputs": ["subtitle", "editorial_text"],
+    }
 
     if blocking:
         return _report(
@@ -513,8 +501,8 @@ def aggregate_preflight_edit_decisions(
         browser_evidence = preflight_edit_decisions(edit, base_dir=root)
     except FilmTypePreflightError as exc:
         actions = [
-            "Use watermarkDiagnostics.topBlockers and suppressionGaps to re-edit timing/placement or footage.",
-            "Keep the configured coverage floor and subject-region safety unchanged.",
+            "Use watermarkDiagnostics to choose another approved fixed anchor or suppress only the colliding watermark interval.",
+            "Do not change footage, scenes, subject regions, copy, or asset selection for watermark recovery.",
         ] if exc.diagnostics else ["Resolve the Film Type browser-preflight refusal and retry."]
         return _report(
             ok=False, edit=edit,
@@ -546,7 +534,7 @@ def aggregate_preflight_edit_decisions(
         edit=edit,
         blocking=[],
         warnings=browser_evidence.get("warnings") or [],
-        evidence=browser_evidence,
+        evidence={**evidence, **browser_evidence},
         watermark_diagnostics=browser_evidence.get("watermarkDiagnostics") or watermark_feasibility,
         diagnostic_layers=["contract", "retention", "hook", "watermark", "browser"],
     )

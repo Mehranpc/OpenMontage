@@ -24,7 +24,12 @@ if str(ROOT) not in sys.path:
 
 from lib.checkpoint import write_checkpoint
 from lib.persian_assets import assert_video_only, audit_asset_manifest
-from lib.persian_rendered_review import build_cold_viewer_review_input, measure_rendered_audio_output
+from lib.persian_finalization import master_final_candidate
+from lib.persian_rendered_review import (
+    build_cold_viewer_review_input,
+    measure_rendered_audio_output,
+    validate_rendered_hook_review,
+)
 from lib.persian_retention import audit_persian_retention
 from lib.persian_scenes import audit_scene_plan
 from lib.persian_srt_alignment import build_script_aligned_cues
@@ -41,7 +46,7 @@ from lib.persian_video_workflow import (
     record_phase_failure,
     stage_workflow_edit_draft,
 )
-from schemas.artifacts import validate_artifact
+from schemas.artifacts import build_artifact, validate_artifact
 from tools.video.persian_compose_script_aligned import ScriptAlignedPersianCompose
 
 SCRIPT = (
@@ -310,7 +315,27 @@ def _edit_decisions(narration: Path, words: list[dict[str, Any]], clips: dict[st
                        "seed": "persian-reels-local-e2e-film-type-01"},
             "format": "vertical", "durationSeconds": 10.5,
             "platformTarget": "instagram-reels", "captionMode": "hybrid",
-            "shots": shots, "moments": [], "typographicBeats": [],
+            "shots": shots,
+            "moments": [{
+                "id": "hook-1",
+                "kind": "hook",
+                "purpose": "hook-adaptive-editorial",
+                "startSeconds": 0.0,
+                "endSeconds": 4.6,
+                "segments": [
+                    {"role": "lead", "text": "شروع با"},
+                    {"role": "hero", "text": "یک تغییر کوچک", "accentWords": ["تغییر"]},
+                    {"role": "tail", "text": "روشن می‌شود."},
+                ],
+                "presentation": {
+                    "placement": "auto",
+                    "treatment": "editorial",
+                    "motion": "soft-reveal",
+                    "emphasis": "inline",
+                    "contrastStrength": "strong",
+                },
+            }],
+            "typographicBeats": [],
             "audio": {"narration": str(narration), "wordTimings": words},
             "omitMusicReason": "Local E2E harness isolates narration/caption/render gates.",
         },
@@ -445,6 +470,81 @@ def _extract_frames(candidate: Path, target: Path, times: list[float], prefix: s
     return paths
 
 
+def _build_opening_review(
+    opening: Path, frames: list[str], project: Path, hook_audit: dict[str, Any],
+    *, edit_artifact_sha256: str,
+) -> tuple[Path, dict[str, Any]]:
+    opening_sha = _sha(opening)
+    cold_input = build_cold_viewer_review_input(
+        candidate_sha256=opening_sha,
+        opening_evidence={
+            "framePaths": list(frames),
+            "startSeconds": 0.0,
+            "endSeconds": 4.6,
+        },
+    )
+    cold_path = _write_json(
+        project / "artifacts" / "opening_cold_viewer_review_input.json", cold_input
+    )
+    cold_sha = _sha(cold_path)
+    hook_review = {
+        "version": "2.0",
+        "reviewSource": "rendered_mp4",
+        "reviewerRole": "independent_reviewer",
+        "reviewedCandidateSha256": opening_sha,
+        "strength": "acceptable",
+        "rationale": (
+            "Trial-only opening-gate review: the muted rendered opening establishes "
+            "the visual direction and the adaptive hierarchy remains readable."
+        ),
+        "observations": [
+            "The muted opening communicates a specific visible change.",
+            "The hero phrase dominates its support text without filling the safe area.",
+        ],
+        "mutedHookDirectionConfirmed": True,
+        "visualVoiceAlignment": "acceptable",
+        "actualPayoffSeconds": 2.4,
+        "concretePayoffKind": "demonstration",
+        "payoffEvidence": "The second visual event begins the concrete change at 2.4s.",
+        "payoffBeginsPromptly": True,
+        "coldViewer": {
+            "evidenceSource": "rendered_opening_only",
+            "contextIsolated": True,
+            "inferredTopic": "تغییر جهت یک الگوی نور متحرک",
+            "inferredClaim": "افتتاحیه یک تغییر مشخص را مطرح می‌کند",
+            "continuationReason": "می‌خواهم ببینم این تغییر چطور کامل می‌شود",
+            "unresolvedReferents": [],
+            "reviewInputSha256": cold_sha,
+        },
+        "visualTypography": {
+            "policyVersion": "1.0",
+            "evidenceSource": "rendered_opening_pixels",
+            "hierarchyPassed": True,
+            "occupancyRatio": 0.31,
+            "emphasisPassed": True,
+            "lineBalancePassed": True,
+            "opticalPlacementPassed": True,
+            "durationSeconds": 4.6,
+            "recipeId": "editorial-hero-balanced",
+        },
+    }
+    validate_rendered_hook_review(
+        hook_review, candidate_sha256=opening_sha, require_pass=True
+    )
+    review = {
+        "version": "1.0",
+        "status": "pass",
+        "openingCandidatePath": str(opening),
+        "openingCandidateSha256": opening_sha,
+        "editArtifactSha256": edit_artifact_sha256,
+        "hookQualityAudit": hook_audit,
+        "hookQualityReview": hook_review,
+        "coldViewerReviewInput": {"path": str(cold_path), "sha256": cold_sha},
+    }
+    path = _write_json(project / "artifacts" / "opening_review.json", review)
+    return path, review
+
+
 def _attempt_complete(root: Path, phase: str, evidence: dict[str, Any]) -> None:
     record_phase_attempt(PROJECT_ID, phase, pipeline_dir=root)
     complete_phase(PROJECT_ID, phase, evidence=evidence, pipeline_dir=root)
@@ -570,6 +670,17 @@ def _build_final_review(
             "continuationReason": "می‌خواهم ببینم این تغییر چطور کامل می‌شود",
             "unresolvedReferents": [],
             "reviewInputSha256": cold_input_sha,
+        },
+        "visualTypography": {
+            "policyVersion": "1.0",
+            "evidenceSource": "rendered_opening_pixels",
+            "hierarchyPassed": True,
+            "occupancyRatio": 0.31,
+            "emphasisPassed": True,
+            "lineBalancePassed": True,
+            "opticalPlacementPassed": True,
+            "durationSeconds": 4.6,
+            "recipeId": "editorial-hero-balanced",
         },
     }
     review = {
@@ -772,11 +883,59 @@ def run_local(root: Path) -> dict[str, Any]:
     complete_phase(
         PROJECT_ID, "no_copy_preflight", evidence={"attempt_id": attempt_id}, pipeline_dir=root
     )
-    candidate = project / "renders" / "candidate.mp4"
+    edit_artifact_sha256 = str(preflight["artifactSha256"])
+    hook_audit = ((preflight.get("evidence") or {}).get("hookQualityAudit"))
+    if not isinstance(hook_audit, dict) or hook_audit.get("required") is not True:
+        raise RuntimeError(
+            "front-door preflight did not persist required Hook Quality v2 evidence"
+        )
+
+    opening = project / "renders" / "opening-candidate.mp4"
+    record_phase_attempt(PROJECT_ID, "render_opening_candidate", pipeline_dir=root)
+    try:
+        opening_result = ScriptAlignedPersianCompose().execute({
+            "edit_decisions": canonical_edit, "output_path": str(opening), "crf": 20,
+            "concurrency": 2, "timeout_ms": 120000, "frames": "0-149"})
+        if not opening_result.success:
+            raise RuntimeError(opening_result.error or "Persian opening compose failed")
+    except Exception as exc:
+        record_phase_failure(
+            PROJECT_ID, "render_opening_candidate", reason=str(exc), pipeline_dir=root
+        )
+        raise
+    complete_phase(PROJECT_ID, "render_opening_candidate", evidence={
+        "output_path": str(opening),
+        "opening_candidate_sha256": _sha(opening),
+        "edit_artifact_sha256": edit_artifact_sha256,
+    }, pipeline_dir=root)
+
+    record_phase_attempt(PROJECT_ID, "opening_review", pipeline_dir=root)
+    try:
+        opening_frames = _extract_frames(
+            opening, project / "artifacts" / "opening-review-frames",
+            [0.25, 1.0, 2.4, 4.2], "opening"
+        )
+        opening_review_path, opening_review = _build_opening_review(
+            opening, opening_frames, project, hook_audit,
+            edit_artifact_sha256=edit_artifact_sha256,
+        )
+    except Exception as exc:
+        record_phase_failure(
+            PROJECT_ID, "opening_review", reason=str(exc), pipeline_dir=root
+        )
+        raise
+    complete_phase(PROJECT_ID, "opening_review", evidence={
+        "opening_review_path": str(opening_review_path),
+        "opening_review_sha256": _sha(opening_review_path),
+        "opening_candidate_sha256": opening_review["openingCandidateSha256"],
+        "edit_artifact_sha256": edit_artifact_sha256,
+    }, pipeline_dir=root)
+
+    rendered = project / "renders" / "rendered.mp4"
     record_phase_attempt(PROJECT_ID, "render_final_candidate", pipeline_dir=root)
     try:
         result = ScriptAlignedPersianCompose().execute({
-            "edit_decisions": canonical_edit, "output_path": str(candidate), "crf": 20,
+            "edit_decisions": canonical_edit, "output_path": str(rendered), "crf": 20,
             "concurrency": 2, "timeout_ms": 120000})
         if not result.success:
             raise RuntimeError(result.error or "Persian compose failed")
@@ -787,9 +946,25 @@ def run_local(root: Path) -> dict[str, Any]:
         )
         raise
     complete_phase(PROJECT_ID, "render_final_candidate", evidence={
-        "output_path": str(candidate),
+        "output_path": str(rendered),
+        "edit_artifact_sha256": edit_artifact_sha256,
         "motion_qa_passed": data["post_render_motion_qa"]["passed"],
     }, pipeline_dir=root)
+
+    record_phase_attempt(PROJECT_ID, "master_final_candidate", pipeline_dir=root)
+    try:
+        mastering = master_final_candidate(rendered, project / "renders" / "candidate.mp4")
+        candidate = Path(mastering["candidatePath"])
+    except Exception as exc:
+        record_phase_failure(
+            PROJECT_ID, "master_final_candidate", reason=str(exc), pipeline_dir=root
+        )
+        raise
+    complete_phase(PROJECT_ID, "master_final_candidate", evidence={
+        **mastering,
+        "edit_artifact_sha256": edit_artifact_sha256,
+    }, pipeline_dir=root)
+
     record_phase_attempt(PROJECT_ID, "final_review", pipeline_dir=root)
     try:
         probe = _probe(candidate)
@@ -800,11 +975,6 @@ def run_local(root: Path) -> dict[str, Any]:
         caption_frames = _extract_frames(candidate, project / "artifacts" / "caption-review-frames",
                                          [1.0, 5.6, 9.0], "caption")
         rendered_audio = measure_rendered_audio_output(candidate)
-        hook_audit = ((preflight.get("evidence") or {}).get("hookQualityAudit"))
-        if not isinstance(hook_audit, dict) or hook_audit.get("required") is not True:
-            raise RuntimeError(
-                "front-door preflight did not persist required Hook Quality v2 evidence"
-            )
         review_path = _build_final_review(
             candidate, review_frames, cold_frames, data.get("subtitle_path"), probe, project,
             hook_audit, rendered_audio,
@@ -827,6 +997,9 @@ def run_local(root: Path) -> dict[str, Any]:
         "ok": True, "production_certified": False, "disclaimer": DISCLAIMER,
         "project_root": str(project), "candidate_path": str(candidate),
         "candidate_sha256": _sha(candidate), "workflow_status": terminal["status"],
+        "opening_review_path": str(opening_review_path),
+        "opening_candidate_sha256": opening_review["openingCandidateSha256"],
+        "mastering": mastering,
         "next_phase": terminal.get("next_phase"), "caption_mode": data["caption_mode"],
         "burned_caption_count": data["burned_caption_count"],
         "subtitle_path": data.get("subtitle_path"), "scene_sourcing_order": scene_audit["sourcing_order"],

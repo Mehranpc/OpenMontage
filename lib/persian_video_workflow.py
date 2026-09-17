@@ -45,7 +45,10 @@ PHASE_SLO_SECONDS = {
     "plan_scenes_moments": 5 * 60,
     "acquire_assets": 10 * 60,
     "no_copy_preflight": 5 * 60,
+    "render_opening_candidate": 4 * 60,
+    "opening_review": 3 * 60,
     "render_final_candidate": 15 * 60,
+    "master_final_candidate": 5 * 60,
     "final_review": 3 * 60,
 }
 END_TO_END_SLO_SECONDS = 45 * 60
@@ -60,7 +63,10 @@ PHASES = (
     "acquire_assets",
     "review_subject_regions",
     "no_copy_preflight",
+    "render_opening_candidate",
+    "opening_review",
     "render_final_candidate",
+    "master_final_candidate",
     "final_review",
     "awaiting_human",
 )
@@ -81,7 +87,10 @@ _REWIND_INVALIDATES = {
     "acquire_assets": ("assets", "edit", "compose"),
     "review_subject_regions": ("edit", "compose"),
     "no_copy_preflight": ("edit", "compose"),
+    "render_opening_candidate": ("compose",),
+    "opening_review": ("compose",),
     "render_final_candidate": ("compose",),
+    "master_final_candidate": ("compose",),
     "final_review": ("compose",),
 }
 
@@ -205,7 +214,9 @@ def _production_input_mode(*, has_script: bool, has_narration: bool) -> str:
     )
 
 
-_EXTERNAL_DURABLE_PHASES = frozenset({"acquire_assets", "render_final_candidate"})
+_EXTERNAL_DURABLE_PHASES = frozenset({
+    "acquire_assets", "render_opening_candidate", "render_final_candidate", "master_final_candidate"
+})
 
 
 def alignment_execution_policy(state: Mapping[str, Any]) -> dict[str, Any]:
@@ -224,6 +235,116 @@ def alignment_execution_policy(state: Mapping[str, Any]) -> dict[str, Any]:
         "scriptAuthority": authority,
         "primaryModelClass": "speech_transcription",
         "heavyTranscriptionRecoveryOnly": False,
+    }
+
+
+def repair_trivial_zero_length_timings(
+    timings: Sequence[Mapping[str, Any]], *, epsilon_seconds: float = 0.08
+) -> list[dict[str, Any]]:
+    """Repair exact zero-length word timings only when the next boundary proves room.
+
+    This deterministic repair never overlaps the following word and deliberately
+    leaves ambiguous/reversed timings untouched so heavy alignment remains a real
+    fallback rather than the default response to harmless quantization.
+    """
+    if epsilon_seconds <= 0:
+        raise PersianVideoWorkflowError("epsilon_seconds must be positive")
+    repaired = [dict(item) for item in timings]
+    for index, item in enumerate(repaired):
+        pair = ("start", "end") if "start" in item or "end" in item else ("startSeconds", "endSeconds")
+        start_key, end_key = pair
+        try:
+            start = float(item[start_key]); end = float(item[end_key])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if abs(end - start) > 1e-9:
+            continue
+        next_start = None
+        if index + 1 < len(repaired):
+            nxt = repaired[index + 1]
+            next_key = "start" if "start" in nxt else "startSeconds"
+            try:
+                next_start = float(nxt[next_key])
+            except (KeyError, TypeError, ValueError):
+                next_start = None
+        if next_start is None or next_start <= start + 1e-9:
+            continue
+        item[end_key] = round(min(next_start, start + epsilon_seconds), 6)
+    return repaired
+
+
+def validate_scene_plan_budget(
+    scene_plan: Mapping[str, Any], *, max_semantic_candidates: int, rejection_margin: float = 0.25
+) -> dict[str, Any]:
+    """Reject plans whose mandatory distinct events consume the sourcing safety margin."""
+    if max_semantic_candidates <= 0:
+        raise PersianVideoWorkflowError("max_semantic_candidates must be positive")
+    if not 0 <= rejection_margin < 1:
+        raise PersianVideoWorkflowError("rejection_margin must be in [0, 1)")
+    metadata = scene_plan.get("metadata") if isinstance(scene_plan, Mapping) else None
+    beats = metadata.get("beats") if isinstance(metadata, Mapping) else []
+    event_ids: list[str] = []
+    for beat in beats or []:
+        if not isinstance(beat, Mapping):
+            continue
+        for event in beat.get("visual_events") or []:
+            if not isinstance(event, Mapping):
+                continue
+            event_id = str(event.get("id") or "").strip()
+            if event_id and event_id not in event_ids:
+                event_ids.append(event_id)
+    mandatory = len(event_ids)
+    allowed = int(max_semantic_candidates * (1.0 - rejection_margin))
+    headroom = max_semantic_candidates - mandatory
+    if mandatory > allowed:
+        raise PersianVideoWorkflowError(
+            "scene plan consumes too much semantic candidate budget: "
+            f"{mandatory} mandatory distinct events leave only {headroom} candidate(s); "
+            f"policy requires at least {max_semantic_candidates - allowed} rejection-margin candidate(s)"
+        )
+    return {
+        "policyVersion": "1.0",
+        "mandatoryDistinctEvents": mandatory,
+        "maxSemanticCandidates": max_semantic_candidates,
+        "semanticCandidateHeadroom": headroom,
+        "requiredRejectionMargin": rejection_margin,
+        "eventIds": event_ids,
+    }
+
+
+def validate_scene_plan_duration(
+    scene_plan: Mapping[str, Any], *, narration_duration_seconds: float, fps: float = 30.0
+) -> dict[str, Any]:
+    """Bind the scene-plan tail to authoritative narration within one frame."""
+    if narration_duration_seconds <= 0 or fps <= 0:
+        raise PersianVideoWorkflowError("authoritative narration duration and fps must be positive")
+    scenes = scene_plan.get("scenes") if isinstance(scene_plan, Mapping) else None
+    if not isinstance(scenes, list) or not scenes:
+        raise PersianVideoWorkflowError("scene plan requires at least one scene for duration validation")
+    ends: list[float] = []
+    for scene in scenes:
+        if not isinstance(scene, Mapping):
+            raise PersianVideoWorkflowError("scene plan scenes must be objects")
+        try:
+            ends.append(float(scene["end_seconds"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PersianVideoWorkflowError("scene plan scene end_seconds must be numeric") from exc
+    plan_end = max(ends)
+    delta = abs(plan_end - float(narration_duration_seconds))
+    tolerance = 1.0 / float(fps)
+    if delta > tolerance + 1e-9:
+        raise PersianVideoWorkflowError(
+            "scene-plan end time does not match authoritative narration duration: "
+            f"plan={plan_end:.3f}s narration={narration_duration_seconds:.3f}s "
+            f"tolerance={tolerance:.3f}s"
+        )
+    return {
+        "policyVersion": "1.0",
+        "scenePlanEndSeconds": round(plan_end, 6),
+        "narrationDurationSeconds": round(float(narration_duration_seconds), 6),
+        "deltaSeconds": round(delta, 6),
+        "frameToleranceSeconds": round(tolerance, 6),
+        "withinFrameTolerance": True,
     }
 
 
@@ -276,10 +397,29 @@ def phase_time_accounting(
                 external += duration
             else:
                 editorial += duration
+    accounting_lag = 0.0
+    telemetry = state.get("phase_telemetry")
+    if isinstance(telemetry, Mapping):
+        for entries in telemetry.values():
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if isinstance(entry, Mapping):
+                    raw = entry.get("accounting_lag_seconds")
+                    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+                        accounting_lag += max(0.0, float(raw))
+    total = editorial + external
     return {
+        # Issue #28 canonical names. These dimensions are intentionally not
+        # collapsed into one wall-time number.
+        "job_runtime_seconds": round(total, 3),
+        "provider_wait_seconds": round(external, 3),
+        "accounting_lag_seconds": round(accounting_lag, 3),
+        "editorial_wall_seconds": round(editorial, 3),
+        # Backward-compatible aliases consumed by older reports/tests.
         "active_editorial_seconds": round(editorial, 3),
         "external_durable_seconds": round(external, 3),
-        "total_observed_seconds": round(editorial + external, 3),
+        "total_observed_seconds": round(total, 3),
     }
 
 

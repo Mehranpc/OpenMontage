@@ -1,7 +1,7 @@
 {
   "profile": "film-type",
-  "profileVersion": "2.15.0",
-  "layoutVersion": 15,
+  "profileVersion": "2.14.0",
+  "layoutVersion": 14,
   "name": "Pathway Film Type",
   "scope": "persian-footage",
   "rollout": "opt-in",
@@ -49,32 +49,28 @@
     "darkInk": "#191919",
     "accent": "#1789FC",
     "titleLadderPx": [
-      148,
-      136,
-      124,
+      128,
+      116,
+      104,
+      92,
+      84
+    ],
+    "statementLadderPx": [
       112,
-      100,
-      90,
+      104,
+      96,
+      88,
       80,
       72
     ],
-    "statementLadderPx": [
-      118,
-      108,
-      98,
-      88,
-      80,
-      72,
-      64
-    ],
     "figureLadderPx": [
-      260,
-      232,
-      208,
-      184,
-      160
+      248,
+      224,
+      200,
+      176,
+      152
     ],
-    "titleTailRatio": 0.72,
+    "titleTailRatio": 0.8,
     "contextPx": 44,
     "supportPx": 58,
     "sourcePx": 44,
@@ -83,45 +79,7 @@
     "glow": false,
     "decorativeRule": false,
     "supportOpacity": 1,
-    "inlineEmphasis": "blue-underline-white-ink",
-    "recipes": {
-      "editorial-hero-balanced": {
-        "columnFractions": [
-          0.62,
-          0.72,
-          0.82
-        ],
-        "maxHeroLines": 3,
-        "maxSupportLines": 2,
-        "occupancyMin": 0.18,
-        "occupancyTarget": 0.31,
-        "occupancyMax": 0.56
-      },
-      "editorial-hero-compact": {
-        "columnFractions": [
-          0.56,
-          0.66,
-          0.76
-        ],
-        "maxHeroLines": 3,
-        "maxSupportLines": 2,
-        "occupancyMin": 0.15,
-        "occupancyTarget": 0.26,
-        "occupancyMax": 0.5
-      },
-      "editorial-callout-balanced": {
-        "columnFractions": [
-          0.58,
-          0.7,
-          0.82
-        ],
-        "maxHeroLines": 3,
-        "maxSupportLines": 2,
-        "occupancyMin": 0.14,
-        "occupancyTarget": 0.24,
-        "occupancyMax": 0.5
-      }
-    }
+    "inlineEmphasis": "blue-underline-white-ink"
   },
   "layout": {
     "inkPaddingPx": 12,
@@ -240,13 +198,6 @@
     "longFormThresholdSeconds": 30,
     "minLongFormRelocations": 2,
     "minLongFormVerticalBands": 2,
-    "verticalDiversityMinDwellSeconds": 4,
-    "planningMode": "fixed-anchors-text-only",
-    "approvedAnchors": [
-      "upper-left",
-      "upper-right",
-      "lower-left",
-      "lower-right"
-    ]
+    "verticalDiversityMinDwellSeconds": 4
   }
 }
