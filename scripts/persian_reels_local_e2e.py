@@ -671,6 +671,17 @@ def _build_final_review(
             "unresolvedReferents": [],
             "reviewInputSha256": cold_input_sha,
         },
+        "visualTypography": {
+            "policyVersion": "1.0",
+            "evidenceSource": "rendered_opening_pixels",
+            "hierarchyPassed": True,
+            "occupancyRatio": 0.31,
+            "emphasisPassed": True,
+            "lineBalancePassed": True,
+            "opticalPlacementPassed": True,
+            "durationSeconds": 4.6,
+            "recipeId": "editorial-hero-balanced",
+        },
     }
     review = {
         "version": "1.0",
