@@ -50,17 +50,6 @@ def _wait_for_job(projects_root: Path, job_id: str) -> dict:
     return result
 
 
-def _wait_for_front_door_job(projects_root: Path, job_id: str) -> dict:
-    terminal = {"succeeded", "failed", "interrupted"}
-    result = workflow.reconcile_workflow_job("run", job_id, pipeline_dir=projects_root)
-    for _ in range(100):
-        if result.get("status") in terminal:
-            return result
-        time.sleep(0.05)
-        result = workflow.reconcile_workflow_job("run", job_id, pipeline_dir=projects_root)
-    return result
-
-
 def _prepare_inputs_evidence(projects_root: Path) -> dict[str, str]:
     state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
     return {
@@ -184,31 +173,74 @@ def test_failed_commit_preserves_successful_execution_for_retry(tmp_path: Path) 
     )["workflowTransitionOutcome"] == "succeeded"
 
 
-def test_persian_front_door_owns_the_durable_execution_lifecycle(tmp_path: Path) -> None:
+def test_replaying_committed_job_reuses_its_execution_envelope(tmp_path: Path) -> None:
     projects_root = _fresh_project(tmp_path, with_narration=True)
-    started = workflow.start_workflow_job(
+    argv = ["python", "-c", _semantic_child(success=True)]
+    first = kernel.start_phase_job(
         "run",
-        job_id="front-door-success",
+        job_id="replay-success",
         phase="prepare_inputs",
-        argv=["python", "-c", _semantic_child(success=True)],
-        idempotence_key="front-door-success-v1",
+        argv=argv,
+        idempotence_key="replay-success-v1",
         pipeline_dir=projects_root,
     )
-    assert started["phaseAttempt"] == 1
-    assert started["executionEnvelope"]["workflowTransitionOutcome"] == "pending"
-
-    finished = _wait_for_front_door_job(projects_root, "front-door-success")
-    assert finished["executionOutcome"] == "succeeded"
-    assert workflow.load_workflow_state("run", pipeline_dir=projects_root)["next_phase"] == "prepare_inputs"
-
-    committed = workflow.commit_workflow_job(
+    _wait_for_job(projects_root, "replay-success")
+    kernel.commit_phase_job(
         "run",
-        "front-door-success",
+        "replay-success",
         evidence=_prepare_inputs_evidence(projects_root),
         pipeline_dir=projects_root,
     )
-    assert committed["next_phase"] == "align_script_timing"
-    envelope = kernel.load_execution_envelope(
-        "run", "front-door-success", pipeline_dir=projects_root
+
+    replayed = kernel.start_phase_job(
+        "run",
+        job_id="replay-success",
+        phase="prepare_inputs",
+        argv=argv,
+        idempotence_key="replay-success-v1",
+        pipeline_dir=projects_root,
     )
-    assert envelope["workflowTransitionOutcome"] == "succeeded"
+    assert replayed["jobId"] == first["jobId"]
+    assert replayed["phaseAttempt"] == first["phaseAttempt"] == 1
+    assert replayed["executionEnvelope"]["workflowTransitionOutcome"] == "succeeded"
+    assert workflow.load_workflow_state("run", pipeline_dir=projects_root)["next_phase"] == "align_script_timing"
+
+
+def test_failed_execution_cannot_be_relabelled_after_later_attempt_advances_phase(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path, with_narration=True)
+    kernel.start_phase_job(
+        "run",
+        job_id="first-failed",
+        phase="prepare_inputs",
+        argv=["python", "-c", _semantic_child(success=False, error="provider unavailable")],
+        idempotence_key="first-failed-v1",
+        pipeline_dir=projects_root,
+    )
+    failed = _wait_for_job(projects_root, "first-failed")
+    assert failed["executionOutcome"] == "failed"
+
+    kernel.start_phase_job(
+        "run",
+        job_id="second-success",
+        phase="prepare_inputs",
+        argv=["python", "-c", _semantic_child(success=True)],
+        idempotence_key="second-success-v1",
+        pipeline_dir=projects_root,
+    )
+    _wait_for_job(projects_root, "second-success")
+    kernel.commit_phase_job(
+        "run",
+        "second-success",
+        evidence=_prepare_inputs_evidence(projects_root),
+        pipeline_dir=projects_root,
+    )
+
+    with pytest.raises(kernel.PersianRunKernelError, match="successful semantic execution"):
+        kernel.commit_phase_job(
+            "run", "first-failed", pipeline_dir=projects_root
+        )
+    failed_envelope = kernel.load_execution_envelope(
+        "run", "first-failed", pipeline_dir=projects_root
+    )
+    assert failed_envelope["executionOutcome"] == "failed"
+    assert failed_envelope["workflowTransitionOutcome"] == "blocked"
