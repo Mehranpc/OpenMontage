@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from lib.persian_video_workflow import (
+    bootstrap_persian_video,
+    load_workflow_state,
+    stage_workflow_edit_draft,
+)
+from tests.lib.test_persian_preflight_contract import _payload
+from tests.lib.test_persian_video_workflow import BASE, _advance_to
+
+
+HOOK = "بزرگ‌ترین اشتباه دربارهٔ بازی‌های ویدیویی اینه که فکر کنیم فقط وقت تلف کردنه!"
+
+
+def test_front_door_persists_explicit_semantic_poster_stack_before_preflight(tmp_path: Path) -> None:
+    narration = tmp_path.parent / f"{tmp_path.name}-semantic-hook.wav"
+    narration.write_bytes(b"audio")
+    bootstrap_persian_video(
+        title="Semantic poster stack",
+        approved_script=HOOK,
+        narration_path=str(narration),
+        hook_text=HOOK,
+        project_id="run",
+        pipeline_dir=tmp_path,
+        backlot_opener=lambda _pid: 0,
+        now=BASE,
+    )
+    _advance_to(tmp_path, "no_copy_preflight")
+
+    payload = _payload()
+    hook = payload["persian"]["moments"][0]
+    hook.update({
+        "kind": "hook",
+        "purpose": "hook-pattern-interrupt",
+        "startSeconds": 0.0,
+        "endSeconds": 5.0,
+        "presentation": {"placement": "upper-right", "recipeId": "editorial-hero-balanced"},
+        "segments": [
+            {"role": "lead", "semanticRole": "setup", "text": "بزرگ‌ترین اشتباه"},
+            {"role": "lead", "semanticRole": "bridge", "text": "دربارهٔ"},
+            {"role": "hero", "semanticRole": "subject_hero", "text": "بازی‌های ویدیویی"},
+            {"role": "tail", "semanticRole": "connector", "text": "اینه که فکر کنیم فقط"},
+            {"role": "tail", "semanticRole": "payoff", "text": "وقت تلف کردنه!"},
+        ],
+    })
+    source = tmp_path / "run" / "semantic-edit.json"
+    source.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    staged = stage_workflow_edit_draft("run", "semantic-v1", source, pipeline_dir=tmp_path)
+    poster = staged["hookAuthority"]["semanticPosterStack"]
+    assert poster["version"] == "1.0"
+    assert poster["authoritativeHookText"] == HOOK
+    assert [phrase["role"] for phrase in poster["phrases"]] == [
+        "setup", "bridge", "subject_hero", "connector", "payoff"
+    ]
+    assert " ".join(phrase["text"] for phrase in poster["phrases"]) == HOOK
+
+    state = load_workflow_state("run", pipeline_dir=tmp_path)
+    assert state["hook_selection"]["semantic_poster_stack"] == poster
