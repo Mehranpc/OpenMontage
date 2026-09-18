@@ -28,6 +28,7 @@ def test_issue32_active_profile_is_versioned_kahroba_editorial_system() -> None:
     assert editorial["allowedAlignments"] == ["right", "center"]
     assert editorial["maxHookLines"] == 5
     assert editorial["truncate"] is False
+    assert "underline" not in editorial["decorativeAccents"]
 
 
 def test_issue32_archives_exact_215_profile_before_advancing_default() -> None:

@@ -44,7 +44,11 @@ class Issue32KahrobaBrowserContract(unittest.TestCase):
         assert layout["placement"] in {"upper-right", "upper-center", "mid-right", "center", "lower-right"}
         assert not layout["placement"].endswith("left")
         accent_rows = [row for row in hero_rows if row["accentWords"]]
-        assert len(accent_rows) == 1, "semantic burst/underline belongs only to the row containing the accented phrase"
+        assert len(accent_rows) == 1, "semantic accent belongs only to the row containing the accented phrase"
+        sizes = [row["fontSizePx"] for row in hero_rows]
+        assert max(sizes) - min(sizes) >= 16, "poster hook needs visible typographic hierarchy, not four equal rows"
+        assert accent_rows[0]["fontSizePx"] == max(sizes), "the strongest semantic phrase must carry the largest display size"
+        assert layout["rect"]["x"] + layout["rect"]["w"] >= 0.87, "RTL hook should sit visually toward the right edge"
         assert accent_rows[0]["text"].endswith("وقت تلف کردنه!")
         assert all(word in accent_rows[0]["text"] for word in accent_rows[0]["accentWords"])
         assert prepared["design"]["resolved"]["typography"]["editorial"]["semanticAccent"] == "#FFEA00"
