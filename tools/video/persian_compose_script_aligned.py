@@ -31,6 +31,21 @@ class ScriptAlignedPersianCompose(PersianCompose):
     name = "persian_compose"
     version = "0.5.0"
 
+    _SEMANTIC_POSTER_ROLES = {
+        "setup",
+        "bridge",
+        "subject_hero",
+        "connector",
+        "payoff",
+    }
+    _STRUCTURAL_ROLE_BY_SEMANTIC_ROLE = {
+        "setup": "lead",
+        "bridge": "lead",
+        "subject_hero": "hero",
+        "connector": "tail",
+        "payoff": "tail",
+    }
+
     @staticmethod
     def _runtime_persian(edit_decisions: dict[str, Any]) -> dict[str, Any] | None:
         persian = edit_decisions.get("persian")
@@ -39,16 +54,104 @@ class ScriptAlignedPersianCompose(PersianCompose):
         runtime_persian = dict(persian)
         runtime_persian.pop("_approvedSubtitleScript", None)
         runtime_persian.pop("_hookCaptionHandoff", None)
+        runtime_persian.pop("_semanticPosterStack", None)
         metadata = edit_decisions.get("metadata") or {}
         approved_script = metadata.get("persianSubtitleScript") if isinstance(metadata, dict) else None
         hook_handoff = metadata.get("hookCaptionHandoff") if isinstance(metadata, dict) else None
+        semantic_poster = metadata.get("semanticPosterStack") if isinstance(metadata, dict) else None
         if approved_script is not None:
             runtime_persian["_approvedSubtitleScript"] = approved_script
         if hook_handoff is not None:
             # Runtime-only injection keeps the public edit schema stable while making
             # the explicit handoff available before burned-caption geometry freezes.
             runtime_persian["_hookCaptionHandoff"] = hook_handoff
+        if semantic_poster is not None:
+            # The canonical semantic plan lives in edit metadata. Rehydrate it only
+            # for runtime props so the public edit schema remains unchanged while
+            # Film Type 2.16 can consume authored meaning instead of guessing from
+            # lead/hero/tail position.
+            runtime_persian["_semanticPosterStack"] = semantic_poster
         return runtime_persian
+
+    @staticmethod
+    def _rehydrate_semantic_poster_stack(
+        moments: list[Any], plan: Any
+    ) -> list[Any]:
+        """Attach canonical semantic roles to the one opening hook at runtime.
+
+        This adapter never invents semantics. The metadata plan must match the
+        normalized moment text and structural roles exactly; otherwise render is
+        refused before browser layout.
+        """
+        if not isinstance(plan, dict) or plan.get("version") != "1.0":
+            raise ValueError("SEMANTIC_POSTER_INVALID: semanticPosterStack version must be 1.0")
+        phrases = plan.get("phrases")
+        if not isinstance(phrases, list) or not 2 <= len(phrases) <= 5:
+            raise ValueError("SEMANTIC_POSTER_INVALID: semanticPosterStack requires 2-5 phrases")
+        hooks = [
+            moment for moment in moments
+            if isinstance(moment, dict) and moment.get("kind") == "hook"
+        ]
+        if len(hooks) != 1:
+            raise ValueError("SEMANTIC_POSTER_INVALID: semanticPosterStack requires exactly one hook moment")
+
+        roles: list[str] = []
+        phrase_texts: list[str] = []
+        for index, phrase in enumerate(phrases):
+            if not isinstance(phrase, dict):
+                raise ValueError(f"SEMANTIC_POSTER_INVALID: phrase {index} must be an object")
+            role = str(phrase.get("role") or "").strip()
+            text = str(phrase.get("text") or "").strip()
+            if role not in ScriptAlignedPersianCompose._SEMANTIC_POSTER_ROLES:
+                raise ValueError(f"SEMANTIC_POSTER_INVALID: unsupported semantic role {role!r}")
+            if not text:
+                raise ValueError(f"SEMANTIC_POSTER_INVALID: phrase {index} has no text")
+            roles.append(role)
+            phrase_texts.append(text)
+        if roles.count("subject_hero") != 1:
+            raise ValueError("SEMANTIC_POSTER_INVALID: exactly one subject_hero is required")
+
+        hook = hooks[0]
+        raw_segments = hook.get("segments")
+        if not isinstance(raw_segments, list):
+            raise ValueError("SEMANTIC_POSTER_INVALID: hook segments must be an array")
+        content = [segment for segment in raw_segments if isinstance(segment, dict) and segment.get("role") != "source"]
+        if len(content) != len(phrases):
+            raise ValueError("SEMANTIC_POSTER_INVALID: phrase count does not match normalized hook segments")
+
+        hydrated_content: list[dict[str, Any]] = []
+        for index, (segment, role, text) in enumerate(zip(content, roles, phrase_texts, strict=True)):
+            actual_text = str(segment.get("text") or "").strip()
+            if actual_text != text:
+                raise ValueError(
+                    f"SEMANTIC_POSTER_INVALID: phrase {index} text does not match normalized hook copy"
+                )
+            expected_structural = ScriptAlignedPersianCompose._STRUCTURAL_ROLE_BY_SEMANTIC_ROLE[role]
+            if segment.get("role") != expected_structural:
+                raise ValueError(
+                    f"SEMANTIC_POSTER_INVALID: semantic role {role} requires structural role {expected_structural}"
+                )
+            hydrated_content.append({**segment, "semanticRole": role})
+
+        reconstructed = " ".join(item["text"] for item in hydrated_content).strip()
+        authoritative = " ".join(str(plan.get("authoritativeHookText") or "").split())
+        if " ".join(reconstructed.split()) != authoritative:
+            raise ValueError(
+                "SEMANTIC_POSTER_INVALID: runtime phrase concatenation does not reconstruct authoritative hook"
+            )
+
+        content_iter = iter(hydrated_content)
+        hydrated_segments = [
+            dict(segment) if isinstance(segment, dict) and segment.get("role") == "source" else next(content_iter)
+            for segment in raw_segments
+        ]
+        result: list[Any] = []
+        for moment in moments:
+            if moment is hook:
+                result.append({**hook, "segments": hydrated_segments})
+            else:
+                result.append(moment)
+        return result
 
     def execute(self, inputs: dict[str, Any]):
         edit_decisions = inputs.get("edit_decisions")
@@ -115,6 +218,27 @@ class ScriptAlignedPersianCompose(PersianCompose):
         """Resolve typographic-only composition before browser Film Type layout."""
         runtime = self._prepare_typographic_only_composition(persian)
         return super()._build_props(runtime, staging_dir, run_id)
+
+    @staticmethod
+    def _build_moments(
+        persian: dict[str, Any], duration_seconds: float, *, v2: bool = False,
+        measure_layout: bool = True, adaptive_pixel_typography: bool = False,
+        simultaneous_hook_typography: bool = False,
+    ) -> list[dict[str, Any]]:
+        moments = PersianCompose._build_moments(
+            persian,
+            duration_seconds,
+            v2=v2,
+            measure_layout=measure_layout,
+            adaptive_pixel_typography=adaptive_pixel_typography,
+            simultaneous_hook_typography=simultaneous_hook_typography,
+        )
+        semantic_plan = persian.get("_semanticPosterStack")
+        if semantic_plan is None:
+            return moments
+        return ScriptAlignedPersianCompose._rehydrate_semantic_poster_stack(
+            moments, semantic_plan
+        )
 
     def _build_caption_props(self, persian: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
         """Build approved-script captions before Film Type freezes layout."""
