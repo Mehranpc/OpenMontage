@@ -34,6 +34,16 @@ def _review(visual: dict) -> dict:
     }
 
 
+def _phrase_metrics() -> list[dict]:
+    return [
+        {"semanticRole": "setup", "fontSizePx": 64, "visualRows": 1, "inkHex": "#FFFFFF"},
+        {"semanticRole": "bridge", "fontSizePx": 48, "visualRows": 1, "inkHex": "#FFFFFF"},
+        {"semanticRole": "subject_hero", "fontSizePx": 118, "visualRows": 1, "inkHex": "#FFEA00"},
+        {"semanticRole": "connector", "fontSizePx": 48, "visualRows": 1, "inkHex": "#FFFFFF"},
+        {"semanticRole": "payoff", "fontSizePx": 76, "visualRows": 1, "inkHex": "#FFFFFF"},
+    ]
+
+
 def _visual_v2(**overrides) -> dict:
     value = {
         "policyVersion": "2.0",
@@ -53,6 +63,13 @@ def _visual_v2(**overrides) -> dict:
         "supportInkHex": "#FFFFFF",
         "plainSubtitleLike": False,
         "localContrastFieldVisible": True,
+        "backgroundComplexity": "busy",
+        "blockScrimVisible": True,
+        "blockScrimFeathered": True,
+        "glyphSeparationStrong": True,
+        "phoneScaleReadable": True,
+        "fullFrameDarkening": False,
+        "phraseMetrics": _phrase_metrics(),
     }
     value.update(overrides)
     return value
@@ -76,3 +93,48 @@ def test_editorial_visual_policy_v2_requires_kahroba_white_yellow_and_complete_h
             validate_rendered_hook_review(
                 _review(_visual_v2(**override)), candidate_sha256=DIGEST, require_pass=True
             )
+
+
+def test_rendered_pixels_must_prove_semantic_hierarchy_and_one_row_subject_hero() -> None:
+    near_flat = _phrase_metrics()
+    near_flat[2] = {**near_flat[2], "fontSizePx": 78}
+    with pytest.raises(PersianRenderedReviewError, match="near-flat"):
+        validate_rendered_hook_review(
+            _review(_visual_v2(phraseMetrics=near_flat)), candidate_sha256=DIGEST, require_pass=True
+        )
+
+    wrapped_hero = _phrase_metrics()
+    wrapped_hero[2] = {**wrapped_hero[2], "visualRows": 2}
+    with pytest.raises(PersianRenderedReviewError, match="one visual row"):
+        validate_rendered_hook_review(
+            _review(_visual_v2(phraseMetrics=wrapped_hero)), candidate_sha256=DIGEST, require_pass=True
+        )
+
+    wrong_subject_color = _phrase_metrics()
+    wrong_subject_color[2] = {**wrong_subject_color[2], "inkHex": "#FFFFFF"}
+    with pytest.raises(PersianRenderedReviewError, match="subject_hero.*#FFEA00"):
+        validate_rendered_hook_review(
+            _review(_visual_v2(phraseMetrics=wrong_subject_color)), candidate_sha256=DIGEST, require_pass=True
+        )
+
+
+def test_busy_background_requires_feathered_block_scrim_but_simple_fixture_does_not() -> None:
+    for override, message in [
+        ({"blockScrimVisible": False}, "block-level.*scrim"),
+        ({"blockScrimFeathered": False}, "feathered"),
+        ({"glyphSeparationStrong": False}, "glyph separation"),
+        ({"phoneScaleReadable": False}, "phone scale"),
+        ({"fullFrameDarkening": True}, "full-frame"),
+    ]:
+        with pytest.raises(PersianRenderedReviewError, match=message):
+            validate_rendered_hook_review(
+                _review(_visual_v2(**override)), candidate_sha256=DIGEST, require_pass=True
+            )
+
+    simple = _visual_v2(
+        backgroundComplexity="simple",
+        blockScrimVisible=False,
+        blockScrimFeathered=False,
+        glyphSeparationStrong=False,
+    )
+    validate_rendered_hook_review(_review(simple), candidate_sha256=DIGEST, require_pass=True)
