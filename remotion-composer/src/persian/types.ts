@@ -98,6 +98,8 @@ export type PersianSemanticPosterRole = "setup" | "bridge" | "subject_hero" | "c
 /** One line-group of a moment's phrase. */
 export interface PersianSegment {
   readonly role: PersianSegmentRole;
+  /** Runtime-only semantic authorship for Film Type 2.16 editorial poster stacks. */
+  readonly semanticRole?: PersianSemanticPosterRole;
   /** The Persian (or mixed) text of this segment. Painted exactly as given. */
   readonly text: string;
   /**
