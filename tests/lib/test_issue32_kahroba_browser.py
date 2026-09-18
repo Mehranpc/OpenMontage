@@ -10,7 +10,7 @@ from lib.persian_film_type import prepare_film_type_props
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def _props(*, include_semantic_roles: bool) -> dict:
+def _props(*, include_semantic_roles: bool, permute_support_semantics: bool = False) -> dict:
     design = resolve_design({"version": 2, "profile": "film-type", "seed": "issue32-kahroba"})
     segments = [
         {"role": "lead", "semanticRole": "setup", "text": "بزرگ‌ترین اشتباه"},
@@ -19,6 +19,9 @@ def _props(*, include_semantic_roles: bool) -> dict:
         {"role": "tail", "semanticRole": "connector", "text": "اینه که فکر کنیم فقط"},
         {"role": "tail", "semanticRole": "payoff", "text": "وقت تلف کردنه!"},
     ]
+    if permute_support_semantics:
+        segments[0]["semanticRole"], segments[1]["semanticRole"] = segments[1]["semanticRole"], segments[0]["semanticRole"]
+        segments[3]["semanticRole"], segments[4]["semanticRole"] = segments[4]["semanticRole"], segments[3]["semanticRole"]
     if not include_semantic_roles:
         segments = [{key: value for key, value in segment.items() if key != "semanticRole"} for segment in segments]
     return {
@@ -71,3 +74,14 @@ class Issue32KahrobaBrowserContract(unittest.TestCase):
     def test_editorial_poster_stack_refuses_position_only_semantics(self) -> None:
         with self.assertRaisesRegex(ValueError, "semanticRole"):
             prepare_film_type_props(_props(include_semantic_roles=False), ROOT / "remotion-composer")
+
+    def test_support_scale_follows_semantic_role_not_row_position(self) -> None:
+        prepared = prepare_film_type_props(
+            _props(include_semantic_roles=True, permute_support_semantics=True),
+            ROOT / "remotion-composer",
+        )
+        rows = prepared["filmType"]["moments"]["hook"]["rows"]
+        bridge, setup, subject, payoff, connector = [row["fontSizePx"] for row in rows]
+        assert subject > payoff >= setup > bridge
+        assert subject > payoff > connector
+        assert abs(bridge - connector) <= 8
