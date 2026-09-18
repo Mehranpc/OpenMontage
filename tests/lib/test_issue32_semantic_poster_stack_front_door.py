@@ -7,6 +7,7 @@ import pytest
 
 from lib.persian_editorial_hook import PersianEditorialHookError
 from lib.persian_video_workflow import bootstrap_persian_video, stage_workflow_edit_draft
+from schemas.artifacts import validate_artifact
 from tests.lib.test_persian_preflight_contract import _payload
 from tests.lib.test_persian_video_workflow import BASE, _advance_to
 
@@ -59,6 +60,11 @@ def test_front_door_persists_explicit_semantic_poster_stack_before_preflight(tmp
 
     persisted = json.loads(Path(staged["draftPath"]).read_text(encoding="utf-8"))
     assert persisted["metadata"]["semanticPosterStack"] == poster
+    assert all(
+        "semanticRole" not in segment
+        for segment in persisted["persian"]["moments"][0]["segments"]
+    )
+    validate_artifact("edit_decisions", persisted)
 
 
 def test_editorial_opening_cannot_fall_back_to_position_inferred_roles(tmp_path: Path) -> None:
