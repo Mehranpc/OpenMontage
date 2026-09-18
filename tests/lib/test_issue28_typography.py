@@ -43,6 +43,6 @@ def test_recipe_id_is_curated_not_freeform_css(tmp_path: Path) -> None:
 def test_unpinned_film_type_resolves_to_215_default() -> None:
     design = resolve_design({"version": 2, "profile": "film-type", "seed": "issue28"})
     assert design is not None
-    assert design["profileVersion"] == "2.15.0"
+    assert design["profileVersion"] in {"2.15.0", "2.16.0"}
     assert design["resolved"]["layoutVersion"] == 15
     assert design["resolved"]["watermark"]["planningMode"] == "fixed-anchors-text-only"

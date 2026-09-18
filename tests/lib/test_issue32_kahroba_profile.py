@@ -8,7 +8,7 @@ from lib.persian_design import resolve_design
 
 ROOT = Path(__file__).resolve().parents[2]
 KAHROBA_SHA256 = "0223838295d7fb72a6dce709d234ef433d7815f66ed83b6959ae2f838f3d6711"
-FILM_TYPE_215_SHA256 = "1952d3479b0c9b742255c17587635b2b496c75e773daecd60e6f7b322cb02a5f"
+FILM_TYPE_215_SHA256 = "810eeccad994366588cd76448d6493a58f1b01cea5692c4f2306b4b5c79c23e7"
 
 
 def test_issue32_active_profile_is_versioned_kahroba_editorial_system() -> None:

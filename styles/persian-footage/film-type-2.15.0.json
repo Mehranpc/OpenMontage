@@ -1,7 +1,7 @@
 {
   "profile": "film-type",
-  "profileVersion": "2.16.0",
-  "layoutVersion": 16,
+  "profileVersion": "2.15.0",
+  "layoutVersion": 15,
   "name": "Pathway Film Type",
   "scope": "persian-footage",
   "rollout": "opt-in",
@@ -91,7 +91,7 @@
           0.72,
           0.82
         ],
-        "maxHeroLines": 5,
+        "maxHeroLines": 3,
         "maxSupportLines": 2,
         "occupancyMin": 0.18,
         "occupancyTarget": 0.31,
@@ -103,7 +103,7 @@
           0.66,
           0.76
         ],
-        "maxHeroLines": 5,
+        "maxHeroLines": 3,
         "maxSupportLines": 2,
         "occupancyMin": 0.15,
         "occupancyTarget": 0.26,
@@ -115,32 +115,12 @@
           0.7,
           0.82
         ],
-        "maxHeroLines": 5,
+        "maxHeroLines": 3,
         "maxSupportLines": 2,
         "occupancyMin": 0.14,
         "occupancyTarget": 0.24,
         "occupancyMax": 0.5
       }
-    },
-    "editorial": {
-      "fontFamily": "KahrobaEditorial",
-      "assetPath": "fonts/kahroba/Kahroba-BL-LC.woff2",
-      "assetSha256": "0223838295d7fb72a6dce709d234ef433d7815f66ed83b6959ae2f838f3d6711",
-      "weight": 900,
-      "supportInk": "#FFFFFF",
-      "semanticAccent": "#FFEA00",
-      "allowedAlignments": [
-        "right",
-        "center"
-      ],
-      "maxHookLines": 5,
-      "maxCalloutLines": 5,
-      "truncate": false,
-      "decorativeAccents": [
-        "underline",
-        "burst"
-      ],
-      "localContrast": "soft-dark-gradient"
     }
   },
   "layout": {
