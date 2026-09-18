@@ -12,7 +12,7 @@
         "bottom": 0.35,
         "side": 0.08,
         "left": 0.08,
-        "right": 0.16
+        "right": 0.08
       },
       "columnFraction": 0.62,
       "wideColumnFraction": 0.82
@@ -83,7 +83,7 @@
     "glow": false,
     "decorativeRule": false,
     "supportOpacity": 1,
-    "inlineEmphasis": "blue-underline-white-ink",
+    "inlineEmphasis": "yellow-fill-white-support",
     "recipes": {
       "editorial-hero-balanced": {
         "columnFractions": [
@@ -94,8 +94,8 @@
         "maxHeroLines": 5,
         "maxSupportLines": 2,
         "occupancyMin": 0.2,
-        "occupancyTarget": 0.62,
-        "occupancyMax": 0.76
+        "occupancyTarget": 0.76,
+        "occupancyMax": 0.86
       },
       "editorial-hero-compact": {
         "columnFractions": [
@@ -106,8 +106,8 @@
         "maxHeroLines": 5,
         "maxSupportLines": 2,
         "occupancyMin": 0.18,
-        "occupancyTarget": 0.56,
-        "occupancyMax": 0.72
+        "occupancyTarget": 0.66,
+        "occupancyMax": 0.82
       },
       "editorial-callout-balanced": {
         "columnFractions": [
@@ -137,7 +137,6 @@
       "maxCalloutLines": 5,
       "truncate": false,
       "decorativeAccents": [
-        "underline",
         "burst"
       ],
       "localContrast": "soft-dark-gradient"
@@ -155,7 +154,7 @@
     "edgeInsetPx": 10,
     "upperCentre": 0.26,
     "middleCentre": 0.56,
-    "safeAreaPaddingPx": 20,
+    "safeAreaPaddingPx": 8,
     "motionClearancePx": 18,
     "collisionMarginPx": 12,
     "autoRequiresReviewedAvoidRegions": true,

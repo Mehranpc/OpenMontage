@@ -289,11 +289,18 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
         if (!lines) {failed = true; break;}
         for (const [lineIndex,text] of lines.entries()) {
           if (lineIndex) y += l.lineGapPx;
-          const ink = measureRun(text,piece.size,piece.weight,piece.family);
-          const underline = moment.presentation?.emphasis === "inline" && (segment.accentWords?.length ?? 0) > 0;
-          const belowPx = Math.max(ink.belowPx,underline ? piece.size * .14 : 0);
           const rowAccentWords = (segment.accentWords ?? []).filter(word => text.includes(word));
-          rows.push({text,role: piece.role,segmentIndex: index,fontSizePx: piece.size,weight: piece.weight,
+          const posterHook = p.profileVersion === "2.16.0" && moment.kind === "hook" && piece.role === "hero";
+          const posterScale = !posterHook ? 1
+            : rowAccentWords.length ? 1.18
+            : lineIndex === 0 ? 1.08
+            : lines.length >= 4 && lineIndex === 1 ? .96
+            : .90;
+          const rowSize = Math.round(piece.size * posterScale);
+          const ink = measureRun(text,rowSize,piece.weight,piece.family);
+          if (ink.widthPx > column - 2 * l.inkPaddingPx + .5) { failed = true; break; }
+          const belowPx = ink.belowPx;
+          rows.push({text,role: piece.role,segmentIndex: index,fontSizePx: rowSize,weight: piece.weight,
             family: piece.family,direction: "rtl",...ink,belowPx: round(belowPx),baselinePx: round(y + ink.abovePx),
             revealAfterSeconds: reveal,accentWords: rowAccentWords});
           y += ink.abovePx + belowPx;
@@ -481,7 +488,11 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
       layout.lineBalanceRatio = round(lineBalance);
       const occupancyPenalty = recipe ? Math.abs(occupancy-recipe.config.occupancyTarget)*8
         + (occupancy < recipe.config.occupancyMin ? (recipe.config.occupancyMin-occupancy)*12 : 0) : 0;
-      const score = Math.max(0,lines-2)*8 + Math.max(0,lines-1)*.8
+      const posterHook = p.profileVersion === "2.16.0" && moment.kind === "hook";
+      const linePenalty = posterHook
+        ? (lines === 3 || lines === 4 ? 0 : lines === 2 ? 1.5 : lines === 5 ? 4 : Math.abs(lines - 3.5) * 6)
+        : Math.max(0,lines-2)*8 + Math.max(0,lines-1)*.8;
+      const score = linePenalty
         + imbalance*2 + shrink*3 + occupancyPenalty + h*2 + w*.25 + zones.indexOf(zone)*.04 + (diffuse && moment.kind === "hook" && zone.startsWith("lower") ? .2 : 0);
       candidates.push({layout,score});
     }
@@ -815,7 +826,7 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
     "2.13.0":"c742b5f13b71e504f40c3dda03625aafee4d533f1c66464045d82b21fecc683a",
     "2.14.0":"f9a2bf8d73ed2f6cc32f7d70230008cde12ed5607af0895a485b3cb7b0378c54",
     "2.15.0":"1952d3479b0c9b742255c17587635b2b496c75e773daecd60e6f7b322cb02a5f",
-    "2.16.0":"1e28ce9b9ddfd87e614eab567c068624487c5efaffa63171b8e3d1951c4dd0d7",
+    "2.16.0":"4552273a82420e5ff2d3f2f247f1dde0216aec299e9f0d85de2d180d725698c3",
     "2.5.0":"ba44a26a97c680a8e714d5578fcab01cb7009a986e4d1361f9ce49dd3aab0261",
   }[profile.profileVersion];
   if(props.design!.contentHash!==expectedHash) throw new Error(`Unsupported Film Type ${profile.profileVersion} tokens; arbitrary snapshots cannot weaken layout or rollout guards.`);

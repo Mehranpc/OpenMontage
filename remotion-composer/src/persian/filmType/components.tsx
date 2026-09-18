@@ -117,7 +117,7 @@ const Run: React.FC<{row: FilmRow; x: number; color: string; accent: string; emp
       fontKerning:"normal",fontSynthesis:"none",unicodeBidi:"isolate",fill:baseFill}}>
     {hasInlineAccent ? row.text.split(/(\s+)/u).map((part,i) => {
       const highlighted=accents.has(compareKey(part));
-      return <tspan key={i} style={highlighted ? {fill:accent,textDecorationLine:"underline",textDecorationColor:accent,textDecorationThickness:"3px",textUnderlineOffset:"7px"} : undefined}>{part}</tspan>;
+      return <tspan key={i} style={highlighted ? {fill:accent} : undefined}>{part}</tspan>;
     }) : row.text}
   </text>;
 };
@@ -128,14 +128,14 @@ const EditorialBurst: React.FC<{
 }> = ({row,anchor,align,accent,progress,opacity}) => {
   if (row.accentWords.length === 0) return null;
   const rightEdge = align === "center" ? anchor + row.widthPx / 2 : align === "right" ? anchor : anchor + row.widthPx;
-  const ray = Math.max(18, Math.min(32, row.fontSizePx * .22));
-  const x = rightEdge + Math.max(10, row.fontSizePx * .06);
-  const y = Math.max(18, row.baselinePx - row.abovePx * .43);
+  const ray = Math.max(30, Math.min(52, row.fontSizePx * .34));
+  const x = rightEdge + Math.max(16, row.fontSizePx * .10);
+  const y = Math.max(22, row.baselinePx - row.abovePx * .46);
   const p = Math.max(0, Math.min(1, progress));
-  return <g data-film-editorial-accent="burst" opacity={opacity * .95} stroke={accent} strokeWidth={Math.max(3, row.fontSizePx * .026)} strokeLinecap="round">
-    <line x1={x + 2} y1={y - 9} x2={x + 2 + ray * .22 * p} y2={y - 9 - ray * .78 * p}/>
-    <line x1={x + 9} y1={y + 2} x2={x + 9 + ray * .72 * p} y2={y + 2 - ray * .48 * p}/>
-    <line x1={x + 12} y1={y + 15} x2={x + 12 + ray * .92 * p} y2={y + 15 - ray * .10 * p}/>
+  return <g data-film-editorial-accent="burst" opacity={opacity * .95} stroke={accent} strokeWidth={Math.max(4, row.fontSizePx * .034)} strokeLinecap="round">
+    <line x1={x} y1={y - 7} x2={x + ray * .34 * p} y2={y - 7 - ray * .82 * p}/>
+    <line x1={x + 4} y1={y + 5} x2={x + 4 + ray * .74 * p} y2={y + 5 - ray * .48 * p}/>
+    <line x1={x + 2} y1={y + 18} x2={x + 2 + ray * .96 * p} y2={y + 18 - ray * .08 * p}/>
   </g>;
 };
 

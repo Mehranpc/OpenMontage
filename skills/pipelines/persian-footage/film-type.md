@@ -39,7 +39,7 @@ Supported pairs are `2.1.0`/layout 1 through `2.16.0`/layout 16. The archived
 2.15 hash is
 `1952d3479b0c9b742255c17587635b2b496c75e773daecd60e6f7b322cb02a5f`;
 the current 2.16 hash is
-`1e28ce9b9ddfd87e614eab567c068624487c5efaffa63171b8e3d1951c4dd0d7`.
+`4552273a82420e5ff2d3f2f247f1dde0216aec299e9f0d85de2d180d725698c3`.
 
 Older pins keep their historical renderer, character-limit, caption, and
 watermark behavior. Migration means resolving a fresh unpinned design and
