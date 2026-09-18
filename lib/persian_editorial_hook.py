@@ -20,6 +20,16 @@ HOOK_REFERENCE_CORPUS = (
 )
 MIN_AUTOMATIC_HOOK_SCORE = 7.0
 REQUIRED_CONTENT_MATCH_SCORE = 2
+SEMANTIC_POSTER_ROLES = frozenset(
+    {"setup", "bridge", "subject_hero", "connector", "payoff"}
+)
+STRUCTURAL_ROLE_BY_SEMANTIC_ROLE = {
+    "setup": "lead",
+    "bridge": "lead",
+    "subject_hero": "hero",
+    "connector": "tail",
+    "payoff": "tail",
+}
 
 
 class PersianEditorialHookError(ValueError):
@@ -78,22 +88,27 @@ def _normalized_hook_text(value: object) -> str:
     return " ".join(_clean_text(value, "hook text").split())
 
 
-def edit_hook_text(payload: Mapping[str, Any]) -> str:
-    """Return the one viewer-visible authored hook from an edit payload.
-
-    Visual segmentation (lead/hero/tail or wrapped rows) may change, but the
-    selected words and punctuation remain one authoritative sentence.
-    """
+def _opening_hook(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     persian = payload.get("persian") if isinstance(payload, Mapping) else None
     if not isinstance(persian, Mapping):
         raise PersianEditorialHookError("edit payload requires a persian object")
     moments = persian.get("moments")
     if not isinstance(moments, Sequence) or isinstance(moments, (str, bytes)):
         raise PersianEditorialHookError("edit payload requires Persian moments")
-    hooks = [moment for moment in moments if isinstance(moment, Mapping) and str(moment.get("kind") or "") == "hook"]
+    hooks = [
+        moment
+        for moment in moments
+        if isinstance(moment, Mapping) and str(moment.get("kind") or "") == "hook"
+    ]
     if len(hooks) != 1:
         raise PersianEditorialHookError("edit payload must contain exactly one opening hook")
-    segments = hooks[0].get("segments")
+    return hooks[0]
+
+
+def edit_hook_text(payload: Mapping[str, Any]) -> str:
+    """Return the one viewer-visible authored hook from an edit payload."""
+    hook = _opening_hook(payload)
+    segments = hook.get("segments")
     if not isinstance(segments, Sequence) or isinstance(segments, (str, bytes)):
         raise PersianEditorialHookError("opening hook requires authored text segments")
     parts = [
@@ -103,6 +118,71 @@ def edit_hook_text(payload: Mapping[str, Any]) -> str:
     ]
     visible = " ".join(part for part in parts if part)
     return _normalized_hook_text(visible)
+
+
+def semantic_poster_stack_from_edit(
+    decision: Mapping[str, Any], payload: Mapping[str, Any]
+) -> dict[str, Any] | None:
+    """Validate and materialize an explicitly authored semantic phrase plan.
+
+    The planner authors semanticRole. This boundary validates and persists it; it
+    never infers setup/bridge/subject/connector/payoff from phrase position.
+    """
+    hook = _opening_hook(payload)
+    segments = hook.get("segments")
+    if not isinstance(segments, Sequence) or isinstance(segments, (str, bytes)):
+        raise PersianEditorialHookError("opening hook requires authored text segments")
+    content = [
+        segment
+        for segment in segments
+        if isinstance(segment, Mapping) and str(segment.get("role") or "") != "source"
+    ]
+    declared = [str(segment.get("semanticRole") or "").strip() for segment in content]
+    if not any(declared):
+        return None
+    if not 2 <= len(content) <= 5:
+        raise PersianEditorialHookError("semantic poster stack requires 2-5 ordered phrases")
+    if any(not role for role in declared):
+        raise PersianEditorialHookError(
+            "semantic poster stack requires semanticRole on every visible phrase"
+        )
+    unsupported = sorted(set(declared) - SEMANTIC_POSTER_ROLES)
+    if unsupported:
+        raise PersianEditorialHookError(
+            "semantic poster stack contains unsupported roles: " + ", ".join(unsupported)
+        )
+    if declared.count("subject_hero") != 1:
+        raise PersianEditorialHookError(
+            "semantic poster stack requires exactly one subject_hero phrase"
+        )
+
+    phrases: list[dict[str, str]] = []
+    for index, (segment, semantic_role) in enumerate(zip(content, declared, strict=True)):
+        structural_role = str(segment.get("role") or "").strip()
+        expected_structural = STRUCTURAL_ROLE_BY_SEMANTIC_ROLE[semantic_role]
+        if structural_role != expected_structural:
+            raise PersianEditorialHookError(
+                f"semantic poster phrase {index} role {semantic_role} requires structural role {expected_structural}"
+            )
+        phrases.append(
+            {
+                "role": semantic_role,
+                "text": _clean_text(segment.get("text"), f"semantic poster phrase {index}"),
+            }
+        )
+
+    reconstructed = _normalized_hook_text(" ".join(phrase["text"] for phrase in phrases))
+    authoritative = _normalized_hook_text(decision.get("text"))
+    if reconstructed != authoritative:
+        raise PersianEditorialHookError(
+            "semantic poster phrase concatenation must reconstruct the authoritative hook"
+        )
+    return {
+        "version": "1.0",
+        "authoritativeHookText": str(decision.get("text") or "").strip(),
+        "authoritativeHookSha256": str(decision.get("sha256") or "").strip().lower(),
+        "phrases": phrases,
+    }
 
 
 def validate_edit_hook_authority(
@@ -129,12 +209,16 @@ def validate_edit_hook_authority(
         raise PersianEditorialHookError(
             "edit hook does not match the selected hook; reflow is allowed but rewriting is not"
         )
-    return {
+    result: dict[str, Any] = {
         "mode": mode,
         "verified": True,
         "selectedHookSha256": expected_sha,
         "viewerVisibleText": actual,
     }
+    semantic = semantic_poster_stack_from_edit(decision, payload)
+    if semantic is not None:
+        result["semanticPosterStack"] = semantic
+    return result
 
 
 def finalize_automatic_hook_selection(
@@ -194,10 +278,12 @@ __all__ = [
     "HOOK_REFERENCE_CORPUS",
     "MIN_AUTOMATIC_HOOK_SCORE",
     "REQUIRED_CONTENT_MATCH_SCORE",
+    "SEMANTIC_POSTER_ROLES",
     "PersianEditorialHookError",
     "build_initial_hook_selection",
     "validate_user_hook_unchanged",
     "edit_hook_text",
+    "semantic_poster_stack_from_edit",
     "validate_edit_hook_authority",
     "finalize_automatic_hook_selection",
 ]
