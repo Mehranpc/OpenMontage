@@ -14,6 +14,7 @@ import re
 from typing import Any, Mapping, Sequence
 
 from lib.json_safe import to_json_safe
+from lib.persian_durable_job import durable_command_sha256
 from lib import persian_video_workflow as workflow
 
 _ENVELOPE_VERSION = "1.0"
@@ -24,7 +25,6 @@ _CHECKPOINTED_PHASES = frozenset({
     "acquire_assets",
     "no_copy_preflight",
 })
-_TERMINAL_EXECUTION_OUTCOMES = frozenset({"succeeded", "failed", "interrupted"})
 
 
 class PersianRunKernelError(ValueError):
@@ -109,8 +109,19 @@ def _job_error_reason(job: Mapping[str, Any]) -> str:
 
 
 def _decorate_job(job: Mapping[str, Any], envelope: Mapping[str, Any]) -> dict[str, Any]:
+    execution_outcome = str(
+        envelope.get("executionOutcome") or job.get("executionOutcome") or "pending"
+    )
+    status = str(job.get("status") or "pending")
+    if execution_outcome in {"failed", "interrupted"}:
+        status = execution_outcome
     return {
         **dict(job),
+        "status": status,
+        "processOutcome": envelope.get("processOutcome", job.get("processOutcome")),
+        "semanticOutcome": envelope.get("semanticOutcome", job.get("semanticOutcome")),
+        "executionOutcome": execution_outcome,
+        "reportingOutcome": envelope.get("reportingOutcome", job.get("reportingOutcome")),
         "phaseAttempt": envelope["phaseAttempt"],
         "executionEnvelopePath": envelope["path"],
         "executionEnvelope": dict(envelope),
@@ -151,8 +162,13 @@ def start_phase_job(
             raise PersianRunKernelError(
                 f"job {job_id!r} is already bound to a different idempotence key"
             )
-        job = workflow.reconcile_workflow_job(project_id, job_id, pipeline_dir=pipeline_dir)
-        return _decorate_job(job, envelope)
+        requested_command_sha = durable_command_sha256(argv)
+        recorded_command_sha = str(envelope.get("commandSha256") or "")
+        if recorded_command_sha and recorded_command_sha != requested_command_sha:
+            raise PersianRunKernelError(
+                f"job {job_id!r} is already bound to a different command"
+            )
+        return reconcile_phase_job(project_id, job_id, pipeline_dir=pipeline_dir)
 
     if phase != state.get("next_phase"):
         raise PersianRunKernelError(
@@ -218,6 +234,7 @@ def start_phase_job(
         "phaseAttempt": int(phase_attempt),
         "jobId": actual_job_id,
         "idempotenceKey": idempotence_key,
+        "commandSha256": str(job.get("commandSha256") or durable_command_sha256(argv)),
         "durableStatus": job.get("status"),
         "processOutcome": job.get("processOutcome", "pending"),
         "semanticOutcome": job.get("semanticOutcome", "pending"),
@@ -283,12 +300,24 @@ def reconcile_phase_job(
             envelope[{"status": "durableStatus"}.get(key, key)] = job[key]
     envelope["updatedAt"] = _now()
 
-    if job.get("executionOutcome") in {"failed", "interrupted"}:
+    effective_job = dict(job)
+    if (
+        job.get("processOutcome") == "succeeded"
+        and job.get("semanticOutcome") == "not_reported"
+    ):
+        envelope["executionOutcome"] = "failed"
+        effective_job["executionOutcome"] = "failed"
+        effective_job["semanticError"] = (
+            "production run kernel requires a semantic result; "
+            "process exit code alone is not success"
+        )
+
+    if envelope.get("executionOutcome") in {"failed", "interrupted"}:
         _close_failed_attempt_if_current(
-            project_id, envelope, job, pipeline_dir=pipeline_dir
+            project_id, envelope, effective_job, pipeline_dir=pipeline_dir
         )
         envelope["workflowTransitionOutcome"] = "blocked"
-        envelope["workflowTransitionError"] = _job_error_reason(job)
+        envelope["workflowTransitionError"] = _job_error_reason(effective_job)
 
     state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     envelope["nextPhase"] = state.get("next_phase")
