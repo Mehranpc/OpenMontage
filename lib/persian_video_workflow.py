@@ -27,6 +27,7 @@ from lib.persian_editorial_hook import (
     build_initial_hook_selection,
     finalize_automatic_hook_selection,
     validate_user_hook_unchanged,
+    validate_edit_hook_authority,
 )
 from lib.persian_durable_job import DurableJobError, reconcile_job, start_job
 from lib.persian_edit_workspace import (
@@ -2055,7 +2056,12 @@ def stage_workflow_edit_draft(
         )
     source = assert_read_allowed(state, input_path)
     payload = _read_json(str(source))
-    return stage_edit_draft(_project_root(state), attempt_id, payload)
+    decision = state.get("hook_selection")
+    if not isinstance(decision, Mapping):
+        raise PersianVideoWorkflowError("workflow is missing its hook-selection authority record")
+    authority = validate_edit_hook_authority(decision, payload)
+    staged = stage_edit_draft(_project_root(state), attempt_id, payload)
+    return {**staged, "hookAuthority": authority}
 
 
 def preflight_workflow_edit_draft(

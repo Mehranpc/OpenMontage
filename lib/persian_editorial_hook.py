@@ -74,6 +74,69 @@ def validate_user_hook_unchanged(decision: Mapping[str, Any], selected_text: str
         )
 
 
+def _normalized_hook_text(value: object) -> str:
+    return " ".join(_clean_text(value, "hook text").split())
+
+
+def edit_hook_text(payload: Mapping[str, Any]) -> str:
+    """Return the one viewer-visible authored hook from an edit payload.
+
+    Visual segmentation (lead/hero/tail or wrapped rows) may change, but the
+    selected words and punctuation remain one authoritative sentence.
+    """
+    persian = payload.get("persian") if isinstance(payload, Mapping) else None
+    if not isinstance(persian, Mapping):
+        raise PersianEditorialHookError("edit payload requires a persian object")
+    moments = persian.get("moments")
+    if not isinstance(moments, Sequence) or isinstance(moments, (str, bytes)):
+        raise PersianEditorialHookError("edit payload requires Persian moments")
+    hooks = [moment for moment in moments if isinstance(moment, Mapping) and str(moment.get("kind") or "") == "hook"]
+    if len(hooks) != 1:
+        raise PersianEditorialHookError("edit payload must contain exactly one opening hook")
+    segments = hooks[0].get("segments")
+    if not isinstance(segments, Sequence) or isinstance(segments, (str, bytes)):
+        raise PersianEditorialHookError("opening hook requires authored text segments")
+    parts = [
+        str(segment.get("text") or "").strip()
+        for segment in segments
+        if isinstance(segment, Mapping) and str(segment.get("role") or "") != "source"
+    ]
+    visible = " ".join(part for part in parts if part)
+    return _normalized_hook_text(visible)
+
+
+def validate_edit_hook_authority(
+    decision: Mapping[str, Any], payload: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Bind edit staging to the durable front-door hook decision."""
+    mode = str(decision.get("mode") or "")
+    if mode == "automatic" and str(decision.get("status") or "") != "selected":
+        raise PersianEditorialHookError(
+            "automatic hook selection required before edit staging"
+        )
+    if mode not in {"user_supplied", "automatic"}:
+        raise PersianEditorialHookError("workflow hook authority mode is invalid")
+    expected = _normalized_hook_text(decision.get("text"))
+    expected_sha = str(decision.get("sha256") or "").strip().lower()
+    if expected_sha != _sha256_text(str(decision.get("text") or "").strip()):
+        raise PersianEditorialHookError("workflow selected hook digest is invalid")
+    actual = edit_hook_text(payload)
+    if actual != expected:
+        if mode == "user_supplied":
+            raise PersianEditorialHookError(
+                "user-supplied hook is authoritative and edit staging cannot rewrite it"
+            )
+        raise PersianEditorialHookError(
+            "edit hook does not match the selected hook; reflow is allowed but rewriting is not"
+        )
+    return {
+        "mode": mode,
+        "verified": True,
+        "selectedHookSha256": expected_sha,
+        "viewerVisibleText": actual,
+    }
+
+
 def finalize_automatic_hook_selection(
     initial: Mapping[str, Any],
     *,
@@ -134,5 +197,7 @@ __all__ = [
     "PersianEditorialHookError",
     "build_initial_hook_selection",
     "validate_user_hook_unchanged",
+    "edit_hook_text",
+    "validate_edit_hook_authority",
     "finalize_automatic_hook_selection",
 ]
