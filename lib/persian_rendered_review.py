@@ -20,7 +20,8 @@ from lib.persian_music import (
 HOOK_RENDER_REVIEW_VERSION = "2.0"
 COLD_VIEWER_POLICY_VERSION = "1.0"
 RENDERED_AUDIO_POLICY_VERSION = "1.0"
-VISUAL_TYPOGRAPHY_POLICY_VERSION = "1.0"
+VISUAL_TYPOGRAPHY_POLICY_VERSION = "2.0"
+VISUAL_TYPOGRAPHY_LEGACY_POLICY_VERSION = "1.0"
 VISUAL_TYPOGRAPHY_RECIPES = frozenset({"editorial-hero-balanced", "editorial-hero-compact", "editorial-callout-balanced"})
 MIN_VISUAL_OCCUPANCY_RATIO = 0.16
 MAX_VISUAL_OCCUPANCY_RATIO = 0.58
@@ -164,8 +165,9 @@ def _validate_visual_typography(review: Mapping[str, Any], *, require_pass: bool
         if require_pass:
             raise PersianRenderedReviewError("passing rendered hook review requires visual typography evidence")
         return False
-    if str(raw.get("policyVersion") or "") != VISUAL_TYPOGRAPHY_POLICY_VERSION:
-        raise PersianRenderedReviewError("visual typography policyVersion must be 1.0")
+    policy_version = str(raw.get("policyVersion") or "")
+    if policy_version not in {VISUAL_TYPOGRAPHY_LEGACY_POLICY_VERSION, VISUAL_TYPOGRAPHY_POLICY_VERSION}:
+        raise PersianRenderedReviewError("visual typography policyVersion must be 1.0 or 2.0")
     if str(raw.get("evidenceSource") or "") != "rendered_opening_pixels":
         raise PersianRenderedReviewError("visual typography evidence must come from rendered opening pixels")
     recipe = str(raw.get("recipeId") or "")
@@ -181,6 +183,25 @@ def _validate_visual_typography(review: Mapping[str, Any], *, require_pass: bool
         and raw.get("opticalPlacementPassed") is True
         and MIN_VISUAL_HOLD_SECONDS <= duration <= MAX_VISUAL_HOLD_SECONDS
     )
+    if policy_version == VISUAL_TYPOGRAPHY_POLICY_VERSION:
+        family = str(raw.get("displayFontFamily") or "")
+        if family != "KahrobaEditorial":
+            raise PersianRenderedReviewError("visual typography v2 requires the KahrobaEditorial display family")
+        alignment = str(raw.get("alignment") or "")
+        if alignment not in {"right", "center"}:
+            raise PersianRenderedReviewError("visual typography v2 alignment must be right or center")
+        if raw.get("semanticYellowVisible") is not True:
+            raise PersianRenderedReviewError("visual typography v2 requires visible semantic yellow emphasis")
+        if str(raw.get("semanticAccentHex") or "").upper() != "#FFEA00":
+            raise PersianRenderedReviewError("visual typography v2 semantic accent must be #FFEA00")
+        if str(raw.get("supportInkHex") or "").upper() != "#FFFFFF":
+            raise PersianRenderedReviewError("visual typography v2 support ink must be #FFFFFF")
+        if raw.get("wholeHookVisible") is not True:
+            raise PersianRenderedReviewError("visual typography v2 requires the whole hook to remain visible")
+        if raw.get("plainSubtitleLike") is not False:
+            raise PersianRenderedReviewError("visual typography v2 refuses plain subtitle-like opening treatment")
+        if raw.get("localContrastFieldVisible") is not True:
+            raise PersianRenderedReviewError("visual typography v2 requires a local contrast field behind the hook")
     if require_pass and not passed:
         raise PersianRenderedReviewError(
             "visual typography failed rendered-pixel hierarchy, occupancy, emphasis, line balance, optical placement, or duration QA"
