@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
+from pathlib import Path
 
 import pytest
 
+from lib.persian_design import SUPPORTED_FILM_TYPE_212_HASH
 from lib.persian_srt_alignment import SubtitleAlignmentError, build_script_aligned_cues
 from tools.tool_registry import ToolRegistry
 from tools.video.persian_compose import PersianCompose
@@ -363,8 +366,21 @@ def test_short_hybrid_film_type_keeps_watermark_after_intro_delay(tmp_path) -> N
     script = "شروع روشن است."
     clip = tmp_path / "clip.mp4"
     clip.write_bytes(b"x" * 64)
+    profile = json.loads(
+        (Path(__file__).resolve().parents[2] / "styles/persian-footage/film-type-2.12.0.json").read_text()
+    )
     persian = {
-        "design": {"version": 2, "profile": "film-type", "seed": "short-hybrid-watermark"},
+        # This regression predates Film Type 2.16 and exercises watermark timing,
+        # not the licensed editorial typeface. Pin its original profile so CI does
+        # not silently turn a watermark test into a Kahroba runtime-asset test.
+        "design": {
+            "version": 2,
+            "profile": "film-type",
+            "seed": "short-hybrid-watermark",
+            "profileVersion": "2.12.0",
+            "contentHash": SUPPORTED_FILM_TYPE_212_HASH,
+            "resolved": profile,
+        },
         "format": "vertical",
         "durationSeconds": 10.5,
         "platformTarget": "instagram-reels",
