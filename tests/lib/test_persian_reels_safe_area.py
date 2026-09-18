@@ -16,8 +16,9 @@ class ReelsSafeAreaContracts(unittest.TestCase):
             self.assertEqual(p['contrast'][key],old['contrast'][key])
         for key in ('fontFamily','heroWeight','supportWeight','ink','darkInk','accent',
                     'contextPx','supportPx','sourcePx','persianLetterSpacing','glow',
-                    'decorativeRule','supportOpacity','inlineEmphasis'):
+                    'decorativeRule','supportOpacity'):
             self.assertEqual(p['typography'][key],old['typography'][key])
+        self.assertEqual(p['typography']['inlineEmphasis'],'yellow-fill-white-support')
         self.assertIn('recipes',p['typography'])
         # The field may only get softer/smaller than the 2.7 baseline, never darker
         # or larger, and it must stay a diffuse ellipse (no plate, no frame grade).
@@ -31,11 +32,13 @@ class ReelsSafeAreaContracts(unittest.TestCase):
         # 2.10 scopes the field to each measured row instead of the whole block.
         self.assertTrue(field['perRow'])
         self.assertGreater(field['rowPaddingPx'],0)
-    def test_reels_text_and_brand_share_safe_bounds(self):
+    def test_reels_text_uses_rtl_right_margin_while_brand_keeps_legacy_clearance(self):
         p=resolve_design({'version':2,'profile':'film-type','seed':'test'})['resolved']
         text=p['formats']['vertical']['safeArea'];brand=p['watermark']['safeAreas']['vertical']
-        for key,value in {'top':.14,'bottom':.35,'left':.08,'right':.16}.items():
+        for key,value in {'top':.14,'bottom':.35,'left':.08}.items():
             self.assertEqual(text[key],value);self.assertEqual(brand[key],value)
+        self.assertEqual(text['right'],.08)
+        self.assertEqual(brand['right'],.16)
     def test_burned_caption_band_stays_inside_reels_safe_area(self):
         p=resolve_design({'version':2,'profile':'film-type','seed':'test'})['resolved']
         safe=p['formats']['vertical']['safeArea']
