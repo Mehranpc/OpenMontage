@@ -79,7 +79,7 @@ def validate_user_hook_unchanged(decision: Mapping[str, Any], selected_text: str
     """Refuse downstream replacement of an explicitly supplied hook."""
     if str(decision.get("mode") or "") != "user_supplied":
         return
-    expected = _clean_text(decision.get("text"), "authoritative user hook")
+    expected = _clean_text(decision.get("text"), "user hook")
     actual = _clean_text(selected_text, "selected hook")
     if actual != expected or _sha256_text(actual) != str(decision.get("sha256") or ""):
         raise PersianEditorialHookError(
@@ -202,6 +202,17 @@ def semantic_poster_stack_from_edit(
     }
 
 
+def _strip_transport_semantic_roles(payload: dict[str, Any]) -> None:
+    """Keep semantic roles canonical in metadata, not as unschematized render fields."""
+    hook = _opening_hook(payload)
+    segments = hook.get("segments")
+    if not isinstance(segments, Sequence) or isinstance(segments, (str, bytes)):
+        return
+    for segment in segments:
+        if isinstance(segment, dict):
+            segment.pop("semanticRole", None)
+
+
 def validate_edit_hook_authority(
     decision: Mapping[str, Any], payload: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -251,6 +262,7 @@ def validate_edit_hook_authority(
                 "persisted semantic poster stack cannot be silently reinterpreted"
             )
         metadata["semanticPosterStack"] = semantic
+        _strip_transport_semantic_roles(payload)
     return result
 
 
