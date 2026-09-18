@@ -219,7 +219,7 @@ def test_read_allowlist_permits_current_source_and_contracts_but_not_siblings(tm
     required_contracts = [
         ROOT / "skills" / "persian-video" / "SKILL.md",
         ROOT / "skills" / "meta" / "reviewer.md",
-        ROOT / "docs" / "persian-film-type-2.15-patch.md",
+        ROOT / "docs" / "persian-film-type-2.16-patch.md",
         ROOT / "docs" / "film-type-visual-regression.md",
         ROOT / "styles" / "persian-footage" / "film-type.json",
         ROOT / ".agents" / "skills" / "music" / "SKILL.md",
