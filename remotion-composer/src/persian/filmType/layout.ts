@@ -8,7 +8,7 @@ import { planCoverageAwareBrand, planMovingBrand } from "./watermark24";
 import { estedadReady, ensureKahrobaReady, isEstedadLoaded, isKahrobaLoaded, ESTEDAD_FAMILY, KAHROBA_FAMILY } from "../fonts";
 import { breakClass, splitWords, visibleLength } from "../text";
 import { FORMAT_DIMENSIONS, MOMENT_READ_CPS, MOMENT_FIXATION_SECONDS, MOMENT_BLOCK_SECONDS, MOMENT_SOURCE_READ_WEIGHT, MOMENT_MIN_SECONDS, type PersianFormat } from "../tokens";
-import { assertMomentIsWellFormed, DEFAULT_WATERMARK, type PersianMoment,
+import { assertMomentIsWellFormed, DEFAULT_WATERMARK, type PersianMoment, type PersianSemanticPosterRole,
   type PersianVideoProps, type PersianDesignSnapshot } from "../types";
 
 export type Rect = { x: number; y: number; w: number; h: number };
@@ -237,39 +237,63 @@ export function splitQuantity(text: string): [string,string] | null {
   return match && !match[2].includes("\n") ? [match[1],match[2]] : null;
 }
 
-export function isPosterStackHook(moment: PersianMoment): boolean {
-  if (moment.kind !== "hook" || moment.purpose !== "hook-pattern-interrupt") return false;
+const SEMANTIC_POSTER_SCALE: Readonly<Record<PersianSemanticPosterRole, number>> = {
+  setup: .56,
+  bridge: .42,
+  subject_hero: 1,
+  connector: .42,
+  payoff: .62,
+};
+
+const STRUCTURAL_ROLE_BY_SEMANTIC_ROLE: Readonly<Record<PersianSemanticPosterRole, "lead" | "hero" | "tail">> = {
+  setup: "lead",
+  bridge: "lead",
+  subject_hero: "hero",
+  connector: "tail",
+  payoff: "tail",
+};
+
+function semanticPosterRoles(moment: PersianMoment): readonly PersianSemanticPosterRole[] | null {
+  if (moment.kind !== "hook" || moment.purpose !== "hook-pattern-interrupt" || moment.userAuthoredShortHook) return null;
+  const recipeId = moment.presentation?.recipeId ?? "editorial-hero-balanced";
+  if (recipeId !== "editorial-hero-balanced" && recipeId !== "editorial-hero-compact") return null;
   const blocks = moment.segments.filter(segment => segment.role !== "source");
-  if (blocks.length < 2 || blocks.length > 5 || blocks.some(segment => (segment.accentWords ?? []).length > 0)) return false;
-  const heroIndex = blocks.findIndex(segment => segment.role === "hero");
-  if (heroIndex < 0 || blocks.filter(segment => segment.role === "hero").length !== 1) return false;
-  return blocks.slice(0, heroIndex).every(segment => segment.role === "lead")
-    && blocks.slice(heroIndex + 1).every(segment => segment.role === "tail");
-}
-
-/** Relative display scale for one authored phrase in a semantic poster stack. */
-export function posterStackScale(segmentIndex: number, segments: PersianMoment["segments"]): number {
-  const blocks = segments.filter(segment => segment.role !== "source");
-  const heroIndex = blocks.findIndex(segment => segment.role === "hero");
-  const blockIndex = blocks.indexOf(segments[segmentIndex]);
-  if (blockIndex < 0 || heroIndex < 0) return 1;
-  if (blockIndex === heroIndex) return 1;
-  if (blockIndex < heroIndex) {
-    const count = heroIndex;
-    if (count <= 1) return .56;
-    const t = blockIndex / (count - 1);
-    return .56 + (.42 - .56) * t;
+  if (blocks.length < 2 || blocks.length > 5) {
+    throw new Error(`Moment ${moment.id}: Film Type 2.16 editorial poster stack requires 2-5 visible phrases.`);
   }
-  const count = blocks.length - heroIndex - 1;
-  const position = blockIndex - heroIndex - 1;
-  if (count <= 1) return .62;
-  const t = position / (count - 1);
-  return .42 + (.62 - .42) * t;
+  if (blocks.some(segment => (segment.accentWords ?? []).length > 0)) {
+    throw new Error(`Moment ${moment.id}: Film Type 2.16 editorial poster stack cannot mix accentWords with semanticRole hierarchy.`);
+  }
+  const roles = blocks.map(segment => {
+    const semanticRole = segment.semanticRole;
+    if (!semanticRole) {
+      throw new Error(`Moment ${moment.id}: Film Type 2.16 editorial poster stack requires explicit semanticRole on every visible phrase.`);
+    }
+    if (STRUCTURAL_ROLE_BY_SEMANTIC_ROLE[semanticRole] !== segment.role) {
+      throw new Error(`Moment ${moment.id}: semanticRole ${semanticRole} is incompatible with structural role ${segment.role}.`);
+    }
+    return semanticRole;
+  });
+  if (roles.filter(role => role === "subject_hero").length !== 1) {
+    throw new Error(`Moment ${moment.id}: Film Type 2.16 editorial poster stack requires exactly one subject_hero.`);
+  }
+  return roles;
 }
 
-function posterStackGapPx(nextIndex: number, heroIndex: number, heroPx: number): number {
-  if (nextIndex === heroIndex) return Math.max(8, Math.round(heroPx * .05));
-  if (nextIndex - 1 === heroIndex) return Math.max(12, Math.round(heroPx * .11));
+export function isPosterStackHook(moment: PersianMoment): boolean {
+  return semanticPosterRoles(moment) !== null;
+}
+
+/** Relative display scale authored by semantic role, never inferred from row position. */
+export function posterStackScale(segment: PersianMoment["segments"][number]): number {
+  const semanticRole = segment.semanticRole;
+  if (!semanticRole) throw new Error("posterStackScale requires explicit semanticRole.");
+  return SEMANTIC_POSTER_SCALE[semanticRole];
+}
+
+function posterStackGapPx(previousRole: PersianSemanticPosterRole, nextRole: PersianSemanticPosterRole, heroPx: number): number {
+  if (nextRole === "subject_hero") return Math.max(8, Math.round(heroPx * .05));
+  if (previousRole === "subject_hero") return Math.max(12, Math.round(heroPx * .11));
   return Math.max(9, Math.round(heroPx * .07));
 }
 
@@ -294,8 +318,8 @@ function editorialRecipe(moment: PersianMoment, p: FilmProfile): {id: EditorialR
 
 function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, column: number, selectedSize?: number): Omit<FilmMomentLayout,"rect"|"placement"|"subjectSafety"|"contrastMode"|"strength"> | null {
   const t = p.typography, l = p.layout, dims = FORMAT_DIMENSIONS[fmt], recipe = editorialRecipe(moment,p);
-  const posterStack = p.profileVersion === "2.16.0" && isPosterStackHook(moment);
-  const posterHeroIndex = posterStack ? moment.segments.findIndex(segment => segment.role === "hero") : -1;
+  const posterRoles = p.profileVersion === "2.16.0" ? semanticPosterRoles(moment) : null;
+  const posterStack = posterRoles !== null;
   const numeric = !moment.exactText && moment.kind === "figure" && moment.segments.some(s => s.role === "hero" && splitQuantity(s.text));
   const ladder = numeric ? t.figureLadderPx : moment.kind === "hook" ? t.titleLadderPx : t.statementLadderPx;
   const safe = p.formats[fmt].safeArea;
@@ -307,9 +331,13 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
     for (let index = 0; index < moment.segments.length; index++) {
       const segment = moment.segments[index];
       const reveal = segment.revealAfterSeconds ?? 0;
-      if (index) y += posterStack
-        ? posterStackGapPx(index, posterHeroIndex, main)
-        : reveal > previousReveal ? l.revealGroupGapPx : segment.role === "source" ? l.sourceGapPx : segment.role === "hero" && moment.segments[index - 1].role === "lead" ? l.contextGapPx : l.phraseGapPx;
+      if (index) {
+        const previous = moment.segments[index - 1];
+        const semanticGap = posterStack && previous.role !== "source" && segment.role !== "source";
+        y += semanticGap
+          ? posterStackGapPx(previous.semanticRole!, segment.semanticRole!, main)
+          : reveal > previousReveal ? l.revealGroupGapPx : segment.role === "source" ? l.sourceGapPx : segment.role === "hero" && previous.role === "lead" ? l.contextGapPx : l.phraseGapPx;
+      }
       previousReveal = reveal;
       const quantity = numeric && segment.role === "hero" ? splitQuantity(segment.text) : null;
       const editorial = p.profileVersion === "2.16.0" ? t.editorial : undefined;
@@ -319,7 +347,7 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
         {text: quantity[0], role: "quantity", size: main, weight: editorial ? editorialWeight : 500 as 500|900, max: 1, family: editorialFamily},
         {text: quantity[1], role: "quantity-unit", size: t.quantityUnitPx, weight: editorial ? editorialWeight : 500 as 500|900, max: 2, family: editorialFamily},
       ] : [{text: segment.text, role: segment.role,
-        size: segment.role === "source" ? t.sourcePx : posterStack ? Math.round(main * posterStackScale(index, moment.segments)) : segment.role === "lead" ? (editorial ? Math.round(main * .72) : t.contextPx) : segment.role === "tail" ? (editorial ? Math.round(main * .72) : (moment.kind === "hook" ? Math.round(main * t.titleTailRatio) : t.supportPx)) : main,
+        size: segment.role === "source" ? t.sourcePx : posterStack ? Math.round(main * posterStackScale(segment)) : segment.role === "lead" ? (editorial ? Math.round(main * .72) : t.contextPx) : segment.role === "tail" ? (editorial ? Math.round(main * .72) : (moment.kind === "hook" ? Math.round(main * t.titleTailRatio) : t.supportPx)) : main,
         weight: segment.role === "source" ? t.supportWeight : (editorial ? editorialWeight : (segment.role === "hero" ? t.heroWeight : t.supportWeight)),
         max: posterStack ? 1 : segment.role === "hero" ? (recipe?.config.maxHeroLines ?? editorial?.maxHookLines ?? 3) : (recipe?.config.maxSupportLines ?? 2),
         family: segment.role === "source" ? ESTEDAD_FAMILY : editorialFamily}];
