@@ -175,9 +175,10 @@ def _validate_visual_typography(review: Mapping[str, Any], *, require_pass: bool
         raise PersianRenderedReviewError("visual typography recipe must be one of the curated recipes")
     occupancy = _number(raw.get("occupancyRatio"), "visual typography occupancy ratio")
     duration = _number(raw.get("durationSeconds"), "visual typography duration")
+    max_occupancy = 0.78 if policy_version == VISUAL_TYPOGRAPHY_POLICY_VERSION else MAX_VISUAL_OCCUPANCY_RATIO
     passed = (
         raw.get("hierarchyPassed") is True
-        and MIN_VISUAL_OCCUPANCY_RATIO <= occupancy <= MAX_VISUAL_OCCUPANCY_RATIO
+        and MIN_VISUAL_OCCUPANCY_RATIO <= occupancy <= max_occupancy
         and raw.get("emphasisPassed") is True
         and raw.get("lineBalancePassed") is True
         and raw.get("opticalPlacementPassed") is True
