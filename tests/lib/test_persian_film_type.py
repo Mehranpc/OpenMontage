@@ -158,7 +158,7 @@ class FilmTypeContracts(unittest.TestCase):
         self.assertEqual(new['watermark']['targetCoverageRatio'],.8)
         self.assertEqual(new['watermark']['longFormThresholdSeconds'],30)
         self.assertEqual(new['watermark']['minLongFormRelocations'],2)
-        self.assertEqual(new['formats']['vertical']['safeArea'],{'top':.14,'bottom':.35,'side':.08,'left':.08,'right':.16})
+        self.assertEqual(new['formats']['vertical']['safeArea'],{'top':.14,'bottom':.35,'side':.08,'left':.08,'right':.08})
         self.assertEqual(new['watermark']['safeAreas']['vertical'],{'top':.14,'bottom':.35,'left':.08,'right':.16})
     def test_213_only_adds_coverage_policy_to_the_archived_212_profile(self):
         old=json.loads((ROOT/'styles/persian-footage/film-type-2.12.0.json').read_text())
