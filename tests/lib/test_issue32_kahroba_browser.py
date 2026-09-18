@@ -43,4 +43,8 @@ class Issue32KahrobaBrowserContract(unittest.TestCase):
         assert " ".join(row["text"] for row in hero_rows) == text
         assert layout["placement"] in {"upper-right", "upper-center", "mid-right", "center", "lower-right"}
         assert not layout["placement"].endswith("left")
+        accent_rows = [row for row in hero_rows if row["accentWords"]]
+        assert len(accent_rows) == 1, "semantic burst/underline belongs only to the row containing the accented phrase"
+        assert accent_rows[0]["text"].endswith("وقت تلف کردنه!")
+        assert all(word in accent_rows[0]["text"] for word in accent_rows[0]["accentWords"])
         assert prepared["design"]["resolved"]["typography"]["editorial"]["semanticAccent"] == "#FFEA00"
