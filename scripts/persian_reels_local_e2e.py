@@ -24,6 +24,7 @@ if str(ROOT) not in sys.path:
 
 from lib.checkpoint import write_checkpoint
 from lib.persian_assets import assert_video_only, audit_asset_manifest
+from lib.persian_editorial_hook import validate_edit_hook_authority
 from lib.persian_finalization import master_final_candidate
 from lib.persian_rendered_review import (
     build_cold_viewer_review_input,
@@ -448,6 +449,20 @@ def validate_contract_fixture(work: Path) -> dict[str, Any]:
         raise RuntimeError("projected asset fixture failed: " + "; ".join(projection_problems))
     assert_video_only(actual)
     edit = _edit_decisions(narration, words, clips)
+    hook_text = " ".join(
+        str(segment.get("text") or "").strip()
+        for segment in edit["persian"]["moments"][0]["segments"]
+        if str(segment.get("role") or "") != "source"
+    ).strip()
+    validate_edit_hook_authority(
+        {
+            "mode": "automatic",
+            "status": "selected",
+            "text": hook_text,
+            "sha256": hashlib.sha256(hook_text.encode("utf-8")).hexdigest(),
+        },
+        edit,
+    )
     for name, artifact in (("scene_plan", plan), ("asset_manifest", actual),
                            ("asset_manifest", projection), ("edit_decisions", edit)):
         validate_artifact(name, artifact)
