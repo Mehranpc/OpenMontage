@@ -24,6 +24,7 @@ from lib.paths import REPO_ROOT
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 _PYTHON_LAUNCHERS = frozenset({"python", "python3", "python.exe", "python3.exe"})
+_RESULT_ENV_VAR = "OPENMONTAGE_DURABLE_RESULT_PATH"
 
 
 class DurableJobError(ValueError):
@@ -77,6 +78,10 @@ def _state_path(project_dir: Path, job_id: str) -> Path:
 
 def _result_path(project_dir: Path, job_id: str) -> Path:
     return _state_path(project_dir, job_id).with_name("result.json")
+
+
+def _semantic_result_path(project_dir: Path, job_id: str) -> Path:
+    return _state_path(project_dir, job_id).with_name("semantic-result.json")
 
 
 def _log_path(project_dir: Path, job_id: str) -> Path:
@@ -138,12 +143,15 @@ def start_job(
     state_path = _state_path(project_dir, job_id)
     if state_path.exists():
         raise DurableJobError("job_id already exists; reuse its state or choose a new job_id")
+    semantic_result_path = _semantic_result_path(project_dir, job_id)
     state = {
         "version": 2,
         "jobId": job_id,
         "phase": phase,
         "idempotenceKey": idempotence_key,
         "status": "queued",
+        "processOutcome": "pending",
+        "semanticOutcome": "pending",
         "executionOutcome": "pending",
         "reportingOutcome": "pending",
         "command": command,
@@ -152,11 +160,13 @@ def start_job(
         "heartbeatAt": None,
         "workerPid": None,
         "resultPath": str(_result_path(project_dir, job_id)),
+        "semanticResultPath": str(semantic_result_path),
         "logPath": str(_log_path(project_dir, job_id)),
         "executionContext": {
             "cwd": str(REPO_ROOT.resolve()),
             "interpreter": str(Path(sys.executable).resolve()),
             "pythonPath": env["PYTHONPATH"],
+            "semanticResultEnv": _RESULT_ENV_VAR,
         },
     }
     _atomic_json(state_path, state)
@@ -225,6 +235,10 @@ def reconcile_job(project_dir: Path, job_id: str) -> dict[str, Any]:
                     "status",
                     "exitCode",
                     "finishedAt",
+                    "processOutcome",
+                    "semanticOutcome",
+                    "semanticResult",
+                    "semanticError",
                     "executionOutcome",
                     "reportingOutcome",
                 )
@@ -245,6 +259,9 @@ def reconcile_job(project_dir: Path, job_id: str) -> dict[str, Any]:
             _atomic_json(state_path, state)
             return state
         state["status"] = "interrupted"
+        state["processOutcome"] = "interrupted"
+        if state.get("semanticOutcome") in {None, "pending", "running"}:
+            state["semanticOutcome"] = "not_reported"
         state["executionOutcome"] = "interrupted"
         state["finishedAt"] = _now()
         state["recoveryAction"] = (
@@ -254,20 +271,49 @@ def reconcile_job(project_dir: Path, job_id: str) -> dict[str, Any]:
     return state
 
 
+def _read_semantic_result(state_path: Path, state: Mapping[str, Any]) -> tuple[str, dict[str, Any] | None, str | None]:
+    raw_path = str(state.get("semanticResultPath") or "").strip()
+    path = Path(raw_path) if raw_path else state_path.with_name("semantic-result.json")
+    if not path.is_file():
+        return "not_reported", None, None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return "invalid", None, f"semantic result is unreadable JSON: {exc}"
+    if not isinstance(payload, dict):
+        return "invalid", None, "semantic result must be a JSON object"
+    success = payload.get("success")
+    if not isinstance(success, bool):
+        return "invalid", to_json_safe(payload), "semantic result requires boolean success"
+    return ("succeeded" if success else "failed"), to_json_safe(payload), None
+
+
 def _record_finished_execution(
     state_path: Path, *, exit_code: int, heartbeat_at: str | None = None
 ) -> dict[str, Any]:
-    """Persist execution truth first; reporting may fail without changing it."""
+    """Persist process and semantic execution truth first; reporting may fail later."""
     state = _read_json(state_path)
     result_path = state_path.with_name("result.json")
-    status = "succeeded" if int(exit_code) == 0 else "failed"
-    finished = {
+    process_outcome = "succeeded" if int(exit_code) == 0 else "failed"
+    semantic_outcome, semantic_result, semantic_error = _read_semantic_result(state_path, state)
+    execution_succeeded = process_outcome == "succeeded" and semantic_outcome in {
+        "succeeded",
+        "not_reported",
+    }
+    status = "succeeded" if execution_succeeded else "failed"
+    finished: dict[str, Any] = {
         "status": status,
+        "processOutcome": process_outcome,
+        "semanticOutcome": semantic_outcome,
         "executionOutcome": status,
         "exitCode": int(exit_code),
         "finishedAt": _now(),
         "heartbeatAt": heartbeat_at or state.get("heartbeatAt") or _now(),
     }
+    if semantic_result is not None:
+        finished["semanticResult"] = semantic_result
+    if semantic_error:
+        finished["semanticError"] = semantic_error
     state.update(finished)
     state["reportingOutcome"] = "pending"
     _atomic_json(state_path, state)
@@ -290,17 +336,25 @@ def _record_finished_execution(
 def _worker(state_path: Path) -> int:
     state = _read_json(state_path)
     log_path = state_path.with_name("job.log")
+    semantic_result_path = Path(
+        str(state.get("semanticResultPath") or state_path.with_name("semantic-result.json"))
+    )
+    semantic_result_path.unlink(missing_ok=True)
     state["status"] = "running"
+    state["processOutcome"] = "running"
+    state["semanticOutcome"] = "pending"
     state["executionOutcome"] = "running"
     state["workerPid"] = os.getpid()
     state["startedAt"] = _now()
     state["heartbeatAt"] = _now()
     _atomic_json(state_path, state)
+    child_env = _canonical_env()
+    child_env[_RESULT_ENV_VAR] = str(semantic_result_path)
     with log_path.open("ab") as log:
         child = subprocess.Popen(
             state["command"],
             cwd=REPO_ROOT,
-            env=_canonical_env(),
+            env=child_env,
             stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=subprocess.STDOUT,
