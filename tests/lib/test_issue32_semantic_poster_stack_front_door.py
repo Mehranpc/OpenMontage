@@ -31,6 +31,7 @@ def test_front_door_persists_explicit_semantic_poster_stack_before_preflight(tmp
     _advance_to(tmp_path, "no_copy_preflight")
 
     payload = _payload()
+    payload["renderer_family"] = "persian-footage"
     hook = payload["persian"]["moments"][0]
     hook.update({
         "kind": "hook",
