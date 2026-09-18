@@ -108,6 +108,11 @@ def _command_digest(argv: Sequence[str]) -> str:
     ).hexdigest()
 
 
+def durable_command_sha256(argv: Sequence[str]) -> str:
+    """Return the canonical digest used to bind one durable command identity."""
+    return _command_digest(_normalize_command(argv))
+
+
 def load_job(project_dir: Path, job_id: str) -> dict[str, Any]:
     return _read_json(_state_path(project_dir, job_id))
 
@@ -136,7 +141,7 @@ def start_job(
     existing_id = index.get(idempotence_key)
     if existing_id:
         existing = load_job(project_dir, str(existing_id))
-        if existing.get("commandSha256") != _command_digest(command):
+        if existing.get("commandSha256") != durable_command_sha256(command):
             raise DurableJobError("idempotence_key already belongs to a different command")
         return {**existing, "idempotentReuse": True}
 
@@ -155,7 +160,7 @@ def start_job(
         "executionOutcome": "pending",
         "reportingOutcome": "pending",
         "command": command,
-        "commandSha256": _command_digest(command),
+        "commandSha256": durable_command_sha256(command),
         "createdAt": _now(),
         "heartbeatAt": None,
         "workerPid": None,
