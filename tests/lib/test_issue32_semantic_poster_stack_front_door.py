@@ -3,11 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from lib.persian_video_workflow import (
-    bootstrap_persian_video,
-    load_workflow_state,
-    stage_workflow_edit_draft,
-)
+from lib.persian_video_workflow import bootstrap_persian_video, stage_workflow_edit_draft
 from tests.lib.test_persian_preflight_contract import _payload
 from tests.lib.test_persian_video_workflow import BASE, _advance_to
 
@@ -58,5 +54,5 @@ def test_front_door_persists_explicit_semantic_poster_stack_before_preflight(tmp
     ]
     assert " ".join(phrase["text"] for phrase in poster["phrases"]) == HOOK
 
-    state = load_workflow_state("run", pipeline_dir=tmp_path)
-    assert state["hook_selection"]["semantic_poster_stack"] == poster
+    persisted = json.loads(Path(staged["draftPath"]).read_text(encoding="utf-8"))
+    assert persisted["metadata"]["semanticPosterStack"] == poster
