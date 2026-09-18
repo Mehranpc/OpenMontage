@@ -143,17 +143,15 @@ def start_phase_job(
     path = _envelope_path(state, job_id)
     if path.is_file():
         envelope = _read_json(path)
-        job = workflow.start_workflow_job(
-            project_id,
-            job_id=job_id,
-            phase=phase,
-            argv=argv,
-            idempotence_key=idempotence_key,
-            pipeline_dir=pipeline_dir,
-            launch=launch,
-        )
-        if str(job.get("jobId")) != str(envelope.get("jobId")):
-            raise PersianRunKernelError("durable idempotence resolved to a different job identity")
+        if str(envelope.get("phase")) != phase:
+            raise PersianRunKernelError(
+                f"job {job_id!r} is already bound to phase {envelope.get('phase')!r}"
+            )
+        if str(envelope.get("idempotenceKey")) != idempotence_key:
+            raise PersianRunKernelError(
+                f"job {job_id!r} is already bound to a different idempotence key"
+            )
+        job = workflow.reconcile_workflow_job(project_id, job_id, pipeline_dir=pipeline_dir)
         return _decorate_job(job, envelope)
 
     if phase != state.get("next_phase"):
@@ -353,11 +351,6 @@ def commit_phase_job(
     if envelope.get("workflowTransitionOutcome") == "succeeded":
         return state
 
-    if phase in list(state.get("completed_phases") or []):
-        _record_commit_success(envelope, state)
-        _atomic_json(Path(str(envelope["path"])), envelope)
-        return state
-
     reconcile_phase_job(project_id, job_id, pipeline_dir=pipeline_dir)
     envelope = load_execution_envelope(project_id, job_id, pipeline_dir=pipeline_dir)
     if envelope.get("executionOutcome") != "succeeded":
@@ -365,6 +358,11 @@ def commit_phase_job(
             "workflow commit requires successful semantic execution; "
             f"process={envelope.get('processOutcome')} semantic={envelope.get('semanticOutcome')}"
         )
+
+    if phase in list(state.get("completed_phases") or []):
+        _record_commit_success(envelope, state)
+        _atomic_json(Path(str(envelope["path"])), envelope)
+        return state
 
     phase_evidence = dict(evidence or {})
     try:
