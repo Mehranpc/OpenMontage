@@ -43,7 +43,6 @@ def test_front_door_zero_exit_does_not_hide_failed_semantic_result(tmp_path: Pat
         argv=["python", "-c", child],
         idempotence_key="semantic-failure-v1",
         pipeline_dir=tmp_path,
-        semantic_result_required=True,
     )
 
     final = _wait_for_job(tmp_path, "semantic-failure")
