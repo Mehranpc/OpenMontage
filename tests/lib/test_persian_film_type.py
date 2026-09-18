@@ -32,7 +32,7 @@ class FilmTypeContracts(unittest.TestCase):
     def test_film_type_requires_explicit_version(self):
         with self.assertRaisesRegex(ValueError,'explicit'):resolve_design({'profile':'film-type','seed':'x'})
     def test_known_snapshot_and_pin_roundtrip(self):
-        design=resolve_design(self.raw);self.assertEqual(design['contentHash'],SUPPORTED_FILM_TYPE_215_HASH)
+        design=resolve_design(self.raw);self.assertEqual(design['contentHash'],SUPPORTED_FILM_TYPE_216_HASH)
         self.assertEqual(resolve_design(design),design)
     def test_pinned_2_1_snapshot_keeps_old_interpretation(self):
         legacy_path=ROOT/'styles/persian-footage/film-type-2.1.0.json'
@@ -58,7 +58,7 @@ class FilmTypeContracts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'Unsupported'):resolve_design(design)
     def test_integral_json_floats_use_browser_canonical_hash(self):
         design=resolve_design(self.raw);design['resolved']['watermark']['persianFontPx']=30.0
-        self.assertEqual(resolve_design(design)['contentHash'],SUPPORTED_FILM_TYPE_215_HASH)
+        self.assertEqual(resolve_design(design)['contentHash'],SUPPORTED_FILM_TYPE_216_HASH)
     def test_nan_profile_refused(self):
         design=resolve_design(self.raw);design['resolved']['motion']['travelPx']=float('nan')
         with self.assertRaisesRegex(ValueError,'non-finite'):resolve_design(design)
