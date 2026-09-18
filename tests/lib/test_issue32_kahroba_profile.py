@@ -37,3 +37,25 @@ def test_issue32_archives_exact_215_profile_before_advancing_default() -> None:
     profile = json.loads(archived.read_text(encoding="utf-8"))
     assert profile["profileVersion"] == "2.15.0"
     assert profile["layoutVersion"] == 15
+
+
+def test_issue32_complete_hook_uses_browser_fit_not_legacy_reading_or_char_ceiling() -> None:
+    from lib.persian_moments import audit_moments, build_moments
+
+    hook = "بزرگ‌ترین اشتباه دربارهٔ بازی‌های ویدیویی اینه که فکر کنیم فقط وقت تلف کردنه!"
+    built = build_moments([{
+        "id": "hook-issue32",
+        "kind": "hook",
+        "purpose": "hook-pattern-interrupt",
+        "startSeconds": 0.0,
+        "endSeconds": 4.9,
+        "segments": [{"role": "hero", "text": hook, "accentWords": ["وقت", "تلف", "کردنه!"]}],
+    }])
+    audit = audit_moments(
+        built,
+        duration_seconds=47.4,
+        v2=True,
+        adaptive_pixel_typography=True,
+        simultaneous_hook_typography=True,
+    )
+    assert audit.problems == []
