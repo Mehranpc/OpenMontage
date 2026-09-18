@@ -10,38 +10,43 @@ from lib.persian_film_type import prepare_film_type_props
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _props(*, include_semantic_roles: bool) -> dict:
+    design = resolve_design({"version": 2, "profile": "film-type", "seed": "issue32-kahroba"})
+    segments = [
+        {"role": "lead", "semanticRole": "setup", "text": "بزرگ‌ترین اشتباه"},
+        {"role": "lead", "semanticRole": "bridge", "text": "دربارهٔ"},
+        {"role": "hero", "semanticRole": "subject_hero", "text": "بازی‌های ویدیویی"},
+        {"role": "tail", "semanticRole": "connector", "text": "اینه که فکر کنیم فقط"},
+        {"role": "tail", "semanticRole": "payoff", "text": "وقت تلف کردنه!"},
+    ]
+    if not include_semantic_roles:
+        segments = [{key: value for key, value in segment.items() if key != "semanticRole"} for segment in segments]
+    return {
+        "format": "vertical",
+        "durationSeconds": 12.0,
+        "design": design,
+        "watermark": {"persianText": "", "latinText": ""},
+        "typographicBeats": [],
+        "captionMode": "sidecar_only",
+        "captions": [],
+        "shots": [{"id": "s", "source": "unused.mp4", "startSeconds": 0, "endSeconds": 12, "avoidRegions": []}],
+        "moments": [{
+            "id": "hook",
+            "kind": "hook",
+            "startSeconds": 0.0,
+            "endSeconds": 5.0,
+            "purpose": "hook-pattern-interrupt",
+            "presentation": {"placement": "auto", "emphasis": "none", "recipeId": "editorial-hero-balanced"},
+            "segments": segments,
+        }],
+    }
+
+
 @unittest.skipUnless(os.environ.get("OPENMONTAGE_BROWSER_TESTS") == "1", "opt-in real browser suite")
 class Issue32KahrobaBrowserContract(unittest.TestCase):
     def test_complete_persian_hook_uses_kahroba_and_never_left_orients(self) -> None:
         text = "بزرگ‌ترین اشتباه دربارهٔ بازی‌های ویدیویی اینه که فکر کنیم فقط وقت تلف کردنه!"
-        design = resolve_design({"version": 2, "profile": "film-type", "seed": "issue32-kahroba"})
-        props = {
-            "format": "vertical",
-            "durationSeconds": 12.0,
-            "design": design,
-            "watermark": {"persianText": "", "latinText": ""},
-            "typographicBeats": [],
-            "captionMode": "sidecar_only",
-            "captions": [],
-            "shots": [{"id": "s", "source": "unused.mp4", "startSeconds": 0, "endSeconds": 12, "avoidRegions": []}],
-            "moments": [{
-                "id": "hook",
-                "kind": "hook",
-                "startSeconds": 0.0,
-                "endSeconds": 5.0,
-                "purpose": "hook-pattern-interrupt",
-                "presentation": {"placement": "auto", "emphasis": "none", "recipeId": "editorial-hero-balanced"},
-                "segments": [
-                    {"role": "lead", "text": "بزرگ‌ترین اشتباه"},
-                    {"role": "lead", "text": "دربارهٔ"},
-                    {"role": "hero", "text": "بازی‌های ویدیویی"},
-                    {"role": "tail", "text": "اینه که فکر کنیم فقط"},
-                    {"role": "tail", "text": "وقت تلف کردنه!"},
-                ],
-            }],
-        }
-
-        prepared = prepare_film_type_props(props, ROOT / "remotion-composer")
+        prepared = prepare_film_type_props(_props(include_semantic_roles=True), ROOT / "remotion-composer")
         layout = prepared["filmType"]["moments"]["hook"]
         rows = layout["rows"]
 
@@ -62,3 +67,7 @@ class Issue32KahrobaBrowserContract(unittest.TestCase):
         assert rows[2]["role"] == "hero" and rows[2]["text"] == "بازی‌های ویدیویی"
         assert layout["rect"]["x"] + layout["rect"]["w"] >= 0.87, "RTL hook should sit visually toward the right edge"
         assert prepared["design"]["resolved"]["typography"]["editorial"]["semanticAccent"] == "#FFEA00"
+
+    def test_editorial_poster_stack_refuses_position_only_semantics(self) -> None:
+        with self.assertRaisesRegex(ValueError, "semanticRole"):
+            prepare_film_type_props(_props(include_semantic_roles=False), ROOT / "remotion-composer")
