@@ -33,6 +33,8 @@ MAX_TRUE_PEAK_DBFS = -1.0
 _SEPARATION_TOLERANCE_LU = 0.35
 _LUFS_RE = re.compile(r"\bI:\s*(-?[0-9]+(?:\.[0-9]+)?)\s+LUFS")
 _PEAK_RE = re.compile(r"\bPeak:\s*(-?[0-9]+(?:\.[0-9]+)?)\s+dBFS")
+_SEMANTIC_POSTER_ROLES = frozenset({"setup", "bridge", "subject_hero", "connector", "payoff"})
+_MIN_HERO_TO_SUPPORT_RATIO = 1.15
 
 
 class PersianRenderedReviewError(ValueError):
@@ -159,6 +161,96 @@ def _validate_cold_viewer(review: Mapping[str, Any]) -> bool:
     return bool(topic and claim and continuation and not [item for item in unresolved if item.strip()])
 
 
+def _validate_semantic_phrase_metrics(raw: Mapping[str, Any]) -> None:
+    metrics = raw.get("phraseMetrics")
+    if not isinstance(metrics, list) or not 2 <= len(metrics) <= 5:
+        raise PersianRenderedReviewError(
+            "visual typography v2 requires rendered phraseMetrics for 2-5 semantic phrases"
+        )
+    if any(not isinstance(item, Mapping) for item in metrics):
+        raise PersianRenderedReviewError("rendered phraseMetrics entries must be objects")
+
+    roles = [str(item.get("semanticRole") or "").strip() for item in metrics]
+    unsupported = sorted(set(roles) - _SEMANTIC_POSTER_ROLES)
+    if unsupported:
+        raise PersianRenderedReviewError(
+            "rendered phraseMetrics contain unsupported semantic roles: " + ", ".join(unsupported)
+        )
+    if roles.count("subject_hero") != 1:
+        raise PersianRenderedReviewError(
+            "rendered phraseMetrics require exactly one subject_hero"
+        )
+
+    sizes: dict[str, list[float]] = {}
+    hero_size = 0.0
+    for index, item in enumerate(metrics):
+        role = roles[index]
+        size = _number(item.get("fontSizePx"), f"rendered phrase {index} fontSizePx")
+        if size <= 0:
+            raise PersianRenderedReviewError("rendered phrase fontSizePx must be positive")
+        rows = item.get("visualRows")
+        if not isinstance(rows, int) or isinstance(rows, bool) or rows < 1:
+            raise PersianRenderedReviewError("rendered phrase visualRows must be a positive integer")
+        ink = str(item.get("inkHex") or "").upper()
+        if role == "subject_hero":
+            if rows != 1:
+                raise PersianRenderedReviewError("subject_hero must remain on one visual row")
+            if ink != "#FFEA00":
+                raise PersianRenderedReviewError("subject_hero rendered ink must be #FFEA00")
+            hero_size = size
+        else:
+            if ink != "#FFFFFF":
+                raise PersianRenderedReviewError(
+                    f"support semantic phrase {role or index} rendered ink must be #FFFFFF"
+                )
+        sizes.setdefault(role, []).append(size)
+
+    support_sizes = [
+        size for role, values in sizes.items() if role != "subject_hero" for size in values
+    ]
+    if not support_sizes or hero_size < max(support_sizes) * _MIN_HERO_TO_SUPPORT_RATIO:
+        raise PersianRenderedReviewError(
+            "rendered semantic hierarchy is near-flat; subject_hero must visibly dominate support phrases"
+        )
+
+    payoff = max(sizes.get("payoff", [0.0]))
+    setup = max(sizes.get("setup", [0.0]))
+    if payoff and setup and payoff < setup:
+        raise PersianRenderedReviewError("rendered payoff must be at least as large as setup")
+    medium_floor = min(value for value in (payoff, setup) if value > 0) if payoff or setup else 0.0
+    if medium_floor:
+        for role in ("bridge", "connector"):
+            if role in sizes and max(sizes[role]) >= medium_floor:
+                raise PersianRenderedReviewError(
+                    f"rendered {role} must remain smaller than setup/payoff support phrases"
+                )
+
+
+def _validate_background_readability(raw: Mapping[str, Any]) -> None:
+    complexity = str(raw.get("backgroundComplexity") or "")
+    if complexity not in {"simple", "busy"}:
+        raise PersianRenderedReviewError(
+            "visual typography v2 backgroundComplexity must be simple or busy"
+        )
+    if raw.get("phoneScaleReadable") is not True:
+        raise PersianRenderedReviewError("rendered hook must remain comfortably readable at phone scale")
+    if raw.get("fullFrameDarkening") is not False:
+        raise PersianRenderedReviewError(
+            "visual typography v2 forbids full-frame darkening as the normal readability treatment"
+        )
+    if complexity == "busy":
+        if raw.get("blockScrimVisible") is not True:
+            raise PersianRenderedReviewError(
+                "busy-background opening requires a block-level soft local scrim"
+            )
+        if raw.get("blockScrimFeathered") is not True:
+            raise PersianRenderedReviewError("busy-background block scrim must be feathered")
+        if raw.get("glyphSeparationStrong") is not True:
+            raise PersianRenderedReviewError(
+                "busy-background opening requires stronger glyph separation"
+            )
+
+
 def _validate_visual_typography(review: Mapping[str, Any], *, require_pass: bool) -> bool:
     raw = review.get("visualTypography")
     if not isinstance(raw, Mapping):
@@ -203,6 +295,8 @@ def _validate_visual_typography(review: Mapping[str, Any], *, require_pass: bool
             raise PersianRenderedReviewError("visual typography v2 refuses plain subtitle-like opening treatment")
         if raw.get("localContrastFieldVisible") is not True:
             raise PersianRenderedReviewError("visual typography v2 requires a local contrast field behind the hook")
+        _validate_semantic_phrase_metrics(raw)
+        _validate_background_readability(raw)
     if require_pass and not passed:
         raise PersianRenderedReviewError(
             "visual typography failed rendered-pixel hierarchy, occupancy, emphasis, line balance, optical placement, or duration QA"
