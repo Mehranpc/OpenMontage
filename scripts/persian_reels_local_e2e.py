@@ -328,9 +328,9 @@ def _edit_decisions(narration: Path, words: list[dict[str, Any]], clips: dict[st
                 "startSeconds": 0.0,
                 "endSeconds": 4.6,
                 "segments": [
-                    {"role": "lead", "text": "شروع با"},
-                    {"role": "hero", "text": "یک تغییر کوچک"},
-                    {"role": "tail", "text": "روشن می‌شود."},
+                    {"role": "lead", "semanticRole": "setup", "text": "شروع با"},
+                    {"role": "hero", "semanticRole": "subject_hero", "text": "یک تغییر کوچک"},
+                    {"role": "tail", "semanticRole": "payoff", "text": "روشن می‌شود."},
                 ],
                 "presentation": {
                     "placement": "auto",
