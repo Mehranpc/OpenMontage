@@ -23,6 +23,7 @@ from lib.checkpoint import CheckpointValidationError, init_project, read_checkpo
 from lib.paths import PROJECTS_DIR, REPO_ROOT
 from lib.pipeline_loader import load_pipeline_readonly
 from lib.persian_film_type_docs import active_film_type_version, film_type_contract_paths
+from lib.persian_editorial_hook import build_initial_hook_selection
 from lib.persian_durable_job import DurableJobError, reconcile_job, start_job
 from lib.persian_edit_workspace import (
     PersianEditWorkspaceError, artifact_sha256, load_promotable_edit_draft, preflight_edit_draft, promote_edit_draft, stage_edit_draft,
@@ -469,6 +470,7 @@ def _repo_read_allowlist(profile_version: str | None = None) -> list[str]:
         (REPO_ROOT / "skills" / "meta" / "reviewer.md").resolve(),
         (REPO_ROOT / "pipeline_defs" / "persian-footage.yaml").resolve(),
         (REPO_ROOT / "styles" / "persian-footage").resolve(),
+        (REPO_ROOT / "docs" / "reference" / "persian-hooks").resolve(),
         *film_type_contract_paths(profile_version, repo_root=REPO_ROOT),
         (REPO_ROOT / ".agents" / "skills" / "music").resolve(),
         (REPO_ROOT / ".agents" / "skills" / "speech-to-text").resolve(),
@@ -483,6 +485,7 @@ def bootstrap_persian_video(
     title: str,
     narration_path: str | None = None,
     approved_script: str | None = None,
+    hook_text: str | None = None,
     project_id: str | None = None,
     pipeline_dir: Path | None = None,
     backlot_opener: Callable[[str | None], int] = open_backlot,
@@ -550,6 +553,7 @@ def bootstrap_persian_video(
             "completed_phases": ["validate_input", "create_project"],
             "next_phase": "open_backlot",
             "input": input_record,
+            "hook_selection": build_initial_hook_selection(hook_text),
             "budgets": asdict(get_workflow_budgets()),
             "attempts": {},
             "send_backs": 0,
@@ -1956,6 +1960,7 @@ def _add_bootstrap_inputs(parser: argparse.ArgumentParser) -> None:
     script = parser.add_mutually_exclusive_group()
     script.add_argument("--approved-script", metavar="TEXT")
     script.add_argument("--approved-script-file", metavar="PATH")
+    parser.add_argument("--hook", metavar="TEXT", help="authoritative opening hook; bypasses automatic hook selection")
 
 
 def _bootstrap_inputs(args: argparse.Namespace) -> tuple[str | None, str | None]:
@@ -2190,6 +2195,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 title=args.title,
                 narration_path=narration_path,
                 approved_script=approved_script,
+                hook_text=args.hook,
                 project_id=args.project_id,
             )
             _print_json(workflow_status(state["project_id"]))
