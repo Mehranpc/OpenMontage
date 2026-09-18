@@ -133,7 +133,7 @@ class ScriptAlignedPersianCompose(PersianCompose):
                 max_visible_chars=burned_caption_max_visible_chars(profile_version),
                 id_prefix="caption",
                 require_words=True,
-                min_connector_words=8 if profile_version in {"2.14.0", "2.15.0"} else 0,
+                min_connector_words=8 if profile_version in {"2.14.0", "2.15.0", "2.16.0"} else 0,
             )
             burned = self._apply_hook_caption_handoff(burned, persian)
             burned = self._suppress_stranded_burned_cues(burned, persian.get("moments") or [])

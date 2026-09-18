@@ -415,8 +415,27 @@ def phase_time_accounting(
                     if isinstance(raw, (int, float)) and not isinstance(raw, bool):
                         accounting_lag += max(0.0, float(raw))
     total = editorial + external
-    origin_raw = since or _parse_timestamp(str(state.get("created_at") or ""))
-    wall_seconds = max(0.0, (current - origin_raw).total_seconds())
+    if since is not None:
+        origin = since
+    else:
+        created_raw = str(state.get("created_at") or "").strip()
+        if created_raw:
+            origin = _parse_timestamp(created_raw)
+        else:
+            # Utility callers may ask only for the metric schema without a durable
+            # workflow state. Use the earliest valid phase start when available; an
+            # entirely empty synthetic state has zero wall time rather than raising.
+            starts: list[datetime] = []
+            for entries in telemetry.values():
+                if isinstance(entries, list):
+                    for entry in entries:
+                        if isinstance(entry, Mapping) and str(entry.get("started_at") or "").strip():
+                            try:
+                                starts.append(_parse_timestamp(str(entry["started_at"])))
+                            except PersianVideoWorkflowError:
+                                pass
+            origin = min(starts) if starts else current
+    wall_seconds = max(0.0, (current - origin).total_seconds())
     review_seconds = 0.0
     for phase_name in ("opening_review", "final_review"):
         entries = telemetry.get(phase_name) if isinstance(telemetry, Mapping) else None

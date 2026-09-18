@@ -44,6 +44,7 @@ from lib.persian_video_workflow import (
     record_asset_search_result,
     record_phase_attempt,
     record_phase_failure,
+    record_hook_selection,
     stage_workflow_edit_draft,
 )
 from schemas.artifacts import build_artifact, validate_artifact
@@ -848,6 +849,27 @@ def run_local(root: Path) -> dict[str, Any]:
     if projected_problems:
         raise RuntimeError("semantic asset projection failed: " + "; ".join(projected_problems))
     edit = _edit_decisions(narration, words, clips)
+    hook_text = " ".join(
+        str(segment.get("text") or "").strip()
+        for segment in edit["persian"]["moments"][0]["segments"]
+        if str(segment.get("role") or "") != "source"
+    ).strip()
+    record_hook_selection(
+        PROJECT_ID,
+        selected_text=hook_text,
+        hook_family="specific-change",
+        candidates=[
+            {"text": "شروع با یک تغییر کوچک روشن می‌شود.", "score": 8.2},
+            {"text": "یک تغییر کوچک چه فرقی می‌سازد؟", "score": 7.4},
+            {"text": "شروع تغییر", "score": 5.2},
+        ],
+        score=8.2,
+        content_match_score=2,
+        evidence_checked=True,
+        unsupported_claims_rejected=True,
+        rationale="Synthetic E2E fixture explicitly exercises the automatic hook-selection gate.",
+        pipeline_dir=root,
+    )
     for name, artifact in (("scene_plan", plan), ("asset_manifest", actual_manifest),
                            ("edit_decisions", edit)):
         validate_artifact(name, artifact)

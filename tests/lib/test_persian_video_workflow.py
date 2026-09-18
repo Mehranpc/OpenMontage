@@ -1054,7 +1054,18 @@ def test_front_door_edit_stage_obeys_project_read_isolation(tmp_path):
     project = tmp_path / "run"
     candidate = project / "artifacts" / "candidate-edit.json"
     candidate.parent.mkdir(parents=True, exist_ok=True)
-    candidate.write_text(json.dumps({"persian": {"format": "vertical"}}), encoding="utf-8")
+    selected_hook = "متن تأییدشده"
+    workflow.record_hook_selection(
+        "run", selected_text=selected_hook, hook_family="fixture",
+        candidates=[{"text": selected_hook}, {"text": "گزینهٔ دوم"}],
+        score=8.0, content_match_score=2, evidence_checked=True,
+        unsupported_claims_rejected=True, rationale="Read-isolation fixture prerequisite.",
+        pipeline_dir=tmp_path,
+    )
+    candidate.write_text(json.dumps({"persian": {
+        "format": "vertical",
+        "moments": [{"id": "hook", "kind": "hook", "segments": [{"role": "hero", "text": selected_hook}]}],
+    }}), encoding="utf-8")
     result = workflow.stage_workflow_edit_draft("run", "a1", candidate, pipeline_dir=tmp_path)
     assert Path(result["draftPath"]).is_file()
     outside = tmp_path.parent / "outside-edit.json"
