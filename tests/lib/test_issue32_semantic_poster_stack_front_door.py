@@ -10,9 +10,26 @@ from lib.persian_video_workflow import bootstrap_persian_video, stage_workflow_e
 from schemas.artifacts import validate_artifact
 from tests.lib.test_persian_preflight_contract import _payload
 from tests.lib.test_persian_video_workflow import BASE, _advance_to
+from tools.video.persian_compose_script_aligned import ScriptAlignedPersianCompose
 
 
 HOOK = "بزرگ‌ترین اشتباه دربارهٔ بازی‌های ویدیویی اینه که فکر کنیم فقط وقت تلف کردنه!"
+POSTER_ROLES = ["setup", "bridge", "subject_hero", "connector", "payoff"]
+
+
+def _poster_plan() -> dict:
+    return {
+        "version": "1.0",
+        "authoritativeHookText": HOOK,
+        "authoritativeHookSha256": "691797db0dc2a07838f472d831ac543d70cf4e8eeba3087431a81b019b56d5d8",
+        "phrases": [
+            {"role": "setup", "text": "بزرگ‌ترین اشتباه"},
+            {"role": "bridge", "text": "دربارهٔ"},
+            {"role": "subject_hero", "text": "بازی‌های ویدیویی"},
+            {"role": "connector", "text": "اینه که فکر کنیم فقط"},
+            {"role": "payoff", "text": "وقت تلف کردنه!"},
+        ],
+    }
 
 
 def test_front_door_persists_explicit_semantic_poster_stack_before_preflight(tmp_path: Path) -> None:
@@ -56,9 +73,7 @@ def test_front_door_persists_explicit_semantic_poster_stack_before_preflight(tmp
     poster = staged["hookAuthority"]["semanticPosterStack"]
     assert poster["version"] == "1.0"
     assert poster["authoritativeHookText"] == HOOK
-    assert [phrase["role"] for phrase in poster["phrases"]] == [
-        "setup", "bridge", "subject_hero", "connector", "payoff"
-    ]
+    assert [phrase["role"] for phrase in poster["phrases"]] == POSTER_ROLES
     assert " ".join(phrase["text"] for phrase in poster["phrases"]) == HOOK
 
     persisted = json.loads(Path(staged["draftPath"]).read_text(encoding="utf-8"))
@@ -105,3 +120,34 @@ def test_editorial_opening_cannot_fall_back_to_position_inferred_roles(tmp_path:
 
     with pytest.raises(PersianEditorialHookError, match="explicit semanticRole"):
         stage_workflow_edit_draft("run", "semantic-missing", source, pipeline_dir=tmp_path)
+
+
+def test_compose_runtime_rehydrates_semantic_roles_from_canonical_metadata() -> None:
+    plan = _poster_plan()
+    edit_decisions = {
+        "metadata": {"semanticPosterStack": plan},
+        "persian": {
+            "moments": [{
+                "id": "hook",
+                "kind": "hook",
+                "purpose": "hook-pattern-interrupt",
+                "segments": [
+                    {"role": "lead", "text": "بزرگ‌ترین اشتباه"},
+                    {"role": "lead", "text": "دربارهٔ"},
+                    {"role": "hero", "text": "بازی‌های ویدیویی"},
+                    {"role": "tail", "text": "اینه که فکر کنیم فقط"},
+                    {"role": "tail", "text": "وقت تلف کردنه!"},
+                ],
+            }],
+        },
+    }
+
+    runtime = ScriptAlignedPersianCompose._runtime_persian(edit_decisions)
+    assert runtime is not None
+    assert runtime["_semanticPosterStack"] == plan
+    hydrated = ScriptAlignedPersianCompose._rehydrate_semantic_poster_stack(
+        runtime["moments"], runtime["_semanticPosterStack"]
+    )
+    segments = hydrated[0]["segments"]
+    assert [segment["semanticRole"] for segment in segments] == POSTER_ROLES
+    assert " ".join(segment["text"] for segment in segments) == HOOK
