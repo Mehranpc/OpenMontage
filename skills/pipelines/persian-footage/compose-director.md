@@ -1,9 +1,9 @@
 ## Film Type is the active visual profile
 
-Film Type 2.15.0 / layout 15 is the default for every persian-footage run.
+Film Type 2.16.0 / layout 16 is the default for every persian-footage run.
 **This file does not restate the profile's rules.** Read
 `skills/pipelines/persian-footage/film-type.md` for the active contract, and
-`docs/persian-film-type-2.15-patch.md` for what the current version changed.
+`docs/persian-film-type-2.16-patch.md` for what the current version changed.
 Guidance for older pins lives in
 `skills/pipelines/persian-footage/film-type-history.md` — archive only.
 

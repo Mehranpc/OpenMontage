@@ -5,21 +5,22 @@ import { assertCaptionsFit, captionBandRect } from "../captionLayout";
  * deliberately unchanged. The same browser measurement feeds paint and planning.
  */
 import { planCoverageAwareBrand, planMovingBrand } from "./watermark24";
-import { estedadReady, isEstedadLoaded, ESTEDAD_FAMILY } from "../fonts";
+import { estedadReady, ensureKahrobaReady, isEstedadLoaded, isKahrobaLoaded, ESTEDAD_FAMILY, KAHROBA_FAMILY } from "../fonts";
 import { breakClass, splitWords, visibleLength } from "../text";
 import { FORMAT_DIMENSIONS, MOMENT_READ_CPS, MOMENT_FIXATION_SECONDS, MOMENT_BLOCK_SECONDS, MOMENT_SOURCE_READ_WEIGHT, MOMENT_MIN_SECONDS, type PersianFormat } from "../tokens";
-import { assertMomentIsWellFormed, DEFAULT_WATERMARK, type PersianMoment,
+import { assertMomentIsWellFormed, DEFAULT_WATERMARK, type PersianMoment, type PersianSemanticPosterRole,
   type PersianVideoProps, type PersianDesignSnapshot } from "../types";
 
 export type Rect = { x: number; y: number; w: number; h: number };
 export type AvoidRegion = Rect & { startSeconds?: number; endSeconds?: number };
 export type Strength = "soft" | "standard" | "strong";
 export type FilmProfile = {
-  profile: "film-type"; profileVersion: "2.1.0" | "2.2.0" | "2.3.0" | "2.4.0" | "2.5.0" | "2.6.0" | "2.7.0" | "2.8.0" | "2.9.0" | "2.10.0" | "2.11.0" | "2.12.0" | "2.13.0" | "2.14.0" | "2.15.0"; layoutVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15;
+  profile: "film-type"; profileVersion: "2.1.0" | "2.2.0" | "2.3.0" | "2.4.0" | "2.5.0" | "2.6.0" | "2.7.0" | "2.8.0" | "2.9.0" | "2.10.0" | "2.11.0" | "2.12.0" | "2.13.0" | "2.14.0" | "2.15.0" | "2.16.0"; layoutVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16;
   formats: Record<PersianFormat, { safeArea: {top: number; bottom: number; side: number; left?:number; right?:number}; columnFraction: number; wideColumnFraction: number }>;
   typography: { fontFamily: string; heroWeight: 700; supportWeight: 500; ink: string; darkInk: string; accent: string;
     titleLadderPx: number[]; statementLadderPx: number[]; figureLadderPx: number[];
     titleTailRatio: number; contextPx: number; supportPx: number; sourcePx: number; quantityUnitPx: number;
+    editorial?: {fontFamily:string;assetPath:string;assetSha256:string;weight:900;supportInk:string;semanticAccent:string;allowedAlignments:("right"|"center")[];maxHookLines:number;maxCalloutLines:number;truncate:false;decorativeAccents:string[];localContrast:string};
     recipes?: Record<"editorial-hero-balanced" | "editorial-hero-compact" | "editorial-callout-balanced", {columnFractions:number[];maxHeroLines:number;maxSupportLines:number;occupancyMin:number;occupancyTarget:number;occupancyMax:number}> };
   layout: {inkPaddingPx: number; lineGapPx: number; phraseGapPx: number; contextGapPx: number; sourceGapPx: number;
     quantityGapPx: number; revealGroupGapPx: number; maxStackFraction: number; edgeInsetPx: number;
@@ -43,7 +44,7 @@ export type FilmProfile = {
     glyphShadow?: {color:string;nearOffsetPx:number;nearBlurPx:number;nearAlpha:number;haloBlurPx:number;haloAlpha:number}};
 };
 export type FilmRow = {
-  text: string; role: string; segmentIndex: number; fontSizePx: number; weight: 400 | 500 | 700;
+  text: string; role: string; segmentIndex: number; fontSizePx: number; weight: 400 | 500 | 700 | 900;
   family: string; direction: "rtl" | "ltr"; abovePx: number; belowPx: number;
   widthPx: number; baselinePx: number; revealAfterSeconds: number; accentWords: readonly string[];
 };
@@ -56,7 +57,7 @@ export type FilmMomentLayout = {
 };
 export type FilmLockup = {rows: FilmRow[]; widthPx: number; heightPx: number; layout: "two-line"; measured: true};
 export type FilmTypeLayout = {
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15; inputHash: string; moments: Record<string, FilmMomentLayout>;
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16; inputHash: string; moments: Record<string, FilmMomentLayout>;
   lockup: FilmLockup | null; warnings: string[];
 };
 type TimedRect = Rect & {
@@ -98,7 +99,7 @@ export function isFilmTypePolish(design?: PersianDesignSnapshot): boolean {
     design !== undefined &&
     isFilmType(design) &&
     (design.profileVersion === "2.2.0" ||
-      design.profileVersion === "2.3.0" || design.profileVersion === "2.4.0" || (design.profileVersion === "2.5.0" || (design.profileVersion === "2.6.0" || (design.profileVersion === "2.7.0" || design.profileVersion === "2.8.0" || design.profileVersion === "2.9.0" || design.profileVersion === "2.10.0" || (design.profileVersion === "2.11.0" || design.profileVersion === "2.12.0" || (design.profileVersion === "2.13.0" || design.profileVersion === "2.14.0" || design.profileVersion === "2.15.0"))))))
+      design.profileVersion === "2.3.0" || design.profileVersion === "2.4.0" || (design.profileVersion === "2.5.0" || (design.profileVersion === "2.6.0" || (design.profileVersion === "2.7.0" || design.profileVersion === "2.8.0" || design.profileVersion === "2.9.0" || design.profileVersion === "2.10.0" || (design.profileVersion === "2.11.0" || design.profileVersion === "2.12.0" || (design.profileVersion === "2.13.0" || design.profileVersion === "2.14.0" || (design.profileVersion === "2.15.0" || design.profileVersion === "2.16.0")))))))
   );
 }
 export function stableJSON(value: unknown): string {
@@ -117,29 +118,38 @@ export async function sha256Text(text: string): Promise<string> {
 }
 export function filmProfile(design: PersianDesignSnapshot): FilmProfile {
   const p = design.resolved as unknown as FilmProfile;
-  if (!isFilmType(design) || !p || p.profile !== "film-type" || !((p.profileVersion === "2.1.0" && p.layoutVersion === 1) || (p.profileVersion === "2.2.0" && p.layoutVersion === 2) || (p.profileVersion === "2.3.0" && p.layoutVersion === 3) || (p.profileVersion === "2.4.0" && p.layoutVersion === 4) || (p.profileVersion === "2.5.0" && p.layoutVersion === 5) || (p.profileVersion === "2.6.0" && p.layoutVersion === 6) || (p.profileVersion === "2.7.0" && p.layoutVersion === 7) || (p.profileVersion === "2.8.0" && p.layoutVersion === 8) || (p.profileVersion === "2.9.0" && p.layoutVersion === 9) || (p.profileVersion === "2.10.0" && p.layoutVersion === 10) || (p.profileVersion === "2.11.0" && p.layoutVersion === 11) || (p.profileVersion === "2.12.0" && p.layoutVersion === 12) || (p.profileVersion === "2.13.0" && p.layoutVersion === 13) || (p.profileVersion === "2.14.0" && p.layoutVersion === 14) || (p.profileVersion === "2.15.0" && p.layoutVersion === 15)) || design.profileVersion !== p.profileVersion) {
+  if (!isFilmType(design) || !p || p.profile !== "film-type" || !((p.profileVersion === "2.1.0" && p.layoutVersion === 1) || (p.profileVersion === "2.2.0" && p.layoutVersion === 2) || (p.profileVersion === "2.3.0" && p.layoutVersion === 3) || (p.profileVersion === "2.4.0" && p.layoutVersion === 4) || (p.profileVersion === "2.5.0" && p.layoutVersion === 5) || (p.profileVersion === "2.6.0" && p.layoutVersion === 6) || (p.profileVersion === "2.7.0" && p.layoutVersion === 7) || (p.profileVersion === "2.8.0" && p.layoutVersion === 8) || (p.profileVersion === "2.9.0" && p.layoutVersion === 9) || (p.profileVersion === "2.10.0" && p.layoutVersion === 10) || (p.profileVersion === "2.11.0" && p.layoutVersion === 11) || (p.profileVersion === "2.12.0" && p.layoutVersion === 12) || (p.profileVersion === "2.13.0" && p.layoutVersion === 13) || (p.profileVersion === "2.14.0" && p.layoutVersion === 14) || (p.profileVersion === "2.15.0" && p.layoutVersion === 15) || (p.profileVersion === "2.16.0" && p.layoutVersion === 16)) || design.profileVersion !== p.profileVersion) {
     throw new Error("Unsupported Film Type snapshot. Re-prepare with an explicitly supported profile; do not fall back to Legacy.");
   }
   if(typeof design.seed!=="string"||!design.seed.trim()) throw new Error("Film Type requires a non-empty deterministic seed.");
   if (p.typography.fontFamily !== ESTEDAD_FAMILY) throw new Error("Film Type requires the vendored Estedad family.");
-  if ((p.profileVersion === "2.10.0" || p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0")) && !p.contrast.glyphShadow) throw new Error("Film Type 2.10+ requires explicit glyph shadow tokens.");
-  if ((p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0")) && !p.watermark.glyphShadow) throw new Error("Film Type 2.11+ requires explicit watermark glyph shadow tokens.");
-  if ((p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0")) && (!Number.isFinite(p.watermark.minTextClearancePx) || (p.watermark.minTextClearancePx ?? 0) < 0 || p.watermark.suppressWhenNoTextClearance !== true)) {
+  if ((p.profileVersion === "2.10.0" || p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0"))) && !p.contrast.glyphShadow) throw new Error("Film Type 2.10+ requires explicit glyph shadow tokens.");
+  if ((p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0"))) && !p.watermark.glyphShadow) throw new Error("Film Type 2.11+ requires explicit watermark glyph shadow tokens.");
+  if ((p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0"))) && (!Number.isFinite(p.watermark.minTextClearancePx) || (p.watermark.minTextClearancePx ?? 0) < 0 || p.watermark.suppressWhenNoTextClearance !== true)) {
     throw new Error("Film Type 2.12+ requires explicit measured brand/text clearance and suppression policy tokens.");
   }
-  if ((p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0") && (![p.watermark.minCoverageRatio,p.watermark.targetCoverageRatio].every(v => Number.isFinite(v) && (v ?? 0) > 0 && (v ?? 0) <= 1) || (p.watermark.targetCoverageRatio ?? 0) < (p.watermark.minCoverageRatio ?? 0) || !Number.isFinite(p.watermark.longFormThresholdSeconds) || (p.watermark.longFormThresholdSeconds ?? 0) <= 0 || !Number.isInteger(p.watermark.minLongFormRelocations) || (p.watermark.minLongFormRelocations ?? -1) < 0)) {
+  if ((p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")) && (![p.watermark.minCoverageRatio,p.watermark.targetCoverageRatio].every(v => Number.isFinite(v) && (v ?? 0) > 0 && (v ?? 0) <= 1) || (p.watermark.targetCoverageRatio ?? 0) < (p.watermark.minCoverageRatio ?? 0) || !Number.isFinite(p.watermark.longFormThresholdSeconds) || (p.watermark.longFormThresholdSeconds ?? 0) <= 0 || !Number.isInteger(p.watermark.minLongFormRelocations) || (p.watermark.minLongFormRelocations ?? -1) < 0)) {
     throw new Error("Film Type 2.13 requires explicit watermark coverage and long-form relocation policy tokens.");
   }
-  if ((p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0") && (!Number.isInteger(p.watermark.minLongFormVerticalBands) || (p.watermark.minLongFormVerticalBands ?? -1) < 2
+  if ((p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")) && (!Number.isInteger(p.watermark.minLongFormVerticalBands) || (p.watermark.minLongFormVerticalBands ?? -1) < 2
       || !Number.isFinite(p.watermark.verticalDiversityMinDwellSeconds)
       || (p.watermark.verticalDiversityMinDwellSeconds ?? 0) <= 0
       || (p.watermark.verticalDiversityMinDwellSeconds ?? Infinity) > p.watermark.minDwellSeconds)) {
     throw new Error("Film Type 2.14 requires at least two watermark vertical bands and a bounded diversity-only dwell for long-form anti-crop diversity.");
   }
-  if (p.profileVersion === "2.15.0" && (p.watermark.planningMode !== "fixed-anchors-text-only"
+  if ((p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0") && (p.watermark.planningMode !== "fixed-anchors-text-only"
       || !Array.isArray(p.watermark.approvedAnchors) || p.watermark.approvedAnchors.length < 2
       || p.watermark.approvedAnchors.some(zone => !["upper-left","upper-right","lower-left","lower-right"].includes(zone)))) {
-    throw new Error("Film Type 2.15 requires fixed approved watermark anchors and text-only collision planning.");
+    throw new Error("Film Type 2.15+ requires fixed approved watermark anchors and text-only collision planning.");
+  }
+  if (p.profileVersion === "2.16.0") {
+    const editorial=p.typography.editorial;
+    if (!editorial || editorial.fontFamily !== KAHROBA_FAMILY || editorial.weight !== 900
+        || editorial.supportInk.toUpperCase() !== "#FFFFFF" || editorial.semanticAccent.toUpperCase() !== "#FFEA00"
+        || stableJSON(editorial.allowedAlignments) !== stableJSON(["right","center"])
+        || editorial.maxHookLines !== 5 || editorial.truncate !== false) {
+      throw new Error("Film Type 2.16 requires the frozen Kahroba white/yellow right-or-center editorial contract.");
+    }
   }
   return p;
 }
@@ -149,7 +159,9 @@ const measurements = new Map<string, {abovePx: number; belowPx: number; widthPx:
 /** Measure the ORIGINAL run, including its ZWNJ. Paint does not split letters or
  * put words in flex boxes, so there is no estimated ZWNJ/notdef surcharge. */
 export function measureRun(text: string, size: number, weight: number, family = ESTEDAD_FAMILY, direction: "rtl" | "ltr" = "rtl") {
-  if (!isEstedadLoaded()) throw new Error("Film Type measurement requires loaded Estedad fonts.");
+  if (family === KAHROBA_FAMILY) {
+    if (!isKahrobaLoaded()) throw new Error("Film Type 2.16 editorial measurement requires loaded KahrobaEditorial.");
+  } else if (!isEstedadLoaded()) throw new Error("Film Type measurement requires loaded Estedad fonts.");
   const key = stableJSON([text,size,weight,family,direction]);
   const cached = measurements.get(key);
   if (cached) return cached;
@@ -171,7 +183,7 @@ export function measureRun(text: string, size: number, weight: number, family = 
 
 /** DP over whole shaped runs; reuse the Persian grammar rules, not the Legacy
  * word-span sizing. Forced newlines remain forced and cannot strand a clitic. */
-export function breakFilmLines(text: string, width: number, size: number, weight: number, maxLines: number, version: FilmProfile["profileVersion"] = "2.1.0", preserveExact = false): string[] | null {
+export function breakFilmLines(text: string, width: number, size: number, weight: number, maxLines: number, version: FilmProfile["profileVersion"] = "2.1.0", preserveExact = false, family = ESTEDAD_FAMILY): string[] | null {
   // Strict copy was already validated as single-ASCII-space-separated. Split it
   // directly so NFC/Arabic-letter folding in splitWords can never change paint.
   const words = preserveExact ? text.split(" ") : splitWords(text);
@@ -186,7 +198,7 @@ export function breakFilmLines(text: string, width: number, size: number, weight
     let best: {cost: number; lines: string[]} | null = null;
     for (let end = at; end < words.length && words[end] !== "\n"; end++) {
       const line = words.slice(at,end + 1).join(" ");
-      const measured = measureRun(line,size,weight).widthPx;
+      const measured = measureRun(line,size,weight,family).widthPx;
       if (measured > width) continue;
       const next = words[end + 1] === "\n" ? words[end + 2] : words[end + 1];
       let boundary = breakClass(words[end],next ?? null);
@@ -198,13 +210,13 @@ export function breakFilmLines(text: string, width: number, size: number, weight
       // Re-check backward binding with a neutral preceding token so «را» and
       // light verbs cannot be orphaned by this contextual exception. Do not
       // insert NBSP/newlines or rewrite the authored segment to force fitting.
-      if ((version === "2.3.0" || version === "2.4.0" || (version === "2.5.0" || (version === "2.6.0" || (version === "2.7.0" || version === "2.8.0" || version === "2.9.0" || version === "2.10.0" || (version === "2.11.0" || version === "2.12.0" || (version === "2.13.0" || version === "2.14.0" || version === "2.15.0")))))) && end > at && words[end] === "از" && prefix(words[end - 1])
+      if ((version === "2.3.0" || version === "2.4.0" || (version === "2.5.0" || (version === "2.6.0" || (version === "2.7.0" || version === "2.8.0" || version === "2.9.0" || version === "2.10.0" || (version === "2.11.0" || version === "2.12.0" || (version === "2.13.0" || version === "2.14.0" || (version === "2.15.0" || version === "2.16.0"))))))) && end > at && words[end] === "از" && prefix(words[end - 1])
           && breakClass("—", next ?? null) !== "forbidden") boundary = "preferred";
       if (next && boundary === "forbidden") continue;
       const rest = solve(end + 1,remaining - 1);
       if (!rest) continue;
       const slack = width - measured;
-      const cost = (version === "2.6.0" || (version === "2.7.0" || version === "2.8.0" || version === "2.9.0" || version === "2.10.0" || (version === "2.11.0" || version === "2.12.0" || (version === "2.13.0" || version === "2.14.0" || version === "2.15.0"))))
+      const cost = (version === "2.6.0" || (version === "2.7.0" || version === "2.8.0" || version === "2.9.0" || version === "2.10.0" || (version === "2.11.0" || version === "2.12.0" || (version === "2.13.0" || version === "2.14.0" || (version === "2.15.0" || version === "2.16.0")))))
         ? rest.cost + 1 + Math.pow(slack / width, 2) * .7
           + (next && end === at ? .65 : 0)
           + (next && boundary !== "preferred" ? .08 : 0)
@@ -225,10 +237,70 @@ export function splitQuantity(text: string): [string,string] | null {
   return match && !match[2].includes("\n") ? [match[1],match[2]] : null;
 }
 
+const SEMANTIC_POSTER_SCALE: Readonly<Record<PersianSemanticPosterRole, number>> = {
+  setup: .56,
+  bridge: .42,
+  subject_hero: 1,
+  connector: .42,
+  payoff: .62,
+};
+
+const STRUCTURAL_ROLE_BY_SEMANTIC_ROLE: Readonly<Record<PersianSemanticPosterRole, "lead" | "hero" | "tail">> = {
+  setup: "lead",
+  bridge: "lead",
+  subject_hero: "hero",
+  connector: "tail",
+  payoff: "tail",
+};
+
+function semanticPosterRoles(moment: PersianMoment): readonly PersianSemanticPosterRole[] | null {
+  if (moment.kind !== "hook" || moment.purpose !== "hook-pattern-interrupt" || moment.userAuthoredShortHook) return null;
+  const recipeId = moment.presentation?.recipeId ?? "editorial-hero-balanced";
+  if (recipeId !== "editorial-hero-balanced" && recipeId !== "editorial-hero-compact") return null;
+  const blocks = moment.segments.filter(segment => segment.role !== "source");
+  if (blocks.length < 2 || blocks.length > 5) {
+    throw new Error(`Moment ${moment.id}: Film Type 2.16 editorial poster stack requires 2-5 visible phrases.`);
+  }
+  if (blocks.some(segment => (segment.accentWords ?? []).length > 0)) {
+    throw new Error(`Moment ${moment.id}: Film Type 2.16 editorial poster stack cannot mix accentWords with semanticRole hierarchy.`);
+  }
+  const roles = blocks.map(segment => {
+    const semanticRole = segment.semanticRole;
+    if (!semanticRole) {
+      throw new Error(`Moment ${moment.id}: Film Type 2.16 editorial poster stack requires explicit semanticRole on every visible phrase.`);
+    }
+    if (STRUCTURAL_ROLE_BY_SEMANTIC_ROLE[semanticRole] !== segment.role) {
+      throw new Error(`Moment ${moment.id}: semanticRole ${semanticRole} is incompatible with structural role ${segment.role}.`);
+    }
+    return semanticRole;
+  });
+  if (roles.filter(role => role === "subject_hero").length !== 1) {
+    throw new Error(`Moment ${moment.id}: Film Type 2.16 editorial poster stack requires exactly one subject_hero.`);
+  }
+  return roles;
+}
+
+export function isPosterStackHook(moment: PersianMoment): boolean {
+  return semanticPosterRoles(moment) !== null;
+}
+
+/** Relative display scale authored by semantic role, never inferred from row position. */
+export function posterStackScale(segment: PersianMoment["segments"][number]): number {
+  const semanticRole = segment.semanticRole;
+  if (!semanticRole) throw new Error("posterStackScale requires explicit semanticRole.");
+  return SEMANTIC_POSTER_SCALE[semanticRole];
+}
+
+function posterStackGapPx(previousRole: PersianSemanticPosterRole, nextRole: PersianSemanticPosterRole, heroPx: number): number {
+  if (nextRole === "subject_hero") return Math.max(8, Math.round(heroPx * .05));
+  if (previousRole === "subject_hero") return Math.max(12, Math.round(heroPx * .11));
+  return Math.max(9, Math.round(heroPx * .07));
+}
+
 type EditorialRecipeId = "editorial-hero-balanced" | "editorial-hero-compact" | "editorial-callout-balanced";
 type EditorialRecipe = NonNullable<FilmProfile["typography"]["recipes"]>[EditorialRecipeId];
 function editorialRecipe(moment: PersianMoment, p: FilmProfile): {id: EditorialRecipeId; config: EditorialRecipe} | null {
-  if (p.profileVersion !== "2.15.0") return null;
+  if (p.profileVersion !== "2.15.0" && p.profileVersion !== "2.16.0") return null;
   const id = (moment.presentation?.recipeId ?? (moment.kind === "hook" ? "editorial-hero-balanced" : "editorial-callout-balanced")) as EditorialRecipeId;
   const config = p.typography.recipes?.[id];
   if (!config) throw new Error(`Moment ${moment.id}: unsupported Film Type 2.15 editorial recipe ${id}.`);
@@ -246,6 +318,8 @@ function editorialRecipe(moment: PersianMoment, p: FilmProfile): {id: EditorialR
 
 function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, column: number, selectedSize?: number): Omit<FilmMomentLayout,"rect"|"placement"|"subjectSafety"|"contrastMode"|"strength"> | null {
   const t = p.typography, l = p.layout, dims = FORMAT_DIMENSIONS[fmt], recipe = editorialRecipe(moment,p);
+  const posterRoles = p.profileVersion === "2.16.0" ? semanticPosterRoles(moment) : null;
+  const posterStack = posterRoles !== null;
   const numeric = !moment.exactText && moment.kind === "figure" && moment.segments.some(s => s.role === "hero" && splitQuantity(s.text));
   const ladder = numeric ? t.figureLadderPx : moment.kind === "hook" ? t.titleLadderPx : t.statementLadderPx;
   const safe = p.formats[fmt].safeArea;
@@ -257,28 +331,46 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
     for (let index = 0; index < moment.segments.length; index++) {
       const segment = moment.segments[index];
       const reveal = segment.revealAfterSeconds ?? 0;
-      if (index) y += reveal > previousReveal ? l.revealGroupGapPx : segment.role === "source" ? l.sourceGapPx : segment.role === "hero" && moment.segments[index - 1].role === "lead" ? l.contextGapPx : l.phraseGapPx;
+      if (index) {
+        const previous = moment.segments[index - 1];
+        const semanticGap = posterStack && previous.role !== "source" && segment.role !== "source";
+        y += semanticGap
+          ? posterStackGapPx(previous.semanticRole!, segment.semanticRole!, main)
+          : reveal > previousReveal ? l.revealGroupGapPx : segment.role === "source" ? l.sourceGapPx : segment.role === "hero" && previous.role === "lead" ? l.contextGapPx : l.phraseGapPx;
+      }
       previousReveal = reveal;
       const quantity = numeric && segment.role === "hero" ? splitQuantity(segment.text) : null;
+      const editorial = p.profileVersion === "2.16.0" ? t.editorial : undefined;
+      const editorialFamily = editorial?.fontFamily ?? ESTEDAD_FAMILY;
+      const editorialWeight = editorial?.weight ?? t.heroWeight;
       const pieces = quantity ? [
-        {text: quantity[0], role: "quantity", size: main, weight: 500 as const, max: 1},
-        {text: quantity[1], role: "quantity-unit", size: t.quantityUnitPx, weight: 500 as const, max: 2},
+        {text: quantity[0], role: "quantity", size: main, weight: editorial ? editorialWeight : 500 as 500|900, max: 1, family: editorialFamily},
+        {text: quantity[1], role: "quantity-unit", size: t.quantityUnitPx, weight: editorial ? editorialWeight : 500 as 500|900, max: 2, family: editorialFamily},
       ] : [{text: segment.text, role: segment.role,
-        size: segment.role === "source" ? t.sourcePx : segment.role === "lead" ? t.contextPx : segment.role === "tail" ? (moment.kind === "hook" ? Math.round(main * t.titleTailRatio) : t.supportPx) : main,
-        weight: (segment.role === "hero" ? t.heroWeight : t.supportWeight),
-        max: segment.role === "hero" ? (recipe?.config.maxHeroLines ?? 3) : (recipe?.config.maxSupportLines ?? 2)}];
+        size: segment.role === "source" ? t.sourcePx : posterStack ? Math.round(main * posterStackScale(segment)) : segment.role === "lead" ? (editorial ? Math.round(main * .72) : t.contextPx) : segment.role === "tail" ? (editorial ? Math.round(main * .72) : (moment.kind === "hook" ? Math.round(main * t.titleTailRatio) : t.supportPx)) : main,
+        weight: segment.role === "source" ? t.supportWeight : (editorial ? editorialWeight : (segment.role === "hero" ? t.heroWeight : t.supportWeight)),
+        max: posterStack ? 1 : segment.role === "hero" ? (recipe?.config.maxHeroLines ?? editorial?.maxHookLines ?? 3) : (recipe?.config.maxSupportLines ?? 2),
+        family: segment.role === "source" ? ESTEDAD_FAMILY : editorialFamily}];
       for (const [pieceIndex,piece] of pieces.entries()) {
         if (pieceIndex) y += l.quantityGapPx;
-        const lines = breakFilmLines(piece.text,column - 2 * l.inkPaddingPx,piece.size,piece.weight,piece.max,p.profileVersion,Boolean(moment.exactText));
+        const lines = breakFilmLines(piece.text,column - 2 * l.inkPaddingPx,piece.size,piece.weight,piece.max,p.profileVersion,Boolean(moment.exactText),piece.family);
         if (!lines) {failed = true; break;}
         for (const [lineIndex,text] of lines.entries()) {
           if (lineIndex) y += l.lineGapPx;
-          const ink = measureRun(text,piece.size,piece.weight);
-          const underline = moment.presentation?.emphasis === "inline" && (segment.accentWords?.length ?? 0) > 0;
-          const belowPx = Math.max(ink.belowPx,underline ? piece.size * .14 : 0);
-          rows.push({text,role: piece.role,segmentIndex: index,fontSizePx: piece.size,weight: piece.weight,
-            family: ESTEDAD_FAMILY,direction: "rtl",...ink,belowPx: round(belowPx),baselinePx: round(y + ink.abovePx),
-            revealAfterSeconds: reveal,accentWords: segment.accentWords ?? []});
+          const rowAccentWords = (segment.accentWords ?? []).filter(word => text.includes(word));
+          const posterHook = p.profileVersion === "2.16.0" && moment.kind === "hook" && !posterStack && piece.role === "hero";
+          const posterScale = !posterHook ? 1
+            : rowAccentWords.length ? 1.18
+            : lineIndex === 0 ? 1.08
+            : lines.length >= 4 && lineIndex === 1 ? .96
+            : .90;
+          const rowSize = Math.round(piece.size * posterScale);
+          const ink = measureRun(text,rowSize,piece.weight,piece.family);
+          if (ink.widthPx > column - 2 * l.inkPaddingPx + .5) { failed = true; break; }
+          const belowPx = ink.belowPx;
+          rows.push({text,role: piece.role,segmentIndex: index,fontSizePx: rowSize,weight: piece.weight,
+            family: piece.family,direction: "rtl",...ink,belowPx: round(belowPx),baselinePx: round(y + ink.abovePx),
+            revealAfterSeconds: reveal,accentWords: rowAccentWords});
           y += ink.abovePx + belowPx;
           widest = Math.max(widest,ink.widthPx);
         }
@@ -297,7 +389,7 @@ function expand(r: Rect, x: number, y: number): Rect {return {x:r.x-x,y:r.y-y,w:
 /** 2.11 keeps text one extra margin inside the frozen safe area. Older pins never
  * carried the token, so their geometry is unchanged. */
 function safePadPx(p: FilmProfile): number {
-  return (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0")) ? (p.layout.safeAreaPaddingPx ?? 0) : 0;
+  return (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0"))) ? (p.layout.safeAreaPaddingPx ?? 0) : 0;
 }
 function inSafe(r: Rect, s: {top:number; bottom:number; side:number;left?:number;right?:number}, padX = 0, padY = 0): boolean {
   return r.x >= (s.left??s.side) + padX - 1e-8 && r.y >= s.top + padY - 1e-8 && r.x + r.w <= 1 - (s.right??s.side) - padX + 1e-8 && r.y + r.h <= 1 - s.bottom - padY + 1e-8;
@@ -324,6 +416,11 @@ export function filmRowDelay(row: Pick<FilmRow,"revealAfterSeconds"|"segmentInde
 }
 function assertFilmTiming(moment: PersianMoment, p: FilmProfile): void {
   const span=moment.endSeconds-moment.startSeconds;
+  if (p.profileVersion === "2.16.0" && moment.kind === "hook") {
+    if (span < 3 || span > 5 + 1e-6) throw new Error(`Moment ${moment.id}: Film Type 2.16 opening hook must occupy one complete 3-5s composition.`);
+    if (moment.segments.some(segment => (segment.revealAfterSeconds ?? 0) !== 0)) throw new Error(`Moment ${moment.id}: Film Type 2.16 opening hook must appear as one simultaneous composition.`);
+    return;
+  }
   if(span<MOMENT_MIN_SECONDS) throw new Error(`Moment ${moment.id}: Film Type needs at least ${MOMENT_MIN_SECONDS}s; short flashes are not readable.`);
   const starts=[...new Set(moment.segments.map(s=>s.revealAfterSeconds??0))].sort((a,b)=>a-b);
   for(const [i,start] of starts.entries()){
@@ -350,6 +447,9 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
   }
   const fmt = props.format, dims = FORMAT_DIMENSIONS[fmt], cfg = p.formats[fmt], l = p.layout;
   const authored = moment.presentation?.placement ?? "auto";
+  if (p.profileVersion === "2.16.0" && authored !== "auto" && authored.endsWith("left")) {
+    throw new Error(`Moment ${moment.id}: Film Type 2.16 Persian editorial placement may be right or center, never left.`);
+  }
   const overlapping = props.shots.filter(s => s.startSeconds < moment.endSeconds && s.endSeconds > moment.startSeconds);
   const coveredByTypography = (props.typographicBeats ?? []).some(beat => beat.startSeconds <= moment.startSeconds + 1e-6 && beat.endSeconds >= moment.endSeconds - 1e-6);
   const reviewed = overlapping.length > 0 ? overlapping.every(s => Array.isArray(s.avoidRegions)) : coveredByTypography;
@@ -357,20 +457,23 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
   // inside the platform safe area. Subject/region review stays available for
   // older pinned profiles, but these versions never demand it and never use
   // regions to reject, dim or move approved text. No detection is introduced.
-  const enforceSubject = p.profileVersion !== "2.9.0" && p.profileVersion !== "2.10.0" && p.profileVersion !== "2.11.0";
-  if ((authored === "auto" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0") || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0"))) && !reviewed && l.autoRequiresReviewedAvoidRegions) {
+  const enforceSubject = p.profileVersion !== "2.9.0" && p.profileVersion !== "2.10.0" && p.profileVersion !== "2.11.0" && !(p.profileVersion === "2.16.0" && moment.kind === "hook");
+  if ((authored === "auto" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")) || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0"))) && !reviewed && l.autoRequiresReviewedAvoidRegions) {
     throw new Error(`Moment ${moment.id}: Film Type auto placement needs reviewed, screen-space shot.avoidRegions (including camera motion for the entire dwell). Use [] only after reviewing a clear shot. Film Type 2.6 also requires review for explicit placement; supply regions for every overlapping shot.`);
   }
-  const zones = authored !== "auto" ? [authored] : moment.presentation?.treatment === "inline-statement" || moment.kind === "statement"
-    ? ["lower-right","mid-right","lower-left","mid-left","upper-right","upper-left"]
-    : (p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0") && moment.kind === "hook"
-      ? ["upper-center","mid-left","upper-left","mid-right","upper-right","lower-left","lower-right"]
-      : ["mid-left","upper-left","mid-right","upper-right","lower-left","lower-right"];
+  const zones = authored !== "auto" ? [authored]
+    : p.profileVersion === "2.16.0"
+      ? (moment.kind === "hook" ? ["upper-right","upper-center","mid-right","center","lower-right"] : ["mid-right","center","upper-right","upper-center","lower-right"])
+      : moment.presentation?.treatment === "inline-statement" || moment.kind === "statement"
+        ? ["lower-right","mid-right","lower-left","mid-left","upper-right","upper-left"]
+        : (p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0") && moment.kind === "hook"
+          ? ["upper-center","mid-left","upper-left","mid-right","upper-right","lower-left","lower-right"]
+          : ["mid-left","upper-left","mid-right","upper-right","lower-left","lower-right"];
   const validZones = new Set(["upper-left","upper-center","upper-right","mid-left","mid-right","lower-left","lower-right","center"]);
   if (zones.some(z => !validZones.has(z))) throw new Error(`Moment ${moment.id}: unsupported Film Type placement.`);
   const relevant = avoid.filter(r => r.startSeconds < moment.endSeconds && r.endSeconds > moment.startSeconds);
-  const ranked = (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0"))));
-  const diffuse = (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0")));
+  const ranked = (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")))));
+  const diffuse = (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0"))));
   const blocked: string[] = [];
   const candidates: {layout: FilmMomentLayout; score: number}[] = [];
   const ladder = moment.kind === "figure" && moment.segments.some(s => s.role === "hero" && splitQuantity(s.text))
@@ -424,11 +527,11 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
         // profile's ordinary `strong` token stays at the 2.13 baseline so later
         // editorial moments do not all become darker just because the hook needed
         // more separation.
-        if((p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0") && moment.kind === "hook" && strength === "strong") peak=Math.max(peak,.46);
+        if((p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")) && moment.kind === "hook" && strength === "strong") peak=Math.max(peak,.46);
         // Maximum shadow opacity on a rectangle occurs nearest the field centre.
         // Include the whole entrance trajectory; never shorten feather to fit.
         const cx=(rect.x+w/2)*dims.width, cy=(rect.y+h/2)*dims.height;
-        if(enforceSubject && p.profileVersion !== "2.12.0" && p.profileVersion !== "2.13.0" && p.profileVersion !== "2.14.0" && p.profileVersion !== "2.15.0") for(const region of relevant){
+        if(enforceSubject && p.profileVersion !== "2.12.0" && p.profileVersion !== "2.13.0" && p.profileVersion !== "2.14.0" && p.profileVersion !== "2.15.0" && p.profileVersion !== "2.16.0") for(const region of relevant){
           const dx=Math.max(region.x*dims.width-cx,0,cx-(region.x+region.w)*dims.width);
           const dy=Math.max(region.y*dims.height-(cy+l.motionClearancePx),0,cy-(region.y+region.h)*dims.height);
           const influence=diffuseAt(Math.hypot(dx/radii.rx,dy/radii.ry));
@@ -453,7 +556,11 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
       layout.lineBalanceRatio = round(lineBalance);
       const occupancyPenalty = recipe ? Math.abs(occupancy-recipe.config.occupancyTarget)*8
         + (occupancy < recipe.config.occupancyMin ? (recipe.config.occupancyMin-occupancy)*12 : 0) : 0;
-      const score = Math.max(0,lines-2)*8 + Math.max(0,lines-1)*.8
+      const posterHook = p.profileVersion === "2.16.0" && moment.kind === "hook";
+      const linePenalty = posterHook
+        ? (lines === 3 || lines === 4 ? 0 : lines === 2 ? 1.5 : lines === 5 ? 4 : Math.abs(lines - 3.5) * 6)
+        : Math.max(0,lines-2)*8 + Math.max(0,lines-1)*.8;
+      const score = linePenalty
         + imbalance*2 + shrink*3 + occupancyPenalty + h*2 + w*.25 + zones.indexOf(zone)*.04 + (diffuse && moment.kind === "hook" && zone.startsWith("lower") ? .2 : 0);
       candidates.push({layout,score});
     }
@@ -463,13 +570,13 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
     candidates.sort((a,b) => a.score-b.score);
     return candidates[0].layout;
   }
-  if (p.profileVersion === "2.15.0") throw new Error(`Moment ${moment.id}: no curated adaptive editorial recipe fits the measured pixels inside the safe area. Preserve the authored phrase; revise recipe, placement, or duration explicitly rather than applying a character-count proxy. Diagnostics: ${blocked.join("; ") || "no curated measured candidate fits"}`);
+  if ((p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")) throw new Error(`Moment ${moment.id}: no curated adaptive editorial recipe fits the measured pixels inside the safe area. Preserve the authored phrase; revise recipe, placement, or duration explicitly rather than applying a character-count proxy. Diagnostics: ${blocked.join("; ") || "no curated measured candidate fits"}`);
   throw new Error(`Moment ${moment.id}: no readable Film Type placement fits the safe area and supplied subject regions. Shorten the authored phrase, choose another legal placement, or change the shot; do not clip, hide text, or shrink below the profile floors. Diagnostics: ${blocked.join("; ") || "no size fits; check copy length and height"}`);
 }
 
 export function watermarkSafeArea(p: FilmProfile, format: PersianFormat) {
   const base = p.formats[format].safeArea;
-  if (p.profileVersion !== "2.3.0" && p.profileVersion !== "2.4.0" && p.profileVersion !== "2.5.0" && p.profileVersion !== "2.6.0" && p.profileVersion !== "2.7.0" && p.profileVersion !== "2.8.0" && p.profileVersion !== "2.9.0" && p.profileVersion !== "2.10.0" && p.profileVersion !== "2.11.0" && p.profileVersion !== "2.12.0" && p.profileVersion !== "2.13.0" && p.profileVersion !== "2.14.0" && p.profileVersion !== "2.15.0") return {top:base.top,bottom:base.bottom,left:base.side,right:base.side};
+  if (p.profileVersion !== "2.3.0" && p.profileVersion !== "2.4.0" && p.profileVersion !== "2.5.0" && p.profileVersion !== "2.6.0" && p.profileVersion !== "2.7.0" && p.profileVersion !== "2.8.0" && p.profileVersion !== "2.9.0" && p.profileVersion !== "2.10.0" && p.profileVersion !== "2.11.0" && p.profileVersion !== "2.12.0" && p.profileVersion !== "2.13.0" && p.profileVersion !== "2.14.0" && p.profileVersion !== "2.15.0" && p.profileVersion !== "2.16.0") return {top:base.top,bottom:base.bottom,left:base.side,right:base.side};
   const safe = p.watermark.safeAreas?.[format];
   if (!safe || ![safe.top,safe.bottom,safe.left,safe.right].every(v => Number.isFinite(v) && v >= 0 && v < 1)
       || safe.top + safe.bottom >= 1 || safe.left + safe.right >= 1) {
@@ -606,7 +713,7 @@ function buildWatermarkDiagnostics(
 function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record<string,FilmMomentLayout>, lockup: FilmLockup | null, avoid: TimedRect[], diagnosticSink?: WatermarkDiagnosticSink): NonNullable<PersianVideoProps["watermarkPlan"]> {
   if (!lockup) return [];
   const dims=FORMAT_DIMENSIONS[props.format],safe=watermarkSafeArea(p,props.format),l=p.layout,cfg=p.watermark;
-  const repair=p.profileVersion === "2.3.0" || p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0")))));
+  const repair=p.profileVersion === "2.3.0" || p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0"))))));
   // 2.9/2.10 plan the brand against real TEXT rectangles and the watermark safe
   // area only. Supplied subject regions never block or hide the brand.
   // 2.11 additionally vetoes brand slots that overlap a REVIEWED region, per
@@ -614,7 +721,7 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
   // when no clear slot fits the text, the existing "No safe moving watermark
   // schedule" error fails loudly instead of parking the brand on a face.
   // Older pins plan exactly as before.
-  const subjectAvoid = (p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || p.profileVersion === "2.15.0") ? [] : avoid;
+  const subjectAvoid = (p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")) ? [] : avoid;
   const w=lockup.widthPx/dims.width,h=lockup.heightPx/dims.height;
   const padPx = safePadPx(p);
   const left=safe.left+(l.edgeInsetPx+padPx)/dims.width,right=1-safe.right-(l.edgeInsetPx+padPx)/dims.width-w;
@@ -624,8 +731,8 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
     "mid-left":{x:left,y:.5-h/2,w,h},"mid-right":{x:right,y:.5-h/2,w,h},
     "upper-left":{x:left,y:top,w,h},"upper-right":{x:right,y:top,w,h},
   };
-  const names=p.profileVersion === "2.15.0" ? cfg.approvedAnchors : repair ? cfg.allowedZones : Object.keys(rects);
-  if (!names?.length || names.some(z => !(z in rects) || (repair && p.profileVersion !== "2.8.0" && p.profileVersion !== "2.9.0" && p.profileVersion !== "2.10.0" && p.profileVersion !== "2.11.0" && p.profileVersion !== "2.12.0" && p.profileVersion !== "2.13.0" && p.profileVersion !== "2.14.0" && p.profileVersion !== "2.15.0" && z.startsWith("upper")))) {
+  const names=(p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0") ? cfg.approvedAnchors : repair ? cfg.allowedZones : Object.keys(rects);
+  if (!names?.length || names.some(z => !(z in rects) || (repair && p.profileVersion !== "2.8.0" && p.profileVersion !== "2.9.0" && p.profileVersion !== "2.10.0" && p.profileVersion !== "2.11.0" && p.profileVersion !== "2.12.0" && p.profileVersion !== "2.13.0" && p.profileVersion !== "2.14.0" && p.profileVersion !== "2.15.0" && p.profileVersion !== "2.16.0" && z.startsWith("upper")))) {
     throw new Error("Film Type 2.3 watermark candidates must be explicit non-top zones.");
   }
   const offset=seededOffset(props.design!.seed,names.length);
@@ -650,7 +757,7 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
   // candidate order, so the planner only uses one when no clear slot fits the
   // text. Regions can never veto the last slot, so the frozen 2.9+ contract
   // (a full-frame review still renders) holds. Older pins plan exactly as before.
-  const regionAvoid = p.profileVersion === "2.15.0" ? []
+  const regionAvoid = (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0") ? []
     : (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0")) ? avoid : [];
   const regionBlockedSeconds = (zone: string): number => {
     const box = expand(rects[zone],l.collisionMarginPx/dims.width,l.collisionMarginPx/dims.height);
@@ -673,7 +780,7 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
   const blockers:string[]=[];
   if(diagnosticSink) diagnosticSink.candidateZones=[...order];
   const diagnosticKeys=new Set<string>();
-  const visualClearancePx=(p.profileVersion==="2.12.0" || p.profileVersion==="2.13.0" || p.profileVersion==="2.14.0" || p.profileVersion==="2.15.0")
+  const visualClearancePx=(p.profileVersion==="2.12.0" || p.profileVersion==="2.13.0" || p.profileVersion==="2.14.0" || (p.profileVersion==="2.15.0" || p.profileVersion==="2.16.0"))
     ? Math.max(cfg.minTextClearancePx??0,lockup.heightPx)
     : l.collisionMarginPx;
   const noteBlocker=(r:Rect,start:number,end:number,label:string,o:TimedRect|undefined,blockerType:WatermarkDiagnosticBlocker["blockerType"],clearancePx:number)=>{
@@ -715,9 +822,9 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
   };
   const preferredClear=(r:Rect,start:number,end:number)=>hardClear(r,start,end)
     && clearText(r,start,end,visualClearancePx,true);
-  const clear=(p.profileVersion==="2.12.0" || p.profileVersion==="2.13.0" || p.profileVersion==="2.14.0" || p.profileVersion==="2.15.0")?preferredClear:hardClear;
+  const clear=(p.profileVersion==="2.12.0" || p.profileVersion==="2.13.0" || p.profileVersion==="2.14.0" || (p.profileVersion==="2.15.0" || p.profileVersion==="2.16.0"))?preferredClear:hardClear;
   const timelineBoundaries=[...props.shots.flatMap(s=>[s.startSeconds,s.endSeconds]),...props.moments.flatMap(m=>[m.startSeconds,m.endSeconds]),...(captionActive?(props.captions ?? []).flatMap(c=>[c.startSeconds,c.endSeconds]):[]),...subjectAvoid.flatMap(r=>[r.startSeconds,r.endSeconds])];
-  if(p.profileVersion==="2.13.0" || p.profileVersion==="2.14.0" || p.profileVersion==="2.15.0") return planCoverageAwareBrand(props.durationSeconds,timelineBoundaries,order,rects,preferredClear,cfg,cfg.introDelaySeconds??0,()=>blockers.join("; "));
+  if(p.profileVersion==="2.13.0" || p.profileVersion==="2.14.0" || (p.profileVersion==="2.15.0" || p.profileVersion==="2.16.0")) return planCoverageAwareBrand(props.durationSeconds,timelineBoundaries,order,rects,preferredClear,cfg,cfg.introDelaySeconds??0,()=>blockers.join("; "));
   if(p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0")))) {
     const run=(clearance:(r:Rect,start:number,end:number)=>boolean)=>planMovingBrand(props.durationSeconds,
       props.shots.flatMap(s=>[s.startSeconds,s.endSeconds]),
@@ -771,6 +878,7 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
   await estedadReady;
   assertCaptionsFit(props.format, props.captions ?? [], props.durationSeconds, props.design);
   const profile=filmProfile(props.design!);
+  if (profile.profileVersion === "2.16.0") await ensureKahrobaReady(profile.typography.editorial!.assetSha256);
   const expectedHash = {
     "2.1.0":"c56aac71643bdeff4c27b75fa1ef1bb4e2997a3216a886d61dac78c3a021af0c",
     "2.2.0":"6d71bee9de74a627f393544bbcf9caf37b7349c422397b016f1f10597a1c43c2",
@@ -786,6 +894,7 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
     "2.13.0":"c742b5f13b71e504f40c3dda03625aafee4d533f1c66464045d82b21fecc683a",
     "2.14.0":"f9a2bf8d73ed2f6cc32f7d70230008cde12ed5607af0895a485b3cb7b0378c54",
     "2.15.0":"1952d3479b0c9b742255c17587635b2b496c75e773daecd60e6f7b322cb02a5f",
+    "2.16.0":"dddf87a331a90dd896fe7ebd44237d37eb03bc3df871b6b55fc6960a1f63f61e",
     "2.5.0":"ba44a26a97c680a8e714d5578fcab01cb7009a986e4d1361f9ce49dd3aab0261",
   }[profile.profileVersion];
   if(props.design!.contentHash!==expectedHash) throw new Error(`Unsupported Film Type ${profile.profileVersion} tokens; arbitrary snapshots cannot weaken layout or rollout guards.`);
@@ -813,39 +922,39 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
     if(moment.startSeconds<0||moment.endSeconds>props.durationSeconds) throw new Error(`Moment ${moment.id}: timing is outside the video.`);
     if(Object.prototype.hasOwnProperty.call(layouts,moment.id)) throw new Error(`Duplicate moment id ${moment.id}`);
     layouts[moment.id]=placeMoment(moment,props,profile,avoid);
-    if((profile.profileVersion === "2.6.0" || (profile.profileVersion === "2.7.0" || profile.profileVersion === "2.8.0" || profile.profileVersion === "2.9.0" || profile.profileVersion === "2.10.0" || (profile.profileVersion === "2.11.0" || profile.profileVersion === "2.12.0" || (profile.profileVersion === "2.13.0" || profile.profileVersion === "2.14.0" || profile.profileVersion === "2.15.0"))))) {
+    if((profile.profileVersion === "2.6.0" || (profile.profileVersion === "2.7.0" || profile.profileVersion === "2.8.0" || profile.profileVersion === "2.9.0" || profile.profileVersion === "2.10.0" || (profile.profileVersion === "2.11.0" || profile.profileVersion === "2.12.0" || (profile.profileVersion === "2.13.0" || profile.profileVersion === "2.14.0" || (profile.profileVersion === "2.15.0" || profile.profileVersion === "2.16.0")))))) {
       const heroRows = layouts[moment.id].rows.filter(row => row.role === "hero");
       if(heroRows.length > 2) warnings.push(`${moment.id}: editorial-review-required: hero exceeds two lines; shorten or author timed beats against narration. Text/timing were preserved.`);
       if(moment.segments.some(s => s.role === "tail")) warnings.push(`${moment.id}: semantic-review-required: confirm the authored hero, not the tail, carries the intended emphasis. No automatic role swap.`);
       contrastReviewMoments.push(moment.id);
     }
-    if((profile.profileVersion === "2.7.0" || profile.profileVersion === "2.8.0" || profile.profileVersion === "2.9.0" || profile.profileVersion === "2.10.0" || (profile.profileVersion === "2.11.0" || profile.profileVersion === "2.12.0" || (profile.profileVersion === "2.13.0" || profile.profileVersion === "2.14.0" || profile.profileVersion === "2.15.0"))) && moment.kind === "hook" && layouts[moment.id].placement.startsWith("lower")) warnings.push(`${moment.id}: hook-in-lower-third; review shot framing. Explicit placement remains binding.`);
+    if((profile.profileVersion === "2.7.0" || profile.profileVersion === "2.8.0" || profile.profileVersion === "2.9.0" || profile.profileVersion === "2.10.0" || (profile.profileVersion === "2.11.0" || profile.profileVersion === "2.12.0" || (profile.profileVersion === "2.13.0" || profile.profileVersion === "2.14.0" || (profile.profileVersion === "2.15.0" || profile.profileVersion === "2.16.0")))) && moment.kind === "hook" && layouts[moment.id].placement.startsWith("lower")) warnings.push(`${moment.id}: hook-in-lower-third; review shot framing. Explicit placement remains binding.`);
     if(layouts[moment.id].subjectSafety==="not-checked") unreviewedMoments.push(moment.id);
   }
   // Aggregated once per film, not once per moment: same content, no repetition.
   if(contrastReviewMoments.length) warnings.push(`contrast-review-required: bounded field is not a measured footage-contrast guarantee; review all shots and transitions. (moments: ${contrastReviewMoments.join(", ")})`);
   if(unreviewedMoments.length) warnings.push(`explicit placement without reviewed avoid regions; subject collision is not-checked. (moments: ${unreviewedMoments.join(", ")})`);
-  if((profile.profileVersion === "2.8.0" || profile.profileVersion === "2.9.0" || profile.profileVersion === "2.10.0" || (profile.profileVersion === "2.11.0" || profile.profileVersion === "2.12.0" || (profile.profileVersion === "2.13.0" || profile.profileVersion === "2.14.0" || profile.profileVersion === "2.15.0"))) && props.format === "vertical") warnings.push("Reels conservative safe area applied: top 14%, bottom 35%, left 8%, right 16%. Preview actual Instagram UI; expanded captions/comments are not guaranteed. Do not relax subject regions to fit.");
+  if((profile.profileVersion === "2.8.0" || profile.profileVersion === "2.9.0" || profile.profileVersion === "2.10.0" || (profile.profileVersion === "2.11.0" || profile.profileVersion === "2.12.0" || (profile.profileVersion === "2.13.0" || profile.profileVersion === "2.14.0" || (profile.profileVersion === "2.15.0" || profile.profileVersion === "2.16.0")))) && props.format === "vertical") warnings.push("Reels conservative safe area applied: top 14%, bottom 35%, left 8%, right 16%. Preview actual Instagram UI; expanded captions/comments are not guaranteed. Do not relax subject regions to fit.");
   if(profile.profileVersion === "2.9.0" || profile.profileVersion === "2.10.0" || profile.profileVersion === "2.11.0") warnings.push(`Film Type ${profile.profileVersion}: subject-region enforcement is OFF by default. Text and brand are kept inside the platform safe area only; overlap with people or objects in the footage is NOT evaluated and subjectSafety stays not-checked. Pin profileVersion 2.8.0 to restore reviewed-region enforcement.`);
-  if(profile.profileVersion === "2.10.0" || profile.profileVersion === "2.11.0" || profile.profileVersion === "2.12.0" || (profile.profileVersion === "2.13.0" || profile.profileVersion === "2.14.0" || profile.profileVersion === "2.15.0")) warnings.push("Film Type 2.10+: legibility comes from a small per-row field plus a two-layer glyph shadow. This is a readability aid, not a measured contrast guarantee; review bright footage yourself. Pin profileVersion 2.9.0 to restore the previous single-block field.");
+  if(profile.profileVersion === "2.10.0" || profile.profileVersion === "2.11.0" || profile.profileVersion === "2.12.0" || (profile.profileVersion === "2.13.0" || profile.profileVersion === "2.14.0" || (profile.profileVersion === "2.15.0" || profile.profileVersion === "2.16.0"))) warnings.push("Film Type 2.10+: legibility comes from a small per-row field plus a two-layer glyph shadow. This is a readability aid, not a measured contrast guarantee; review bright footage yourself. Pin profileVersion 2.9.0 to restore the previous single-block field.");
   const lockup=measureLockup(props,profile);
   const filmType: FilmTypeLayout={version:profile.layoutVersion,inputHash,moments:layouts,lockup,warnings};
   const watermarkDiagnosticSink:WatermarkDiagnosticSink={candidateZones:[],rejectedIntervals:[]};
-  const watermarkAvoid=profile.profileVersion==="2.15.0"?[]:avoid;
+  const watermarkAvoid=(profile.profileVersion==="2.15.0" || profile.profileVersion==="2.16.0")?[]:avoid;
   const watermarkPlan=planWatermark(props,profile,layouts,lockup,watermarkAvoid,watermarkDiagnosticSink);
   const watermarkDiagnostics=lockup?buildWatermarkDiagnostics(props,profile,watermarkPlan,watermarkDiagnosticSink):undefined;
-  if((profile.profileVersion==="2.12.0" || profile.profileVersion==="2.13.0" || profile.profileVersion==="2.14.0" || profile.profileVersion==="2.15.0")&&lockup){
+  if((profile.profileVersion==="2.12.0" || profile.profileVersion==="2.13.0" || profile.profileVersion==="2.14.0" || (profile.profileVersion==="2.15.0" || profile.profileVersion==="2.16.0"))&&lockup){
     const slots=[...watermarkPlan].sort((a,b)=>a.startSeconds-b.startSeconds),gaps:string[]=[];
     let cursor=profile.watermark.introDelaySeconds??0;
     for(const slot of slots){if(slot.startSeconds>cursor+1e-6)gaps.push(`${cursor.toFixed(2)}-${slot.startSeconds.toFixed(2)}s`);cursor=Math.max(cursor,slot.endSeconds);}
     if(cursor<props.durationSeconds-1e-6)gaps.push(`${cursor.toFixed(2)}-${props.durationSeconds.toFixed(2)}s`);
     if(gaps.length){
-      const reason=profile.profileVersion==="2.15.0"?"watermark-suppressed-for-text-clearance":"watermark-suppressed-for-text-clearance-or-subject-region";
-      const detail=profile.profileVersion==="2.15.0"?"the brand is intentionally absent to preserve measured brand-to-text clearance.":"the brand is intentionally absent rather than grouped with text or parked on a reviewed subject.";
+      const reason=(profile.profileVersion==="2.15.0" || profile.profileVersion==="2.16.0")?"watermark-suppressed-for-text-clearance":"watermark-suppressed-for-text-clearance-or-subject-region";
+      const detail=(profile.profileVersion==="2.15.0" || profile.profileVersion==="2.16.0")?"the brand is intentionally absent to preserve measured brand-to-text clearance.":"the brand is intentionally absent rather than grouped with text or parked on a reviewed subject.";
       warnings.push(`${reason}: ${gaps.join(", ")}; ${detail}`);
     }
   }
-  if((profile.profileVersion==="2.13.0" || profile.profileVersion==="2.14.0" || profile.profileVersion==="2.15.0")&&lockup){
+  if((profile.profileVersion==="2.13.0" || profile.profileVersion==="2.14.0" || (profile.profileVersion==="2.15.0" || profile.profileVersion==="2.16.0"))&&lockup){
     const cfg=profile.watermark,intro=Math.min(props.durationSeconds,cfg.introDelaySeconds??0);
     const coverage=watermarkDiagnostics?.coverageRatio??(watermarkCoveredSeconds(watermarkPlan)/props.durationSeconds);
     const minimum=watermarkDiagnostics?.coverageFloor??cfg.minCoverageRatio!;
@@ -859,14 +968,14 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
       const capacity=Math.max(0,Math.floor((props.durationSeconds-intro)/cfg.minDwellSeconds)-1);
       const requiredMoves=Math.min(cfg.minLongFormRelocations??0,capacity),moves=watermarkRelocations(watermarkPlan);
       if(moves<requiredMoves) warnings.push(`watermark-relocations-below-target: ${moves} relocation(s) vs ${requiredMoves} target; measured safety and coverage remain authoritative.`);
-      if(profile.profileVersion==="2.14.0" || profile.profileVersion==="2.15.0"){
+      if(profile.profileVersion==="2.14.0" || (profile.profileVersion==="2.15.0" || profile.profileVersion==="2.16.0")){
         const requiredBands=cfg.minLongFormVerticalBands??0;
         const bands=new Set(watermarkPlan.map(slot=>slot.zone.split("-")[0])).size;
         if(bands<requiredBands) warnings.push(`watermark-vertical-bands-below-target: ${bands} vertical band(s) vs ${requiredBands} target; measured safety and coverage remain authoritative.`);
       }
     }
   }
-  if (["2.4.0","2.5.0","2.6.0","2.7.0","2.8.0","2.9.0","2.10.0","2.11.0","2.12.0","2.13.0","2.14.0","2.15.0"].includes(profile.profileVersion) && watermarkPlan.length &&
+  if (["2.4.0","2.5.0","2.6.0","2.7.0","2.8.0","2.9.0","2.10.0","2.11.0","2.12.0","2.13.0","2.14.0","2.15.0","2.16.0"].includes(profile.profileVersion) && watermarkPlan.length &&
       !["left","right"].every(side=>watermarkPlan.some(slot=>slot.zone.endsWith(side))))
     warnings.push("Moving brand could not use both sides within supplied clearances; no crop/removal protection is guaranteed.");
   // A saved layout must still agree with the browser that actually paints it.

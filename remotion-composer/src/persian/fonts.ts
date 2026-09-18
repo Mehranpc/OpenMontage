@@ -46,6 +46,49 @@ const WEIGHT_FILES: Record<EstedadWeight, string> = {
  */
 export const ESTEDAD_FAMILY = "Estedad";
 
+/** Private licensed display face used only by Film Type 2.16+ editorial moments. */
+export const KAHROBA_FAMILY = "KahrobaEditorial";
+export const KAHROBA_ASSET_PATH = "fonts/kahroba/Kahroba-EB-LC.woff2";
+
+let kahrobaLoaded = false;
+let kahrobaPromise: Promise<void> | null = null;
+
+const bytesSha256 = async (bytes: ArrayBuffer): Promise<string> =>
+  [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+
+export function ensureKahrobaReady(expectedSha256: string): Promise<void> {
+  if (kahrobaLoaded) return Promise.resolve();
+  if (kahrobaPromise) return kahrobaPromise;
+  const handle = delayRender("Loading licensed Kahroba editorial typeface");
+  kahrobaPromise = (async () => {
+    const response = await fetch(staticFile(KAHROBA_ASSET_PATH));
+    if (!response.ok) {
+      throw new Error(`Kahroba asset is missing (${response.status}); run scripts/install_kahroba_font.py with the licensed BL-LC source.`);
+    }
+    const bytes = await response.arrayBuffer();
+    const actualSha256 = await bytesSha256(bytes);
+    if (actualSha256 !== expectedSha256.toLowerCase()) {
+      throw new Error(`Kahroba asset SHA-256 mismatch: ${actualSha256}`);
+    }
+    const face = new FontFace(KAHROBA_FAMILY, bytes, {weight: "900", style: "normal", display: "block"});
+    const loaded = await face.load();
+    document.fonts.add(loaded);
+    await document.fonts.load(`900 120px "${KAHROBA_FAMILY}"`, "بازی");
+    kahrobaLoaded = true;
+  })();
+  kahrobaPromise.then(
+    () => continueRender(handle),
+    (error) => { continueRender(handle); throw error; },
+  );
+  return kahrobaPromise;
+}
+
+export function isKahrobaLoaded(): boolean {
+  return kahrobaLoaded;
+}
+
 const handle = delayRender("Loading Estedad (Persian typeface)");
 
 /**

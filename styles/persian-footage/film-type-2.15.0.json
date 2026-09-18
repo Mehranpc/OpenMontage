@@ -1,7 +1,7 @@
 {
   "profile": "film-type",
-  "profileVersion": "2.16.0",
-  "layoutVersion": 16,
+  "profileVersion": "2.15.0",
+  "layoutVersion": 15,
   "name": "Pathway Film Type",
   "scope": "persian-footage",
   "rollout": "opt-in",
@@ -12,7 +12,7 @@
         "bottom": 0.35,
         "side": 0.08,
         "left": 0.08,
-        "right": 0.08
+        "right": 0.16
       },
       "columnFraction": 0.62,
       "wideColumnFraction": 0.82
@@ -83,7 +83,7 @@
     "glow": false,
     "decorativeRule": false,
     "supportOpacity": 1,
-    "inlineEmphasis": "yellow-fill-white-support",
+    "inlineEmphasis": "blue-underline-white-ink",
     "recipes": {
       "editorial-hero-balanced": {
         "columnFractions": [
@@ -91,11 +91,11 @@
           0.72,
           0.82
         ],
-        "maxHeroLines": 5,
+        "maxHeroLines": 3,
         "maxSupportLines": 2,
-        "occupancyMin": 0.2,
-        "occupancyTarget": 0.76,
-        "occupancyMax": 0.86
+        "occupancyMin": 0.18,
+        "occupancyTarget": 0.31,
+        "occupancyMax": 0.56
       },
       "editorial-hero-compact": {
         "columnFractions": [
@@ -103,11 +103,11 @@
           0.66,
           0.76
         ],
-        "maxHeroLines": 5,
+        "maxHeroLines": 3,
         "maxSupportLines": 2,
-        "occupancyMin": 0.18,
-        "occupancyTarget": 0.66,
-        "occupancyMax": 0.82
+        "occupancyMin": 0.15,
+        "occupancyTarget": 0.26,
+        "occupancyMax": 0.5
       },
       "editorial-callout-balanced": {
         "columnFractions": [
@@ -115,31 +115,12 @@
           0.7,
           0.82
         ],
-        "maxHeroLines": 5,
+        "maxHeroLines": 3,
         "maxSupportLines": 2,
-        "occupancyMin": 0.16,
-        "occupancyTarget": 0.48,
-        "occupancyMax": 0.7
+        "occupancyMin": 0.14,
+        "occupancyTarget": 0.24,
+        "occupancyMax": 0.5
       }
-    },
-    "editorial": {
-      "fontFamily": "KahrobaEditorial",
-      "assetPath": "fonts/kahroba/Kahroba-EB-LC.woff2",
-      "assetSha256": "354d3f6fd8f3a330a766d403beac0a37d3d7378a754067265d766ee1a1cae14d",
-      "weight": 900,
-      "supportInk": "#FFFFFF",
-      "semanticAccent": "#FFEA00",
-      "allowedAlignments": [
-        "right",
-        "center"
-      ],
-      "maxHookLines": 5,
-      "maxCalloutLines": 5,
-      "truncate": false,
-      "decorativeAccents": [
-        "burst"
-      ],
-      "localContrast": "soft-dark-gradient"
     }
   },
   "layout": {
@@ -150,11 +131,11 @@
     "sourceGapPx": 30,
     "quantityGapPx": 18,
     "revealGroupGapPx": 34,
-    "maxStackFraction": 0.68,
+    "maxStackFraction": 0.6,
     "edgeInsetPx": 10,
     "upperCentre": 0.26,
     "middleCentre": 0.56,
-    "safeAreaPaddingPx": 8,
+    "safeAreaPaddingPx": 20,
     "motionClearancePx": 18,
     "collisionMarginPx": 12,
     "autoRequiresReviewedAvoidRegions": true,

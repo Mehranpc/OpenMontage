@@ -794,6 +794,33 @@ def is_context_claim_qualifier_hook(moment: PersianMoment) -> bool:
         return False
     return not any(segment.accent_words for segment in moment.segments)
 
+def is_poster_stack_hook(moment: PersianMoment) -> bool:
+    """True for a semantic poster stack used by retention-first opening hooks.
+
+    The authored hook is partitioned into 2–5 simultaneous phrase blocks. Exactly
+    one ``hero`` names the central subject/topic. Blocks before it are ``lead``
+    setup/bridge phrases; blocks after it are ``tail`` connector/payoff phrases.
+    The wording is unchanged — segmentation only gives the renderer semantic
+    hierarchy. Inline ``accentWords`` are deliberately absent because the whole
+    hero phrase owns the yellow emphasis.
+    """
+    if moment.kind != "hook" or moment.purpose != "hook-pattern-interrupt":
+        return False
+    non_source = [segment for segment in moment.segments if segment.role != "source"]
+    if not 2 <= len(non_source) <= 5:
+        return False
+    if any(segment.accent_words for segment in non_source):
+        return False
+    hero_indexes = [index for index, segment in enumerate(non_source) if segment.role == "hero"]
+    if len(hero_indexes) != 1:
+        return False
+    hero_index = hero_indexes[0]
+    return (
+        all(segment.role == "lead" for segment in non_source[:hero_index])
+        and all(segment.role == "tail" for segment in non_source[hero_index + 1 :])
+    )
+
+
 def is_flat_display_hook(moment: PersianMoment) -> bool:
     """True when a moment has the flat display hook structure.
 
@@ -812,7 +839,10 @@ def is_flat_display_hook(moment: PersianMoment) -> bool:
     )
 
 
-def _audit_one(moment: PersianMoment, *, adaptive_pixel_typography: bool = False) -> list[str]:
+def _audit_one(
+    moment: PersianMoment, *, adaptive_pixel_typography: bool = False,
+    simultaneous_hook_typography: bool = False,
+) -> list[str]:
     """Faults internal to a single moment."""
     problems: list[str] = []
 
@@ -887,6 +917,7 @@ def _audit_one(moment: PersianMoment, *, adaptive_pixel_typography: bool = False
     if moment.kind == "hook" and not (
         is_claim_qualifier_hook(moment)
         or is_context_claim_qualifier_hook(moment)
+        or is_poster_stack_hook(moment)
         or is_flat_display_hook(moment)
     ):
         roles = [segment.role for segment in moment.segments]
@@ -987,14 +1018,19 @@ def _audit_one(moment: PersianMoment, *, adaptive_pixel_typography: bool = False
             "stalled, and the footage behind it is doing nothing"
         )
 
-    required = moment.min_read_seconds
-    if moment.duration + 1e-9 < required:
-        problems.append(
-            f"{moment.id}: needs {required:.2f}s for its own text (fixation + "
-            f"reading + builds) but has {moment.duration:.2f}s. The reading model "
-            "charges the entrance the character count never saw — that dead time is "
-            "the «بیش از حد سریع رد میشن» complaint, measured."
-        )
+    # Film Type 2.16 opening hooks are one simultaneous 3–5 second composition.
+    # Their complete copy is pixel-fitted and then judged from the rendered opening;
+    # the legacy sequential-reading estimate must not veto a hook the browser can
+    # actually present. Body callouts and older profiles retain the timing gate.
+    if not (simultaneous_hook_typography and moment.kind == "hook"):
+        required = moment.min_read_seconds
+        if moment.duration + 1e-9 < required:
+            problems.append(
+                f"{moment.id}: needs {required:.2f}s for its own text (fixation + "
+                f"reading + builds) but has {moment.duration:.2f}s. The reading model "
+                "charges the entrance the character count never saw — that dead time is "
+                "the «بیش از حد سریع رد میشن» complaint, measured."
+            )
 
     for segment in moment.segments:
         if segment.reveal_after_seconds >= moment.duration:
@@ -1011,6 +1047,7 @@ def _audit_one(moment: PersianMoment, *, adaptive_pixel_typography: bool = False
 def audit_moments(
     moments: list[PersianMoment], *, duration_seconds: float, v2: bool = False,
     adaptive_pixel_typography: bool = False,
+    simultaneous_hook_typography: bool = False,
 ) -> MomentAudit:
     """Audit a moment set against every rule that can be checked without rendering.
 
@@ -1032,7 +1069,10 @@ def audit_moments(
         return audit
 
     for moment in moments:
-        audit.problems.extend(_audit_one(moment, adaptive_pixel_typography=adaptive_pixel_typography))
+        audit.problems.extend(_audit_one(
+            moment, adaptive_pixel_typography=adaptive_pixel_typography,
+            simultaneous_hook_typography=simultaneous_hook_typography,
+        ))
 
     ordered = sorted(moments, key=lambda moment: moment.start_seconds)
 
@@ -1183,5 +1223,6 @@ __all__ = [
     "build_moments",
     "audit_moments",
     "is_claim_qualifier_hook",
+    "is_poster_stack_hook",
     "is_flat_display_hook",
 ]

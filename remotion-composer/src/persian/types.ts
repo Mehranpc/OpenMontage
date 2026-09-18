@@ -93,10 +93,13 @@ export type PersianMomentKind = "figure" | "term" | "statement" | "hook";
  *   the phrase: it is a citation appended to it.
  */
 export type PersianSegmentRole = "lead" | "hero" | "tail" | "source";
+export type PersianSemanticPosterRole = "setup" | "bridge" | "subject_hero" | "connector" | "payoff";
 
 /** One line-group of a moment's phrase. */
 export interface PersianSegment {
   readonly role: PersianSegmentRole;
+  /** Runtime-only semantic authorship for Film Type 2.16 editorial poster stacks. */
+  readonly semanticRole?: PersianSemanticPosterRole;
   /** The Persian (or mixed) text of this segment. Painted exactly as given. */
   readonly text: string;
   /**
@@ -217,6 +220,8 @@ export interface PersianShot {
   readonly semanticDirection?: string;
   readonly openingSemanticMatch?: boolean;
   readonly selectionReason?: string;
+  /** Reviewed background readability class for adaptive editorial contrast. */
+  readonly visualComplexity?: "simple" | "busy";
   /** Executable edit grammar. Persian currently renders hard cuts only. */
   readonly transitionIn?: "cut";
   /** Path relative to the composition's public dir. */

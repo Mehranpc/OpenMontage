@@ -13,6 +13,14 @@ A pattern interrupt is not automatically a hook. Cuts, motion, typography, zooms
 
 `viewerValue`, `semanticTension`, and `firstProof` are distinct concepts. The same observable/spoken event may satisfy more than one only when that is genuinely true and `sharedEvidenceJustifications` records why. Identical timestamps or persuasive prose are not enough to double-count evidence.
 
+## Hook selection authority — Issue #32
+
+Before authoring the opening moment, inspect the workflow `hook_selection`. A user-supplied hook is authoritative: do not shorten, paraphrase, or replace it to make layout easier. If selection is automatic, read the three durable reference files under `docs/reference/persian-hooks/`, classify the source/content type, generate comparative candidates, remove unsupported/exaggerated claims, and rank the survivors for retention. The winner requires score >= 7/10 and content-match 2/2 and must be persisted with `record_hook_selection` before edit staging. “Shorter” is not a ranking objective.
+
+Automatic framing may be conversational and bolder than an abstract, including an honest question whose nuance arrives immediately afterward, but it may not invent a number, effect direction, study population, or unsupported relationship.
+
+For Film Type 2.16, every opening hook is one complete 3–5 second composition and must communicate topic + tension on mute. The renderer uses verified Kahroba editorial type, white support + `#FFEA00` semantic emphasis, right/center Persian alignment, and rendered-pixel Visual Typography policy v2. A plain white subtitle-like overlay is a visual failure even when it technically fits.
+
 ## Required edit evidence — Hook Quality v2
 
 For new short-form production, persist top-level `metadata.hookQuality` inside `edit_decisions` before no-copy preflight:
@@ -139,3 +147,10 @@ A weak rendered hook, failed muted direction, weak visual/voice alignment, non-c
 ## Post-publish calibration
 
 After publication, real platform observations belong in the independent `post_publish_performance` artifact, bound to the exact published MP4 SHA-256. Use append-only snapshots such as 1h, 4h, 24h, and 72h when available. Missing platform metrics remain null/absent; never fabricate them. `calibration_mode` is `observational`. No post-publish record authorizes automatic threshold learning, narration rewriting, or policy mutation.
+
+
+### Semantic poster-stack hierarchy
+
+For Film Type 2.16, do **not** flatten a normal opening hook into one wrapped `hero` with `accentWords`. Preserve the selected hook wording exactly, then partition it into 2–5 simultaneous semantic phrase segments. There is exactly one `hero`: the contiguous phrase that names the central subject/topic and makes the topic obvious with audio muted. Setup/bridge phrases before it are `lead`; connector/payoff phrases after it are `tail`. The renderer owns the poster scale hierarchy and keeps each semantic phrase on one measured row; if the hero cannot stay one line, revise the phrase partition or placement rather than shrinking one phrase independently or deleting words.
+
+Example: `بزرگ‌ترین اشتباه دربارهٔ بازی‌های ویدیویی اینه که فکر کنیم فقط وقت تلف کردنه!` becomes `lead: بزرگ‌ترین اشتباه` / `lead: دربارهٔ` / `hero: بازی‌های ویدیویی` / `tail: اینه که فکر کنیم فقط` / `tail: وقت تلف کردنه!`. The hero paints yellow; the support phrases stay white. This is semantic layout, not a rewrite: joining the segments with spaces must reproduce the authoritative hook text. Explicit user-authored micro-hooks may use their existing short-hook exception.

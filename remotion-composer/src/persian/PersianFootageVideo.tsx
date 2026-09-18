@@ -323,7 +323,7 @@ export const PersianFootageVideo: React.FC<PersianVideoProps> = ({
             {design ? (
               design.version === 2 ? (
                 filmTypeEnabled ? (
-                  <PersianFilmTypeMoment moment={moment} layout={filmType!.moments[moment.id]} format={format} durationFrames={duration} design={design} />
+                  <PersianFilmTypeMoment moment={moment} layout={filmType!.moments[moment.id]} format={format} durationFrames={duration} design={design} shots={shots} />
                 ) : <PersianV2MomentBlock moment={moment} format={format} durationFrames={duration} design={design} />
               ) : (() => { throw new Error(`Unsupported Persian design snapshot version: ${String(design.version)}`); })()
             ) : (

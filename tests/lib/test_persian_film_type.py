@@ -15,7 +15,7 @@ import unittest
 from unittest.mock import patch
 
 from lib.persian_brand import canonical_watermark
-from lib.persian_design import resolve_design, prepare_v2, SUPPORTED_FILM_TYPE_29_HASH, SUPPORTED_FILM_TYPE_28_HASH, SUPPORTED_FILM_TYPE_27_HASH, SUPPORTED_FILM_TYPE_26_HASH, SUPPORTED_FILM_TYPE_25_HASH, SUPPORTED_FILM_TYPE_210_HASH, SUPPORTED_FILM_TYPE_211_HASH, SUPPORTED_FILM_TYPE_212_HASH, SUPPORTED_FILM_TYPE_213_HASH, SUPPORTED_FILM_TYPE_HASH, SUPPORTED_FILM_TYPE_215_HASH, SUPPORTED_FILM_TYPE_MOTION_HASH, SUPPORTED_FILM_TYPE_LEGACY_HASH, SUPPORTED_FILM_TYPE_POLISH_HASH, SUPPORTED_FILM_TYPE_REPAIR_HASH
+from lib.persian_design import resolve_design, prepare_v2, SUPPORTED_FILM_TYPE_29_HASH, SUPPORTED_FILM_TYPE_28_HASH, SUPPORTED_FILM_TYPE_27_HASH, SUPPORTED_FILM_TYPE_26_HASH, SUPPORTED_FILM_TYPE_25_HASH, SUPPORTED_FILM_TYPE_210_HASH, SUPPORTED_FILM_TYPE_211_HASH, SUPPORTED_FILM_TYPE_212_HASH, SUPPORTED_FILM_TYPE_213_HASH, SUPPORTED_FILM_TYPE_HASH, SUPPORTED_FILM_TYPE_215_HASH, SUPPORTED_FILM_TYPE_216_HASH, SUPPORTED_FILM_TYPE_MOTION_HASH, SUPPORTED_FILM_TYPE_LEGACY_HASH, SUPPORTED_FILM_TYPE_POLISH_HASH, SUPPORTED_FILM_TYPE_REPAIR_HASH
 from lib.persian_film_type import prepare_film_type_props
 from tools.video.persian_compose import PersianCompose
 
@@ -32,7 +32,7 @@ class FilmTypeContracts(unittest.TestCase):
     def test_film_type_requires_explicit_version(self):
         with self.assertRaisesRegex(ValueError,'explicit'):resolve_design({'profile':'film-type','seed':'x'})
     def test_known_snapshot_and_pin_roundtrip(self):
-        design=resolve_design(self.raw);self.assertEqual(design['contentHash'],SUPPORTED_FILM_TYPE_215_HASH)
+        design=resolve_design(self.raw);self.assertEqual(design['contentHash'],SUPPORTED_FILM_TYPE_216_HASH)
         self.assertEqual(resolve_design(design),design)
     def test_pinned_2_1_snapshot_keeps_old_interpretation(self):
         legacy_path=ROOT/'styles/persian-footage/film-type-2.1.0.json'
@@ -58,7 +58,7 @@ class FilmTypeContracts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'Unsupported'):resolve_design(design)
     def test_integral_json_floats_use_browser_canonical_hash(self):
         design=resolve_design(self.raw);design['resolved']['watermark']['persianFontPx']=30.0
-        self.assertEqual(resolve_design(design)['contentHash'],SUPPORTED_FILM_TYPE_215_HASH)
+        self.assertEqual(resolve_design(design)['contentHash'],SUPPORTED_FILM_TYPE_216_HASH)
     def test_nan_profile_refused(self):
         design=resolve_design(self.raw);design['resolved']['motion']['travelPx']=float('nan')
         with self.assertRaisesRegex(ValueError,'non-finite'):resolve_design(design)
@@ -104,14 +104,15 @@ class FilmTypeContracts(unittest.TestCase):
                                         ('2.12.0','film-type-2.12.0.json',SUPPORTED_FILM_TYPE_212_HASH),
                                         ('2.13.0','film-type-2.13.0.json',SUPPORTED_FILM_TYPE_213_HASH),
                                         ('2.14.0','film-type-2.14.0.json',SUPPORTED_FILM_TYPE_HASH),
-                                        ('2.15.0','film-type.json',SUPPORTED_FILM_TYPE_215_HASH)]:
+                                        ('2.15.0','film-type-2.15.0.json',SUPPORTED_FILM_TYPE_215_HASH),
+                                        ('2.16.0','film-type.json',SUPPORTED_FILM_TYPE_216_HASH)]:
             with self.subTest(version=version):
                 profile=json.loads((ROOT/'styles/persian-footage'/filename).read_text())
                 pin={**self.raw,'profileVersion':version,'contentHash':digest,'resolved':profile}
                 self.assertEqual(resolve_design(pin),pin)
                 self.assertEqual(self._bridge(design=pin)['filmType']['version'],profile['layoutVersion'])
     def test_bridge_refuses_wrong_layout_version(self):
-        for wrong in [1,2,3,4,5,6,7,8,9,10,11,12,13,14,True,False,'15',16,None]:
+        for wrong in [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,True,False,'16',17,None]:
             with self.subTest(wrong=wrong),self.assertRaisesRegex(ValueError,'provenance'):
                 self._bridge(lambda p:p['filmType'].update(version=wrong))
     def test_repair_tokens_restore_scale_and_real_watermark_policy(self):
@@ -143,7 +144,7 @@ class FilmTypeContracts(unittest.TestCase):
         self.assertLessEqual(new['contrast']['strengths']['standard'],.6)
     def test_ranked_tokens_are_registry_default(self):
         new=resolve_design(self.raw)['resolved']
-        self.assertEqual(new['profileVersion'],'2.15.0');self.assertEqual(new['layoutVersion'],15)
+        self.assertEqual(new['profileVersion'],'2.16.0');self.assertEqual(new['layoutVersion'],16)
         self.assertEqual(new['layout']['aestheticPolicy'],'ranked-v1')
         self.assertEqual(new['contrast']['darkField'],'#191919')
         self.assertEqual(new['contrast']['strengths'],{'soft':.24,'standard':.34,'strong':.40})
@@ -157,7 +158,7 @@ class FilmTypeContracts(unittest.TestCase):
         self.assertEqual(new['watermark']['targetCoverageRatio'],.8)
         self.assertEqual(new['watermark']['longFormThresholdSeconds'],30)
         self.assertEqual(new['watermark']['minLongFormRelocations'],2)
-        self.assertEqual(new['formats']['vertical']['safeArea'],{'top':.14,'bottom':.35,'side':.08,'left':.08,'right':.16})
+        self.assertEqual(new['formats']['vertical']['safeArea'],{'top':.14,'bottom':.35,'side':.08,'left':.08,'right':.08})
         self.assertEqual(new['watermark']['safeAreas']['vertical'],{'top':.14,'bottom':.35,'left':.08,'right':.16})
     def test_213_only_adds_coverage_policy_to_the_archived_212_profile(self):
         old=json.loads((ROOT/'styles/persian-footage/film-type-2.12.0.json').read_text())
@@ -241,6 +242,16 @@ class FilmTypeContracts(unittest.TestCase):
     def test_empty_schedule_is_opt_in_only(self):
         self.assertEqual(PersianCompose._build_moments({'moments':[]},12,v2=True,measure_layout=False),[])
         with self.assertRaisesRegex(ValueError,'Legacy'):PersianCompose._build_moments({'moments':[]},12)
+    def test_film_producer_preserves_reviewed_visual_complexity(self):
+        clip=self.root/'clip-busy.mp4';clip.write_bytes(b'fixture-not-decoded')
+        persian={'format':'vertical','durationSeconds':12,'design':self.raw,'moments':[],
+                 'shots':[{'source':str(clip),'startSeconds':0,'endSeconds':12,'sourceInSeconds':0,
+                           'camera':'none','attribution':'fixture','avoidRegions':[],
+                           'visualComplexity':'busy'}]}
+        with patch('tools.video.persian_compose.prepare_film_type_props',side_effect=lambda p,c:p):
+            props,_=PersianCompose()._build_props(persian,self.root/'stage-busy','unit-busy')
+        self.assertEqual(props['shots'][0]['visualComplexity'],'busy')
+
     def test_film_producer_preserves_reviewed_empty_regions(self):
         clip=self.root/'clip.mp4';clip.write_bytes(b'fixture-not-decoded')
         persian={'format':'vertical','durationSeconds':12,'design':self.raw,'moments':[],

@@ -1,9 +1,9 @@
 ## Film Type is the active visual profile
 
-Film Type 2.15.0 / layout 15 is the default for every persian-footage run.
+Film Type 2.16.0 / layout 16 is the default for every persian-footage run.
 **This file does not restate the profile's rules.** Read
 `skills/pipelines/persian-footage/film-type.md` for the active contract, and
-`docs/persian-film-type-2.15-patch.md` for what the current version changed.
+`docs/persian-film-type-2.16-patch.md` for what the current version changed.
 Guidance for older pins lives in
 `skills/pipelines/persian-footage/film-type-history.md` — archive only.
 
@@ -351,7 +351,7 @@ common right edge and no single band, so do not describe the layout to a reviewe
 a spine.
 
 What holds in both: the position is computed, never authored for aesthetic reasons.
-Film Type 2.12 introduced binding explicit placement; current 2.15 retains it. Missing
+Film Type 2.12 introduced binding explicit placement; current 2.16 retains it. Missing
 reviewed avoid regions is a refusal, and a blocked authored zone is a refusal.
 
 Contrast is profile-specific. The `5.6:1` floor is Legacy (`lib/persian_verify.py:193`);
@@ -620,7 +620,7 @@ do not certify semantics from a single thumbnail.
 
 A moment lands on a shot. Prefer a shot whose subject is low or left in frame, or
 whose motion has settled. Neither profile detects subjects. Film Type 2.12 introduced conservative machine-estimated
-`avoidRegions` on every overlapping shot and current 2.15 retains that typography requirement (use `[]` only after the agent checks the
+`avoidRegions` on every overlapping shot and current 2.16 retains that typography requirement (use `[]` only after the agent checks the
 whole crop/camera move) and rejects intersecting candidates. Human approval applies
 to the complete rendered candidate. A wide
 block over a centre-framed face therefore goes back to the edit for shorter copy, a

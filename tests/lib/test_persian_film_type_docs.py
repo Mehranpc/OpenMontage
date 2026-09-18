@@ -18,8 +18,8 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_active_profile_resolves_matching_patch_document() -> None:
     version = active_film_type_version(repo_root=ROOT)
     path = film_type_patch_path(repo_root=ROOT)
-    assert version == "2.15.0"
-    assert path.name == "persian-film-type-2.15-patch.md"
+    assert version == "2.16.0"
+    assert path.name == "persian-film-type-2.16-patch.md"
     assert path.is_file()
 
 
@@ -33,7 +33,7 @@ def test_registered_current_contract_paths_exist() -> None:
     paths = film_type_contract_paths(repo_root=ROOT)
     assert {path.name for path in paths} == {
         "film-type.md",
-        "persian-film-type-2.15-patch.md",
+        "persian-film-type-2.16-patch.md",
         "film-type-visual-regression.md",
     }
     assert all(path.is_file() for path in paths)

@@ -23,6 +23,12 @@ from lib.checkpoint import CheckpointValidationError, init_project, read_checkpo
 from lib.paths import PROJECTS_DIR, REPO_ROOT
 from lib.pipeline_loader import load_pipeline_readonly
 from lib.persian_film_type_docs import active_film_type_version, film_type_contract_paths
+from lib.persian_editorial_hook import (
+    build_initial_hook_selection,
+    finalize_automatic_hook_selection,
+    validate_user_hook_unchanged,
+    validate_edit_hook_authority,
+)
 from lib.persian_durable_job import DurableJobError, reconcile_job, start_job
 from lib.persian_edit_workspace import (
     PersianEditWorkspaceError, artifact_sha256, load_promotable_edit_draft, preflight_edit_draft, promote_edit_draft, stage_edit_draft,
@@ -409,13 +415,51 @@ def phase_time_accounting(
                     if isinstance(raw, (int, float)) and not isinstance(raw, bool):
                         accounting_lag += max(0.0, float(raw))
     total = editorial + external
+    if since is not None:
+        origin = since
+    else:
+        created_raw = str(state.get("created_at") or "").strip()
+        if created_raw:
+            origin = _parse_timestamp(created_raw)
+        else:
+            # Utility callers may ask only for the metric schema without a durable
+            # workflow state. Use the earliest valid phase start when available; an
+            # entirely empty synthetic state has zero wall time rather than raising.
+            starts: list[datetime] = []
+            for entries in telemetry.values():
+                if isinstance(entries, list):
+                    for entry in entries:
+                        if isinstance(entry, Mapping) and str(entry.get("started_at") or "").strip():
+                            try:
+                                starts.append(_parse_timestamp(str(entry["started_at"])))
+                            except PersianVideoWorkflowError:
+                                pass
+            origin = min(starts) if starts else current
+    wall_seconds = max(0.0, (current - origin).total_seconds())
+    review_seconds = 0.0
+    for phase_name in ("opening_review", "final_review"):
+        entries = telemetry.get(phase_name) if isinstance(telemetry, Mapping) else None
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                continue
+            raw = entry.get("duration_seconds")
+            if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+                review_seconds += max(0.0, float(raw))
+    gap = max(0.0, wall_seconds - total)
     return {
-        # Issue #28 canonical names. These dimensions are intentionally not
-        # collapsed into one wall-time number.
-        "job_runtime_seconds": round(total, 3),
+        # Issue #32: the number called runtime must match the user's wall clock.
+        # Instrumented work remains available separately instead of pretending it
+        # covers time between phase attempts or review preparation/accounting gaps.
+        "job_runtime_seconds": round(wall_seconds, 3),
+        "workflow_wall_seconds": round(wall_seconds, 3),
         "provider_wait_seconds": round(external, 3),
         "accounting_lag_seconds": round(accounting_lag, 3),
         "editorial_wall_seconds": round(editorial, 3),
+        "review_phase_seconds": round(review_seconds, 3),
+        "orchestration_gap_seconds": round(gap, 3),
+        "unattributed_wall_seconds": round(gap, 3),
         # Backward-compatible aliases consumed by older reports/tests.
         "active_editorial_seconds": round(editorial, 3),
         "external_durable_seconds": round(external, 3),
@@ -469,6 +513,7 @@ def _repo_read_allowlist(profile_version: str | None = None) -> list[str]:
         (REPO_ROOT / "skills" / "meta" / "reviewer.md").resolve(),
         (REPO_ROOT / "pipeline_defs" / "persian-footage.yaml").resolve(),
         (REPO_ROOT / "styles" / "persian-footage").resolve(),
+        (REPO_ROOT / "docs" / "reference" / "persian-hooks").resolve(),
         *film_type_contract_paths(profile_version, repo_root=REPO_ROOT),
         (REPO_ROOT / ".agents" / "skills" / "music").resolve(),
         (REPO_ROOT / ".agents" / "skills" / "speech-to-text").resolve(),
@@ -483,6 +528,7 @@ def bootstrap_persian_video(
     title: str,
     narration_path: str | None = None,
     approved_script: str | None = None,
+    hook_text: str | None = None,
     project_id: str | None = None,
     pipeline_dir: Path | None = None,
     backlot_opener: Callable[[str | None], int] = open_backlot,
@@ -550,6 +596,7 @@ def bootstrap_persian_video(
             "completed_phases": ["validate_input", "create_project"],
             "next_phase": "open_backlot",
             "input": input_record,
+            "hook_selection": build_initial_hook_selection(hook_text),
             "budgets": asdict(get_workflow_budgets()),
             "attempts": {},
             "send_backs": 0,
@@ -649,6 +696,36 @@ def load_workflow_state(
     return state
 
 
+def record_hook_selection(
+    project_id: str,
+    *,
+    selected_text: str,
+    hook_family: str,
+    candidates: Sequence[Mapping[str, Any]],
+    score: float,
+    content_match_score: int,
+    evidence_checked: bool,
+    unsupported_claims_rejected: bool,
+    rationale: str,
+    pipeline_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Persist the automatic hook winner without weakening user-authored authority."""
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    initial = state.get("hook_selection")
+    if not isinstance(initial, Mapping):
+        raise PersianVideoWorkflowError("workflow is missing its hook-selection authority record")
+    if str(initial.get("mode") or "") == "user_supplied":
+        validate_user_hook_unchanged(initial, selected_text)
+        return state
+    state["hook_selection"] = finalize_automatic_hook_selection(
+        initial, selected_text=selected_text, hook_family=hook_family, candidates=candidates,
+        score=score, content_match_score=content_match_score, evidence_checked=evidence_checked,
+        unsupported_claims_rejected=unsupported_claims_rejected, rationale=rationale,
+    )
+    _write_state(_project_root(state), state)
+    return state
+
+
 def assert_read_allowed(state: Mapping[str, Any], requested_path: str | Path) -> Path:
     """Reject reads from sibling projects and anything outside the explicit allowlist."""
     requested = Path(requested_path).expanduser().resolve()
@@ -688,27 +765,21 @@ def _parse_timestamp(value: str) -> datetime:
 def assert_within_wall_time(
     state: Mapping[str, Any], *, now: datetime | None = None
 ) -> None:
+    """Validate timing metadata without turning the 30/45m target into a kill switch.
+
+    Issue #32 makes production duration an architecture/SLO signal. Correct work may
+    continue past the target; the terminal performance summary exposes the real wall
+    time and whether the target was exceeded.
+    """
     started = _parse_timestamp(
         str(state.get("budget_window_started_at") or state.get("created_at") or "")
     )
     current = now or datetime.now(timezone.utc)
-    telemetry = state.get("phase_telemetry")
-    if isinstance(telemetry, Mapping) and telemetry:
-        elapsed_minutes = phase_time_accounting(
-            state, now=current, since=started, include_open=True
-        )["active_editorial_seconds"] / 60.0
-        basis = "active editorial"
-    else:
-        # Legacy states have no phase telemetry, so retain the historical guard
-        # until their first instrumented attempt establishes the new accounting.
-        elapsed_minutes = max(0.0, (current - started).total_seconds() / 60.0)
-        basis = "workflow wall-time"
+    if current < started:
+        raise PersianVideoWorkflowError("workflow timing clock moved before the active window")
     limit = int((state.get("budgets") or {}).get("max_wall_time_minutes", 0))
-    if limit <= 0 or elapsed_minutes > limit:
-        raise PersianVideoWorkflowError(
-            f"workflow wall-time budget exceeded on {basis} accounting: "
-            f"{elapsed_minutes:.1f}m > {limit}m"
-        )
+    if limit <= 0:
+        raise PersianVideoWorkflowError("workflow max_wall_time_minutes must be positive")
 
 def record_phase_attempt(
     project_id: str,
@@ -996,11 +1067,11 @@ def _complete_phase_impl(
         state["next_phase"] = PHASES[_phase_index(phase) + 1]
     _finish_phase_telemetry(state, phase, outcome="succeeded", now=now)
     if phase == "awaiting_human":
-        accounting = phase_time_accounting(state)
+        accounting = phase_time_accounting(state, now=now or datetime.now(timezone.utc))
         state["performance_summary"] = {
             **accounting,
             "endToEndSloSeconds": END_TO_END_SLO_SECONDS,
-            "endToEndSloExceeded": accounting["total_observed_seconds"] > END_TO_END_SLO_SECONDS,
+            "endToEndSloExceeded": accounting["workflow_wall_seconds"] > END_TO_END_SLO_SECONDS,
             "phaseSloExceeded": {
                 name: any(
                     bool(item.get("slo_exceeded"))
@@ -1956,6 +2027,7 @@ def _add_bootstrap_inputs(parser: argparse.ArgumentParser) -> None:
     script = parser.add_mutually_exclusive_group()
     script.add_argument("--approved-script", metavar="TEXT")
     script.add_argument("--approved-script-file", metavar="PATH")
+    parser.add_argument("--hook", metavar="TEXT", help="authoritative opening hook; bypasses automatic hook selection")
 
 
 def _bootstrap_inputs(args: argparse.Namespace) -> tuple[str | None, str | None]:
@@ -2003,7 +2075,12 @@ def stage_workflow_edit_draft(
         )
     source = assert_read_allowed(state, input_path)
     payload = _read_json(str(source))
-    return stage_edit_draft(_project_root(state), attempt_id, payload)
+    decision = state.get("hook_selection")
+    if not isinstance(decision, Mapping):
+        raise PersianVideoWorkflowError("workflow is missing its hook-selection authority record")
+    authority = validate_edit_hook_authority(decision, payload)
+    staged = stage_edit_draft(_project_root(state), attempt_id, payload)
+    return {**staged, "hookAuthority": authority}
 
 
 def preflight_workflow_edit_draft(
@@ -2190,6 +2267,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 title=args.title,
                 narration_path=narration_path,
                 approved_script=approved_script,
+                hook_text=args.hook,
                 project_id=args.project_id,
             )
             _print_json(workflow_status(state["project_id"]))
