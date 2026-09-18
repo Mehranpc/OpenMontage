@@ -1,8 +1,9 @@
 import {diffuseRadii,diffuseStops} from "./diffuse27";
 /** Film Type paint. All movement is frame-driven; no CSS animation/timers. */
-import React, { useId, useMemo } from "react";
+import React, { useEffect, useId, useMemo, useState } from "react";
 import { AbsoluteFill, Easing, useCurrentFrame, useVideoConfig } from "remotion";
 import { compareKey } from "../text";
+import { ensureKahrobaReady, isKahrobaLoaded } from "../fonts";
 import { FORMAT_DIMENSIONS, type PersianFormat } from "../tokens";
 import type { PersianMoment, PersianDesignSnapshot, PersianVideoProps } from "../types";
 import { filmProfile, filmRowDelay, isFilmTypePolish, type FilmRow, type FilmMomentLayout, type FilmLockup, type FilmProfile, type Rect } from "./layout";
@@ -146,6 +147,16 @@ export const PersianFilmTypeMoment: React.FC<{
 }> = ({moment,layout,format,durationFrames,design}) => {
   const frame = useCurrentFrame(), {fps} = useVideoConfig();
   const p = filmProfile(design), dims = FORMAT_DIMENSIONS[format];
+  const kahrobaPromise = p.profileVersion === "2.16.0"
+    ? ensureKahrobaReady(p.typography.editorial!.assetSha256)
+    : null;
+  const [kahrobaReady, setKahrobaReady] = useState(() => p.profileVersion !== "2.16.0" || isKahrobaLoaded());
+  useEffect(() => {
+    if (!kahrobaPromise || kahrobaReady) return;
+    let active = true;
+    kahrobaPromise.then(() => { if (active) setKahrobaReady(true); });
+    return () => { active = false; };
+  }, [kahrobaPromise, kahrobaReady]);
   const polished = isFilmTypePolish(design);
   if (!layout || layout.id !== moment.id) throw new Error(`Missing measured Film Type layout for ${moment.id}; run persian_compose.`);
   const span = durationFrames / fps, seconds = frame / fps;
@@ -160,6 +171,7 @@ export const PersianFilmTypeMoment: React.FC<{
   const cut = moment.presentation?.motion === "cut-in";
   const align = layout.placement === "center" || layout.placement.endsWith("-center") ? "center" : polished ? "right" : layout.placement.endsWith("left") ? "left" : "right";
   const anchor = align === "center" ? layout.widthPx/2 : align === "left" ? p.layout.inkPaddingPx : layout.widthPx-p.layout.inkPaddingPx;
+  if (!kahrobaReady) return null;
   return <AbsoluteFill data-film-type-moment={moment.id} data-film-type-placement={layout.placement} style={{pointerEvents:"none"}}>
     {diffuse ? <DiffuseField layout={layout} format={format} design={design} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)} anchor={anchor} align={align}/> : modern ? <CompactFilmField featherPx={layout.fieldFeatherPx} rect={layout.rect} format={format} design={design} color={dark?p.contrast.darkField:p.contrast.lightField}
       alpha={p.contrast.strengths[layout.strength]} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)}/> : <FilmContrastField rect={layout.rect} format={format} color={dark?p.contrast.darkField:p.contrast.lightField}
