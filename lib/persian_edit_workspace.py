@@ -76,6 +76,79 @@ def _valid_cached_report(value: object, *, digest: str) -> bool:
     )
 
 
+
+def _editorial_moment_ids(edit: Mapping[str, Any]) -> list[str]:
+    persian = edit.get("persian")
+    moments = persian.get("moments") if isinstance(persian, Mapping) else None
+    if not isinstance(moments, list):
+        return []
+    ids: list[str] = []
+    for index, moment in enumerate(moments):
+        if not isinstance(moment, Mapping):
+            continue
+        moment_id = str(moment.get("id") or "").strip()
+        if not moment_id:
+            raise PersianEditWorkspaceError(f"editorial moment {index} requires a non-empty id")
+        if moment_id in ids:
+            raise PersianEditWorkspaceError(f"duplicate editorial moment id: {moment_id}")
+        ids.append(moment_id)
+    return ids
+
+
+def _editorial_baseline_path(project_dir: Path) -> Path:
+    return project_dir.expanduser().resolve() / ".drafts" / "edit" / "editorial-baseline.json"
+
+
+def _validate_editorial_moment_continuity(
+    project_dir: Path, attempt_id: str, edit: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Prevent preflight convergence from deleting authored editorial beats silently."""
+    path = _editorial_baseline_path(project_dir)
+    current = _editorial_moment_ids(edit)
+    previous: list[str] = []
+    if path.is_file():
+        try:
+            baseline = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise PersianEditWorkspaceError("editorial moment baseline is unreadable") from exc
+        raw_ids = baseline.get("momentIds") if isinstance(baseline, Mapping) else None
+        if not isinstance(raw_ids, list) or any(not isinstance(item, str) or not item for item in raw_ids):
+            raise PersianEditWorkspaceError("editorial moment baseline is invalid")
+        previous = list(raw_ids)
+    removed = [moment_id for moment_id in previous if moment_id not in current]
+    authorization = None
+    metadata = edit.get("metadata")
+    if isinstance(metadata, Mapping):
+        authorization = metadata.get("editorialMomentRemovalAuthorization")
+    authorized = False
+    if removed:
+        if isinstance(authorization, Mapping):
+            declared = authorization.get("removedMomentIds")
+            authorized = (
+                authorization.get("authorized") is True
+                and authorization.get("source") == "explicit_user_response"
+                and bool(str(authorization.get("decisionId") or "").strip())
+                and bool(str(authorization.get("reason") or "").strip())
+                and isinstance(declared, list)
+                and set(str(item) for item in declared) == set(removed)
+            )
+        if not authorized:
+            raise PersianEditWorkspaceError(
+                "silent editorial moment removal is forbidden during convergence; "
+                f"removed={removed}. Repair recipe/line-break/placement/timing first, or persist "
+                "an explicit_user_response editorialMomentRemovalAuthorization naming exactly those ids."
+            )
+    _atomic_json(path, {
+        "version": "1.0",
+        "lastAttemptId": attempt_id,
+        "momentIds": current,
+    })
+    return {
+        "editorialMomentIds": current,
+        "removedEditorialMomentIds": removed,
+        "removalAuthorized": bool(removed and authorized),
+    }
+
 def stage_edit_draft(
     project_dir: Path, attempt_id: str, payload: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -85,6 +158,7 @@ def stage_edit_draft(
     # not make an independent late mix decision, so preflight and promotion remain
     # digest-bound to the exact speech-time gain that will execute.
     edit = materialize_loudness_aware_mix(edit, base_dir=REPO_ROOT)
+    continuity = _validate_editorial_moment_continuity(project_dir, attempt_id, edit)
     digest = artifact_sha256(edit)
     if draft.exists():
         existing = json.loads(draft.read_text(encoding="utf-8"))
@@ -102,6 +176,7 @@ def stage_edit_draft(
         "attemptId": attempt_id,
         "draftPath": str(draft),
         "artifactSha256": digest,
+        **continuity,
     }
 
 
