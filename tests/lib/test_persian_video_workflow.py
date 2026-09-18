@@ -357,15 +357,12 @@ def test_send_back_budget_and_resume_preserve_durable_counters(tmp_path):
     assert resumed["budget_window_started_at"] == (BASE + timedelta(hours=4)).isoformat()
 
 
-def test_wall_time_expires_until_resume_starts_a_new_window(tmp_path):
+def test_wall_time_target_is_advisory_and_does_not_block_phase_attempt(tmp_path):
     _bootstrap(tmp_path)
     expired = BASE + timedelta(minutes=46)
-    with pytest.raises(PersianVideoWorkflowError, match="wall-time budget exceeded"):
-        record_phase_attempt("run", "prepare_inputs", pipeline_dir=tmp_path, now=expired)
-    resumed = resume_workflow("run", pipeline_dir=tmp_path, backlot_opener=lambda _: 0, now=expired)
     state = record_phase_attempt("run", "prepare_inputs", pipeline_dir=tmp_path, now=expired)
     assert state["attempts"]["prepare_inputs"] == 1
-    assert resumed["budget_window_started_at"] == expired.isoformat()
+    assert state["performance_slo"]["policy"] == "engineering-target-not-correctness-shortcut"
 
 
 def _bootstrap_to_assets(tmp_path: Path) -> None:
@@ -599,15 +596,18 @@ def test_second_asset_pass_rejects_slots_outside_scene_importance_order(tmp_path
         )
 
 
-def test_asset_actions_and_send_back_obey_session_wall_time(tmp_path):
+def test_asset_actions_and_send_back_are_not_killed_by_runtime_target(tmp_path):
     _bootstrap_to_assets(tmp_path)
     expired = BASE + timedelta(minutes=46)
-    with pytest.raises(PersianVideoWorkflowError, match="wall-time budget exceeded"):
-        bounded_asset_search_request("run", {}, retry_pass=0, pipeline_dir=tmp_path, now=expired)
-    with pytest.raises(PersianVideoWorkflowError, match="wall-time budget exceeded"):
-        request_send_back(
-            "run", "prepare_inputs", reason="late", pipeline_dir=tmp_path, now=expired,
-        )
+    request = bounded_asset_search_request("run", {}, retry_pass=0, pipeline_dir=tmp_path, now=expired)
+    record_asset_search_result(
+        "run", retry_pass=0, result_data=_asset_result(request, candidates=0, downloaded_bytes=0),
+        pipeline_dir=tmp_path, now=expired,
+    )
+    rewound = request_send_back(
+        "run", "prepare_inputs", reason="late but valid editorial revision", pipeline_dir=tmp_path, now=expired,
+    )
+    assert rewound["next_phase"] == "prepare_inputs"
 
 
 def _write_final_review(project: Path, candidate: Path) -> Path:

@@ -414,13 +414,32 @@ def phase_time_accounting(
                     if isinstance(raw, (int, float)) and not isinstance(raw, bool):
                         accounting_lag += max(0.0, float(raw))
     total = editorial + external
+    origin_raw = since or _parse_timestamp(str(state.get("created_at") or ""))
+    wall_seconds = max(0.0, (current - origin_raw).total_seconds())
+    review_seconds = 0.0
+    for phase_name in ("opening_review", "final_review"):
+        entries = telemetry.get(phase_name) if isinstance(telemetry, Mapping) else None
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                continue
+            raw = entry.get("duration_seconds")
+            if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+                review_seconds += max(0.0, float(raw))
+    gap = max(0.0, wall_seconds - total)
     return {
-        # Issue #28 canonical names. These dimensions are intentionally not
-        # collapsed into one wall-time number.
-        "job_runtime_seconds": round(total, 3),
+        # Issue #32: the number called runtime must match the user's wall clock.
+        # Instrumented work remains available separately instead of pretending it
+        # covers time between phase attempts or review preparation/accounting gaps.
+        "job_runtime_seconds": round(wall_seconds, 3),
+        "workflow_wall_seconds": round(wall_seconds, 3),
         "provider_wait_seconds": round(external, 3),
         "accounting_lag_seconds": round(accounting_lag, 3),
         "editorial_wall_seconds": round(editorial, 3),
+        "review_phase_seconds": round(review_seconds, 3),
+        "orchestration_gap_seconds": round(gap, 3),
+        "unattributed_wall_seconds": round(gap, 3),
         # Backward-compatible aliases consumed by older reports/tests.
         "active_editorial_seconds": round(editorial, 3),
         "external_durable_seconds": round(external, 3),
@@ -726,27 +745,21 @@ def _parse_timestamp(value: str) -> datetime:
 def assert_within_wall_time(
     state: Mapping[str, Any], *, now: datetime | None = None
 ) -> None:
+    """Validate timing metadata without turning the 30/45m target into a kill switch.
+
+    Issue #32 makes production duration an architecture/SLO signal. Correct work may
+    continue past the target; the terminal performance summary exposes the real wall
+    time and whether the target was exceeded.
+    """
     started = _parse_timestamp(
         str(state.get("budget_window_started_at") or state.get("created_at") or "")
     )
     current = now or datetime.now(timezone.utc)
-    telemetry = state.get("phase_telemetry")
-    if isinstance(telemetry, Mapping) and telemetry:
-        elapsed_minutes = phase_time_accounting(
-            state, now=current, since=started, include_open=True
-        )["active_editorial_seconds"] / 60.0
-        basis = "active editorial"
-    else:
-        # Legacy states have no phase telemetry, so retain the historical guard
-        # until their first instrumented attempt establishes the new accounting.
-        elapsed_minutes = max(0.0, (current - started).total_seconds() / 60.0)
-        basis = "workflow wall-time"
+    if current < started:
+        raise PersianVideoWorkflowError("workflow timing clock moved before the active window")
     limit = int((state.get("budgets") or {}).get("max_wall_time_minutes", 0))
-    if limit <= 0 or elapsed_minutes > limit:
-        raise PersianVideoWorkflowError(
-            f"workflow wall-time budget exceeded on {basis} accounting: "
-            f"{elapsed_minutes:.1f}m > {limit}m"
-        )
+    if limit <= 0:
+        raise PersianVideoWorkflowError("workflow max_wall_time_minutes must be positive")
 
 def record_phase_attempt(
     project_id: str,
@@ -1034,11 +1047,11 @@ def _complete_phase_impl(
         state["next_phase"] = PHASES[_phase_index(phase) + 1]
     _finish_phase_telemetry(state, phase, outcome="succeeded", now=now)
     if phase == "awaiting_human":
-        accounting = phase_time_accounting(state)
+        accounting = phase_time_accounting(state, now=now or datetime.now(timezone.utc))
         state["performance_summary"] = {
             **accounting,
             "endToEndSloSeconds": END_TO_END_SLO_SECONDS,
-            "endToEndSloExceeded": accounting["total_observed_seconds"] > END_TO_END_SLO_SECONDS,
+            "endToEndSloExceeded": accounting["workflow_wall_seconds"] > END_TO_END_SLO_SECONDS,
             "phaseSloExceeded": {
                 name: any(
                     bool(item.get("slo_exceeded"))
