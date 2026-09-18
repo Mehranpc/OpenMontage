@@ -6,6 +6,7 @@ import time
 
 import pytest
 
+from lib import persian_run_kernel as kernel
 from lib import persian_video_workflow as workflow
 
 
@@ -40,12 +41,12 @@ def _semantic_child(*, success: bool, error: str | None = None) -> str:
 
 def _wait_for_job(projects_root: Path, job_id: str) -> dict:
     terminal = {"succeeded", "failed", "interrupted"}
-    result = workflow.reconcile_workflow_job("run", job_id, pipeline_dir=projects_root)
+    result = kernel.reconcile_phase_job("run", job_id, pipeline_dir=projects_root)
     for _ in range(100):
         if result.get("status") in terminal:
             return result
         time.sleep(0.05)
-        result = workflow.reconcile_workflow_job("run", job_id, pipeline_dir=projects_root)
+        result = kernel.reconcile_phase_job("run", job_id, pipeline_dir=projects_root)
     return result
 
 
@@ -59,7 +60,7 @@ def _prepare_inputs_evidence(projects_root: Path) -> dict[str, str]:
 
 def test_front_door_zero_exit_does_not_hide_failed_semantic_result(tmp_path: Path) -> None:
     projects_root = _fresh_project(tmp_path)
-    workflow.start_workflow_job(
+    kernel.start_phase_job(
         "run",
         job_id="semantic-failure",
         phase="prepare_inputs",
@@ -79,7 +80,7 @@ def test_front_door_zero_exit_does_not_hide_failed_semantic_result(tmp_path: Pat
 
 def test_front_door_binds_durable_job_to_one_phase_attempt(tmp_path: Path) -> None:
     projects_root = _fresh_project(tmp_path)
-    started = workflow.start_workflow_job(
+    started = kernel.start_phase_job(
         "run",
         job_id="bound-failure",
         phase="prepare_inputs",
@@ -91,7 +92,7 @@ def test_front_door_binds_durable_job_to_one_phase_attempt(tmp_path: Path) -> No
 
     _wait_for_job(projects_root, "bound-failure")
     state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
-    envelope = state["execution_envelopes"]["bound-failure"]
+    envelope = kernel.load_execution_envelope("run", "bound-failure", pipeline_dir=projects_root)
     assert envelope["phase"] == "prepare_inputs"
     assert envelope["phaseAttempt"] == 1
     assert envelope["processOutcome"] == "succeeded"
@@ -103,7 +104,7 @@ def test_front_door_binds_durable_job_to_one_phase_attempt(tmp_path: Path) -> No
 
 def test_successful_job_advances_only_through_digest_bound_commit(tmp_path: Path) -> None:
     projects_root = _fresh_project(tmp_path, with_narration=True)
-    workflow.start_workflow_job(
+    kernel.start_phase_job(
         "run",
         job_id="prepare-success",
         phase="prepare_inputs",
@@ -116,26 +117,28 @@ def test_successful_job_advances_only_through_digest_bound_commit(tmp_path: Path
     assert workflow.load_workflow_state("run", pipeline_dir=projects_root)["next_phase"] == "prepare_inputs"
 
     evidence = _prepare_inputs_evidence(projects_root)
-    committed = workflow.commit_workflow_job(
+    committed = kernel.commit_phase_job(
         "run", "prepare-success", evidence=evidence, pipeline_dir=projects_root
     )
     assert committed["next_phase"] == "align_script_timing"
-    envelope = committed["execution_envelopes"]["prepare-success"]
+    envelope = kernel.load_execution_envelope("run", "prepare-success", pipeline_dir=projects_root)
     assert envelope["workflowTransitionOutcome"] == "succeeded"
     assert envelope["checkpointOutcome"] == "not_applicable"
     assert envelope["artifactIdentity"]["authoritative_script_sha256"] == evidence["authoritative_script_sha256"]
     assert envelope["artifactIdentity"]["narration_sha256"] == evidence["narration_sha256"]
 
-    repeated = workflow.commit_workflow_job(
+    repeated = kernel.commit_phase_job(
         "run", "prepare-success", evidence=evidence, pipeline_dir=projects_root
     )
     assert repeated["next_phase"] == "align_script_timing"
-    assert repeated["execution_envelopes"]["prepare-success"]["workflowTransitionOutcome"] == "succeeded"
+    assert kernel.load_execution_envelope(
+        "run", "prepare-success", pipeline_dir=projects_root
+    )["workflowTransitionOutcome"] == "succeeded"
 
 
 def test_failed_commit_preserves_successful_execution_for_retry(tmp_path: Path) -> None:
     projects_root = _fresh_project(tmp_path, with_narration=True)
-    workflow.start_workflow_job(
+    kernel.start_phase_job(
         "run",
         job_id="recoverable-commit",
         phase="prepare_inputs",
@@ -146,21 +149,25 @@ def test_failed_commit_preserves_successful_execution_for_retry(tmp_path: Path) 
     _wait_for_job(projects_root, "recoverable-commit")
 
     with pytest.raises(workflow.PersianVideoWorkflowError, match="authoritative_script_sha256"):
-        workflow.commit_workflow_job(
+        kernel.commit_phase_job(
             "run", "recoverable-commit", evidence={}, pipeline_dir=projects_root
         )
 
     after_failure = workflow.load_workflow_state("run", pipeline_dir=projects_root)
-    envelope = after_failure["execution_envelopes"]["recoverable-commit"]
+    envelope = kernel.load_execution_envelope(
+        "run", "recoverable-commit", pipeline_dir=projects_root
+    )
     assert envelope["executionOutcome"] == "succeeded"
     assert envelope["workflowTransitionOutcome"] == "failed"
     assert after_failure["next_phase"] == "prepare_inputs"
 
-    recovered = workflow.commit_workflow_job(
+    recovered = kernel.commit_phase_job(
         "run",
         "recoverable-commit",
         evidence=_prepare_inputs_evidence(projects_root),
         pipeline_dir=projects_root,
     )
     assert recovered["next_phase"] == "align_script_timing"
-    assert recovered["execution_envelopes"]["recoverable-commit"]["workflowTransitionOutcome"] == "succeeded"
+    assert kernel.load_execution_envelope(
+        "run", "recoverable-commit", pipeline_dir=projects_root
+    )["workflowTransitionOutcome"] == "succeeded"
