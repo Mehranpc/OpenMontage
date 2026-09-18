@@ -237,6 +237,42 @@ export function splitQuantity(text: string): [string,string] | null {
   return match && !match[2].includes("\n") ? [match[1],match[2]] : null;
 }
 
+export function isPosterStackHook(moment: PersianMoment): boolean {
+  if (moment.kind !== "hook" || moment.purpose !== "hook-pattern-interrupt") return false;
+  const blocks = moment.segments.filter(segment => segment.role !== "source");
+  if (blocks.length < 2 || blocks.length > 5 || blocks.some(segment => (segment.accentWords ?? []).length > 0)) return false;
+  const heroIndex = blocks.findIndex(segment => segment.role === "hero");
+  if (heroIndex < 0 || blocks.filter(segment => segment.role === "hero").length !== 1) return false;
+  return blocks.slice(0, heroIndex).every(segment => segment.role === "lead")
+    && blocks.slice(heroIndex + 1).every(segment => segment.role === "tail");
+}
+
+/** Relative display scale for one authored phrase in a semantic poster stack. */
+export function posterStackScale(segmentIndex: number, segments: PersianMoment["segments"]): number {
+  const blocks = segments.filter(segment => segment.role !== "source");
+  const heroIndex = blocks.findIndex(segment => segment.role === "hero");
+  const blockIndex = blocks.indexOf(segments[segmentIndex]);
+  if (blockIndex < 0 || heroIndex < 0) return 1;
+  if (blockIndex === heroIndex) return 1;
+  if (blockIndex < heroIndex) {
+    const count = heroIndex;
+    if (count <= 1) return .56;
+    const t = blockIndex / (count - 1);
+    return .56 + (.42 - .56) * t;
+  }
+  const count = blocks.length - heroIndex - 1;
+  const position = blockIndex - heroIndex - 1;
+  if (count <= 1) return .62;
+  const t = position / (count - 1);
+  return .42 + (.62 - .42) * t;
+}
+
+function posterStackGapPx(nextIndex: number, heroIndex: number, heroPx: number): number {
+  if (nextIndex === heroIndex) return Math.max(8, Math.round(heroPx * .05));
+  if (nextIndex - 1 === heroIndex) return Math.max(12, Math.round(heroPx * .11));
+  return Math.max(9, Math.round(heroPx * .07));
+}
+
 type EditorialRecipeId = "editorial-hero-balanced" | "editorial-hero-compact" | "editorial-callout-balanced";
 type EditorialRecipe = NonNullable<FilmProfile["typography"]["recipes"]>[EditorialRecipeId];
 function editorialRecipe(moment: PersianMoment, p: FilmProfile): {id: EditorialRecipeId; config: EditorialRecipe} | null {
@@ -258,6 +294,8 @@ function editorialRecipe(moment: PersianMoment, p: FilmProfile): {id: EditorialR
 
 function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, column: number, selectedSize?: number): Omit<FilmMomentLayout,"rect"|"placement"|"subjectSafety"|"contrastMode"|"strength"> | null {
   const t = p.typography, l = p.layout, dims = FORMAT_DIMENSIONS[fmt], recipe = editorialRecipe(moment,p);
+  const posterStack = p.profileVersion === "2.16.0" && isPosterStackHook(moment);
+  const posterHeroIndex = posterStack ? moment.segments.findIndex(segment => segment.role === "hero") : -1;
   const numeric = !moment.exactText && moment.kind === "figure" && moment.segments.some(s => s.role === "hero" && splitQuantity(s.text));
   const ladder = numeric ? t.figureLadderPx : moment.kind === "hook" ? t.titleLadderPx : t.statementLadderPx;
   const safe = p.formats[fmt].safeArea;
@@ -269,7 +307,9 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
     for (let index = 0; index < moment.segments.length; index++) {
       const segment = moment.segments[index];
       const reveal = segment.revealAfterSeconds ?? 0;
-      if (index) y += reveal > previousReveal ? l.revealGroupGapPx : segment.role === "source" ? l.sourceGapPx : segment.role === "hero" && moment.segments[index - 1].role === "lead" ? l.contextGapPx : l.phraseGapPx;
+      if (index) y += posterStack
+        ? posterStackGapPx(index, posterHeroIndex, main)
+        : reveal > previousReveal ? l.revealGroupGapPx : segment.role === "source" ? l.sourceGapPx : segment.role === "hero" && moment.segments[index - 1].role === "lead" ? l.contextGapPx : l.phraseGapPx;
       previousReveal = reveal;
       const quantity = numeric && segment.role === "hero" ? splitQuantity(segment.text) : null;
       const editorial = p.profileVersion === "2.16.0" ? t.editorial : undefined;
@@ -279,9 +319,9 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
         {text: quantity[0], role: "quantity", size: main, weight: editorial ? editorialWeight : 500 as 500|900, max: 1, family: editorialFamily},
         {text: quantity[1], role: "quantity-unit", size: t.quantityUnitPx, weight: editorial ? editorialWeight : 500 as 500|900, max: 2, family: editorialFamily},
       ] : [{text: segment.text, role: segment.role,
-        size: segment.role === "source" ? t.sourcePx : segment.role === "lead" ? (editorial ? Math.round(main * .72) : t.contextPx) : segment.role === "tail" ? (editorial ? Math.round(main * .72) : (moment.kind === "hook" ? Math.round(main * t.titleTailRatio) : t.supportPx)) : main,
+        size: segment.role === "source" ? t.sourcePx : posterStack ? Math.round(main * posterStackScale(index, moment.segments)) : segment.role === "lead" ? (editorial ? Math.round(main * .72) : t.contextPx) : segment.role === "tail" ? (editorial ? Math.round(main * .72) : (moment.kind === "hook" ? Math.round(main * t.titleTailRatio) : t.supportPx)) : main,
         weight: segment.role === "source" ? t.supportWeight : (editorial ? editorialWeight : (segment.role === "hero" ? t.heroWeight : t.supportWeight)),
-        max: segment.role === "hero" ? (recipe?.config.maxHeroLines ?? editorial?.maxHookLines ?? 3) : (recipe?.config.maxSupportLines ?? 2),
+        max: posterStack ? 1 : segment.role === "hero" ? (recipe?.config.maxHeroLines ?? editorial?.maxHookLines ?? 3) : (recipe?.config.maxSupportLines ?? 2),
         family: segment.role === "source" ? ESTEDAD_FAMILY : editorialFamily}];
       for (const [pieceIndex,piece] of pieces.entries()) {
         if (pieceIndex) y += l.quantityGapPx;
@@ -290,7 +330,7 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
         for (const [lineIndex,text] of lines.entries()) {
           if (lineIndex) y += l.lineGapPx;
           const rowAccentWords = (segment.accentWords ?? []).filter(word => text.includes(word));
-          const posterHook = p.profileVersion === "2.16.0" && moment.kind === "hook" && piece.role === "hero";
+          const posterHook = p.profileVersion === "2.16.0" && moment.kind === "hook" && !posterStack && piece.role === "hero";
           const posterScale = !posterHook ? 1
             : rowAccentWords.length ? 1.18
             : lineIndex === 0 ? 1.08

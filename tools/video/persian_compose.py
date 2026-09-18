@@ -786,6 +786,25 @@ class PersianCompose(BaseTool):
                         "context+claim+qualifier hooks require Film Type 2.14.0+; "
                         "pinned older profiles keep their historical hook contract"
                     )
+                if profile_version == "2.16.0" and moment.get("kind") == "hook" and moment.get("purpose") == "hook-pattern-interrupt" and not moment.get("userAuthoredShortHook"):
+                    content = [seg for seg in moment.get("segments", []) if seg.get("role") != "source"]
+                    hero_positions = [i for i, seg in enumerate(content) if seg.get("role") == "hero"]
+                    hero_index = hero_positions[0] if len(hero_positions) == 1 else -1
+                    poster_stack = (
+                        2 <= len(content) <= 5
+                        and hero_index >= 0
+                        and all(seg.get("role") == "lead" for seg in content[:hero_index])
+                        and all(seg.get("role") == "tail" for seg in content[hero_index + 1:])
+                        and not any(seg.get("accentWords") for seg in content)
+                    )
+                    if not poster_stack:
+                        raise ValueError(
+                            "Film Type 2.16 opening hooks require a semantic poster stack: "
+                            "2-5 simultaneous phrase segments, exactly one hero subject, "
+                            "lead setup before it and tail connector/payoff after it. "
+                            "Keep the selected hook wording unchanged; repartition the phrase "
+                            "instead of flattening it into accentWords."
+                        )
         # The browser bridge returns the exact lockup geometry used by the V2 planner.
         # Query it independently of moment fitting so an empty moment list cannot
         # accidentally erase the required watermark measurement.

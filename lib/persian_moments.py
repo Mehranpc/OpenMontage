@@ -794,6 +794,33 @@ def is_context_claim_qualifier_hook(moment: PersianMoment) -> bool:
         return False
     return not any(segment.accent_words for segment in moment.segments)
 
+def is_poster_stack_hook(moment: PersianMoment) -> bool:
+    """True for a semantic poster stack used by retention-first opening hooks.
+
+    The authored hook is partitioned into 2–5 simultaneous phrase blocks. Exactly
+    one ``hero`` names the central subject/topic. Blocks before it are ``lead``
+    setup/bridge phrases; blocks after it are ``tail`` connector/payoff phrases.
+    The wording is unchanged — segmentation only gives the renderer semantic
+    hierarchy. Inline ``accentWords`` are deliberately absent because the whole
+    hero phrase owns the yellow emphasis.
+    """
+    if moment.kind != "hook" or moment.purpose != "hook-pattern-interrupt":
+        return False
+    non_source = [segment for segment in moment.segments if segment.role != "source"]
+    if not 2 <= len(non_source) <= 5:
+        return False
+    if any(segment.accent_words for segment in non_source):
+        return False
+    hero_indexes = [index for index, segment in enumerate(non_source) if segment.role == "hero"]
+    if len(hero_indexes) != 1:
+        return False
+    hero_index = hero_indexes[0]
+    return (
+        all(segment.role == "lead" for segment in non_source[:hero_index])
+        and all(segment.role == "tail" for segment in non_source[hero_index + 1 :])
+    )
+
+
 def is_flat_display_hook(moment: PersianMoment) -> bool:
     """True when a moment has the flat display hook structure.
 
@@ -890,6 +917,7 @@ def _audit_one(
     if moment.kind == "hook" and not (
         is_claim_qualifier_hook(moment)
         or is_context_claim_qualifier_hook(moment)
+        or is_poster_stack_hook(moment)
         or is_flat_display_hook(moment)
     ):
         roles = [segment.role for segment in moment.segments]
@@ -1195,5 +1223,6 @@ __all__ = [
     "build_moments",
     "audit_moments",
     "is_claim_qualifier_hook",
+    "is_poster_stack_hook",
     "is_flat_display_hook",
 ]

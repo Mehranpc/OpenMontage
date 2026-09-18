@@ -171,7 +171,7 @@ export const PersianFilmTypeMoment: React.FC<{
   const absoluteSeconds = moment.startSeconds + seconds;
   const activeShot = shots.find(shot => absoluteSeconds >= shot.startSeconds && absoluteSeconds < shot.endSeconds);
   const busyBackground = p.profileVersion === "2.16.0" && activeShot?.visualComplexity === "busy";
-  const fieldPeakMultiplier = busyBackground ? 1.35 : 1;
+  const fieldPeakMultiplier = busyBackground ? 1.55 : 1;
   const firstReveal = Math.min(...layout.rows.map(row => row.revealAfterSeconds));
   const modern=p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")))))),lifeAt=modern?gentleLife:filmLife;
   const diffuse=p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")));
@@ -185,6 +185,8 @@ export const PersianFilmTypeMoment: React.FC<{
   const anchor = align === "center" ? layout.widthPx/2 : align === "left" ? p.layout.inkPaddingPx : layout.widthPx-p.layout.inkPaddingPx;
   if (!kahrobaReady) return null;
   return <AbsoluteFill data-film-type-moment={moment.id} data-film-type-placement={layout.placement} style={{pointerEvents:"none"}}>
+    {busyBackground ? <FilmContrastField rect={layout.rect} format={format} color={p.contrast.darkField}
+      alpha={0.42} plateau={0.56} paddingPx={92} opacity={fieldLife.opacity} kind="text"/> : null}
     {diffuse ? <DiffuseField layout={layout} format={format} design={design} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)} anchor={anchor} align={align} peakMultiplier={fieldPeakMultiplier}/> : modern ? <CompactFilmField featherPx={layout.fieldFeatherPx} rect={layout.rect} format={format} design={design} color={dark?p.contrast.darkField:p.contrast.lightField}
       alpha={p.contrast.strengths[layout.strength]} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)}/> : <FilmContrastField rect={layout.rect} format={format} color={dark?p.contrast.darkField:p.contrast.lightField}
       alpha={p.contrast.strengths[layout.strength]} plateau={p.contrast.plateauStop}
