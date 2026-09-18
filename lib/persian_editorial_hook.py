@@ -218,6 +218,22 @@ def validate_edit_hook_authority(
     semantic = semantic_poster_stack_from_edit(decision, payload)
     if semantic is not None:
         result["semanticPosterStack"] = semantic
+        if not isinstance(payload, dict):
+            raise PersianEditorialHookError(
+                "semantic poster staging requires a mutable edit artifact"
+            )
+        metadata = payload.get("metadata")
+        if metadata is None:
+            metadata = {}
+            payload["metadata"] = metadata
+        if not isinstance(metadata, dict):
+            raise PersianEditorialHookError("edit metadata must be an object")
+        existing = metadata.get("semanticPosterStack")
+        if existing is not None and existing != semantic:
+            raise PersianEditorialHookError(
+                "persisted semantic poster stack cannot be silently reinterpreted"
+            )
+        metadata["semanticPosterStack"] = semantic
     return result
 
 
