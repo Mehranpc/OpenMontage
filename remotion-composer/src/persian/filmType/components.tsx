@@ -122,6 +122,25 @@ const Run: React.FC<{row: FilmRow; x: number; color: string; accent: string; emp
   </text>;
 };
 
+const EditorialBurst: React.FC<{
+  row: FilmRow; anchor: number; align: "left" | "right" | "center";
+  accent: string; progress: number; opacity: number;
+}> = ({row,anchor,align,accent,progress,opacity}) => {
+  if (row.accentWords.length === 0) return null;
+  const leftEdge = align === "center" ? anchor - row.widthPx / 2 : align === "right" ? anchor - row.widthPx : anchor;
+  const x2 = Math.max(10, leftEdge - Math.max(8, row.fontSizePx * .04));
+  const ray = Math.max(14, Math.min(28, row.fontSizePx * .18));
+  const x1 = Math.max(3, x2 - ray);
+  const y = Math.max(12, row.baselinePx - row.abovePx * .35);
+  const dash = Math.max(1, ray * progress);
+  return <g data-film-editorial-accent="burst" opacity={opacity * .95} stroke={accent} strokeWidth={Math.max(3, row.fontSizePx * .026)} strokeLinecap="round">
+    <line x1={x1} y1={y} x2={x1 + dash} y2={y}/>
+    <line x1={x1 + 3} y1={y - ray * .62} x2={x1 + 3 + dash * .78} y2={y - ray * .12}/>
+    <line x1={x1 + 3} y1={y + ray * .62} x2={x1 + 3 + dash * .78} y2={y + ray * .12}/>
+  </g>;
+};
+
+
 export const PersianFilmTypeMoment: React.FC<{
   moment: PersianMoment; layout: FilmMomentLayout; format: PersianFormat;
   durationFrames: number; design: PersianDesignSnapshot;
@@ -156,8 +175,12 @@ export const PersianFilmTypeMoment: React.FC<{
         const delay = filmRowDelay(row,p);
         const life = lifeAt(seconds,span,delay,cut?p.motion.cutInSeconds:p.motion.enterSeconds,p.motion.exitSeconds);
         const y = cut && !modern ? 0 : p.motion.travelPx * (1-life.arrive);
-        return <g key={index} data-film-type-row={index} opacity={life.opacity} transform={`translate(0 ${y})`}>
+        const accented216 = p.profileVersion === "2.16.0" && row.accentWords.length > 0;
+        const punch = accented216 ? .985 + .015 * life.arrive : 1;
+        const transform = `translate(0 ${y}) translate(${anchor} 0) scale(${punch}) translate(${-anchor} 0)`;
+        return <g key={index} data-film-type-row={index} opacity={life.opacity} transform={transform}>
           <Run row={row} x={anchor} align={align} color={color} accent={accent} semanticHero={p.profileVersion === "2.16.0" && row.role === "hero"} emphasis={moment.presentation?.emphasis === "inline"}/>
+          {accented216 ? <EditorialBurst row={row} anchor={anchor} align={align} accent={accent} progress={life.arrive} opacity={life.opacity}/> : null}
         </g>;
       })}
     </svg>
