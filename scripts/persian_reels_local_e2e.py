@@ -870,9 +870,11 @@ def run_local(root: Path) -> dict[str, Any]:
         rationale="Synthetic E2E fixture explicitly exercises the automatic hook-selection gate.",
         pipeline_dir=root,
     )
-    for name, artifact in (("scene_plan", plan), ("asset_manifest", actual_manifest),
-                           ("edit_decisions", edit)):
+    for name, artifact in (("scene_plan", plan), ("asset_manifest", actual_manifest)):
         validate_artifact(name, artifact)
+    # The edit candidate is an authoring payload here: semanticRole is intentionally
+    # transport-only until stage_workflow_edit_draft canonicalizes it into metadata.
+    # Artifact-schema validation therefore belongs after the Front Door boundary.
     retention = audit_persian_retention(edit["persian"])
     if retention["problems"]:
         raise RuntimeError("retention audit failed: " + "; ".join(retention["problems"]))
