@@ -665,7 +665,7 @@ class PersianCompose(BaseTool):
                 }
             )
 
-        if film_type and design_snapshot.get("profileVersion") in {"2.13.0", "2.14.0", "2.15.0"}:
+        if film_type and design_snapshot.get("profileVersion") in {"2.13.0", "2.14.0", "2.15.0", "2.16.0"}:
             opening_problems = audit_opening_semantic_shots(shots)
             if opening_problems:
                 raise ValueError(
@@ -748,12 +748,17 @@ class PersianCompose(BaseTool):
 
         duration_seconds = float(persian["durationSeconds"])
         resolved_persian = {**persian, "watermark": watermark}
+        profile_version = str((design_snapshot or {}).get("profileVersion") or "")
         adaptive_pixel_typography = bool(
-            film_type and design_snapshot and design_snapshot.get("profileVersion") == "2.15.0"
+            film_type and profile_version in {"2.15.0", "2.16.0"}
+        )
+        simultaneous_hook_typography = bool(
+            film_type and profile_version == "2.16.0"
         )
         moments = (self._build_moments(
             resolved_persian, duration_seconds, v2=True, measure_layout=False,
             adaptive_pixel_typography=adaptive_pixel_typography,
+            simultaneous_hook_typography=simultaneous_hook_typography,
         ) if film_type else self._build_moments(
             resolved_persian, duration_seconds, v2=design_snapshot is not None
         ))
@@ -769,7 +774,7 @@ class PersianCompose(BaseTool):
                     and moment.get("purpose") == "hook-pattern-interrupt"
                     and roles == ["lead", "hero", "tail"]
                 )
-                if contextual_hook and profile_version not in {"2.14.0", "2.15.0"}:
+                if contextual_hook and profile_version not in {"2.14.0", "2.15.0", "2.16.0"}:
                     raise ValueError(
                         "context+claim+qualifier hooks require Film Type 2.14.0+; "
                         "pinned older profiles keep their historical hook contract"
@@ -909,7 +914,9 @@ class PersianCompose(BaseTool):
 
     @staticmethod
     def _build_moments(
-        persian: dict[str, Any], duration_seconds: float, *, v2: bool = False, measure_layout: bool = True, adaptive_pixel_typography: bool = False
+        persian: dict[str, Any], duration_seconds: float, *, v2: bool = False,
+        measure_layout: bool = True, adaptive_pixel_typography: bool = False,
+        simultaneous_hook_typography: bool = False,
     ) -> list[dict[str, Any]]:
         """Normalize, audit, and return the typographic moments.
 
@@ -972,7 +979,11 @@ class PersianCompose(BaseTool):
         lockup_measurement = None
         if v2 and measure_layout and not __import__("os").environ.get("PERSIAN_SKIP_OPTIONAL_BRIDGE"):
             lockup_measurement = _maybe_attach_stack_heights(built, str(persian.get("format") or "vertical"), enforce_silhouette=v2, watermark=persian.get("watermark") or {})
-        audit = audit_moments(built, duration_seconds=duration_seconds, v2=v2, adaptive_pixel_typography=adaptive_pixel_typography)
+        audit = audit_moments(
+            built, duration_seconds=duration_seconds, v2=v2,
+            adaptive_pixel_typography=adaptive_pixel_typography,
+            simultaneous_hook_typography=simultaneous_hook_typography,
+        )
         if not audit.passed:
             raise ValueError(
                 "the moment set breaks its pacing rules, so it is refused before "

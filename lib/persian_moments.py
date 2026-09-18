@@ -812,7 +812,10 @@ def is_flat_display_hook(moment: PersianMoment) -> bool:
     )
 
 
-def _audit_one(moment: PersianMoment, *, adaptive_pixel_typography: bool = False) -> list[str]:
+def _audit_one(
+    moment: PersianMoment, *, adaptive_pixel_typography: bool = False,
+    simultaneous_hook_typography: bool = False,
+) -> list[str]:
     """Faults internal to a single moment."""
     problems: list[str] = []
 
@@ -987,14 +990,19 @@ def _audit_one(moment: PersianMoment, *, adaptive_pixel_typography: bool = False
             "stalled, and the footage behind it is doing nothing"
         )
 
-    required = moment.min_read_seconds
-    if moment.duration + 1e-9 < required:
-        problems.append(
-            f"{moment.id}: needs {required:.2f}s for its own text (fixation + "
-            f"reading + builds) but has {moment.duration:.2f}s. The reading model "
-            "charges the entrance the character count never saw — that dead time is "
-            "the «بیش از حد سریع رد میشن» complaint, measured."
-        )
+    # Film Type 2.16 opening hooks are one simultaneous 3–5 second composition.
+    # Their complete copy is pixel-fitted and then judged from the rendered opening;
+    # the legacy sequential-reading estimate must not veto a hook the browser can
+    # actually present. Body callouts and older profiles retain the timing gate.
+    if not (simultaneous_hook_typography and moment.kind == "hook"):
+        required = moment.min_read_seconds
+        if moment.duration + 1e-9 < required:
+            problems.append(
+                f"{moment.id}: needs {required:.2f}s for its own text (fixation + "
+                f"reading + builds) but has {moment.duration:.2f}s. The reading model "
+                "charges the entrance the character count never saw — that dead time is "
+                "the «بیش از حد سریع رد میشن» complaint, measured."
+            )
 
     for segment in moment.segments:
         if segment.reveal_after_seconds >= moment.duration:
@@ -1011,6 +1019,7 @@ def _audit_one(moment: PersianMoment, *, adaptive_pixel_typography: bool = False
 def audit_moments(
     moments: list[PersianMoment], *, duration_seconds: float, v2: bool = False,
     adaptive_pixel_typography: bool = False,
+    simultaneous_hook_typography: bool = False,
 ) -> MomentAudit:
     """Audit a moment set against every rule that can be checked without rendering.
 
@@ -1032,7 +1041,10 @@ def audit_moments(
         return audit
 
     for moment in moments:
-        audit.problems.extend(_audit_one(moment, adaptive_pixel_typography=adaptive_pixel_typography))
+        audit.problems.extend(_audit_one(
+            moment, adaptive_pixel_typography=adaptive_pixel_typography,
+            simultaneous_hook_typography=simultaneous_hook_typography,
+        ))
 
     ordered = sorted(moments, key=lambda moment: moment.start_seconds)
 
