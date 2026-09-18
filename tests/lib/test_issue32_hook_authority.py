@@ -4,7 +4,7 @@ from pathlib import Path
 
 from lib.persian_video_workflow import bootstrap_persian_video, record_hook_selection, stage_workflow_edit_draft
 from tests.lib.test_persian_preflight_contract import _payload
-from tests.lib.test_persian_video_workflow import _advance_to
+from tests.lib.test_persian_video_workflow import BASE, _advance_to
 
 
 SCRIPT = "بزرگ‌ترین اشتباه دربارهٔ بازی‌های ویدیویی اینه که فکر کنیم فقط وقت تلف کردنه!"
@@ -110,6 +110,7 @@ def _bootstrap_to_preflight(tmp_path: Path, *, hook_text: str | None) -> None:
         project_id="run",
         pipeline_dir=tmp_path,
         backlot_opener=lambda _pid: 0,
+        now=BASE,
     )
     _advance_to(tmp_path, "no_copy_preflight")
 
