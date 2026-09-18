@@ -93,6 +93,7 @@ export type PersianMomentKind = "figure" | "term" | "statement" | "hook";
  *   the phrase: it is a citation appended to it.
  */
 export type PersianSegmentRole = "lead" | "hero" | "tail" | "source";
+export type PersianSemanticPosterRole = "setup" | "bridge" | "subject_hero" | "connector" | "payoff";
 
 /** One line-group of a moment's phrase. */
 export interface PersianSegment {
