@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 import time
 
@@ -244,3 +243,47 @@ def test_failed_execution_cannot_be_relabelled_after_later_attempt_advances_phas
     )
     assert failed_envelope["executionOutcome"] == "failed"
     assert failed_envelope["workflowTransitionOutcome"] == "blocked"
+
+
+def test_kernel_refuses_zero_exit_without_a_semantic_result(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path)
+    kernel.start_phase_job(
+        "run",
+        job_id="missing-semantic-result",
+        phase="prepare_inputs",
+        argv=["python", "-c", "print('process completed without semantic result')"],
+        idempotence_key="missing-semantic-result-v1",
+        pipeline_dir=projects_root,
+    )
+
+    final = _wait_for_job(projects_root, "missing-semantic-result")
+    assert final["status"] == "failed"
+    assert final["processOutcome"] == "succeeded"
+    assert final["semanticOutcome"] == "not_reported"
+    assert final["executionOutcome"] == "failed"
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    assert state["next_phase"] == "prepare_inputs"
+    assert state["phase_telemetry"]["prepare_inputs"][-1]["outcome"] == "failed"
+
+
+def test_replay_rejects_a_different_command_for_the_same_job_identity(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path)
+    kernel.start_phase_job(
+        "run",
+        job_id="stable-command",
+        phase="prepare_inputs",
+        argv=["python", "-c", _semantic_child(success=True)],
+        idempotence_key="stable-command-v1",
+        pipeline_dir=projects_root,
+    )
+    _wait_for_job(projects_root, "stable-command")
+
+    with pytest.raises(kernel.PersianRunKernelError, match="different command"):
+        kernel.start_phase_job(
+            "run",
+            job_id="stable-command",
+            phase="prepare_inputs",
+            argv=["python", "-c", _semantic_child(success=False, error="different command")],
+            idempotence_key="stable-command-v1",
+            pipeline_dir=projects_root,
+        )
