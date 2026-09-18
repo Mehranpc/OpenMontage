@@ -29,26 +29,36 @@ class Issue32KahrobaBrowserContract(unittest.TestCase):
                 "kind": "hook",
                 "startSeconds": 0.0,
                 "endSeconds": 5.0,
-                "presentation": {"placement": "auto", "emphasis": "inline", "recipeId": "editorial-hero-balanced"},
-                "segments": [{"role": "hero", "text": text, "accentWords": ["بازی‌های", "ویدیویی"]}],
+                "purpose": "hook-pattern-interrupt",
+                "presentation": {"placement": "auto", "emphasis": "none", "recipeId": "editorial-hero-balanced"},
+                "segments": [
+                    {"role": "lead", "text": "بزرگ‌ترین اشتباه"},
+                    {"role": "lead", "text": "دربارهٔ"},
+                    {"role": "hero", "text": "بازی‌های ویدیویی"},
+                    {"role": "tail", "text": "اینه که فکر کنیم فقط"},
+                    {"role": "tail", "text": "وقت تلف کردنه!"},
+                ],
             }],
         }
 
         prepared = prepare_film_type_props(props, ROOT / "remotion-composer")
         layout = prepared["filmType"]["moments"]["hook"]
-        hero_rows = [row for row in layout["rows"] if row["role"] == "hero"]
+        rows = layout["rows"]
 
-        assert 2 <= len(hero_rows) <= 5
-        assert all(row["family"] == "KahrobaEditorial" for row in hero_rows)
-        assert " ".join(row["text"] for row in hero_rows) == text
+        assert len(rows) == 5, "poster hook must preserve five authored semantic phrases as five rows"
+        assert all(row["family"] == "KahrobaEditorial" for row in rows)
+        assert " ".join(row["text"] for row in rows) == text
+        assert [row["text"] for row in rows] == [
+            "بزرگ‌ترین اشتباه", "دربارهٔ", "بازی‌های ویدیویی",
+            "اینه که فکر کنیم فقط", "وقت تلف کردنه!",
+        ]
         assert layout["placement"] in {"upper-right", "upper-center", "mid-right", "center", "lower-right"}
         assert not layout["placement"].endswith("left")
-        accent_rows = [row for row in hero_rows if row["accentWords"]]
-        assert 1 <= len(accent_rows) <= 2, "a contiguous subject phrase may wrap across at most two measured rows"
-        sizes = [row["fontSizePx"] for row in hero_rows]
-        assert max(sizes) - min(sizes) >= 16, "poster hook needs visible typographic hierarchy, not flat rows"
-        assert all(row["fontSizePx"] == max(sizes) for row in accent_rows), "subject phrase rows carry the strongest display size"
+        assert all(not row["accentWords"] for row in rows), "poster hierarchy uses a semantic hero phrase, not inline word highlighting"
+        setup, bridge, subject, connector, payoff = [row["fontSizePx"] for row in rows]
+        assert subject > payoff >= setup > bridge, "subject must dominate; setup/payoff are medium; bridge is small"
+        assert subject > payoff > connector, "connector must stay small beneath the subject"
+        assert abs(bridge - connector) <= 8, "bridge and connector should share the small support scale"
+        assert rows[2]["role"] == "hero" and rows[2]["text"] == "بازی‌های ویدیویی"
         assert layout["rect"]["x"] + layout["rect"]["w"] >= 0.87, "RTL hook should sit visually toward the right edge"
-        accented = [word for row in accent_rows for word in row["accentWords"]]
-        assert accented == ["بازی‌های", "ویدیویی"]
         assert prepared["design"]["resolved"]["typography"]["editorial"]["semanticAccent"] == "#FFEA00"

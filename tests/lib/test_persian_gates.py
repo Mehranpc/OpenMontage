@@ -42,6 +42,7 @@ from lib.persian_moments import (
     build_moments,
     is_claim_qualifier_hook,
     is_flat_display_hook,
+    is_poster_stack_hook,
 )
 from lib.persian_music import (
     KNOWN_PERMISSIVE_LICENSES,
@@ -2624,6 +2625,21 @@ class TestClaimQualifierHook:
         (ordinary,) = build_moments([_figure()])
         assert is_claim_qualifier_hook(ordinary) is False
         assert is_flat_display_hook(ordinary) is False
+
+    def test_pattern_interrupt_poster_stack_is_a_valid_hook_style(self) -> None:
+        (hook,) = build_moments([{
+            "id": "opening", "kind": "hook", "purpose": "hook-pattern-interrupt",
+            "startSeconds": 0.1, "endSeconds": 4.5,
+            "segments": [
+                {"role": "lead", "text": "بزرگ‌ترین اشتباه"},
+                {"role": "lead", "text": "دربارهٔ"},
+                {"role": "hero", "text": "بازی‌های ویدیویی"},
+                {"role": "tail", "text": "اینه که فکر کنیم فقط"},
+                {"role": "tail", "text": "وقت تلف کردنه!"},
+            ],
+        }])
+        assert is_poster_stack_hook(hook) is True
+        assert audit_moments([hook], duration_seconds=12.0).problems == []
 
     def test_a_hook_matching_no_style_is_a_problem(self) -> None:
         """A hook that matches no style silently loses every hook-scoped token."""
