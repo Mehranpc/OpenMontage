@@ -106,16 +106,19 @@ const DiffuseField: React.FC<{layout:FilmMomentLayout;format:PersianFormat;desig
  {fields.map((f,i)=><ellipse key={i} cx={f.cx} cy={f.cy} rx={f.rx} ry={f.ry} fill={`url(#${id})`}/>)}</svg>;
 };
 
-const Run: React.FC<{row: FilmRow; x: number; color: string; accent: string; emphasis: boolean; align?: "left" | "right" | "center"}> = ({row,x,color,accent,emphasis,align="right"}) => {
+const Run: React.FC<{row: FilmRow; x: number; color: string; accent: string; emphasis: boolean; semanticHero?: boolean; align?: "left" | "right" | "center"}> = ({row,x,color,accent,emphasis,semanticHero=false,align="right"}) => {
   const accents = new Set(row.accentWords.map(compareKey));
+  const hasInlineAccent = emphasis && accents.size > 0;
+  const baseFill = semanticHero && !hasInlineAccent ? accent : color;
   return <text data-film-type-ink={row.role} data-film-type-segment={row.segmentIndex}
     data-film-type-content={row.text} x={x} y={row.baselinePx}
     direction={row.direction} textAnchor={align === "center" ? "middle" : align === "right" ? (row.direction === "rtl" ? "start" : "end") : (row.direction === "rtl" ? "end" : "start")}
     style={{fontFamily:row.family,fontSize:row.fontSizePx,fontWeight:row.weight,letterSpacing:0,
-      fontKerning:"normal",fontSynthesis:"none",unicodeBidi:"isolate",fill:color}}>
-    {emphasis && accents.size ? row.text.split(/(\s+)/u).map((part,i) =>
-      <tspan key={i} style={accents.has(compareKey(part)) ? {textDecorationLine:"underline",textDecorationColor:accent,textDecorationThickness:"2px",textUnderlineOffset:"5px"} : undefined}>{part}</tspan>
-    ) : row.text}
+      fontKerning:"normal",fontSynthesis:"none",unicodeBidi:"isolate",fill:baseFill}}>
+    {hasInlineAccent ? row.text.split(/(\s+)/u).map((part,i) => {
+      const highlighted=accents.has(compareKey(part));
+      return <tspan key={i} style={highlighted ? {fill:accent,textDecorationLine:"underline",textDecorationColor:accent,textDecorationThickness:"3px",textUnderlineOffset:"7px"} : undefined}>{part}</tspan>;
+    }) : row.text}
   </text>;
 };
 
@@ -134,9 +137,10 @@ export const PersianFilmTypeMoment: React.FC<{
   const fieldEnter=modern?(moment.presentation?.motion === "cut-in"?p.motion.cutInSeconds:p.motion.enterSeconds):p.motion.scrimEnterSeconds;
   const fieldLife = lifeAt(seconds,span,firstReveal,fieldEnter,p.motion.exitSeconds);
   const dark = layout.contrastMode === "dark";
-  const color = dark ? p.typography.ink : p.typography.darkInk;
+  const color = p.profileVersion === "2.16.0" ? p.typography.editorial!.supportInk : (dark ? p.typography.ink : p.typography.darkInk);
+  const accent = p.profileVersion === "2.16.0" ? p.typography.editorial!.semanticAccent : p.typography.accent;
   const cut = moment.presentation?.motion === "cut-in";
-  const align = layout.placement === "center" ? "center" : polished ? "right" : layout.placement.endsWith("left") ? "left" : "right";
+  const align = layout.placement === "center" || layout.placement.endsWith("-center") ? "center" : polished ? "right" : layout.placement.endsWith("left") ? "left" : "right";
   const anchor = align === "center" ? layout.widthPx/2 : align === "left" ? p.layout.inkPaddingPx : layout.widthPx-p.layout.inkPaddingPx;
   return <AbsoluteFill data-film-type-moment={moment.id} data-film-type-placement={layout.placement} style={{pointerEvents:"none"}}>
     {diffuse ? <DiffuseField layout={layout} format={format} design={design} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)} anchor={anchor} align={align}/> : modern ? <CompactFilmField featherPx={layout.fieldFeatherPx} rect={layout.rect} format={format} design={design} color={dark?p.contrast.darkField:p.contrast.lightField}
@@ -153,7 +157,7 @@ export const PersianFilmTypeMoment: React.FC<{
         const life = lifeAt(seconds,span,delay,cut?p.motion.cutInSeconds:p.motion.enterSeconds,p.motion.exitSeconds);
         const y = cut && !modern ? 0 : p.motion.travelPx * (1-life.arrive);
         return <g key={index} data-film-type-row={index} opacity={life.opacity} transform={`translate(0 ${y})`}>
-          <Run row={row} x={anchor} align={align} color={color} accent={p.typography.accent} emphasis={moment.presentation?.emphasis === "inline"}/>
+          <Run row={row} x={anchor} align={align} color={color} accent={accent} semanticHero={p.profileVersion === "2.16.0" && row.role === "hero"} emphasis={moment.presentation?.emphasis === "inline"}/>
         </g>;
       })}
     </svg>

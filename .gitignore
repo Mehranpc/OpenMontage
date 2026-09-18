@@ -130,3 +130,8 @@ venv/
 # Local Wan / diffusers GPU environment
 .venv-wan/
 META/
+# Licensed Kahroba editorial font is a private runtime asset. Track the contract
+# and installer, never redistribute the user's binary through GitHub.
+!remotion-composer/public/fonts/kahroba/
+remotion-composer/public/fonts/kahroba/*.woff2
+!remotion-composer/public/fonts/kahroba/README.md

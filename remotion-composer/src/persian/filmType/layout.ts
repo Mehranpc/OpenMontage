@@ -5,7 +5,7 @@ import { assertCaptionsFit, captionBandRect } from "../captionLayout";
  * deliberately unchanged. The same browser measurement feeds paint and planning.
  */
 import { planCoverageAwareBrand, planMovingBrand } from "./watermark24";
-import { estedadReady, isEstedadLoaded, ESTEDAD_FAMILY } from "../fonts";
+import { estedadReady, ensureKahrobaReady, isEstedadLoaded, isKahrobaLoaded, ESTEDAD_FAMILY, KAHROBA_FAMILY } from "../fonts";
 import { breakClass, splitWords, visibleLength } from "../text";
 import { FORMAT_DIMENSIONS, MOMENT_READ_CPS, MOMENT_FIXATION_SECONDS, MOMENT_BLOCK_SECONDS, MOMENT_SOURCE_READ_WEIGHT, MOMENT_MIN_SECONDS, type PersianFormat } from "../tokens";
 import { assertMomentIsWellFormed, DEFAULT_WATERMARK, type PersianMoment,
@@ -20,6 +20,7 @@ export type FilmProfile = {
   typography: { fontFamily: string; heroWeight: 700; supportWeight: 500; ink: string; darkInk: string; accent: string;
     titleLadderPx: number[]; statementLadderPx: number[]; figureLadderPx: number[];
     titleTailRatio: number; contextPx: number; supportPx: number; sourcePx: number; quantityUnitPx: number;
+    editorial?: {fontFamily:string;assetPath:string;assetSha256:string;weight:900;supportInk:string;semanticAccent:string;allowedAlignments:("right"|"center")[];maxHookLines:number;maxCalloutLines:number;truncate:false;decorativeAccents:string[];localContrast:string};
     recipes?: Record<"editorial-hero-balanced" | "editorial-hero-compact" | "editorial-callout-balanced", {columnFractions:number[];maxHeroLines:number;maxSupportLines:number;occupancyMin:number;occupancyTarget:number;occupancyMax:number}> };
   layout: {inkPaddingPx: number; lineGapPx: number; phraseGapPx: number; contextGapPx: number; sourceGapPx: number;
     quantityGapPx: number; revealGroupGapPx: number; maxStackFraction: number; edgeInsetPx: number;
@@ -43,7 +44,7 @@ export type FilmProfile = {
     glyphShadow?: {color:string;nearOffsetPx:number;nearBlurPx:number;nearAlpha:number;haloBlurPx:number;haloAlpha:number}};
 };
 export type FilmRow = {
-  text: string; role: string; segmentIndex: number; fontSizePx: number; weight: 400 | 500 | 700;
+  text: string; role: string; segmentIndex: number; fontSizePx: number; weight: 400 | 500 | 700 | 900;
   family: string; direction: "rtl" | "ltr"; abovePx: number; belowPx: number;
   widthPx: number; baselinePx: number; revealAfterSeconds: number; accentWords: readonly string[];
 };
@@ -117,7 +118,7 @@ export async function sha256Text(text: string): Promise<string> {
 }
 export function filmProfile(design: PersianDesignSnapshot): FilmProfile {
   const p = design.resolved as unknown as FilmProfile;
-  if (!isFilmType(design) || !p || p.profile !== "film-type" || !((p.profileVersion === "2.1.0" && p.layoutVersion === 1) || (p.profileVersion === "2.2.0" && p.layoutVersion === 2) || (p.profileVersion === "2.3.0" && p.layoutVersion === 3) || (p.profileVersion === "2.4.0" && p.layoutVersion === 4) || (p.profileVersion === "2.5.0" && p.layoutVersion === 5) || (p.profileVersion === "2.6.0" && p.layoutVersion === 6) || (p.profileVersion === "2.7.0" && p.layoutVersion === 7) || (p.profileVersion === "2.8.0" && p.layoutVersion === 8) || (p.profileVersion === "2.9.0" && p.layoutVersion === 9) || (p.profileVersion === "2.10.0" && p.layoutVersion === 10) || (p.profileVersion === "2.11.0" && p.layoutVersion === 11) || (p.profileVersion === "2.12.0" && p.layoutVersion === 12) || (p.profileVersion === "2.13.0" && p.layoutVersion === 13) || (p.profileVersion === "2.14.0" && p.layoutVersion === 14) || ((p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0") && p.layoutVersion === 15) || (p.profileVersion === "2.16.0" && p.layoutVersion === 16)) || design.profileVersion !== p.profileVersion) {
+  if (!isFilmType(design) || !p || p.profile !== "film-type" || !((p.profileVersion === "2.1.0" && p.layoutVersion === 1) || (p.profileVersion === "2.2.0" && p.layoutVersion === 2) || (p.profileVersion === "2.3.0" && p.layoutVersion === 3) || (p.profileVersion === "2.4.0" && p.layoutVersion === 4) || (p.profileVersion === "2.5.0" && p.layoutVersion === 5) || (p.profileVersion === "2.6.0" && p.layoutVersion === 6) || (p.profileVersion === "2.7.0" && p.layoutVersion === 7) || (p.profileVersion === "2.8.0" && p.layoutVersion === 8) || (p.profileVersion === "2.9.0" && p.layoutVersion === 9) || (p.profileVersion === "2.10.0" && p.layoutVersion === 10) || (p.profileVersion === "2.11.0" && p.layoutVersion === 11) || (p.profileVersion === "2.12.0" && p.layoutVersion === 12) || (p.profileVersion === "2.13.0" && p.layoutVersion === 13) || (p.profileVersion === "2.14.0" && p.layoutVersion === 14) || (p.profileVersion === "2.15.0" && p.layoutVersion === 15) || (p.profileVersion === "2.16.0" && p.layoutVersion === 16)) || design.profileVersion !== p.profileVersion) {
     throw new Error("Unsupported Film Type snapshot. Re-prepare with an explicitly supported profile; do not fall back to Legacy.");
   }
   if(typeof design.seed!=="string"||!design.seed.trim()) throw new Error("Film Type requires a non-empty deterministic seed.");
@@ -139,7 +140,16 @@ export function filmProfile(design: PersianDesignSnapshot): FilmProfile {
   if ((p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0") && (p.watermark.planningMode !== "fixed-anchors-text-only"
       || !Array.isArray(p.watermark.approvedAnchors) || p.watermark.approvedAnchors.length < 2
       || p.watermark.approvedAnchors.some(zone => !["upper-left","upper-right","lower-left","lower-right"].includes(zone)))) {
-    throw new Error("Film Type 2.15 requires fixed approved watermark anchors and text-only collision planning.");
+    throw new Error("Film Type 2.15+ requires fixed approved watermark anchors and text-only collision planning.");
+  }
+  if (p.profileVersion === "2.16.0") {
+    const editorial=p.typography.editorial;
+    if (!editorial || editorial.fontFamily !== KAHROBA_FAMILY || editorial.weight !== 900
+        || editorial.supportInk.toUpperCase() !== "#FFFFFF" || editorial.semanticAccent.toUpperCase() !== "#FFEA00"
+        || stableJSON(editorial.allowedAlignments) !== stableJSON(["right","center"])
+        || editorial.maxHookLines !== 5 || editorial.truncate !== false) {
+      throw new Error("Film Type 2.16 requires the frozen Kahroba white/yellow right-or-center editorial contract.");
+    }
   }
   return p;
 }
@@ -149,7 +159,9 @@ const measurements = new Map<string, {abovePx: number; belowPx: number; widthPx:
 /** Measure the ORIGINAL run, including its ZWNJ. Paint does not split letters or
  * put words in flex boxes, so there is no estimated ZWNJ/notdef surcharge. */
 export function measureRun(text: string, size: number, weight: number, family = ESTEDAD_FAMILY, direction: "rtl" | "ltr" = "rtl") {
-  if (!isEstedadLoaded()) throw new Error("Film Type measurement requires loaded Estedad fonts.");
+  if (family === KAHROBA_FAMILY) {
+    if (!isKahrobaLoaded()) throw new Error("Film Type 2.16 editorial measurement requires loaded KahrobaEditorial.");
+  } else if (!isEstedadLoaded()) throw new Error("Film Type measurement requires loaded Estedad fonts.");
   const key = stableJSON([text,size,weight,family,direction]);
   const cached = measurements.get(key);
   if (cached) return cached;
@@ -171,7 +183,7 @@ export function measureRun(text: string, size: number, weight: number, family = 
 
 /** DP over whole shaped runs; reuse the Persian grammar rules, not the Legacy
  * word-span sizing. Forced newlines remain forced and cannot strand a clitic. */
-export function breakFilmLines(text: string, width: number, size: number, weight: number, maxLines: number, version: FilmProfile["profileVersion"] = "2.1.0", preserveExact = false): string[] | null {
+export function breakFilmLines(text: string, width: number, size: number, weight: number, maxLines: number, version: FilmProfile["profileVersion"] = "2.1.0", preserveExact = false, family = ESTEDAD_FAMILY): string[] | null {
   // Strict copy was already validated as single-ASCII-space-separated. Split it
   // directly so NFC/Arabic-letter folding in splitWords can never change paint.
   const words = preserveExact ? text.split(" ") : splitWords(text);
@@ -186,7 +198,7 @@ export function breakFilmLines(text: string, width: number, size: number, weight
     let best: {cost: number; lines: string[]} | null = null;
     for (let end = at; end < words.length && words[end] !== "\n"; end++) {
       const line = words.slice(at,end + 1).join(" ");
-      const measured = measureRun(line,size,weight).widthPx;
+      const measured = measureRun(line,size,weight,family).widthPx;
       if (measured > width) continue;
       const next = words[end + 1] === "\n" ? words[end + 2] : words[end + 1];
       let boundary = breakClass(words[end],next ?? null);
@@ -260,24 +272,28 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
       if (index) y += reveal > previousReveal ? l.revealGroupGapPx : segment.role === "source" ? l.sourceGapPx : segment.role === "hero" && moment.segments[index - 1].role === "lead" ? l.contextGapPx : l.phraseGapPx;
       previousReveal = reveal;
       const quantity = numeric && segment.role === "hero" ? splitQuantity(segment.text) : null;
+      const editorial = p.profileVersion === "2.16.0" ? t.editorial : undefined;
+      const editorialFamily = editorial?.fontFamily ?? ESTEDAD_FAMILY;
+      const editorialWeight = editorial?.weight ?? t.heroWeight;
       const pieces = quantity ? [
-        {text: quantity[0], role: "quantity", size: main, weight: 500 as const, max: 1},
-        {text: quantity[1], role: "quantity-unit", size: t.quantityUnitPx, weight: 500 as const, max: 2},
+        {text: quantity[0], role: "quantity", size: main, weight: editorial ? editorialWeight : 500 as 500|900, max: 1, family: editorialFamily},
+        {text: quantity[1], role: "quantity-unit", size: t.quantityUnitPx, weight: editorial ? editorialWeight : 500 as 500|900, max: 2, family: editorialFamily},
       ] : [{text: segment.text, role: segment.role,
-        size: segment.role === "source" ? t.sourcePx : segment.role === "lead" ? t.contextPx : segment.role === "tail" ? (moment.kind === "hook" ? Math.round(main * t.titleTailRatio) : t.supportPx) : main,
-        weight: (segment.role === "hero" ? t.heroWeight : t.supportWeight),
-        max: segment.role === "hero" ? (recipe?.config.maxHeroLines ?? 3) : (recipe?.config.maxSupportLines ?? 2)}];
+        size: segment.role === "source" ? t.sourcePx : segment.role === "lead" ? (editorial ? Math.round(main * .72) : t.contextPx) : segment.role === "tail" ? (editorial ? Math.round(main * .72) : (moment.kind === "hook" ? Math.round(main * t.titleTailRatio) : t.supportPx)) : main,
+        weight: segment.role === "source" ? t.supportWeight : (editorial ? editorialWeight : (segment.role === "hero" ? t.heroWeight : t.supportWeight)),
+        max: segment.role === "hero" ? (recipe?.config.maxHeroLines ?? editorial?.maxHookLines ?? 3) : (recipe?.config.maxSupportLines ?? 2),
+        family: segment.role === "source" ? ESTEDAD_FAMILY : editorialFamily}];
       for (const [pieceIndex,piece] of pieces.entries()) {
         if (pieceIndex) y += l.quantityGapPx;
-        const lines = breakFilmLines(piece.text,column - 2 * l.inkPaddingPx,piece.size,piece.weight,piece.max,p.profileVersion,Boolean(moment.exactText));
+        const lines = breakFilmLines(piece.text,column - 2 * l.inkPaddingPx,piece.size,piece.weight,piece.max,p.profileVersion,Boolean(moment.exactText),piece.family);
         if (!lines) {failed = true; break;}
         for (const [lineIndex,text] of lines.entries()) {
           if (lineIndex) y += l.lineGapPx;
-          const ink = measureRun(text,piece.size,piece.weight);
+          const ink = measureRun(text,piece.size,piece.weight,piece.family);
           const underline = moment.presentation?.emphasis === "inline" && (segment.accentWords?.length ?? 0) > 0;
           const belowPx = Math.max(ink.belowPx,underline ? piece.size * .14 : 0);
           rows.push({text,role: piece.role,segmentIndex: index,fontSizePx: piece.size,weight: piece.weight,
-            family: ESTEDAD_FAMILY,direction: "rtl",...ink,belowPx: round(belowPx),baselinePx: round(y + ink.abovePx),
+            family: piece.family,direction: "rtl",...ink,belowPx: round(belowPx),baselinePx: round(y + ink.abovePx),
             revealAfterSeconds: reveal,accentWords: segment.accentWords ?? []});
           y += ink.abovePx + belowPx;
           widest = Math.max(widest,ink.widthPx);
@@ -324,6 +340,11 @@ export function filmRowDelay(row: Pick<FilmRow,"revealAfterSeconds"|"segmentInde
 }
 function assertFilmTiming(moment: PersianMoment, p: FilmProfile): void {
   const span=moment.endSeconds-moment.startSeconds;
+  if (p.profileVersion === "2.16.0" && moment.kind === "hook") {
+    if (span < 3 || span > 5 + 1e-6) throw new Error(`Moment ${moment.id}: Film Type 2.16 opening hook must occupy one complete 3-5s composition.`);
+    if (moment.segments.some(segment => (segment.revealAfterSeconds ?? 0) !== 0)) throw new Error(`Moment ${moment.id}: Film Type 2.16 opening hook must appear as one simultaneous composition.`);
+    return;
+  }
   if(span<MOMENT_MIN_SECONDS) throw new Error(`Moment ${moment.id}: Film Type needs at least ${MOMENT_MIN_SECONDS}s; short flashes are not readable.`);
   const starts=[...new Set(moment.segments.map(s=>s.revealAfterSeconds??0))].sort((a,b)=>a-b);
   for(const [i,start] of starts.entries()){
@@ -350,6 +371,9 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
   }
   const fmt = props.format, dims = FORMAT_DIMENSIONS[fmt], cfg = p.formats[fmt], l = p.layout;
   const authored = moment.presentation?.placement ?? "auto";
+  if (p.profileVersion === "2.16.0" && authored !== "auto" && authored.endsWith("left")) {
+    throw new Error(`Moment ${moment.id}: Film Type 2.16 Persian editorial placement may be right or center, never left.`);
+  }
   const overlapping = props.shots.filter(s => s.startSeconds < moment.endSeconds && s.endSeconds > moment.startSeconds);
   const coveredByTypography = (props.typographicBeats ?? []).some(beat => beat.startSeconds <= moment.startSeconds + 1e-6 && beat.endSeconds >= moment.endSeconds - 1e-6);
   const reviewed = overlapping.length > 0 ? overlapping.every(s => Array.isArray(s.avoidRegions)) : coveredByTypography;
@@ -357,15 +381,18 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
   // inside the platform safe area. Subject/region review stays available for
   // older pinned profiles, but these versions never demand it and never use
   // regions to reject, dim or move approved text. No detection is introduced.
-  const enforceSubject = p.profileVersion !== "2.9.0" && p.profileVersion !== "2.10.0" && p.profileVersion !== "2.11.0";
+  const enforceSubject = p.profileVersion !== "2.9.0" && p.profileVersion !== "2.10.0" && p.profileVersion !== "2.11.0" && p.profileVersion !== "2.16.0";
   if ((authored === "auto" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")) || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0"))) && !reviewed && l.autoRequiresReviewedAvoidRegions) {
     throw new Error(`Moment ${moment.id}: Film Type auto placement needs reviewed, screen-space shot.avoidRegions (including camera motion for the entire dwell). Use [] only after reviewing a clear shot. Film Type 2.6 also requires review for explicit placement; supply regions for every overlapping shot.`);
   }
-  const zones = authored !== "auto" ? [authored] : moment.presentation?.treatment === "inline-statement" || moment.kind === "statement"
-    ? ["lower-right","mid-right","lower-left","mid-left","upper-right","upper-left"]
-    : (p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")) && moment.kind === "hook"
-      ? ["upper-center","mid-left","upper-left","mid-right","upper-right","lower-left","lower-right"]
-      : ["mid-left","upper-left","mid-right","upper-right","lower-left","lower-right"];
+  const zones = authored !== "auto" ? [authored]
+    : p.profileVersion === "2.16.0"
+      ? (moment.kind === "hook" ? ["upper-right","upper-center","mid-right","center","lower-right"] : ["mid-right","center","upper-right","upper-center","lower-right"])
+      : moment.presentation?.treatment === "inline-statement" || moment.kind === "statement"
+        ? ["lower-right","mid-right","lower-left","mid-left","upper-right","upper-left"]
+        : (p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0") && moment.kind === "hook"
+          ? ["upper-center","mid-left","upper-left","mid-right","upper-right","lower-left","lower-right"]
+          : ["mid-left","upper-left","mid-right","upper-right","lower-left","lower-right"];
   const validZones = new Set(["upper-left","upper-center","upper-right","mid-left","mid-right","lower-left","lower-right","center"]);
   if (zones.some(z => !validZones.has(z))) throw new Error(`Moment ${moment.id}: unsupported Film Type placement.`);
   const relevant = avoid.filter(r => r.startSeconds < moment.endSeconds && r.endSeconds > moment.startSeconds);
@@ -771,6 +798,7 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
   await estedadReady;
   assertCaptionsFit(props.format, props.captions ?? [], props.durationSeconds, props.design);
   const profile=filmProfile(props.design!);
+  if (profile.profileVersion === "2.16.0") await ensureKahrobaReady(profile.typography.editorial!.assetSha256);
   const expectedHash = {
     "2.1.0":"c56aac71643bdeff4c27b75fa1ef1bb4e2997a3216a886d61dac78c3a021af0c",
     "2.2.0":"6d71bee9de74a627f393544bbcf9caf37b7349c422397b016f1f10597a1c43c2",
