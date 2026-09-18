@@ -39,7 +39,7 @@ Supported pairs are `2.1.0`/layout 1 through `2.16.0`/layout 16. The archived
 2.15 hash is
 `1952d3479b0c9b742255c17587635b2b496c75e773daecd60e6f7b322cb02a5f`;
 the current 2.16 hash is
-`4552273a82420e5ff2d3f2f247f1dde0216aec299e9f0d85de2d180d725698c3`.
+`dddf87a331a90dd896fe7ebd44237d37eb03bc3df871b6b55fc6960a1f63f61e`.
 
 Older pins keep their historical renderer, character-limit, caption, and
 watermark behavior. Migration means resolving a fresh unpinned design and
@@ -49,7 +49,7 @@ rerunning preparation; never rewrite an existing pin in place.
 
 2.16 keeps the 2.15 separation between typography and watermark planning and adds
 the Issue #32 Persian editorial system. Opening hooks and semantic body callouts
-use the licensed `Kahroba BL-LC` face through the registered family
+use the licensed `Kahroba EB-LC` face through the registered family
 `KahrobaEditorial`; ordinary captions remain on the stable caption type system.
 The opening may be semantically strong and still fail visual typography QA; a safe
 watermark never gets authority to change footage or editorial copy.
@@ -80,9 +80,9 @@ and are never truncated. A soft local dark field and glyph shadow preserve contr
 without a full-frame wash.
 
 Kahroba is a private licensed runtime asset, not redistributed by the repository.
-Install the licensed `Kahroba BL-LC.woff2` with `scripts/install_kahroba_font.py`;
+Install the licensed `Kahroba EB-LC.woff2` with `scripts/install_kahroba_font.py`;
 the installer and browser both verify SHA-256
-`0223838295d7fb72a6dce709d234ef433d7815f66ed83b6959ae2f838f3d6711`.
+`354d3f6fd8f3a330a766d403beac0a37d3d7378a754067265d766ee1a1cae14d`.
 Missing or mismatched bytes fail closed before measurement.
 
 ### Adaptive editorial typography

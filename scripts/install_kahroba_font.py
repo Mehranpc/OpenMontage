@@ -5,9 +5,9 @@ import hashlib
 import shutil
 from pathlib import Path
 
-EXPECTED_SHA256 = "0223838295d7fb72a6dce709d234ef433d7815f66ed83b6959ae2f838f3d6711"
+EXPECTED_SHA256 = "354d3f6fd8f3a330a766d403beac0a37d3d7378a754067265d766ee1a1cae14d"
 ROOT = Path(__file__).resolve().parents[1]
-TARGET = ROOT / "remotion-composer" / "public" / "fonts" / "kahroba" / "Kahroba-BL-LC.woff2"
+TARGET = ROOT / "remotion-composer" / "public" / "fonts" / "kahroba" / "Kahroba-EB-LC.woff2"
 
 
 def sha256(path: Path) -> str:
@@ -24,7 +24,7 @@ def install(source: Path) -> Path:
         raise ValueError(f"Kahroba source does not exist: {source}")
     actual = sha256(source)
     if actual != EXPECTED_SHA256:
-        raise ValueError(f"Kahroba BL-LC SHA-256 mismatch: expected {EXPECTED_SHA256}, got {actual}")
+        raise ValueError(f"Kahroba EB-LC SHA-256 mismatch: expected {EXPECTED_SHA256}, got {actual}")
     TARGET.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, TARGET)
     if sha256(TARGET) != EXPECTED_SHA256:
@@ -33,7 +33,7 @@ def install(source: Path) -> Path:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Install the licensed Kahroba BL-LC runtime font")
+    parser = argparse.ArgumentParser(description="Install the licensed Kahroba EB-LC runtime font")
     parser.add_argument("source", type=Path)
     args = parser.parse_args()
     try:

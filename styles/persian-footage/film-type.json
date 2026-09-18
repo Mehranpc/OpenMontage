@@ -124,8 +124,8 @@
     },
     "editorial": {
       "fontFamily": "KahrobaEditorial",
-      "assetPath": "fonts/kahroba/Kahroba-BL-LC.woff2",
-      "assetSha256": "0223838295d7fb72a6dce709d234ef433d7815f66ed83b6959ae2f838f3d6711",
+      "assetPath": "fonts/kahroba/Kahroba-EB-LC.woff2",
+      "assetSha256": "354d3f6fd8f3a330a766d403beac0a37d3d7378a754067265d766ee1a1cae14d",
       "weight": 900,
       "supportInk": "#FFFFFF",
       "semanticAccent": "#FFEA00",

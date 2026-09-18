@@ -48,7 +48,7 @@ export const ESTEDAD_FAMILY = "Estedad";
 
 /** Private licensed display face used only by Film Type 2.16+ editorial moments. */
 export const KAHROBA_FAMILY = "KahrobaEditorial";
-export const KAHROBA_ASSET_PATH = "fonts/kahroba/Kahroba-BL-LC.woff2";
+export const KAHROBA_ASSET_PATH = "fonts/kahroba/Kahroba-EB-LC.woff2";
 
 let kahrobaLoaded = false;
 let kahrobaPromise: Promise<void> | null = null;

@@ -8,13 +8,13 @@ A hook supplied at production bootstrap is authoritative. Without a user hook, a
 
 ## Editorial visual system
 
-Every video opens with one complete 3–5 second Hook Typography composition. The registered display family is `KahrobaEditorial`, sourced from the licensed `Kahroba BL-LC` face. Supporting text is `#FFFFFF`; semantic emphasis is `#FFEA00`. Persian editorial alignment/placement is right or center, never left. Hooks may use up to five measured lines and are not truncated. The active recipes deliberately permit stronger poster-like occupancy than 2.15 so complete copy is not shrunk into timid overlay text.
+Every video opens with one complete 3–5 second Hook Typography composition. The registered display family is `KahrobaEditorial`, sourced from the licensed `Kahroba EB-LC` face. Supporting text is `#FFFFFF`; semantic emphasis is `#FFEA00`. Persian editorial alignment/placement is right or center, never left. Hooks may use up to five measured lines and are not truncated. The active recipes deliberately permit stronger poster-like occupancy than 2.15 so complete copy is not shrunk into timid overlay text.
 
 The same visual language is available to semantic body callouts and enumerations. Burned captions suppress themselves while an editorial moment owns the frame and resume afterward. Callouts may paraphrase the current narration unit but must preserve its meaning.
 
 ## Font asset boundary
 
-The Kahroba binary is a private licensed runtime asset and is not redistributed by GitHub. Install a licensed source with `python scripts/install_kahroba_font.py "/path/to/Kahroba BL-LC.woff2"`. The expected SHA-256 is `0223838295d7fb72a6dce709d234ef433d7815f66ed83b6959ae2f838f3d6711`. The installer verifies bytes before/after copy and the browser verifies the same digest before measurement/paint. Missing or mismatched bytes fail closed.
+The Kahroba binary is a private licensed runtime asset and is not redistributed by GitHub. Install a licensed source with `python scripts/install_kahroba_font.py "/path/to/Kahroba EB-LC.woff2"`. The expected SHA-256 is `354d3f6fd8f3a330a766d403beac0a37d3d7378a754067265d766ee1a1cae14d`. The installer verifies bytes before/after copy and the browser verifies the same digest before measurement/paint. Missing or mismatched bytes fail closed.
 
 ## Timing and rendered QA
 
