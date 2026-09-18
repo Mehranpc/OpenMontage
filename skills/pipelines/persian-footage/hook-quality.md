@@ -13,6 +13,14 @@ A pattern interrupt is not automatically a hook. Cuts, motion, typography, zooms
 
 `viewerValue`, `semanticTension`, and `firstProof` are distinct concepts. The same observable/spoken event may satisfy more than one only when that is genuinely true and `sharedEvidenceJustifications` records why. Identical timestamps or persuasive prose are not enough to double-count evidence.
 
+## Hook selection authority — Issue #32
+
+Before authoring the opening moment, inspect the workflow `hook_selection`. A user-supplied hook is authoritative: do not shorten, paraphrase, or replace it to make layout easier. If selection is automatic, read the three durable reference files under `docs/reference/persian-hooks/`, classify the source/content type, generate comparative candidates, remove unsupported/exaggerated claims, and rank the survivors for retention. The winner requires score >= 7/10 and content-match 2/2 and must be persisted with `record_hook_selection` before edit staging. “Shorter” is not a ranking objective.
+
+Automatic framing may be conversational and bolder than an abstract, including an honest question whose nuance arrives immediately afterward, but it may not invent a number, effect direction, study population, or unsupported relationship.
+
+For Film Type 2.16, every opening hook is one complete 3–5 second composition and must communicate topic + tension on mute. The renderer uses verified Kahroba editorial type, white support + `#FFEA00` semantic emphasis, right/center Persian alignment, and rendered-pixel Visual Typography policy v2. A plain white subtitle-like overlay is a visual failure even when it technically fits.
+
 ## Required edit evidence — Hook Quality v2
 
 For new short-form production, persist top-level `metadata.hookQuality` inside `edit_decisions` before no-copy preflight:

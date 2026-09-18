@@ -158,7 +158,7 @@ def resolve_design(raw: Any) -> dict[str, Any] | None:
 
     NOTE: None here does NOT mean "render Legacy". Since 2026-09-08 the
     persian-footage compose boundary (PersianCompose._build_props) refuses
-    absent/unversioned design outright — Film Type 2.15 is the default path and
+    absent/unversioned design outright — Film Type 2.16 is the default path and
     Legacy needs the explicit {"version": 2, "profile": "legacy"} opt-out.
     This library keeps its historical None return so other consumers
     (quiet-editorial resolution, validation) are unaffected.
