@@ -2639,7 +2639,10 @@ class TestClaimQualifierHook:
             ],
         }])
         assert is_poster_stack_hook(hook) is True
-        assert audit_moments([hook], duration_seconds=12.0).problems == []
+        assert audit_moments(
+            [hook], duration_seconds=12.0, v2=True,
+            adaptive_pixel_typography=True, simultaneous_hook_typography=True,
+        ).problems == []
 
     def test_a_hook_matching_no_style_is_a_problem(self) -> None:
         """A hook that matches no style silently loses every hook-scoped token."""
