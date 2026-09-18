@@ -30,6 +30,9 @@ STRUCTURAL_ROLE_BY_SEMANTIC_ROLE = {
     "connector": "tail",
     "payoff": "tail",
 }
+_EDITORIAL_OPENING_RECIPES = frozenset(
+    {"editorial-hero-balanced", "editorial-hero-compact"}
+)
 
 
 class PersianEditorialHookError(ValueError):
@@ -138,7 +141,21 @@ def semantic_poster_stack_from_edit(
         if isinstance(segment, Mapping) and str(segment.get("role") or "") != "source"
     ]
     declared = [str(segment.get("semanticRole") or "").strip() for segment in content]
+    presentation = hook.get("presentation")
+    recipe = (
+        str(presentation.get("recipeId") or "")
+        if isinstance(presentation, Mapping)
+        else ""
+    )
+    requires_semantic_plan = (
+        str(hook.get("purpose") or "") == "hook-pattern-interrupt"
+        and recipe in _EDITORIAL_OPENING_RECIPES
+    )
     if not any(declared):
+        if requires_semantic_plan:
+            raise PersianEditorialHookError(
+                "editorial opening requires explicit semanticRole on every visible phrase; positional inference is forbidden"
+            )
         return None
     if not 2 <= len(content) <= 5:
         raise PersianEditorialHookError("semantic poster stack requires 2-5 ordered phrases")
