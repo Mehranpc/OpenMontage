@@ -54,7 +54,7 @@ Read `next_phase` from `status`; do not infer progress from conversation memory,
 - `plan_scenes_moments` through `render_final_candidate` → `narration-to-persian-video.md`
 - `final_review` / `awaiting_human` → `persian-final-review.md`
 
-Before executing a phase, record its attempt. Complete only that same phase after its contract is satisfied:
+For short/non-durable work, record the phase attempt and complete only that same phase after its contract is satisfied:
 
 ```bash
 python -m lib.persian_video_workflow attempt <project-id>
@@ -71,12 +71,17 @@ printf '{"attempt_id":"<attempt-id>"}' > /tmp/preflight-evidence.json
 python -m lib.persian_video_workflow complete <project-id> --phase no_copy_preflight --evidence-json /tmp/preflight-evidence.json
 ```
 
-Long-running current-phase commands should use the durable runner instead of depending on one chat/terminal session. Use `--` before the child command. Re-running the same idempotence key reuses the same logical job; `job-status` reconciles detached/orphaned execution before any retry:
+Long-running current-phase commands use the production run kernel. It owns the phase-attempt binding, durable job identity, process outcome, semantic result, reporting outcome, and workflow commit. Use `--` before the child command:
 
 ```bash
-python -m lib.persian_video_workflow job-start <project-id> <job-id> --phase <next-phase> --idempotence-key <key> -- <command> [args...]
-python -m lib.persian_video_workflow job-status <project-id> <job-id>
+python -m lib.persian_run_kernel start <project-id> <job-id> --phase <next-phase> --idempotence-key <key> -- <command> [args...]
+python -m lib.persian_run_kernel status <project-id> <job-id>
+python -m lib.persian_run_kernel commit <project-id> <job-id> --evidence-json /abs/evidence.json
 ```
+
+A child process exit code of zero is **not** semantic success. Tool/helper commands run through this kernel must persist their normalized JSON result to the path supplied in `OPENMONTAGE_DURABLE_RESULT_PATH`; a result with `success=false` blocks workflow advancement even when the process exits normally. If expensive execution succeeded but workflow commit/reporting later fails, retry `commit` for the same job rather than rerunning the expensive stage.
+
+The lower-level `persian_video_workflow job-start/job-status` commands remain compatibility/debug primitives. Normal production should use the run-kernel commands above so execution truth and workflow advancement stay bound to one durable envelope.
 
 If a review requires going backward, use `send-back`; never edit `next_phase` by hand. The code preserves attempt history and enforces the manifest's send-back ceiling.
 
