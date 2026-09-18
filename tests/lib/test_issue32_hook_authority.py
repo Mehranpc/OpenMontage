@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lib.persian_video_workflow import bootstrap_persian_video, record_hook_selection
+from lib.persian_video_workflow import bootstrap_persian_video, record_hook_selection, stage_workflow_edit_draft
+from tests.lib.test_persian_preflight_contract import _payload
+from tests.lib.test_persian_video_workflow import _advance_to
 
 
 SCRIPT = "بزرگ‌ترین اشتباه دربارهٔ بازی‌های ویدیویی اینه که فکر کنیم فقط وقت تلف کردنه!"
@@ -94,3 +96,74 @@ def test_user_hook_cannot_be_replaced_by_automatic_selection(tmp_path: Path) -> 
             evidence_checked=True, unsupported_claims_rejected=True, rationale="replacement",
             pipeline_dir=tmp_path,
         )
+
+
+
+def _bootstrap_to_preflight(tmp_path: Path, *, hook_text: str | None) -> None:
+    source = tmp_path.parent / f"{tmp_path.name}-issue32-hook.wav"
+    source.write_bytes(b"audio")
+    bootstrap_persian_video(
+        title="Hook staging authority",
+        approved_script=SCRIPT,
+        narration_path=str(source),
+        hook_text=hook_text,
+        project_id="run",
+        pipeline_dir=tmp_path,
+        backlot_opener=lambda _pid: 0,
+    )
+    _advance_to(tmp_path, "no_copy_preflight")
+
+
+def _stage_payload(tmp_path: Path, hook_text: str, *, attempt: str = "edit-v1") -> dict:
+    import json
+
+    payload = _payload()
+    payload["persian"]["moments"][0]["segments"] = [
+        {"role": "hero", "text": hook_text}
+    ]
+    source = tmp_path / "run" / f"{attempt}.json"
+    source.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return stage_workflow_edit_draft("run", attempt, source, pipeline_dir=tmp_path)
+
+
+def test_edit_stage_refuses_rewrite_of_user_authoritative_hook(tmp_path: Path) -> None:
+    import pytest
+    from lib.persian_editorial_hook import PersianEditorialHookError
+
+    _bootstrap_to_preflight(tmp_path, hook_text=HOOK)
+
+    with pytest.raises(PersianEditorialHookError, match="authoritative"):
+        _stage_payload(tmp_path, "یک هوک دیگر")
+
+    staged = _stage_payload(tmp_path, HOOK, attempt="edit-v2")
+    assert staged["hookAuthority"]["mode"] == "user_supplied"
+    assert staged["hookAuthority"]["verified"] is True
+
+
+def test_edit_stage_requires_auto_selection_and_locks_its_winner(tmp_path: Path) -> None:
+    import pytest
+    from lib.persian_editorial_hook import PersianEditorialHookError
+
+    _bootstrap_to_preflight(tmp_path, hook_text=None)
+    with pytest.raises(PersianEditorialHookError, match="selection required"):
+        _stage_payload(tmp_path, SCRIPT)
+
+    record_hook_selection(
+        "run",
+        selected_text=SCRIPT,
+        hook_family="common-mistake",
+        candidates=[{"text": "بازی فقط سرگرمیه؟"}, {"text": SCRIPT}],
+        score=8.6,
+        content_match_score=2,
+        evidence_checked=True,
+        unsupported_claims_rejected=True,
+        rationale="The selected hook names the topic and preserves the supported claim.",
+        pipeline_dir=tmp_path,
+    )
+
+    with pytest.raises(PersianEditorialHookError, match="selected hook"):
+        _stage_payload(tmp_path, "هوک تغییر کرده", attempt="edit-v2")
+
+    staged = _stage_payload(tmp_path, SCRIPT, attempt="edit-v3")
+    assert staged["hookAuthority"]["mode"] == "automatic"
+    assert staged["hookAuthority"]["verified"] is True
