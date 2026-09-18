@@ -127,16 +127,15 @@ const EditorialBurst: React.FC<{
   accent: string; progress: number; opacity: number;
 }> = ({row,anchor,align,accent,progress,opacity}) => {
   if (row.accentWords.length === 0) return null;
-  const leftEdge = align === "center" ? anchor - row.widthPx / 2 : align === "right" ? anchor - row.widthPx : anchor;
-  const x2 = Math.max(10, leftEdge - Math.max(8, row.fontSizePx * .04));
-  const ray = Math.max(14, Math.min(28, row.fontSizePx * .18));
-  const x1 = Math.max(3, x2 - ray);
-  const y = Math.max(12, row.baselinePx - row.abovePx * .35);
+  const rightEdge = align === "center" ? anchor + row.widthPx / 2 : align === "right" ? anchor : anchor + row.widthPx;
+  const ray = Math.max(16, Math.min(30, row.fontSizePx * .20));
+  const x1 = rightEdge + Math.max(9, row.fontSizePx * .055);
+  const y = Math.max(12, row.baselinePx - row.abovePx * .38);
   const dash = Math.max(1, ray * progress);
   return <g data-film-editorial-accent="burst" opacity={opacity * .95} stroke={accent} strokeWidth={Math.max(3, row.fontSizePx * .026)} strokeLinecap="round">
     <line x1={x1} y1={y} x2={x1 + dash} y2={y}/>
-    <line x1={x1 + 3} y1={y - ray * .62} x2={x1 + 3 + dash * .78} y2={y - ray * .12}/>
-    <line x1={x1 + 3} y1={y + ray * .62} x2={x1 + 3 + dash * .78} y2={y + ray * .12}/>
+    <line x1={x1 + 2} y1={y - ray * .18} x2={x1 + 2 + dash * .78} y2={y - ray * .68}/>
+    <line x1={x1 + 2} y1={y + ray * .18} x2={x1 + 2 + dash * .78} y2={y + ray * .68}/>
   </g>;
 };
 
@@ -178,8 +177,9 @@ export const PersianFilmTypeMoment: React.FC<{
         const accented216 = p.profileVersion === "2.16.0" && row.accentWords.length > 0;
         const punch = accented216 ? .985 + .015 * life.arrive : 1;
         const transform = `translate(0 ${y}) translate(${anchor} 0) scale(${punch}) translate(${-anchor} 0)`;
+        const segmentHasSemanticAccent = (moment.segments[row.segmentIndex]?.accentWords?.length ?? 0) > 0;
         return <g key={index} data-film-type-row={index} opacity={life.opacity} transform={transform}>
-          <Run row={row} x={anchor} align={align} color={color} accent={accent} semanticHero={p.profileVersion === "2.16.0" && row.role === "hero"} emphasis={moment.presentation?.emphasis === "inline"}/>
+          <Run row={row} x={anchor} align={align} color={color} accent={accent} semanticHero={p.profileVersion === "2.16.0" && row.role === "hero" && !segmentHasSemanticAccent} emphasis={moment.presentation?.emphasis === "inline"}/>
           {accented216 ? <EditorialBurst row={row} anchor={anchor} align={align} accent={accent} progress={life.arrive} opacity={life.opacity}/> : null}
         </g>;
       })}

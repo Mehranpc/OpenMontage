@@ -292,9 +292,10 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
           const ink = measureRun(text,piece.size,piece.weight,piece.family);
           const underline = moment.presentation?.emphasis === "inline" && (segment.accentWords?.length ?? 0) > 0;
           const belowPx = Math.max(ink.belowPx,underline ? piece.size * .14 : 0);
+          const rowAccentWords = (segment.accentWords ?? []).filter(word => text.includes(word));
           rows.push({text,role: piece.role,segmentIndex: index,fontSizePx: piece.size,weight: piece.weight,
             family: piece.family,direction: "rtl",...ink,belowPx: round(belowPx),baselinePx: round(y + ink.abovePx),
-            revealAfterSeconds: reveal,accentWords: segment.accentWords ?? []});
+            revealAfterSeconds: reveal,accentWords: rowAccentWords});
           y += ink.abovePx + belowPx;
           widest = Math.max(widest,ink.widthPx);
         }
