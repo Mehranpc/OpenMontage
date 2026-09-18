@@ -242,6 +242,16 @@ class FilmTypeContracts(unittest.TestCase):
     def test_empty_schedule_is_opt_in_only(self):
         self.assertEqual(PersianCompose._build_moments({'moments':[]},12,v2=True,measure_layout=False),[])
         with self.assertRaisesRegex(ValueError,'Legacy'):PersianCompose._build_moments({'moments':[]},12)
+    def test_film_producer_preserves_reviewed_visual_complexity(self):
+        clip=self.root/'clip-busy.mp4';clip.write_bytes(b'fixture-not-decoded')
+        persian={'format':'vertical','durationSeconds':12,'design':self.raw,'moments':[],
+                 'shots':[{'source':str(clip),'startSeconds':0,'endSeconds':12,'sourceInSeconds':0,
+                           'camera':'none','attribution':'fixture','avoidRegions':[],
+                           'visualComplexity':'busy'}]}
+        with patch('tools.video.persian_compose.prepare_film_type_props',side_effect=lambda p,c:p):
+            props,_=PersianCompose()._build_props(persian,self.root/'stage-busy','unit-busy')
+        self.assertEqual(props['shots'][0]['visualComplexity'],'busy')
+
     def test_film_producer_preserves_reviewed_empty_regions(self):
         clip=self.root/'clip.mp4';clip.write_bytes(b'fixture-not-decoded')
         persian={'format':'vertical','durationSeconds':12,'design':self.raw,'moments':[],

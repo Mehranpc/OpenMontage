@@ -641,6 +641,12 @@ class PersianCompose(BaseTool):
                 )
             attributions.append(attribution)
 
+            visual_complexity = str(shot.get("visualComplexity") or "").strip()
+            if visual_complexity and visual_complexity not in {"simple", "busy"}:
+                raise ValueError(
+                    f"shot[{index}].visualComplexity must be 'simple' or 'busy' after visual review"
+                )
+
             shots.append(
                 {
                     "id": str(shot.get("id") or f"shot-{index + 1}"),
@@ -654,6 +660,7 @@ class PersianCompose(BaseTool):
                     **({"semanticDirection": str(shot["semanticDirection"])} if shot.get("semanticDirection") else {}),
                     **({"openingSemanticMatch": shot["openingSemanticMatch"]} if isinstance(shot.get("openingSemanticMatch"), bool) else {}),
                     **({"selectionReason": str(shot["selectionReason"])} if shot.get("selectionReason") else {}),
+                    **({"visualComplexity": visual_complexity} if visual_complexity else {}),
                     "transitionIn": str(shot.get("transitionIn") or "cut"),
                     "source": staged,
                     "startSeconds": float(shot["startSeconds"]),

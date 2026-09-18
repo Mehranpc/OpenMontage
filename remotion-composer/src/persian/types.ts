@@ -217,6 +217,8 @@ export interface PersianShot {
   readonly semanticDirection?: string;
   readonly openingSemanticMatch?: boolean;
   readonly selectionReason?: string;
+  /** Reviewed background readability class for adaptive editorial contrast. */
+  readonly visualComplexity?: "simple" | "busy";
   /** Executable edit grammar. Persian currently renders hard cuts only. */
   readonly transitionIn?: "cut";
   /** Path relative to the composition's public dir. */

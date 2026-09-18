@@ -29,11 +29,19 @@ function shadowFilter(s: {color:string;nearOffsetPx:number;nearBlurPx:number;nea
   const rgba = (alpha: number) => `rgba(${channel(0)},${channel(2)},${channel(4)},${alpha})`;
   return `drop-shadow(0 ${s.nearOffsetPx}px ${s.nearBlurPx}px ${rgba(s.nearAlpha)}) drop-shadow(0 0 ${s.haloBlurPx}px ${rgba(s.haloAlpha)})`;
 }
-export function glyphShadowFilter(p: FilmProfile): string | undefined {
+export function glyphShadowFilter(p: FilmProfile, busyBackground = false): string | undefined {
   if (p.profileVersion !== "2.10.0" && p.profileVersion !== "2.11.0" && p.profileVersion !== "2.15.0" && p.profileVersion !== "2.16.0") return undefined;
   const s = p.contrast.glyphShadow;
   if (!s) throw new Error("Film Type 2.10 requires explicit glyph shadow tokens.");
-  return shadowFilter(s);
+  if (!(busyBackground && p.profileVersion === "2.16.0")) return shadowFilter(s);
+  return shadowFilter({
+    ...s,
+    nearOffsetPx: Math.max(s.nearOffsetPx, 3),
+    nearBlurPx: Math.round(s.nearBlurPx * 1.35),
+    nearAlpha: Math.min(.82, s.nearAlpha * 1.45),
+    haloBlurPx: Math.round(s.haloBlurPx * 1.4),
+    haloAlpha: Math.min(.58, s.haloAlpha * 1.7),
+  });
 }
 
 /** 2.11 gives the brand its own shadow tokens. The 30/24px lockup has thinner
@@ -88,9 +96,9 @@ const CompactFilmField: React.FC<{rect:Rect;format:PersianFormat;design:PersianD
 /** 2.9 bounds the field by the frame, so the shadow never grows wider or taller
  * than the video. 2.10 goes further: one small soft field per measured row, so a
  * short line no longer drags a block-sized wash across the footage. */
-const DiffuseField: React.FC<{layout:FilmMomentLayout;format:PersianFormat;design:PersianDesignSnapshot;opacity:number;travel:number;anchor:number;align:"left"|"right"|"center"}>=({layout,format,design,opacity,travel,anchor,align})=>{
+const DiffuseField: React.FC<{layout:FilmMomentLayout;format:PersianFormat;design:PersianDesignSnapshot;opacity:number;travel:number;anchor:number;align:"left"|"right"|"center";peakMultiplier?:number}>=({layout,format,design,opacity,travel,anchor,align,peakMultiplier=1})=>{
  const id=useId(),p=filmProfile(design),d=FORMAT_DIMENSIONS[format],cfg=p.contrast.diffuseField!;
- const dark=layout.contrastMode==="dark",peak=layout.fieldPeakAlpha??p.contrast.strengths[layout.strength];
+ const dark=layout.contrastMode==="dark",peak=Math.min(.72,(layout.fieldPeakAlpha??p.contrast.strengths[layout.strength])*peakMultiplier);
  const bounded=p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0"))) ? {width:d.width,height:d.height} : undefined;
  const left=layout.rect.x*d.width, top=layout.rect.y*d.height;
  const fields=cfg.perRow
@@ -143,8 +151,8 @@ const EditorialBurst: React.FC<{
 
 export const PersianFilmTypeMoment: React.FC<{
   moment: PersianMoment; layout: FilmMomentLayout; format: PersianFormat;
-  durationFrames: number; design: PersianDesignSnapshot;
-}> = ({moment,layout,format,durationFrames,design}) => {
+  durationFrames: number; design: PersianDesignSnapshot; shots: PersianVideoProps["shots"];
+}> = ({moment,layout,format,durationFrames,design,shots}) => {
   const frame = useCurrentFrame(), {fps} = useVideoConfig();
   const p = filmProfile(design), dims = FORMAT_DIMENSIONS[format];
   const kahrobaPromise = p.profileVersion === "2.16.0"
@@ -160,6 +168,10 @@ export const PersianFilmTypeMoment: React.FC<{
   const polished = isFilmTypePolish(design);
   if (!layout || layout.id !== moment.id) throw new Error(`Missing measured Film Type layout for ${moment.id}; run persian_compose.`);
   const span = durationFrames / fps, seconds = frame / fps;
+  const absoluteSeconds = moment.startSeconds + seconds;
+  const activeShot = shots.find(shot => absoluteSeconds >= shot.startSeconds && absoluteSeconds < shot.endSeconds);
+  const busyBackground = p.profileVersion === "2.16.0" && activeShot?.visualComplexity === "busy";
+  const fieldPeakMultiplier = busyBackground ? 1.35 : 1;
   const firstReveal = Math.min(...layout.rows.map(row => row.revealAfterSeconds));
   const modern=p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")))))),lifeAt=modern?gentleLife:filmLife;
   const diffuse=p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")));
@@ -173,13 +185,14 @@ export const PersianFilmTypeMoment: React.FC<{
   const anchor = align === "center" ? layout.widthPx/2 : align === "left" ? p.layout.inkPaddingPx : layout.widthPx-p.layout.inkPaddingPx;
   if (!kahrobaReady) return null;
   return <AbsoluteFill data-film-type-moment={moment.id} data-film-type-placement={layout.placement} style={{pointerEvents:"none"}}>
-    {diffuse ? <DiffuseField layout={layout} format={format} design={design} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)} anchor={anchor} align={align}/> : modern ? <CompactFilmField featherPx={layout.fieldFeatherPx} rect={layout.rect} format={format} design={design} color={dark?p.contrast.darkField:p.contrast.lightField}
+    {diffuse ? <DiffuseField layout={layout} format={format} design={design} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)} anchor={anchor} align={align} peakMultiplier={fieldPeakMultiplier}/> : modern ? <CompactFilmField featherPx={layout.fieldFeatherPx} rect={layout.rect} format={format} design={design} color={dark?p.contrast.darkField:p.contrast.lightField}
       alpha={p.contrast.strengths[layout.strength]} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)}/> : <FilmContrastField rect={layout.rect} format={format} color={dark?p.contrast.darkField:p.contrast.lightField}
       alpha={p.contrast.strengths[layout.strength]} plateau={p.contrast.plateauStop}
       paddingPx={p.contrast.plateauPaddingPx + p.motion.travelPx} opacity={fieldLife.opacity} kind="text"/>}
     <svg data-film-type-text={moment.id} width={layout.widthPx} height={layout.heightPx}
       viewBox={`0 0 ${layout.widthPx} ${layout.heightPx}`}
-      style={{position:"absolute",left:layout.rect.x*dims.width,top:layout.rect.y*dims.height,overflow:"visible",zIndex:2,filter:glyphShadowFilter(p)}}>
+      data-film-background-complexity={busyBackground ? "busy" : "simple"}
+      style={{position:"absolute",left:layout.rect.x*dims.width,top:layout.rect.y*dims.height,overflow:"visible",zIndex:2,filter:glyphShadowFilter(p,busyBackground)}}>
       {layout.rows.map((row,index) => {
         // A quantity and its unit share the same authored segment and entrance.
         // Later authored reveal times are never pulled forward or silently lost.
@@ -192,7 +205,7 @@ export const PersianFilmTypeMoment: React.FC<{
         const segmentHasSemanticAccent = (moment.segments[row.segmentIndex]?.accentWords?.length ?? 0) > 0;
         return <g key={index} data-film-type-row={index} opacity={life.opacity} transform={transform}>
           <Run row={row} x={anchor} align={align} color={color} accent={accent} semanticHero={p.profileVersion === "2.16.0" && row.role === "hero" && !segmentHasSemanticAccent} emphasis={moment.presentation?.emphasis === "inline"}/>
-          {accented216 ? <EditorialBurst row={row} anchor={anchor} align={align} accent={accent} progress={life.arrive} opacity={life.opacity}/> : null}
+          {accented216 && moment.kind !== "hook" ? <EditorialBurst row={row} anchor={anchor} align={align} accent={accent} progress={life.arrive} opacity={life.opacity}/> : null}
         </g>;
       })}
     </svg>

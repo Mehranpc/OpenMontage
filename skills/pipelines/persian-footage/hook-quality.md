@@ -147,3 +147,8 @@ A weak rendered hook, failed muted direction, weak visual/voice alignment, non-c
 ## Post-publish calibration
 
 After publication, real platform observations belong in the independent `post_publish_performance` artifact, bound to the exact published MP4 SHA-256. Use append-only snapshots such as 1h, 4h, 24h, and 72h when available. Missing platform metrics remain null/absent; never fabricate them. `calibration_mode` is `observational`. No post-publish record authorizes automatic threshold learning, narration rewriting, or policy mutation.
+
+
+### Semantic colour emphasis
+
+For Film Type 2.16 opening typography, choose `accentWords` from the contiguous phrase that names the hook's central subject/topic and makes the topic obvious with audio muted. The yellow phrase is not automatically the most sensational or final clause. For `بزرگ‌ترین اشتباه دربارهٔ بازی‌های ویدیویی اینه که فکر کنیم فقط وقت تلف کردنه!`, the correct semantic accent is `بازی‌های ویدیویی`, while `وقت تلف کردنه` stays supporting white tension.

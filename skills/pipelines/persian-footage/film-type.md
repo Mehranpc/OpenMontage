@@ -206,3 +206,10 @@ registry, TypeScript union/hash/dispatch, painter branches, version-drift tests,
 and a versioned patch note. The active routing docs must name exactly one current
 default. Browser preparation and pinned-version reproduction tests must both pass
 before the version can become unpinned default.
+
+
+### 2.16 adaptive hook contrast
+
+During the existing visual review of every shot that overlaps an editorial moment, record `visualComplexity` as `simple` or `busy`. Use `busy` for dense signage/screens, crowds, high-frequency texture, or similarly noisy fields behind the text; use `simple` for broad low-detail fields. The renderer keeps the ordinary local shadow/field on `simple` shots and strengthens only the local glyph shadow plus diffuse dark field on `busy` shots. This is a readability treatment, never a full-frame grade.
+
+For the opening Hook, semantic yellow is reserved for the phrase that identifies the **subject/topic the viewer must recognise in mute playback** (for example `بازی‌های ویدیویی`). Do not default the yellow phrase to the generic misconception/payoff (`وقت تلف کردنه`) merely because it is at the end of the sentence. Opening hooks do not paint decorative burst rays by default; keep the typography clean unless a later explicitly approved recipe adds a different accent.

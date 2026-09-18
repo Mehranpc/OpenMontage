@@ -30,7 +30,7 @@ class Issue32KahrobaBrowserContract(unittest.TestCase):
                 "startSeconds": 0.0,
                 "endSeconds": 5.0,
                 "presentation": {"placement": "auto", "emphasis": "inline", "recipeId": "editorial-hero-balanced"},
-                "segments": [{"role": "hero", "text": text, "accentWords": ["وقت", "تلف", "کردنه!"]}],
+                "segments": [{"role": "hero", "text": text, "accentWords": ["بازی‌های", "ویدیویی"]}],
             }],
         }
 
@@ -49,6 +49,6 @@ class Issue32KahrobaBrowserContract(unittest.TestCase):
         assert max(sizes) - min(sizes) >= 16, "poster hook needs visible typographic hierarchy, not four equal rows"
         assert accent_rows[0]["fontSizePx"] == max(sizes), "the strongest semantic phrase must carry the largest display size"
         assert layout["rect"]["x"] + layout["rect"]["w"] >= 0.87, "RTL hook should sit visually toward the right edge"
-        assert accent_rows[0]["text"].endswith("وقت تلف کردنه!")
+        assert "بازی‌های ویدیویی" in accent_rows[0]["text"]
         assert all(word in accent_rows[0]["text"] for word in accent_rows[0]["accentWords"])
         assert prepared["design"]["resolved"]["typography"]["editorial"]["semanticAccent"] == "#FFEA00"
