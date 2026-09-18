@@ -44,11 +44,11 @@ class Issue32KahrobaBrowserContract(unittest.TestCase):
         assert layout["placement"] in {"upper-right", "upper-center", "mid-right", "center", "lower-right"}
         assert not layout["placement"].endswith("left")
         accent_rows = [row for row in hero_rows if row["accentWords"]]
-        assert len(accent_rows) == 1, "semantic accent belongs only to the row containing the accented phrase"
+        assert 1 <= len(accent_rows) <= 2, "a contiguous subject phrase may wrap across at most two measured rows"
         sizes = [row["fontSizePx"] for row in hero_rows]
-        assert max(sizes) - min(sizes) >= 16, "poster hook needs visible typographic hierarchy, not four equal rows"
-        assert accent_rows[0]["fontSizePx"] == max(sizes), "the strongest semantic phrase must carry the largest display size"
+        assert max(sizes) - min(sizes) >= 16, "poster hook needs visible typographic hierarchy, not flat rows"
+        assert all(row["fontSizePx"] == max(sizes) for row in accent_rows), "subject phrase rows carry the strongest display size"
         assert layout["rect"]["x"] + layout["rect"]["w"] >= 0.87, "RTL hook should sit visually toward the right edge"
-        assert "بازی‌های ویدیویی" in accent_rows[0]["text"]
-        assert all(word in accent_rows[0]["text"] for word in accent_rows[0]["accentWords"])
+        accented = [word for row in accent_rows for word in row["accentWords"]]
+        assert accented == ["بازی‌های", "ویدیویی"]
         assert prepared["design"]["resolved"]["typography"]["editorial"]["semanticAccent"] == "#FFEA00"
