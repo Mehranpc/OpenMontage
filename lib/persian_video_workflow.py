@@ -23,7 +23,11 @@ from lib.checkpoint import CheckpointValidationError, init_project, read_checkpo
 from lib.paths import PROJECTS_DIR, REPO_ROOT
 from lib.pipeline_loader import load_pipeline_readonly
 from lib.persian_film_type_docs import active_film_type_version, film_type_contract_paths
-from lib.persian_editorial_hook import build_initial_hook_selection
+from lib.persian_editorial_hook import (
+    build_initial_hook_selection,
+    finalize_automatic_hook_selection,
+    validate_user_hook_unchanged,
+)
 from lib.persian_durable_job import DurableJobError, reconcile_job, start_job
 from lib.persian_edit_workspace import (
     PersianEditWorkspaceError, artifact_sha256, load_promotable_edit_draft, preflight_edit_draft, promote_edit_draft, stage_edit_draft,
@@ -650,6 +654,36 @@ def load_workflow_state(
         raise PersianVideoWorkflowError(f"workflow state is unreadable: {path}") from exc
     if state.get("version") != WORKFLOW_VERSION or state.get("project_id") != project_id:
         raise PersianVideoWorkflowError("workflow state identity/version mismatch")
+    return state
+
+
+def record_hook_selection(
+    project_id: str,
+    *,
+    selected_text: str,
+    hook_family: str,
+    candidates: Sequence[Mapping[str, Any]],
+    score: float,
+    content_match_score: int,
+    evidence_checked: bool,
+    unsupported_claims_rejected: bool,
+    rationale: str,
+    pipeline_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Persist the automatic hook winner without weakening user-authored authority."""
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    initial = state.get("hook_selection")
+    if not isinstance(initial, Mapping):
+        raise PersianVideoWorkflowError("workflow is missing its hook-selection authority record")
+    if str(initial.get("mode") or "") == "user_supplied":
+        validate_user_hook_unchanged(initial, selected_text)
+        return state
+    state["hook_selection"] = finalize_automatic_hook_selection(
+        initial, selected_text=selected_text, hook_family=hook_family, candidates=candidates,
+        score=score, content_match_score=content_match_score, evidence_checked=evidence_checked,
+        unsupported_claims_rejected=unsupported_claims_rejected, rationale=rationale,
+    )
+    _write_state(_project_root(state), state)
     return state
 
 
