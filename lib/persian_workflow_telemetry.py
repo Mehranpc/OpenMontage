@@ -336,6 +336,7 @@ def causal_time_accounting(
     wall = max(0.0, (current - origin).total_seconds())
     unattributed = max(0.0, wall - covered)
     concurrency = max(0.0, raw_total - covered)
+    coverage_percent = 100.0 if wall <= 0.0 else min(100.0, (covered / wall) * 100.0)
     provider = category_seconds["provider_network_wait"]
     editorial = category_seconds["agent_editorial_work"]
     browser = category_seconds["browser_render_execution"]
@@ -359,6 +360,7 @@ def causal_time_accounting(
         "causal_covered_seconds": round(covered, 3),
         "explicit_concurrency_seconds": round(concurrency, 3),
         "telemetry_span_count": counted,
+        "causal_coverage_percent": round(coverage_percent, 3),
         "orchestration_gap_seconds": round(unattributed, 3),
         "unattributed_wall_seconds": round(unattributed, 3),
         "active_editorial_seconds": round(editorial, 3),
