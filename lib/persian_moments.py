@@ -138,6 +138,11 @@ MAX_SECONDS = 9.0
 #: step* inside one moment is not a new moment and is not subject to it.
 MIN_GAP_SECONDS = 0.9
 
+#: Numerical tolerance for authored decimal timeline boundaries. JSON decimal
+#: times such as 43.04 - 42.14 can land infinitesimally below 0.9 in binary
+#: floating-point and must not turn an exact policy boundary into a refusal.
+TIMING_EPSILON_SECONDS = 1e-9
+
 #: Latest the first moment may appear, in seconds. Mirrors
 #: `OPENING_MOMENT_MAX_START_SECONDS`. Short-form feeds autoplay muted, so a video
 #: that opens on silent footage has nothing on screen to hold a thumb — and the one
@@ -1108,7 +1113,7 @@ def audit_moments(
                 f"{earlier.id} overlaps {later.id} by {-gap:.2f}s. Two moments paint "
                 "two right-anchored stacks on the same rows, which is unreadable."
             )
-        elif gap < MIN_GAP_SECONDS:
+        elif gap + TIMING_EPSILON_SECONDS < MIN_GAP_SECONDS:
             audit.problems.append(
                 f"{earlier.id} → {later.id}: only {gap:.2f}s of empty frame between "
                 f"them, below the {MIN_GAP_SECONDS}s floor. Without that gap the "

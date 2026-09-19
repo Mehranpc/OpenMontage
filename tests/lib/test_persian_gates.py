@@ -1028,6 +1028,17 @@ class TestMomentAudit:
         problems = audit_moments(moments, duration_seconds=66.0).problems
         assert any("empty frame" in problem for problem in problems)
 
+    def test_exact_decimal_gap_floor_is_not_rejected_by_float_rounding(self) -> None:
+        """Authored decimal times exactly on the floor must survive binary float math."""
+        moments = build_moments(
+            [
+                _moment(startSeconds=39.0, endSeconds=42.14),
+                _moment(startSeconds=43.04, endSeconds=47.0),
+            ]
+        )
+        problems = audit_moments(moments, duration_seconds=47.472).problems
+        assert not any("empty frame" in problem for problem in problems)
+
     def test_an_overlap_is_a_problem(self) -> None:
         moments = build_moments(
             [
