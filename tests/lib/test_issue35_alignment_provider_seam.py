@@ -335,3 +335,25 @@ def test_persisted_decision_rejects_selected_provider_name_drift() -> None:
     decision = {**result["provider_decision"], "selectedProvider": "not-whisperx"}
     with pytest.raises(AlignmentProviderError, match="selected provider"):
         validate_alignment_provider_decision(decision, _policy())
+
+
+def test_persisted_decision_rejects_selected_model_drift() -> None:
+    registry = FakeRegistry([_tool("transcriber", "whisperx")])
+    plan = build_alignment_provider_plan(_policy(), registry=registry)
+    result = execute_alignment_with_fallback(
+        plan, input_path="narration.wav", output_dir="artifacts/transcription", registry=registry
+    )
+    decision = {**result["provider_decision"], "selectedModel": "not-the-final-model"}
+    with pytest.raises(AlignmentProviderError, match="selected model"):
+        validate_alignment_provider_decision(decision, _policy())
+
+
+def test_persisted_decision_rejects_execution_duration_drift() -> None:
+    registry = FakeRegistry([_tool("transcriber", "whisperx")])
+    plan = build_alignment_provider_plan(_policy(), registry=registry)
+    result = execute_alignment_with_fallback(
+        plan, input_path="narration.wav", output_dir="artifacts/transcription", registry=registry
+    )
+    decision = {**result["provider_decision"], "executionDurationSeconds": 99.0}
+    with pytest.raises(AlignmentProviderError, match="execution duration"):
+        validate_alignment_provider_decision(decision, _policy())
