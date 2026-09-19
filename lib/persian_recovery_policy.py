@@ -85,6 +85,20 @@ _CLASS_POLICIES: dict[str, dict[str, Any]] = {
             "subject_regions", "watermark",
         ],
     },
+    "SUBJECT_REGION_REVIEW": {
+        "maxAttempts": 1,
+        "strategies": ["attach_reviewed_subject_regions"],
+        # The candidate still declares every concrete changed field. The wildcard
+        # lets the existing convergence workspace carry this newly named scope
+        # without widening behavior: every other dependency scope is explicitly
+        # frozen below, so only subject_regions may differ from the parent.
+        "mutationSurface": ["diagnostic.named_contract_field"],
+        "preserve": [
+            "approved_script", "narration", "hook", "captions", "timeline",
+            "watermark", "typography", "assets", "scenes", "audio_mix", "copy",
+            "unclassified",
+        ],
+    },
     "ASSET_SELECTION": {
         "maxAttempts": 2,
         "strategies": ["use_authored_alternate_query", "stop_for_editorial_revision"],
@@ -113,6 +127,7 @@ _CODE_PREFIX_CLASS = (
     ("CAPTION_WRAP_", "CAPTION_WRAP"),
     ("TIMELINE_FRAME_", "TIMELINE_GRID"),
     ("WATERMARK_", "WATERMARK_TIMING"),
+    ("SUBJECT_REGION_", "SUBJECT_REGION_REVIEW"),
     ("FILM_TYPE_", "FILM_TYPE_LAYOUT"),
 )
 
