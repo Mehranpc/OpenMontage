@@ -411,3 +411,46 @@ def test_telemetry_reporting_failure_preserves_execution_truth_and_blocks_commit
         pipeline_dir=projects_root,
     )
     assert committed["next_phase"] == "align_script_timing"
+
+
+def test_transition_telemetry_failure_cannot_advance_workflow_state(
+    tmp_path: Path, monkeypatch
+) -> None:
+    projects_root = _fresh_project(tmp_path)
+    kernel.start_phase_job(
+        "run",
+        job_id="transition-reporting-failure",
+        phase="prepare_inputs",
+        argv=["python", "-c", _semantic_child()],
+        idempotence_key="transition-reporting-failure-v1",
+        telemetry_category="machine_local_execution",
+        pipeline_dir=projects_root,
+        now=BASE + timedelta(seconds=5),
+    )
+    _wait(projects_root, "transition-reporting-failure")
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    evidence = {
+        "authoritative_script_sha256": state["input"]["approved_script"]["sha256"],
+        "narration_sha256": state["input"]["narration"]["sha256"],
+    }
+
+    monkeypatch.setattr(
+        kernel,
+        "_persist_transition_causal_span",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("transition telemetry failed")),
+    )
+    with pytest.raises(ValueError, match="transition telemetry failed"):
+        kernel.commit_phase_job(
+            "run",
+            "transition-reporting-failure",
+            evidence=evidence,
+            pipeline_dir=projects_root,
+        )
+
+    after = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    assert after["next_phase"] == "prepare_inputs"
+    assert "prepare_inputs" not in after["completed_phases"]
+    envelope = kernel.load_execution_envelope(
+        "run", "transition-reporting-failure", pipeline_dir=projects_root
+    )
+    assert envelope["executionOutcome"] == "succeeded"
