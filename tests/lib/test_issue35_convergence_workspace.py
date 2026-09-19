@@ -351,7 +351,7 @@ def test_workflow_status_surfaces_convergence_workspace_without_file_probing(tmp
     monkeypatch.setattr(
         workflow,
         "convergence_status",
-        lambda project_dir: {
+        lambda project_dir, **_kwargs: {
             "status": "active",
             "candidateCount": 2,
             "candidateIds": ["base", "layout-1"],
@@ -463,7 +463,7 @@ def test_front_door_rejects_second_root_candidate_in_same_revision_cycle(tmp_pat
     monkeypatch.setattr(
         workflow,
         "convergence_status",
-        lambda _project: {
+        lambda _project, **_kwargs: {
             "status": "active",
             "candidateCount": 1,
             "candidateIds": ["base"],

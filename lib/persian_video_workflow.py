@@ -2156,6 +2156,15 @@ def stage_workflow_edit_draft(
     if max_candidates <= 1:
         raise PersianVideoWorkflowError("workflow convergence budget is missing or invalid")
     revision_cycle = int(state.get("user_revision_cycles") or 0)
+    current_convergence = convergence_status(
+        _project_root(state), revision_cycle=revision_cycle
+    )
+    current_ids = set(str(item) for item in current_convergence.get("candidateIds") or [])
+    if parent_attempt_id is None and current_ids and attempt_id not in current_ids:
+        raise PersianVideoWorkflowError(
+            "base convergence candidate already exists for this revision cycle; "
+            "stage recovery as an explicit child with --parent and recovery metadata"
+        )
     staged = stage_edit_draft(
         _project_root(state),
         attempt_id,

@@ -475,8 +475,15 @@ def _write_unresolved(
     return unresolved
 
 
-def convergence_status(project_dir: Path) -> dict[str, Any]:
+def convergence_status(
+    project_dir: Path, *, revision_cycle: int | None = None
+) -> dict[str, Any]:
     manifests = _candidate_manifests(project_dir)
+    if revision_cycle is not None:
+        manifests = [
+            item for item in manifests
+            if int(item.get("revisionCycle") or 0) == int(revision_cycle)
+        ]
     unresolved = None
     path = _unresolved_path(project_dir)
     if path.is_file():
@@ -485,10 +492,13 @@ def convergence_status(project_dir: Path) -> dict[str, Any]:
         except (OSError, json.JSONDecodeError):
             value = None
         if isinstance(value, dict):
-            unresolved = value
+            if revision_cycle is None or int(value.get("revisionCycle") or 0) == int(revision_cycle):
+                unresolved = value
     promoted = [item for item in manifests if item.get("disposition") == "promoted"]
+    promoted.sort(key=lambda item: str(item.get("promotedAt") or item.get("updatedAt") or ""))
     return {
         "version": "1.0",
+        "revisionCycle": revision_cycle,
         "status": "needs_revision" if unresolved else "active",
         "candidateCount": len(manifests),
         "candidateIds": [str(item.get("candidateId")) for item in manifests],
@@ -583,13 +593,19 @@ def _editorial_baseline_path(project_dir: Path) -> Path:
 
 
 def _validate_editorial_moment_continuity(
-    project_dir: Path, attempt_id: str, edit: Mapping[str, Any]
+    project_dir: Path,
+    attempt_id: str,
+    edit: Mapping[str, Any],
+    *,
+    parent_attempt_id: str | None = None,
 ) -> dict[str, Any]:
-    """Prevent preflight convergence from deleting authored editorial beats silently."""
+    """Prevent silent beat deletion relative to the candidate's actual ancestry."""
     path = _editorial_baseline_path(project_dir)
     current = _editorial_moment_ids(edit)
     previous: list[str] = []
-    if path.is_file():
+    if parent_attempt_id:
+        previous = _editorial_moment_ids(_load_draft(project_dir, parent_attempt_id))
+    elif path.is_file():
         try:
             baseline = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
@@ -621,11 +637,15 @@ def _validate_editorial_moment_continuity(
                 f"removed={removed}. Repair recipe/line-break/placement/timing first, or persist "
                 "an explicit_user_response editorialMomentRemovalAuthorization naming exactly those ids."
             )
-    _atomic_json(path, {
-        "version": "1.0",
-        "lastAttemptId": attempt_id,
-        "momentIds": current,
-    })
+    # The global baseline exists for legacy/root staging. Child candidates are
+    # compared to their explicit parent and must not rewrite that global baseline,
+    # otherwise one sibling can make another sibling look destructively incomplete.
+    if parent_attempt_id is None:
+        _atomic_json(path, {
+            "version": "1.0",
+            "lastAttemptId": attempt_id,
+            "momentIds": current,
+        })
     return {
         "editorialMomentIds": current,
         "removedEditorialMomentIds": removed,
@@ -792,7 +812,9 @@ def stage_edit_draft(
                 f"candidate budget exhausted for {resolved_class}: {class_used} used >= {class_max} allowed"
             )
 
-    continuity = _validate_editorial_moment_continuity(project_dir, attempt_id, edit)
+    continuity = _validate_editorial_moment_continuity(
+        project_dir, attempt_id, edit, parent_attempt_id=parent_id
+    )
     if draft.exists():
         existing = json.loads(draft.read_text(encoding="utf-8"))
         if artifact_sha256(existing) != digest:
@@ -982,6 +1004,11 @@ def promote_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
                 project_dir, attempt_id, disposition="promoted",
                 promotedAt=datetime.now(timezone.utc).isoformat(),
             )
+            _atomic_json(_editorial_baseline_path(project_dir), {
+                "version": "1.0",
+                "lastAttemptId": attempt_id,
+                "momentIds": _editorial_moment_ids(edit),
+            })
             _unresolved_path(project_dir).unlink(missing_ok=True)
             return {
                 "promoted": False,
@@ -1006,6 +1033,11 @@ def promote_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
         project_dir, attempt_id, disposition="promoted",
         promotedAt=datetime.now(timezone.utc).isoformat(),
     )
+    _atomic_json(_editorial_baseline_path(project_dir), {
+        "version": "1.0",
+        "lastAttemptId": attempt_id,
+        "momentIds": _editorial_moment_ids(edit),
+    })
     _unresolved_path(project_dir).unlink(missing_ok=True)
     return {
         "promoted": True,
