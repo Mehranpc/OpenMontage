@@ -1,6 +1,7 @@
 import React from "react";
 import {Composition, registerRoot} from "remotion";
-import {PersianFootageVideo, calculatePersianMetadata, PERSIAN_FPS} from "../PersianFootageVideo";
+import {PersianFootageVideo, PERSIAN_FPS} from "../PersianFootageVideo";
+import {calculatePersianMetadata} from "./metadata-policy";
 import type {PersianVideoProps} from "../types";
 
 /** Narrow registration for font/layout preparation; no unrelated compositions,

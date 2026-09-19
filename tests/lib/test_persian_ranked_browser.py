@@ -91,14 +91,17 @@ class RankedBrowserContracts(unittest.TestCase):
                 with self.subTest(format=fmt,text=text):
                     q=self.prepare(self.props(text,fmt))
                     self.assertTrue(q['filmType']['moments']['m']['rows'])
-    def test_default_profile_requires_review_and_enforces_regions(self):
+    def test_default_216_requires_review_but_regions_do_not_veto_typography(self):
         p=self.props();p['shots'][0].pop('avoidRegions')
         with self.assertRaisesRegex(ValueError,'review'):self.prepare(p)
+        plain=self.prepare(self.props())['filmType']['moments']['m']['rect']
         region={'x':0.55,'y':0.45,'w':0.45,'h':0.55}
         p=self.props();p['shots'][0]['avoidRegions']=[region]
-        layout=self.prepare(p)['filmType']['moments']['m']
-        self.assertEqual(layout['subjectSafety'],'checked-against-supplied-regions')
-        self.assertFalse(self._overlaps(layout['rect'],region))
+        q=self.prepare(p);layout=q['filmType']['moments']['m']
+        self.assertEqual(q['shots'][0]['avoidRegions'],[region])
+        self.assertEqual(layout['subjectSafety'],'not-checked')
+        self.assertEqual(layout['rect'],plain)
+        self.assertTrue(any('2.16' in warning and 'subject-region enforcement' in warning for warning in q['filmType']['warnings']))
     def test_212_allows_typography_only_moment_without_fake_shot_review(self):
         p=self.props(text='نیاز به توجه')
         p['durationSeconds']=20
@@ -111,10 +114,14 @@ class RankedBrowserContracts(unittest.TestCase):
         self.assertEqual(layout['subjectSafety'],'not-checked')
         self.assertTrue(layout['rows'])
 
-    def test_default_profile_refuses_the_reviewed_m1_face_collision(self):
+    def test_default_216_explicit_placement_ignores_reviewed_face_region(self):
         p=self.props();p['moments'][0]['presentation']['placement']='upper-right'
-        p['shots'][0]['avoidRegions']=[{'x':0.27,'y':0.28,'w':0.39,'h':0.21}]
-        with self.assertRaisesRegex(ValueError,'no curated adaptive editorial recipe'):self.prepare(p)
+        region={'x':0.27,'y':0.28,'w':0.39,'h':0.21}
+        p['shots'][0]['avoidRegions']=[region]
+        q=self.prepare(p);layout=q['filmType']['moments']['m']
+        self.assertEqual(q['shots'][0]['avoidRegions'],[region])
+        self.assertEqual(layout['placement'],'upper-right')
+        self.assertEqual(layout['subjectSafety'],'not-checked')
     def test_28_pin_still_refuses_missing_reviews_and_obstructed_frames(self):
         p=self.props(design=self.pinned_28());p['shots'][0].pop('avoidRegions')
         p['moments'][0]['presentation']['placement']='upper-right'
