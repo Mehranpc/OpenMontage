@@ -169,7 +169,7 @@ def test_layout_candidate_reuses_unrelated_retention_and_hook_checks(monkeypatch
         calls["hook"] += 1
         return {"problems": [], "advisories": [], "marker": calls["hook"]}
 
-    def fake_browser(edit, *, base_dir=None):
+    def fake_browser(edit, *, base_dir=None, scratch_dir=None):
         calls["browser"] += 1
         return {
             "warnings": [],
@@ -215,7 +215,7 @@ def test_cheap_blocker_never_runs_browser_component(monkeypatch, tmp_path: Path)
         ],
     )
 
-    def fake_browser(edit, *, base_dir=None):
+    def fake_browser(edit, *, base_dir=None, scratch_dir=None):
         nonlocal browser_calls
         browser_calls += 1
         return {"warnings": [], "watermarkDiagnostics": None}
@@ -237,7 +237,7 @@ def test_candidate_compare_and_digest_bound_promotion_update_lifecycle(monkeypat
     monkeypatch.setattr(
         preflight,
         "browser_preflight_edit_decisions",
-        lambda edit, *, base_dir=None: {"warnings": [], "watermarkDiagnostics": None},
+        lambda edit, *, base_dir=None, scratch_dir=None: {"warnings": [], "watermarkDiagnostics": None},
     )
 
     workspace.stage_edit_draft(project, "base", _edit(), max_candidates=10)
@@ -415,7 +415,7 @@ def test_promotion_rejects_preflight_report_changed_after_candidate_binding(monk
     monkeypatch.setattr(
         preflight,
         "browser_preflight_edit_decisions",
-        lambda edit, *, base_dir=None: {"warnings": [], "watermarkDiagnostics": None},
+        lambda edit, *, base_dir=None, scratch_dir=None: {"warnings": [], "watermarkDiagnostics": None},
     )
 
     workspace.stage_edit_draft(project, "base", _edit(), max_candidates=10)
@@ -513,7 +513,7 @@ def test_cached_retention_blocker_remains_blocking_without_browser_rerun(monkeyp
         calls["retention"] += 1
         return {"problems": ["cached retention blocker"], "advisories": [], "marker": 1}
 
-    def fake_browser(edit, *, base_dir=None):
+    def fake_browser(edit, *, base_dir=None, scratch_dir=None):
         calls["browser"] += 1
         return {"warnings": [], "watermarkDiagnostics": None}
 

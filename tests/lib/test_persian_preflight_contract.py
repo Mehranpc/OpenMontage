@@ -129,7 +129,7 @@ def test_cutless_persian_bytes_pass_preflight_contract_and_checkpoint_schema(
     monkeypatch.setattr(preflight, "audit_persian_retention", lambda _: {"problems": []})
     monkeypatch.setattr(
         preflight, "browser_preflight_edit_decisions",
-        lambda edit, base_dir=None: {"warnings": [], "watermarkDiagnostics": None},
+        lambda edit, base_dir=None, scratch_dir=None: {"warnings": [], "watermarkDiagnostics": None},
     )
     report = preflight.aggregate_preflight_edit_decisions(payload, base_dir=tmp_path)
     assert report["ok"] is True, report
