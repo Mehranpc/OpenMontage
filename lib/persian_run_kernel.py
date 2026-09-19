@@ -15,6 +15,11 @@ from typing import Any, Mapping, Sequence
 
 from lib.json_safe import to_json_safe
 from lib.persian_durable_job import durable_command_sha256
+from lib.persian_workflow_telemetry import (
+    CAUSAL_CATEGORIES,
+    causal_phase_span_id,
+    record_causal_interval,
+)
 from lib import persian_video_workflow as workflow
 
 _ENVELOPE_VERSION = "1.0"
@@ -33,6 +38,16 @@ class PersianRunKernelError(ValueError):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _parse_time(value: object) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(str(value or ""))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _validate_job_id(job_id: str) -> str:
@@ -138,6 +153,179 @@ def load_execution_envelope(
     return _read_json(_envelope_path(state, job_id))
 
 
+def _persist_job_causal_span(
+    project_id: str,
+    envelope: Mapping[str, Any],
+    job: Mapping[str, Any],
+    *,
+    pipeline_dir: Path | None,
+    reconciled_at: datetime | None = None,
+) -> None:
+    state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    if not isinstance(state.get("causal_telemetry"), Mapping):
+        return
+    phase = str(envelope["phase"])
+    attempt = int(envelope["phaseAttempt"])
+    job_id = str(envelope["jobId"])
+    started = (
+        job.get("startedAt")
+        or job.get("createdAt")
+        or envelope.get("startedAt")
+    )
+    if not started:
+        return
+    terminal = str(envelope.get("executionOutcome") or job.get("executionOutcome") or "")
+    finished = job.get("finishedAt") if terminal in {"succeeded", "failed", "interrupted"} else None
+    category = str(envelope.get("telemetryCategory") or "machine_local_execution")
+    record_causal_interval(
+        state,
+        span_id=f"job:{job_id}",
+        name=f"durable job {job_id}",
+        category=category,
+        started_at=str(started),
+        finished_at=(str(finished) if finished else None),
+        parent_span_id=causal_phase_span_id(phase, attempt),
+        outcome=(terminal if finished else "running"),
+        kind="durable_job",
+        count_toward_wall=True,
+        fields={"job_id": job_id, "phase": phase, "attempt": attempt},
+    )
+    if finished:
+        reconcile_span_id = f"reconcile:{job_id}"
+        trace = state.get("causal_telemetry") or {}
+        spans = list(trace.get("spans") or []) if isinstance(trace, Mapping) else []
+        already_recorded = any(
+            isinstance(item, Mapping) and item.get("span_id") == reconcile_span_id
+            for item in spans
+        )
+        finished_time = _parse_time(finished)
+        observed = reconciled_at or datetime.now(timezone.utc)
+        if not already_recorded and finished_time is not None and observed > finished_time:
+            record_causal_interval(
+                state,
+                span_id=reconcile_span_id,
+                name=f"reconcile durable job {job_id}",
+                category="accounting_reconciliation",
+                started_at=finished_time,
+                finished_at=observed,
+                parent_span_id=causal_phase_span_id(phase, attempt),
+                outcome="succeeded",
+                kind="reconciliation",
+                count_toward_wall=True,
+                fields={"job_id": job_id, "phase": phase, "attempt": attempt},
+            )
+    workflow._write_state(_project_root(state), state)
+
+
+def _reconcile_job_telemetry(
+    project_id: str,
+    envelope: dict[str, Any],
+    job: Mapping[str, Any],
+    *,
+    pipeline_dir: Path | None,
+    reconciled_at: datetime | None = None,
+) -> bool:
+    """Persist causal reporting without allowing it to rewrite execution truth."""
+    try:
+        _persist_job_causal_span(
+            project_id,
+            envelope,
+            job,
+            pipeline_dir=pipeline_dir,
+            reconciled_at=reconciled_at,
+        )
+    except Exception as exc:
+        envelope["telemetryOutcome"] = "failed"
+        envelope["telemetryError"] = str(exc)
+        envelope["updatedAt"] = _now()
+        return False
+    envelope["telemetryOutcome"] = "succeeded"
+    envelope.pop("telemetryError", None)
+    envelope["updatedAt"] = _now()
+    return True
+
+
+def _persist_transition_causal_span(
+    project_id: str,
+    envelope: Mapping[str, Any],
+    *,
+    pipeline_dir: Path | None,
+    outcome: str,
+    finished_at: datetime | None = None,
+) -> None:
+    state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    trace = state.get("causal_telemetry")
+    if not isinstance(trace, Mapping):
+        return
+    spans = [
+        dict(item)
+        for item in list(trace.get("spans") or [])
+        if isinstance(item, Mapping)
+    ]
+    job_id = str(envelope["jobId"])
+    phase = str(envelope["phase"])
+    phase_attempt = int(envelope["phaseAttempt"])
+    transition_attempt = int(envelope.get("workflowTransitionAttempts") or 0) + 1
+    transition_span_id = f"transition:{job_id}:{transition_attempt}"
+    current = next(
+        (item for item in spans if item.get("span_id") == transition_span_id),
+        None,
+    )
+    prior = [
+        item
+        for item in spans
+        if item.get("kind") == "workflow_transition"
+        and str(item.get("job_id") or "") == job_id
+        and item.get("finished_at")
+        and item.get("span_id") != transition_span_id
+    ]
+    if current and current.get("started_at"):
+        start_value = current["started_at"]
+    elif prior:
+        start_value = max(
+            (str(item["finished_at"]) for item in prior),
+            key=lambda value: _parse_time(value) or datetime.min.replace(tzinfo=timezone.utc),
+        )
+    else:
+        reconcile = next(
+            (item for item in spans if item.get("span_id") == f"reconcile:{job_id}"),
+            None,
+        )
+        job_span = next(
+            (item for item in spans if item.get("span_id") == f"job:{job_id}"),
+            None,
+        )
+        start_value = (
+            (reconcile or {}).get("finished_at")
+            or (job_span or {}).get("finished_at")
+            or envelope.get("updatedAt")
+            or _now()
+        )
+    start = _parse_time(start_value) or datetime.now(timezone.utc)
+    end = None if outcome == "running" and finished_at is None else (finished_at or datetime.now(timezone.utc))
+    if end is not None and end < start:
+        end = start
+    record_causal_interval(
+        state,
+        span_id=transition_span_id,
+        name=f"workflow transition {job_id} attempt {transition_attempt}",
+        category="accounting_reconciliation",
+        started_at=start,
+        finished_at=end,
+        parent_span_id=causal_phase_span_id(phase, phase_attempt),
+        outcome=outcome,
+        kind="workflow_transition",
+        count_toward_wall=True,
+        fields={
+            "job_id": job_id,
+            "phase": phase,
+            "attempt": phase_attempt,
+            "transition_attempt": transition_attempt,
+        },
+    )
+    workflow._write_state(_project_root(state), state)
+
+
 def start_phase_job(
     project_id: str,
     *,
@@ -145,11 +333,17 @@ def start_phase_job(
     phase: str,
     argv: Sequence[str],
     idempotence_key: str,
+    telemetry_category: str = "machine_local_execution",
     pipeline_dir: Path | None = None,
     launch: bool = True,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Bind one current workflow attempt to one durable execution exactly once."""
+    telemetry_category = str(telemetry_category).strip()
+    if telemetry_category not in CAUSAL_CATEGORIES or telemetry_category == "workflow_wall":
+        raise PersianRunKernelError(
+            f"unsupported production telemetry category: {telemetry_category!r}"
+        )
     state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     path = _envelope_path(state, job_id)
     if path.is_file():
@@ -161,6 +355,11 @@ def start_phase_job(
         if str(envelope.get("idempotenceKey")) != idempotence_key:
             raise PersianRunKernelError(
                 f"job {job_id!r} is already bound to a different idempotence key"
+            )
+        recorded_category = str(envelope.get("telemetryCategory") or "machine_local_execution")
+        if recorded_category != telemetry_category:
+            raise PersianRunKernelError(
+                f"job {job_id!r} is already bound to telemetry category {recorded_category!r}"
             )
         requested_command_sha = durable_command_sha256(argv)
         recorded_command_sha = str(envelope.get("commandSha256") or "")
@@ -226,6 +425,9 @@ def start_phase_job(
             f"idempotence key belongs to existing durable job {actual_job_id!r}; reuse that job id"
         )
 
+    trace = state.get("causal_telemetry")
+    trace_id = str(trace.get("trace_id")) if isinstance(trace, Mapping) and trace.get("trace_id") else None
+    parent_span_id = causal_phase_span_id(phase, int(phase_attempt))
     envelope = {
         "version": _ENVELOPE_VERSION,
         "path": str(path),
@@ -233,8 +435,13 @@ def start_phase_job(
         "phase": phase,
         "phaseAttempt": int(phase_attempt),
         "jobId": actual_job_id,
+        "traceId": trace_id,
+        "causalSpanId": f"job:{actual_job_id}",
+        "parentSpanId": parent_span_id,
         "idempotenceKey": idempotence_key,
         "commandSha256": str(job.get("commandSha256") or durable_command_sha256(argv)),
+        "telemetryCategory": telemetry_category,
+        "telemetryOutcome": "pending",
         "durableStatus": job.get("status"),
         "processOutcome": job.get("processOutcome", "pending"),
         "semanticOutcome": job.get("semanticOutcome", "pending"),
@@ -251,6 +458,10 @@ def start_phase_job(
         "startedAt": job.get("startedAt") or job.get("createdAt") or _now(),
         "updatedAt": _now(),
     }
+    _atomic_json(path, envelope)
+    _reconcile_job_telemetry(
+        project_id, envelope, job, pipeline_dir=pipeline_dir, reconciled_at=now
+    )
     _atomic_json(path, envelope)
     return _decorate_job(job, envelope)
 
@@ -311,6 +522,14 @@ def reconcile_phase_job(
             "production run kernel requires a semantic result; "
             "process exit code alone is not success"
         )
+
+    _reconcile_job_telemetry(
+        project_id,
+        envelope,
+        effective_job,
+        pipeline_dir=pipeline_dir,
+        reconciled_at=datetime.now(timezone.utc),
+    )
 
     if envelope.get("executionOutcome") in {"failed", "interrupted"}:
         _close_failed_attempt_if_current(
@@ -387,8 +606,23 @@ def commit_phase_job(
             "workflow commit requires successful semantic execution; "
             f"process={envelope.get('processOutcome')} semantic={envelope.get('semanticOutcome')}"
         )
+    if envelope.get("telemetryOutcome") != "succeeded":
+        raise PersianRunKernelError(
+            "causal telemetry reporting failed; successful execution is preserved. "
+            "Retry reconciliation/commit for the same durable job. "
+            f"error={envelope.get('telemetryError')}"
+        )
+
+    # Persist the transition span before any workflow state advancement. A telemetry
+    # write failure therefore cannot leave canonical workflow state ahead of its trace.
+    _persist_transition_causal_span(
+        project_id, envelope, pipeline_dir=pipeline_dir, outcome="running"
+    )
 
     if phase in list(state.get("completed_phases") or []):
+        _persist_transition_causal_span(
+            project_id, envelope, pipeline_dir=pipeline_dir, outcome="succeeded"
+        )
         _record_commit_success(envelope, state)
         _atomic_json(Path(str(envelope["path"])), envelope)
         return state
@@ -402,10 +636,16 @@ def commit_phase_job(
             pipeline_dir=pipeline_dir,
         )
     except Exception as exc:
+        _persist_transition_causal_span(
+            project_id, envelope, pipeline_dir=pipeline_dir, outcome="failed"
+        )
         _record_commit_failure(envelope, phase_evidence, exc)
         _atomic_json(Path(str(envelope["path"])), envelope)
         raise
 
+    _persist_transition_causal_span(
+        project_id, envelope, pipeline_dir=pipeline_dir, outcome="succeeded"
+    )
     _record_commit_success(envelope, committed)
     _atomic_json(Path(str(envelope["path"])), envelope)
     return committed
@@ -420,6 +660,11 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("job_id")
     start.add_argument("--phase", required=True)
     start.add_argument("--idempotence-key", required=True)
+    start.add_argument(
+        "--telemetry-category",
+        default="machine_local_execution",
+        choices=sorted(CAUSAL_CATEGORIES - {"workflow_wall"}),
+    )
     start.add_argument("argv", nargs=argparse.REMAINDER)
 
     status = sub.add_parser("status", help="reconcile one execution envelope")
@@ -459,6 +704,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 phase=args.phase,
                 argv=command,
                 idempotence_key=args.idempotence_key,
+                telemetry_category=args.telemetry_category,
             )
         elif args.command == "status":
             result = reconcile_phase_job(args.project_id, args.job_id)

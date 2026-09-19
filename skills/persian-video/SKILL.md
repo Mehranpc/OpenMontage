@@ -74,10 +74,14 @@ python -m lib.persian_video_workflow complete <project-id> --phase no_copy_prefl
 Long-running current-phase commands use the production run kernel. It owns the phase-attempt binding, durable job identity, process outcome, semantic result, reporting outcome, and workflow commit. Use `--` before the child command:
 
 ```bash
-python -m lib.persian_run_kernel start <project-id> <job-id> --phase <next-phase> --idempotence-key <key> -- <command> [args...]
+python -m lib.persian_run_kernel start <project-id> <job-id> --phase <next-phase> --idempotence-key <key> --telemetry-category <category> -- <command> [args...]
 python -m lib.persian_run_kernel status <project-id> <job-id>
 python -m lib.persian_run_kernel commit <project-id> <job-id> --evidence-json /abs/evidence.json
 ```
+
+Every durable command must use the narrowest truthful causal category. Use `provider_network_wait` for provider/API-bound work, `machine_local_execution` for local CPU/GPU/ffmpeg/MLX work, and `browser_render_execution` for Chromium/Remotion/browser-heavy execution. The workflow persists one `causal_trace_id`; durable jobs become child spans of their phase attempt, and first terminal reconciliation is recorded separately as `accounting_reconciliation`. Do not relabel a whole render phase as renderer time: only the durable browser/render span is renderer time.
+
+`status.time_accounting` keeps real wall time as the top-level metric and reports `causal_coverage_percent`, category durations, explicit concurrency, and any remaining `unattributed_wall_seconds`. Unattributed time is an instrumentation diagnostic, not a bucket to silently assign to providers or editorial work.
 
 A child process exit code of zero is **not** semantic success. Tool/helper commands run through this kernel must persist their normalized JSON result to the path supplied in `OPENMONTAGE_DURABLE_RESULT_PATH`; a result with `success=false` blocks workflow advancement even when the process exits normally. If expensive execution succeeded but workflow commit/reporting later fails, retry `commit` for the same job rather than rerunning the expensive stage.
 

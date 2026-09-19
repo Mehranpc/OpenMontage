@@ -39,7 +39,14 @@ from lib.persian_rendered_review import (
     validate_rendered_hook_review,
     validate_cold_viewer_review_input,
 )
-from lib.persian_workflow_telemetry import reconcile_phase_telemetry
+from lib.persian_workflow_telemetry import (
+    causal_time_accounting,
+    finish_causal_span,
+    finish_phase_attempt_span,
+    new_causal_trace,
+    record_phase_attempt_span,
+    reconcile_phase_telemetry,
+)
 from lib.persian_recovery_policy import recovery_policy_for_issue
 from schemas.artifacts import validate_artifact
 from jsonschema.exceptions import ValidationError
@@ -367,6 +374,9 @@ def phase_time_accounting(
 ) -> dict[str, float]:
     """Sum phase telemetry without charging external/durable time as editorial time."""
     current = now or datetime.now(timezone.utc)
+    causal = causal_time_accounting(
+        state, now=current, since=since, include_open=include_open
+    )
     editorial = 0.0
     external = 0.0
     telemetry = state.get("phase_telemetry")
@@ -403,6 +413,12 @@ def phase_time_accounting(
                 external += duration
             else:
                 editorial += duration
+    if causal is not None:
+        # Keep legacy phase-class aliases readable for older reports/consumers while
+        # causal spans remain authoritative for coverage and category timing.
+        causal["active_editorial_seconds"] = round(editorial, 3)
+        causal["external_durable_seconds"] = round(external, 3)
+        return causal
     accounting_lag = 0.0
     telemetry = state.get("phase_telemetry")
     if isinstance(telemetry, Mapping):
@@ -485,6 +501,14 @@ def _finish_phase_telemetry(
     entry["finished_at"] = finished.isoformat()
     entry["duration_seconds"] = round(max(0.0, (finished - started).total_seconds()), 3)
     entry["outcome"] = outcome
+    try:
+        attempt_number = int(entry.get("attempt") or 0)
+    except (TypeError, ValueError):
+        attempt_number = 0
+    if attempt_number > 0:
+        finish_phase_attempt_span(
+            state, phase, attempt_number, finished_at=finished, outcome=outcome
+        )
     slo = PHASE_SLO_SECONDS.get(phase)
     if slo is not None:
         entry["slo_seconds"] = slo
@@ -602,6 +626,7 @@ def bootstrap_persian_video(
             "send_backs": 0,
             "recovery_attempts": {},
             "phase_telemetry": {},
+            "causal_telemetry": new_causal_trace(uuid4().hex, started_at=created_at),
             "performance_slo": {
                 "phaseSeconds": dict(PHASE_SLO_SECONDS),
                 "endToEndSeconds": END_TO_END_SLO_SECONDS,
@@ -816,6 +841,12 @@ def record_phase_attempt(
     })
     telemetry[phase] = entries
     state["phase_telemetry"] = telemetry
+    if not isinstance(state.get("causal_telemetry"), Mapping):
+        created = _parse_timestamp(str(state.get("created_at") or effective_now.isoformat()))
+        state["causal_telemetry"] = new_causal_trace(uuid4().hex, started_at=created)
+    record_phase_attempt_span(
+        state, phase, count, started_at=effective_now
+    )
     # A fresh attempt explicitly supersedes any stale unfinished predecessor at
     # this same phase. This prevents crash/restart history from accumulating
     # phantom `running` attempts while leaving the newest attempt genuinely open.
@@ -1067,7 +1098,16 @@ def _complete_phase_impl(
         state["next_phase"] = PHASES[_phase_index(phase) + 1]
     _finish_phase_telemetry(state, phase, outcome="succeeded", now=now)
     if phase == "awaiting_human":
-        accounting = phase_time_accounting(state, now=now or datetime.now(timezone.utc))
+        terminal_now = now or datetime.now(timezone.utc)
+        trace = state.get("causal_telemetry")
+        if isinstance(trace, Mapping) and trace.get("run_span_id"):
+            finish_causal_span(
+                state,
+                str(trace["run_span_id"]),
+                finished_at=terminal_now,
+                outcome="awaiting_human",
+            )
+        accounting = phase_time_accounting(state, now=terminal_now)
         state["performance_summary"] = {
             **accounting,
             "endToEndSloSeconds": END_TO_END_SLO_SECONDS,
@@ -2005,6 +2045,7 @@ def workflow_status(
         "recovery_stop": state.get("recovery_stop"),
         "asset_usage": state.get("asset_usage", {}),
         "alignment_policy": state.get("alignment_policy") or alignment_execution_policy(state),
+        "causal_trace_id": (state.get("causal_telemetry") or {}).get("trace_id"),
         "time_accounting": phase_time_accounting(state),
         "performance_slo": state.get("performance_slo"),
         "performance_summary": state.get("performance_summary"),
