@@ -400,6 +400,7 @@ def record_candidate_review(
     normalized = _validate_review(review)
     review_sha = _sha256({
         "candidateIdentitySha256": candidate["identitySha256"],
+        "candidateContext": candidate.get("context") or {},
         "review": normalized,
     })
     existing_sha = str(candidate.get("reviewSha256") or "")
@@ -546,6 +547,27 @@ def _manifest_binding(candidate: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+
+def _manifest_evidence(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    context = candidate.get("context") if isinstance(candidate.get("context"), Mapping) else {}
+    review = candidate.get("review") if isinstance(candidate.get("review"), Mapping) else {}
+    return {
+        "visual_event_id": str(context.get("visualEventId") or ""),
+        "semantic_beat_id": str(context.get("semanticBeatId") or ""),
+        "query": str(context.get("query") or ""),
+        "candidate_rank": int(context.get("candidateRank") or 0),
+        "narration_span": str(context.get("narrationSpan") or ""),
+        "selection_reason": str(review.get("selection_reason") or ""),
+        "relevance_reason": str(review.get("relevance_reason") or ""),
+        "affect_match": review.get("affect_match"),
+        "staged_stock_risk": str(review.get("staged_stock_risk") or ""),
+        "human_presence": review.get("human_presence"),
+        "shows_subject": review.get("shows_subject"),
+        "frame_review": dict(review.get("frame_review") or {}),
+    }
+
+
+
 def _same_number(left: object, right: object) -> bool:
     try:
         return abs(float(left) - float(right)) <= 1e-6
@@ -620,6 +642,29 @@ def validate_asset_manifest_against_workspace(
                 raise PersianAssetWorkspaceError(
                     f"asset_manifest {event_id!r} {field} does not match selected workspace candidate"
                 )
+        expected_evidence = _manifest_evidence(candidate)
+        for field in (
+            "visual_event_id", "semantic_beat_id", "query", "narration_span",
+            "selection_reason", "relevance_reason", "staged_stock_risk",
+        ):
+            if str(row.get(field) or "") != str(expected_evidence[field]):
+                raise PersianAssetWorkspaceError(
+                    f"asset_manifest {event_id!r} {field} does not match persisted candidate review/context"
+                )
+        if int(row.get("candidate_rank") or 0) != int(expected_evidence["candidate_rank"]):
+            raise PersianAssetWorkspaceError(
+                f"asset_manifest {event_id!r} candidate_rank does not match persisted candidate context"
+            )
+        for field in ("affect_match", "human_presence", "shows_subject"):
+            if row.get(field) is not expected_evidence[field]:
+                raise PersianAssetWorkspaceError(
+                    f"asset_manifest {event_id!r} {field} does not match persisted candidate review"
+                )
+        if row.get("frame_review") != expected_evidence["frame_review"]:
+            raise PersianAssetWorkspaceError(
+                f"asset_manifest {event_id!r} frame_review does not match persisted candidate review"
+            )
+
         raw_crop = row.get("intended_crop")
         if not isinstance(raw_crop, Mapping):
             raise PersianAssetWorkspaceError(
@@ -662,6 +707,7 @@ def select_asset_candidate(
         return {
             "selected": False, "idempotent": True, "selection": existing,
             "manifestBinding": _manifest_binding(candidate),
+            "manifestEvidence": _manifest_evidence(candidate),
         }
     if existing and not replace_existing:
         raise PersianAssetWorkspaceError(
@@ -735,6 +781,7 @@ def select_asset_candidate(
     return {
         "selected": True, "idempotent": False, "selection": selection,
         "manifestBinding": _manifest_binding(candidate),
+        "manifestEvidence": _manifest_evidence(candidate),
     }
 
 
