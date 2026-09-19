@@ -489,3 +489,35 @@ def test_workspace_bound_manifest_rejects_unselected_visual_event_rows(tmp_path:
         workspace.validate_asset_manifest_against_workspace(
             project, {"version": "1.0", "assets": [selected_row, extra]}
         )
+
+def test_status_surfaces_reviewed_reusable_candidates_by_visual_event(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    discovery_ids = workspace.record_discovery_pass(
+        project, 0,
+        [
+            _discovered(project, source_id="status-a", name="status-a.mp4"),
+            _discovered(project, source_id="status-b", name="status-b.mp4"),
+        ],
+    )["candidateIds"]
+    primary = _stage(project, discovery_ids[0], rank=1)
+    alternate = _stage(project, discovery_ids[1], rank=2)
+    for item in (primary, alternate):
+        workspace.record_candidate_review(project, item["candidateId"], _review())
+    workspace.select_asset_candidate(
+        project,
+        "event-1",
+        primary["candidateId"],
+        rejected_alternatives={alternate["candidateId"]: "Less semantic specificity."},
+    )
+
+    status = workspace.asset_workspace_status(project)
+    reusable = status["reusableCandidatesByVisualEvent"]["event-1"]
+    assert [item["candidateId"] for item in reusable] == [
+        primary["candidateId"], alternate["candidateId"]
+    ]
+    assert reusable[0]["disposition"] == "selected"
+    assert reusable[1]["disposition"] == "reviewed"
+    assert reusable[1]["reviewSha256"] == workspace.load_asset_candidate(
+        project, alternate["candidateId"]
+    )["reviewSha256"]
+
