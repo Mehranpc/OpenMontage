@@ -18,9 +18,9 @@ import { CollageBurst, CollageBurstProps } from "./CollageBurst";
 import { LyricOverlay, LyricOverlayProps } from "./LyricOverlay";
 import {
   PersianFootageVideo,
-  calculatePersianMetadata,
   PERSIAN_FPS,
 } from "./persian/PersianFootageVideo";
+import { calculatePersianMetadata } from "./persian/filmType/metadata-policy";
 import { persianDemoFixture, persianDemoFixtureLandscape, persianEmptyFixture, persianEmptyFixtureLandscape } from "./persian/fixtures";
 
 // ---------------------------------------------------------------------------
