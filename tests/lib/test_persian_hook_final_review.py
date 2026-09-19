@@ -140,11 +140,16 @@ def test_valid_evidence_backed_hook_review_allows_existing_final_review_contract
         pipeline_dir=tmp_path, now=BASE,
     )
     assert state["next_phase"] == "awaiting_human"
-    quality = state["evidence"]["final_review"]["qualityEvidence"]
+    evidence = state["evidence"]["final_review"]
+    quality_path = Path(evidence["quality_evidence_path"])
+    assert quality_path.is_file()
+    assert evidence["quality_evidence_sha256"] == workflow._hash_file(quality_path)
+    quality = json.loads(quality_path.read_text(encoding="utf-8"))
     assert quality["openingSummary"]["coldViewComprehension"] is True
     assert {item["provenance"]["domain"] for item in quality["evidence"]} == {
         "authored_timeline", "rendered_pixels", "semantic_review"
     }
+    assert "qualityEvidence" not in evidence
 
 
 def test_passing_final_review_requires_digest_bound_cold_viewer_input_artifact(tmp_path):

@@ -795,6 +795,19 @@ def test_awaiting_human_refuses_review_artifact_changed_after_validation(tmp_pat
         complete_phase("run", "awaiting_human", pipeline_dir=tmp_path, now=BASE)
 
 
+def test_awaiting_human_refuses_quality_evidence_artifact_changed_after_validation(tmp_path):
+    state, _ = _terminal_project(tmp_path)
+    evidence = state["evidence"]["final_review"]
+    quality_path = Path(evidence["quality_evidence_path"])
+    payload = json.loads(quality_path.read_text(encoding="utf-8"))
+    payload["diagnostics"].append({
+        "code": "mutated", "severity": "warning", "message": "changed after validation"
+    })
+    quality_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(PersianVideoWorkflowError, match="quality evidence artifact changed"):
+        complete_phase("run", "awaiting_human", pipeline_dir=tmp_path, now=BASE)
+
+
 def test_terminal_rejects_missing_or_non_compose_checkpoint(tmp_path, monkeypatch):
     _terminal_project(tmp_path)
     monkeypatch.setattr(workflow, "read_checkpoint", lambda *args: None)
