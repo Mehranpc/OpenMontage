@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from lib.persian_quality_evidence import authored_timeline_evidence
+
 OPENING_WINDOW_SECONDS = 3.0
 LONG_EVENT_WARNING_SECONDS = 8.0
 LONG_EVENT_HIGH_RISK_SECONDS = 10.0
@@ -79,12 +81,13 @@ def audit_persian_retention(persian: dict[str, Any]) -> dict[str, Any]:
     if not meaningful_opening_events:
         if overlay_opening_events:
             advisories.append(
-                "first 3 seconds have no meaningful post-start visual change; a typographic overlay is present "
-                "but is not equivalent to a shot/action/reveal change"
+                "first 3 seconds have no authored post-start shot change; a typographic overlay/reveal is present; "
+                "rendered intra-shot pixel motion remains outside this authored-timeline audit"
             )
         else:
             advisories.append(
-                "first 3 seconds have no meaningful post-start visual change; review the opening for perceptual stasis"
+                "first 3 seconds have no authored post-start shot/reveal change; "
+                "rendered intra-shot pixel motion is outside this authored-timeline audit"
             )
 
     if longest > LONG_EVENT_WARNING_SECONDS:
@@ -216,7 +219,7 @@ def audit_persian_retention(persian: dict[str, Any]) -> dict[str, Any]:
             windows.append({"startSeconds": start, "endSeconds": end, "meaningfulChanges": count})
             start = end
 
-    return {
+    result = {
         "problems": problems,
         "advisories": advisories,
         "first3Seconds": {
@@ -245,6 +248,8 @@ def audit_persian_retention(persian: dict[str, Any]) -> dict[str, Any]:
             "strongest_scene", "weakest_scene", "hook_strength", "resolution_strength", "caption_readability",
         ],
     }
+    result["observableEvidence"] = authored_timeline_evidence(result)
+    return result
 
 
 __all__ = [

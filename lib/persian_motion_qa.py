@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
 
+from lib.persian_quality_evidence import rendered_motion_evidence
+
 MOTION_SAMPLE_FPS = 2.0
 MOTION_SAMPLE_WIDTH = 64
 MOTION_SAMPLE_HEIGHT = 36
@@ -170,7 +172,7 @@ class MotionQa:
     elapsed_seconds: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "passed": self.passed,
             "sampleFps": MOTION_SAMPLE_FPS,
             "nearStaticDeltaMax": NEAR_STATIC_DELTA_MAX,
@@ -181,6 +183,8 @@ class MotionQa:
             "failRuns": [run.to_dict() for run in self.fail_runs],
             "elapsedSeconds": round(self.elapsed_seconds, 2),
         }
+        result["observableEvidence"] = rendered_motion_evidence(result)
+        return result
 
 
 def audit_render_motion(video_path: Path, *, timeout: int = 600) -> MotionQa:
