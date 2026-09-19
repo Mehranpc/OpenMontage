@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -314,3 +315,23 @@ def test_parser_exposes_alignment_plan_command() -> None:
     args = workflow.build_parser().parse_args(["alignment-plan", "run"])
     assert args.command == "alignment-plan"
     assert args.project_id == "run"
+
+
+def test_asset_director_does_not_bypass_alignment_provider_front_door() -> None:
+    root = Path(__file__).resolve().parents[2]
+    text = (root / "skills" / "pipelines" / "persian-footage" / "asset-director.md").read_text(encoding="utf-8")
+    assert "persian_video_workflow alignment-plan" in text
+    assert "execute_alignment_with_fallback" in text
+    assert 'registry.get("mlx_whisper_transcriber").execute' not in text
+    assert 'registry.get("transcriber").execute' not in text
+
+
+def test_persisted_decision_rejects_selected_provider_name_drift() -> None:
+    registry = FakeRegistry([_tool("transcriber", "whisperx")])
+    plan = build_alignment_provider_plan(_policy(), registry=registry)
+    result = execute_alignment_with_fallback(
+        plan, input_path="narration.wav", output_dir="artifacts/transcription", registry=registry
+    )
+    decision = {**result["provider_decision"], "selectedProvider": "not-whisperx"}
+    with pytest.raises(AlignmentProviderError, match="selected provider"):
+        validate_alignment_provider_decision(decision, _policy())

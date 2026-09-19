@@ -202,26 +202,27 @@ manifest recorded twelve chosen clips and nothing about what any of them showed,
 
 ## Word timings (`narrated` mode)
 
-```python
-result = registry.get("mlx_whisper_transcriber").execute({
-    "input_path": str(narration_path),
-    "language": "fa",          # never omit — Persian is misdetected as Arabic or Urdu
-    "output_dir": str(project_dir / "assets"),
-})
+Asset sourcing does not choose or execute a speech provider. Timing/transcription is
+owned by the Persian production front door. Before `align_script_timing`, run:
+
+```bash
+python -m lib.persian_video_workflow alignment-plan <project-id>
 ```
 
-`language: "fa"` is not optional. Auto-detection on short or music-heavy audio
-misfires, and a transcript in the Arabic script looks plausible while being wrong in
-every letter that matters.
+Then execute through `lib.persian_alignment_provider.execute_alignment_with_fallback`
+(or the canonical production harness) and complete the phase with its persisted
+`provider_decision`. Never call `mlx_whisper_transcriber`, `transcriber`, or a cloud ASR
+directly from asset sourcing, and never invent a local fallback order here. The provider
+seam live-probes availability and `word_timestamps`/`input_path` fit before invocation,
+rechecks availability at execution time, and exhausts policy-valid lightweight timing
+paths before approved-script heavy recovery.
 
-Falls back to `transcriber` when MLX is unavailable — with `model_size: "large-v3"`
-if the machine can carry it. A smaller model's Persian word boundaries drift.
-
-Timings are a **clock**, never delivery copy. The approved script owns the words; these
-word timings align that copy for sidecar SRT, burned captions, hybrid delivery, and
-narration-anchored moments. In burned/hybrid mode drift is visibly on screen, so timing
-coverage is a real delivery concern again; the remedy is matching narration/timings,
-never substituting Whisper spelling for approved Persian.
+`language: "fa"` remains required for Persian timing execution. Timings are a **clock**,
+never delivery copy. The approved script owns the words; provider word timings align that
+copy for sidecar SRT, burned captions, hybrid delivery, and narration-anchored moments.
+In burned/hybrid mode drift is visibly on screen, so timing coverage is a real delivery
+concern again; the remedy is matching narration/timings, never substituting ASR spelling
+for approved Persian.
 
 ### Reconciling transcript against script
 
