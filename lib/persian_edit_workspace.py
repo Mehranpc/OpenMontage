@@ -772,6 +772,7 @@ def preflight_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
         raise PersianEditWorkspaceError(f"edit draft does not exist: {draft}")
     payload = json.loads(draft.read_text(encoding="utf-8"))
     digest = artifact_sha256(payload)
+    dependency_digests = _dependency_digests(payload)
     cache_path = _cache_path(project_dir, digest)
 
     cached: dict[str, Any] | None = None
@@ -784,25 +785,80 @@ def preflight_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
             cached = dict(candidate)
 
     if cached is None:
-        computed = aggregate_preflight_edit_decisions(payload, base_dir=REPO_ROOT)
+        key_map = {
+            "retention": "retentionAudit",
+            "hook": "hookQualityAudit",
+            "browser": "browserEvidence",
+        }
+        precomputed: dict[str, Any] = {}
+        component_hits: dict[str, bool] = {}
+        for component, report_key in key_map.items():
+            value = _load_component_cache(
+                project_dir, component, dependency_digests[component]
+            )
+            component_hits[component] = value is not None
+            if value is not None:
+                precomputed[report_key] = value
+
+        computed = aggregate_preflight_edit_decisions(
+            payload,
+            base_dir=REPO_ROOT,
+            precomputed_components=precomputed,
+        )
         if computed.get("artifactSha256") != digest:
             raise PersianEditWorkspaceError(
                 "preflight report digest does not match the staged edit bytes"
             )
         computed["cacheHit"] = False
         computed["cacheKey"] = digest
+        computed["componentCacheHits"] = component_hits
+        computed["dependencyDigests"] = dependency_digests
+
+        evidence = computed.get("evidence") if isinstance(computed.get("evidence"), Mapping) else {}
+        component_values = {
+            "retention": evidence.get("retentionAudit"),
+            "hook": evidence.get("hookQualityAudit"),
+            "browser": evidence.get("browserEvidence"),
+        }
+        for component, value in component_values.items():
+            if not component_hits[component] and isinstance(value, Mapping):
+                _write_component_cache(
+                    project_dir,
+                    component,
+                    dependency_digests[component],
+                    value,
+                )
         _atomic_json(cache_path, computed)
         report = dict(computed)
     else:
         report = cached
         report["cacheHit"] = True
         report["cacheKey"] = digest
+        report["componentCacheHits"] = {
+            "retention": True,
+            "hook": True,
+            "browser": True,
+        }
+        report["dependencyDigests"] = dependency_digests
 
     report["attemptId"] = attempt_id
     report["draftPath"] = str(draft)
     _atomic_json(report_path, report)
+    report_sha = hashlib.sha256(report_path.read_bytes()).hexdigest()
+    _update_candidate(
+        project_dir,
+        attempt_id,
+        dependencyDigests=dependency_digests,
+        producedDiagnostics=list(report.get("blockingIssues") or []),
+        cacheHits={
+            "fullReport": bool(report.get("cacheHit")),
+            **dict(report.get("componentCacheHits") or {}),
+        },
+        disposition="preflight_passed" if report.get("ok") is True else "blocked",
+        preflightReportSha256=report_sha,
+        preflightArtifactSha256=digest,
+    )
     return report
-
 
 def load_promotable_edit_draft(
     project_dir: Path, attempt_id: str
@@ -834,6 +890,11 @@ def promote_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
         current = json.loads(canonical.read_text(encoding="utf-8"))
         current_digest = artifact_sha256(current)
         if current_digest == digest:
+            _update_candidate(
+                project_dir, attempt_id, disposition="promoted",
+                promotedAt=datetime.now(timezone.utc).isoformat(),
+            )
+            _unresolved_path(project_dir).unlink(missing_ok=True)
             return {
                 "promoted": False,
                 "idempotent": True,
@@ -853,6 +914,11 @@ def promote_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
     temp = canonical.with_suffix(canonical.suffix + ".tmp")
     temp.write_bytes(draft.read_bytes())
     temp.replace(canonical)
+    _update_candidate(
+        project_dir, attempt_id, disposition="promoted",
+        promotedAt=datetime.now(timezone.utc).isoformat(),
+    )
+    _unresolved_path(project_dir).unlink(missing_ok=True)
     return {
         "promoted": True,
         "idempotent": False,
