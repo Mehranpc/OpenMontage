@@ -67,7 +67,7 @@ def test_named_caption_handoff_failure_maps_to_caption_continuity(monkeypatch, t
     )
     monkeypatch.setattr(
         preflight,
-        "preflight_edit_decisions",
+        "browser_preflight_edit_decisions",
         lambda *_a, **_k: (_ for _ in ()).throw(
             ValueError("[CAPTION_HANDOFF_FRAGMENT] first burned caption starts mid-sentence")
         ),
@@ -102,7 +102,8 @@ def test_same_edit_digest_reuses_persisted_preflight_without_recomputing(monkeyp
     payload = _payload()
     calls = 0
 
-    def fake_preflight(edit, *, base_dir=None):
+    def fake_preflight(edit, *, base_dir=None, precomputed_components=None):
+        del precomputed_components
         nonlocal calls
         calls += 1
         digest = edit_workspace.artifact_sha256(edit)

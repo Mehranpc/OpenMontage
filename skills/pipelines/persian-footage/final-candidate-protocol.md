@@ -45,23 +45,30 @@ Preflight also refuses overlapping reuse of the same source-time window across s
 
 ## Bounded work
 
-Try at most three footage/layout candidates per beat and twenty probes per video.
-At the limit: choose a clearer ranked alternate; shorten only adaptable display copy;
-omit a nonessential moment while preserving narration; source a compatible shot for
-exact copy; otherwise return one structured blocker. A new user goal may authorize
-one new bounded cycle but does not approve visuals.
+No-copy edit/layout convergence is bounded by the durable candidate workspace, not by an agent-maintained probe count. The current workflow derives the per-revision-cycle global candidate ceiling from `1 + max_revisions_per_stage`, while each recovery class keeps its own policy ceiling. A base candidate counts toward the global ceiling; every recovery child records its parent, diagnostic cause, strategy, mutation surface, changed fields/scopes, dependency digests, cache hits, diagnostics, and disposition.
 
-When explicit new user feedback requires revising an already-bounded candidate, open that fresh cycle through the front door with `python -m lib.persian_video_workflow send-back <project-id> <target-phase> --reason "..." --user-directed-revision`. This records the prior counters/history and starts a new bounded window; never edit workflow state or reset counters by hand.
+At a class or global limit, stop with the workspace's structured `needs_revision` report. Do not manufacture another `probe_*` file, helper Python script, or parallel retry ledger. A new explicit user goal may authorize one fresh bounded cycle through `python -m lib.persian_video_workflow send-back <project-id> <target-phase> --reason "..." --user-directed-revision`; this records prior history and starts the next revision cycle without editing workflow JSON or counters by hand. Asset-acquisition budgets remain separate and are not silently expanded by edit convergence.
 
 ## No-copy preflight
 
-For front-door production use the project draft lifecycle:
+For front-door production use the project convergence lifecycle. Stage the base candidate normally; a recovery child must declare explicit ancestry plus the diagnostic/strategy/mutation it is attempting:
 
 ```bash
-python -m lib.persian_video_workflow edit-stage <project-id> <attempt-id> --json /allowed/edit-decisions.json
-python -m lib.persian_video_workflow edit-preflight <project-id> <attempt-id>
-python -m lib.persian_video_workflow edit-promote <project-id> <attempt-id>
+python -m lib.persian_video_workflow edit-stage <project-id> <base-id> --json /allowed/edit-decisions.json
+python -m lib.persian_video_workflow edit-preflight <project-id> <base-id>
+
+python -m lib.persian_video_workflow edit-stage <project-id> <child-id> --json /allowed/revised-edit.json \
+  --parent <base-id> \
+  --diagnostic-code <blocking-code> \
+  --recovery-class <recovery-class> \
+  --strategy <allowed-strategy> \
+  --changed-field <owned-mutation-field>
+python -m lib.persian_video_workflow edit-preflight <project-id> <child-id>
+python -m lib.persian_video_workflow edit-compare <project-id> <base-id> <child-id>
+python -m lib.persian_video_workflow edit-promote <project-id> <passing-id>
 ```
+
+`python -m lib.persian_video_workflow status <project-id>` exposes candidate lifecycle and structured exhaustion. Unchanged retention/hook/browser evidence may be reused only when its declared dependency digest is identical; a whole-report cache hit is tracked separately from component hits. Cheap deterministic blockers run before browser-heavy geometry. Promotion is bound to both the staged edit digest and the persisted preflight-report identity, so changing either after preflight blocks promotion. The legacy `recovery-attempt` command remains a compatibility/debug primitive; normal convergence must not duplicate workspace budget accounting through it.
 
 `lib.persian_preflight` remains the lower-level diagnostic CLI when a standalone report is needed. It runs the real audits and Film Type browser measurement while validating media paths without copying them. It persists an aggregate report on both pass and refusal when `--output` is supplied. It also runs `lib.persian_retention.audit_persian_retention`:
 the first three seconds need a second visual event or pattern interrupt, uncovered visual

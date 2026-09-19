@@ -61,13 +61,33 @@ python -m lib.persian_video_workflow attempt <project-id>
 python -m lib.persian_video_workflow complete <project-id> --evidence-json /abs/evidence.json
 ```
 
-For `no_copy_preflight`, never write `artifacts/edit_decisions.json` directly. Use the digest-bound draft lifecycle; failed probes remain under `.drafts/` / `.preflight/` and cannot replace the canonical edit:
+For `no_copy_preflight`, never write `artifacts/edit_decisions.json` directly. Use the durable convergence workspace through the production front door. The first candidate needs only the immutable stage/preflight flow:
 
 ```bash
-python -m lib.persian_video_workflow edit-stage <project-id> <attempt-id> --json /allowed/edit-decisions.json
-python -m lib.persian_video_workflow edit-preflight <project-id> <attempt-id>
-python -m lib.persian_video_workflow edit-promote <project-id> <attempt-id>
-printf '{"attempt_id":"<attempt-id>"}' > /tmp/preflight-evidence.json
+python -m lib.persian_video_workflow edit-stage <project-id> <base-candidate-id> --json /allowed/edit-decisions.json
+python -m lib.persian_video_workflow edit-preflight <project-id> <base-candidate-id>
+```
+
+When preflight returns a named recoverable diagnostic, the agent chooses one permitted strategy and stages exactly one bounded child candidate with explicit ancestry and mutation metadata:
+
+```bash
+python -m lib.persian_video_workflow edit-stage <project-id> <candidate-id> --json /allowed/revised-edit.json \
+  --parent <parent-candidate-id> \
+  --diagnostic-code <blocking-code> \
+  --recovery-class <recovery-class> \
+  --strategy <allowed-strategy> \
+  --changed-field <owned-mutation-field>
+python -m lib.persian_video_workflow edit-preflight <project-id> <candidate-id>
+python -m lib.persian_video_workflow edit-compare <project-id> <parent-candidate-id> <candidate-id>
+```
+
+`status` exposes the durable convergence state, candidate IDs, promoted candidate, and any structured `needs_revision` stop. Candidate ceilings come from workflow state and recovery policy; never maintain a second probe counter in chat or a helper script. The workspace rejects out-of-surface mutations, reuses only dependency-identical preflight components, runs browser-heavy checks only after cheap blockers pass, and keeps failed candidates non-canonical. The lower-level `recovery-attempt` command is compatibility/debug bookkeeping and is **not** part of normal edit convergence. Do not create ad hoc `probe_*` artifacts or generated Python orchestration scripts.
+
+Promote only the exact passing candidate, then complete the phase:
+
+```bash
+python -m lib.persian_video_workflow edit-promote <project-id> <candidate-id>
+printf '{"attempt_id":"<candidate-id>"}' > /tmp/preflight-evidence.json
 python -m lib.persian_video_workflow complete <project-id> --phase no_copy_preflight --evidence-json /tmp/preflight-evidence.json
 ```
 

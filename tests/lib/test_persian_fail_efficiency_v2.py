@@ -31,7 +31,7 @@ def test_preflight_aggregates_independent_cheap_blockers_before_browser(monkeypa
     monkeypatch.setattr(preflight, "audit_persian_hook_quality", lambda _: {
         "version": "2.0", "required": True, "problems": ["hook issue"], "advisories": []
     })
-    monkeypatch.setattr(preflight, "preflight_edit_decisions", lambda *a, **k: pytest.fail("browser-heavy preflight must not run"))
+    monkeypatch.setattr(preflight, "browser_preflight_edit_decisions", lambda *a, **k: pytest.fail("browser-heavy preflight must not run"))
 
     report = preflight.aggregate_preflight_edit_decisions(payload, base_dir=tmp_path)
     codes = [item["code"] for item in report["blockingIssues"]]
@@ -52,7 +52,7 @@ def test_subject_regions_never_create_early_watermark_feasibility_blocker(monkey
     ]
     monkeypatch.setattr(preflight, "audit_persian_retention", lambda _: {"problems": []})
     monkeypatch.setattr(preflight, "audit_persian_hook_quality", lambda _: {"version": "2.0", "required": False, "problems": [], "advisories": []})
-    monkeypatch.setattr(preflight, "preflight_edit_decisions", lambda *a, **k: {"ok": True, "watermarkDiagnostics": {"source": "browser"}})
+    monkeypatch.setattr(preflight, "browser_preflight_edit_decisions", lambda *a, **k: {"ok": True, "watermarkDiagnostics": {"source": "browser"}})
 
     report = preflight.aggregate_preflight_edit_decisions(payload, base_dir=tmp_path)
     assert report["ok"] is True
