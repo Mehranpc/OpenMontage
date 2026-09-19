@@ -53,7 +53,7 @@ When music is present, also persist `separationMethod: "source_lufs_plus_render_
 
 ## Lifecycle and presentation
 
-Persist the normal `final_review` artifact inside the current project with `status: pass`, `recommended_action: present_to_user`, at least four real reviewed frame paths, passing technical/audio/promise/subtitle checks, and `output_path` pointing to the same digest-bound MP4. Set `render_report.final_review_ref` to that exact artifact. Workflow state stores only the validated artifact path/hash and candidate path/hash; it never substitutes prose evidence for the artifact.
+Persist the normal `final_review` artifact inside the current project with `status: pass`, `recommended_action: present_to_user`, at least four real reviewed frame paths, passing technical/audio/promise/subtitle checks, and `output_path` pointing to the same digest-bound MP4. Set `render_report.final_review_ref` to that exact artifact. Workflow state stores only the validated final-review and final-quality-evidence artifact path/hash references plus candidate path/hash; it never substitutes expanded prose/sample evidence for those artifacts.
 
 The compose checkpoint must be written as `awaiting_human`, never self-approved. Its primary output must be an MP4 inside this project's directory with a 64-character SHA-256 matching the exact file bytes, `delivery_status="final_candidate"`, `human_visual_approval=false`, and `persian_text_verified=false`. Mere MP4 existence is never final-candidate approval.
 
