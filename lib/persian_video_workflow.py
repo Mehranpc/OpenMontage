@@ -2044,7 +2044,10 @@ def workflow_status(
         "send_backs": state.get("send_backs", 0),
         "recovery_attempts": state.get("recovery_attempts", {}),
         "recovery_stop": state.get("recovery_stop"),
-        "convergence": convergence_status(_project_root(state)),
+        "convergence": convergence_status(
+            _project_root(state),
+            revision_cycle=int(state.get("user_revision_cycles") or 0),
+        ),
         "asset_usage": state.get("asset_usage", {}),
         "alignment_policy": state.get("alignment_policy") or alignment_execution_policy(state),
         "causal_trace_id": (state.get("causal_telemetry") or {}).get("trace_id"),
