@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from lib.persian_srt import render_srt
+from lib.persian_text import compare_key, split_words
 from lib.persian_captions import (
     BURNED_CAPTION_MODES,
     build_burned_caption_props,
@@ -271,6 +272,9 @@ class ScriptAlignedPersianCompose(PersianCompose):
                 min_connector_words=8 if profile_version in {"2.14.0", "2.15.0", "2.16.0"} else 0,
             )
             burned = self._apply_hook_caption_handoff(burned, persian)
+            burned = self._suppress_semantically_shadowed_burned_cues(
+                burned, persian.get("moments") or []
+            )
             burned = self._suppress_stranded_burned_cues(burned, persian.get("moments") or [])
             return mode, build_burned_caption_props(burned)
 
@@ -337,6 +341,61 @@ class ScriptAlignedPersianCompose(PersianCompose):
                     "of a cue that began under the typographic hook"
                 )
         return list(cues)
+
+    @staticmethod
+    def _caption_tokens(text: Any) -> set[str]:
+        tokens: set[str] = set()
+        for word in split_words(str(text or "")):
+            if word == "\n":
+                continue
+            token = compare_key(word)
+            if token:
+                tokens.add(token)
+        return tokens
+
+    @staticmethod
+    def _suppress_semantically_shadowed_burned_cues(
+        cues, moments, *, min_anchor_coverage: float = 0.6, min_overlap_ratio: float = 0.5
+    ):
+        """Drop a burned cue when an overlapping moment replaces its spoken subject.
+
+        Frame-level suppression prevents simultaneous painting. This cue-level gate
+        also removes the leading black-caption fragment before a semantic moment when
+        the moment owns at least half the cue window and most of its anchor words are
+        already in that cue. Unrelated overlapping narration remains intact. The
+        sidecar SRT is deliberately unaffected.
+        """
+        kept = []
+        for cue in cues:
+            cue_tokens = ScriptAlignedPersianCompose._caption_tokens(cue.text)
+            cue_duration = max(0.0, float(cue.end_seconds) - float(cue.start_seconds))
+            shadowed = False
+            if cue_duration > 0 and cue_tokens:
+                for moment in moments:
+                    if not isinstance(moment, dict):
+                        continue
+                    anchor = str(moment.get("anchorText") or "").strip()
+                    if not anchor:
+                        continue
+                    m0 = float(moment.get("startSeconds", 0.0))
+                    m1 = float(moment.get("endSeconds", 0.0))
+                    overlap = min(float(cue.end_seconds), m1) - max(float(cue.start_seconds), m0)
+                    if overlap <= 0:
+                        continue
+                    anchor_tokens = ScriptAlignedPersianCompose._caption_tokens(anchor)
+                    if not anchor_tokens:
+                        continue
+                    anchor_coverage = len(cue_tokens & anchor_tokens) / len(anchor_tokens)
+                    overlap_ratio = overlap / cue_duration
+                    if (
+                        anchor_coverage + 1e-9 >= min_anchor_coverage
+                        and overlap_ratio + 1e-9 >= min_overlap_ratio
+                    ):
+                        shadowed = True
+                        break
+            if not shadowed:
+                kept.append(cue)
+        return kept
 
     @staticmethod
     def _suppress_stranded_burned_cues(cues, moments, *, fragment_seconds: float = 1.0):
