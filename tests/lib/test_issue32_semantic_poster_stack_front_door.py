@@ -5,7 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from lib.persian_editorial_hook import PersianEditorialHookError
+from lib.persian_editorial_hook import (
+    PersianEditorialHookError,
+    validate_edit_hook_authority,
+)
 from lib.persian_video_workflow import bootstrap_persian_video, stage_workflow_edit_draft
 from schemas.artifacts import validate_artifact
 from tests.lib.test_persian_preflight_contract import _payload
@@ -84,6 +87,30 @@ def test_front_door_persists_explicit_semantic_poster_stack_before_preflight(tmp
     )
     validate_artifact("edit_decisions", persisted)
 
+    # Bounded recovery restages the canonical artifact after transport-only
+    # semanticRole fields have been stripped. A timing edit must not require the
+    # agent to reconstruct those authoring-only fields.
+    persisted["persian"]["moments"][0]["startSeconds"] = 0.1
+    restage_source = tmp_path / "run" / "semantic-edit-restage.json"
+    restage_source.write_text(json.dumps(persisted, ensure_ascii=False), encoding="utf-8")
+    restaged = stage_workflow_edit_draft(
+        "run",
+        "semantic-v2",
+        restage_source,
+        pipeline_dir=tmp_path,
+        parent_attempt_id="semantic-v1",
+        diagnostic_code="EDIT_ARTIFACT",
+        recovery_class="EDIT_ARTIFACT",
+        strategy="repair_reported_contract_field_only",
+        changed_fields=["persian.moments[0].startSeconds"],
+    )
+    assert restaged["hookAuthority"]["semanticPosterStack"] == poster
+    restaged_payload = json.loads(Path(restaged["draftPath"]).read_text(encoding="utf-8"))
+    assert all(
+        "semanticRole" not in segment
+        for segment in restaged_payload["persian"]["moments"][0]["segments"]
+    )
+
 
 def test_editorial_opening_cannot_fall_back_to_position_inferred_roles(tmp_path: Path) -> None:
     narration = tmp_path.parent / f"{tmp_path.name}-missing-semantic-hook.wav"
@@ -151,3 +178,34 @@ def test_compose_runtime_rehydrates_semantic_roles_from_canonical_metadata() -> 
     segments = hydrated[0]["segments"]
     assert [segment["semanticRole"] for segment in segments] == POSTER_ROLES
     assert " ".join(segment["text"] for segment in segments) == HOOK
+
+
+def test_canonical_semantic_poster_stack_rejects_stale_phrase_text() -> None:
+    plan = _poster_plan()
+    plan["phrases"][4]["text"] = "متن دستکاری‌شده"
+    payload = {
+        "metadata": {"semanticPosterStack": plan},
+        "persian": {
+            "moments": [{
+                "id": "hook",
+                "kind": "hook",
+                "purpose": "hook-pattern-interrupt",
+                "presentation": {"recipeId": "editorial-hero-balanced"},
+                "segments": [
+                    {"role": "lead", "text": "بزرگ‌ترین اشتباه"},
+                    {"role": "lead", "text": "دربارهٔ"},
+                    {"role": "hero", "text": "بازی‌های ویدیویی"},
+                    {"role": "tail", "text": "اینه که فکر کنیم فقط"},
+                    {"role": "tail", "text": "وقت تلف کردنه!"},
+                ],
+            }],
+        },
+    }
+    decision = {
+        "mode": "user_supplied",
+        "text": HOOK,
+        "sha256": _poster_plan()["authoritativeHookSha256"],
+    }
+
+    with pytest.raises(PersianEditorialHookError, match="no longer matches visible segments"):
+        validate_edit_hook_authority(decision, payload)

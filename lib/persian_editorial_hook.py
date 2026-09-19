@@ -123,43 +123,15 @@ def edit_hook_text(payload: Mapping[str, Any]) -> str:
     return _normalized_hook_text(visible)
 
 
-def semantic_poster_stack_from_edit(
-    decision: Mapping[str, Any], payload: Mapping[str, Any]
-) -> dict[str, Any] | None:
-    """Validate and materialize an explicitly authored semantic phrase plan.
-
-    The planner authors semanticRole. This boundary validates and persists it; it
-    never infers setup/bridge/subject/connector/payoff from phrase position.
-    """
-    hook = _opening_hook(payload)
-    segments = hook.get("segments")
-    if not isinstance(segments, Sequence) or isinstance(segments, (str, bytes)):
-        raise PersianEditorialHookError("opening hook requires authored text segments")
-    content = [
-        segment
-        for segment in segments
-        if isinstance(segment, Mapping) and str(segment.get("role") or "") != "source"
-    ]
-    declared = [str(segment.get("semanticRole") or "").strip() for segment in content]
-    presentation = hook.get("presentation")
-    recipe = (
-        str(presentation.get("recipeId") or "")
-        if isinstance(presentation, Mapping)
-        else ""
-    )
-    requires_semantic_plan = (
-        str(hook.get("purpose") or "") == "hook-pattern-interrupt"
-        and recipe in _EDITORIAL_OPENING_RECIPES
-    )
-    if not any(declared):
-        if requires_semantic_plan:
-            raise PersianEditorialHookError(
-                "editorial opening requires explicit semanticRole on every visible phrase; positional inference is forbidden"
-            )
-        return None
+def _build_semantic_poster_stack(
+    decision: Mapping[str, Any],
+    content: Sequence[Mapping[str, Any]],
+    declared: Sequence[str],
+) -> dict[str, Any]:
+    """Validate semantic roles against visible segments and build canonical metadata."""
     if not 2 <= len(content) <= 5:
         raise PersianEditorialHookError("semantic poster stack requires 2-5 ordered phrases")
-    if any(not role for role in declared):
+    if len(declared) != len(content) or any(not role for role in declared):
         raise PersianEditorialHookError(
             "semantic poster stack requires semanticRole on every visible phrase"
         )
@@ -168,7 +140,7 @@ def semantic_poster_stack_from_edit(
         raise PersianEditorialHookError(
             "semantic poster stack contains unsupported roles: " + ", ".join(unsupported)
         )
-    if declared.count("subject_hero") != 1:
+    if list(declared).count("subject_hero") != 1:
         raise PersianEditorialHookError(
             "semantic poster stack requires exactly one subject_hero phrase"
         )
@@ -200,6 +172,93 @@ def semantic_poster_stack_from_edit(
         "authoritativeHookSha256": str(decision.get("sha256") or "").strip().lower(),
         "phrases": phrases,
     }
+
+
+def _canonical_semantic_poster_stack_from_metadata(
+    decision: Mapping[str, Any],
+    payload: Mapping[str, Any],
+    content: Sequence[Mapping[str, Any]],
+) -> dict[str, Any] | None:
+    """Revalidate the canonical poster plan persisted by a prior staging pass.
+
+    Transport ``semanticRole`` fields are intentionally stripped after the first
+    successful stage. A later bounded revision may reuse only the exact canonical
+    metadata that still binds to the authoritative hook and visible segments.
+    """
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, Mapping):
+        return None
+    stored = metadata.get("semanticPosterStack")
+    if stored is None:
+        return None
+    if not isinstance(stored, Mapping):
+        raise PersianEditorialHookError("persisted semantic poster stack must be an object")
+    if str(stored.get("version") or "") != "1.0":
+        raise PersianEditorialHookError("persisted semantic poster stack version is unsupported")
+    raw_phrases = stored.get("phrases")
+    if not isinstance(raw_phrases, Sequence) or isinstance(raw_phrases, (str, bytes)):
+        raise PersianEditorialHookError("persisted semantic poster stack requires phrases")
+    if len(raw_phrases) != len(content):
+        raise PersianEditorialHookError(
+            "persisted semantic poster stack must bind one phrase to every visible segment"
+        )
+
+    declared: list[str] = []
+    for index, phrase in enumerate(raw_phrases):
+        if not isinstance(phrase, Mapping):
+            raise PersianEditorialHookError(
+                f"persisted semantic poster phrase {index} must be an object"
+            )
+        declared.append(str(phrase.get("role") or "").strip())
+
+    canonical = _build_semantic_poster_stack(decision, content, declared)
+    if dict(stored) != canonical:
+        raise PersianEditorialHookError(
+            "persisted semantic poster stack no longer matches visible segments or the authoritative hook"
+        )
+    return canonical
+
+
+def semantic_poster_stack_from_edit(
+    decision: Mapping[str, Any], payload: Mapping[str, Any]
+) -> dict[str, Any] | None:
+    """Validate and materialize an explicitly authored semantic phrase plan.
+
+    The planner authors semanticRole. This boundary validates and persists it; it
+    never infers setup/bridge/subject/connector/payoff from phrase position.
+    """
+    hook = _opening_hook(payload)
+    segments = hook.get("segments")
+    if not isinstance(segments, Sequence) or isinstance(segments, (str, bytes)):
+        raise PersianEditorialHookError("opening hook requires authored text segments")
+    content = [
+        segment
+        for segment in segments
+        if isinstance(segment, Mapping) and str(segment.get("role") or "") != "source"
+    ]
+    declared = [str(segment.get("semanticRole") or "").strip() for segment in content]
+    presentation = hook.get("presentation")
+    recipe = (
+        str(presentation.get("recipeId") or "")
+        if isinstance(presentation, Mapping)
+        else ""
+    )
+    requires_semantic_plan = (
+        str(hook.get("purpose") or "") == "hook-pattern-interrupt"
+        and recipe in _EDITORIAL_OPENING_RECIPES
+    )
+    if not any(declared):
+        persisted = _canonical_semantic_poster_stack_from_metadata(
+            decision, payload, content
+        )
+        if persisted is not None:
+            return persisted
+        if requires_semantic_plan:
+            raise PersianEditorialHookError(
+                "editorial opening requires explicit semanticRole on every visible phrase; positional inference is forbidden"
+            )
+        return None
+    return _build_semantic_poster_stack(decision, content, declared)
 
 
 def _strip_transport_semantic_roles(payload: dict[str, Any]) -> None:
