@@ -217,6 +217,79 @@ def _persist_job_causal_span(
     workflow._write_state(_project_root(state), state)
 
 
+def _persist_transition_causal_span(
+    project_id: str,
+    envelope: Mapping[str, Any],
+    *,
+    pipeline_dir: Path | None,
+    outcome: str,
+    finished_at: datetime | None = None,
+) -> None:
+    state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    trace = state.get("causal_telemetry")
+    if not isinstance(trace, Mapping):
+        return
+    spans = [
+        dict(item)
+        for item in list(trace.get("spans") or [])
+        if isinstance(item, Mapping)
+    ]
+    job_id = str(envelope["jobId"])
+    phase = str(envelope["phase"])
+    phase_attempt = int(envelope["phaseAttempt"])
+    transition_attempt = int(envelope.get("workflowTransitionAttempts") or 0) + 1
+    prior = [
+        item
+        for item in spans
+        if item.get("kind") == "workflow_transition"
+        and str(item.get("job_id") or "") == job_id
+        and item.get("finished_at")
+    ]
+    if prior:
+        start_value = max(
+            (str(item["finished_at"]) for item in prior),
+            key=lambda value: _parse_time(value) or datetime.min.replace(tzinfo=timezone.utc),
+        )
+    else:
+        reconcile = next(
+            (item for item in spans if item.get("span_id") == f"reconcile:{job_id}"),
+            None,
+        )
+        job_span = next(
+            (item for item in spans if item.get("span_id") == f"job:{job_id}"),
+            None,
+        )
+        start_value = (
+            (reconcile or {}).get("finished_at")
+            or (job_span or {}).get("finished_at")
+            or envelope.get("updatedAt")
+            or _now()
+        )
+    start = _parse_time(start_value) or datetime.now(timezone.utc)
+    end = finished_at or datetime.now(timezone.utc)
+    if end < start:
+        end = start
+    record_causal_interval(
+        state,
+        span_id=f"transition:{job_id}:{transition_attempt}",
+        name=f"workflow transition {job_id} attempt {transition_attempt}",
+        category="accounting_reconciliation",
+        started_at=start,
+        finished_at=end,
+        parent_span_id=causal_phase_span_id(phase, phase_attempt),
+        outcome=outcome,
+        kind="workflow_transition",
+        count_toward_wall=True,
+        fields={
+            "job_id": job_id,
+            "phase": phase,
+            "attempt": phase_attempt,
+            "transition_attempt": transition_attempt,
+        },
+    )
+    workflow._write_state(_project_root(state), state)
+
+
 def start_phase_job(
     project_id: str,
     *,
@@ -491,6 +564,9 @@ def commit_phase_job(
         )
 
     if phase in list(state.get("completed_phases") or []):
+        _persist_transition_causal_span(
+            project_id, envelope, pipeline_dir=pipeline_dir, outcome="succeeded"
+        )
         _record_commit_success(envelope, state)
         _atomic_json(Path(str(envelope["path"])), envelope)
         return state
@@ -504,10 +580,16 @@ def commit_phase_job(
             pipeline_dir=pipeline_dir,
         )
     except Exception as exc:
+        _persist_transition_causal_span(
+            project_id, envelope, pipeline_dir=pipeline_dir, outcome="failed"
+        )
         _record_commit_failure(envelope, phase_evidence, exc)
         _atomic_json(Path(str(envelope["path"])), envelope)
         raise
 
+    _persist_transition_causal_span(
+        project_id, envelope, pipeline_dir=pipeline_dir, outcome="succeeded"
+    )
     _record_commit_success(envelope, committed)
     _atomic_json(Path(str(envelope["path"])), envelope)
     return committed
