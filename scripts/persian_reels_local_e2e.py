@@ -982,7 +982,6 @@ def run_local(root: Path) -> dict[str, Any]:
         "opening_review_sha256": _sha(opening_review_path),
         "opening_candidate_sha256": opening_review["openingCandidateSha256"],
         "edit_artifact_sha256": edit_artifact_sha256,
-        "qualityEvidence": opening_review["qualityEvidence"],
     }, pipeline_dir=root)
 
     rendered = project / "renders" / "rendered.mp4"
@@ -1047,6 +1046,9 @@ def run_local(root: Path) -> dict[str, Any]:
         pipeline_dir=root,
     )
     terminal = complete_phase(PROJECT_ID, "awaiting_human", pipeline_dir=root)
+    final_quality_ref = terminal["evidence"]["final_review"]
+    final_quality_path = Path(final_quality_ref["quality_evidence_path"])
+    final_quality_evidence = json.loads(final_quality_path.read_text(encoding="utf-8"))
     summary = {
         "ok": True, "production_certified": False, "disclaimer": DISCLAIMER,
         "project_root": str(project), "candidate_path": str(candidate),
@@ -1054,7 +1056,9 @@ def run_local(root: Path) -> dict[str, Any]:
         "opening_review_path": str(opening_review_path),
         "opening_candidate_sha256": opening_review["openingCandidateSha256"],
         "opening_quality_evidence": opening_review["qualityEvidence"],
-        "final_quality_evidence": terminal["evidence"]["final_review"]["qualityEvidence"],
+        "final_quality_evidence": final_quality_evidence,
+        "final_quality_evidence_path": str(final_quality_path),
+        "final_quality_evidence_sha256": final_quality_ref["quality_evidence_sha256"],
         "mastering": mastering,
         "next_phase": terminal.get("next_phase"), "caption_mode": data["caption_mode"],
         "burned_caption_count": data["burned_caption_count"],

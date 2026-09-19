@@ -1828,6 +1828,46 @@ def _final_review_quality_evidence(
             )
     return compose_quality_evidence(retention, motion, hook_review=hook_review)
 
+def _final_quality_evidence_artifact(
+    state: Mapping[str, Any], quality: Mapping[str, Any], evidence: Mapping[str, Any]
+) -> dict[str, str]:
+    """Persist once, then verify the normalized final-review evidence by digest."""
+    reported_path = str(evidence.get("quality_evidence_path") or "").strip()
+    reported_sha = str(evidence.get("quality_evidence_sha256") or "").strip().lower()
+    if reported_path or reported_sha:
+        if not reported_path or not reported_sha:
+            raise PersianVideoWorkflowError(
+                "final quality evidence requires both path and sha256 once persisted"
+            )
+        path = _project_file(state, reported_path, label="final quality evidence")
+        actual_sha = _hash_file(path)
+        if actual_sha != reported_sha:
+            raise PersianVideoWorkflowError(
+                "quality evidence artifact changed after the final review phase completed"
+            )
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise PersianVideoWorkflowError(
+                "final quality evidence artifact is unreadable JSON"
+            ) from exc
+        if payload != dict(quality):
+            raise PersianVideoWorkflowError(
+                "final quality evidence artifact no longer matches normalized review evidence"
+            )
+        return {"path": str(path), "sha256": actual_sha}
+
+    path = _project_root(state) / "artifacts" / "final_quality_evidence.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(path.suffix + ".tmp")
+    temp.write_text(
+        json.dumps(dict(quality), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temp.replace(path)
+    return {"path": str(path), "sha256": _hash_file(path)}
+
+
 def _render_report_review_fields(report: Mapping[str, Any]) -> None:
     retention = report.get("retention_audit")
     if not isinstance(retention, Mapping):
@@ -2064,12 +2104,15 @@ def _validate_final_review_completion(
             state, metadata, hook_review, candidate_sha256=candidate["candidate_sha256"]
         )
 
+    quality_ref = _final_quality_evidence_artifact(state, quality_evidence, evidence)
+
     return {
         "final_review_path": str(review_path),
         "final_review_sha256": _hash_file(review_path),
         "candidate_path": candidate["candidate_path"],
         "candidate_sha256": candidate["candidate_sha256"],
-        "qualityEvidence": quality_evidence,
+        "quality_evidence_path": quality_ref["path"],
+        "quality_evidence_sha256": quality_ref["sha256"],
         **({
             "cold_viewer_input_path": cold_input["path"],
             "cold_viewer_input_sha256": cold_input["sha256"],
