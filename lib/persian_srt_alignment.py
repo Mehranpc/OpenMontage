@@ -35,6 +35,7 @@ TIMING_EPSILON_SECONDS = 0.001
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _MISSING_ZWNJ_RE = re.compile(r"(?<!\S)(?:می|نمی) (?=\S)")
 _SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+[،؛؟.!:…]")
+_LINE_BREAK_RE = re.compile(r"(?:\r\n|\r|\n)+")
 
 
 class SubtitleAlignmentError(ValueError):
@@ -120,7 +121,8 @@ def _parse_approved_script(raw: Mapping[str, Any] | None) -> ApprovedScript:
     if problems:
         _fail(problems)
 
-    display_text = text if policy == "exact" else to_persian_digits(normalize(text))
+    delivery_source = text if policy == "exact" else to_persian_digits(normalize(text))
+    display_text = _LINE_BREAK_RE.sub(" ", delivery_source).strip(" ")
     return ApprovedScript(
         text=text,
         display_text=display_text,
@@ -132,22 +134,23 @@ def _parse_approved_script(raw: Mapping[str, Any] | None) -> ApprovedScript:
 
 def _audit_script_text(text: str, match_policy: str) -> list[str]:
     problems: list[str] = []
+    delivery_text = _LINE_BREAK_RE.sub(" ", text).strip(" ")
     if text != text.strip(" "):
         problems.append("approved script has leading or trailing spaces")
-    if any(ch.isspace() and ch != " " for ch in text):
+    if any(ch.isspace() and ch not in {" ", "\n", "\r"} for ch in text):
         problems.append(
-            "approved script must use one ASCII space between tokens; tabs, newlines, "
-            "and other whitespace are not accepted"
+            "approved script token separators may use ASCII spaces or line breaks; "
+            "tabs and other whitespace are not accepted"
         )
-    if "  " in text:
+    if "  " in delivery_text:
         problems.append("approved script has repeated spaces")
     if match_policy == "exact" and normalize(text) != text:
         problems.append(
             "exact approved script is not in canonical Persian NFC/Farsi-yeh/keheh form"
         )
-    if _SPACE_BEFORE_PUNCT_RE.search(text):
+    if _SPACE_BEFORE_PUNCT_RE.search(delivery_text):
         problems.append("approved script has whitespace before Persian punctuation")
-    if _MISSING_ZWNJ_RE.search(text):
+    if _MISSING_ZWNJ_RE.search(delivery_text):
         problems.append(
             "approved script contains «می » or «نمی » with a space; use ZWNJ "
             "inside the compound (for example «می‌کند»)"
