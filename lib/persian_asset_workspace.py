@@ -829,6 +829,16 @@ def asset_workspace_status(project_dir: Path) -> dict[str, Any]:
                 "reason": "weak_resolution_quality",
             })
 
+    reusable_events = sorted({
+        str((candidate.get("context") or {}).get("visualEventId") or "").strip()
+        for candidate in candidates
+        if candidate.get("reviewSha256") and candidate.get("disposition") != "rejected"
+    } - {""})
+    reusable_by_event = {
+        event_id: reusable_asset_candidates(project_dir, visual_event_id=event_id)
+        for event_id in reusable_events
+    }
+
     return {
         "version": "1.0",
         "discoveryPassCount": len(passes),
@@ -841,6 +851,7 @@ def asset_workspace_status(project_dir: Path) -> dict[str, Any]:
             for event_id, selection in selections.items()
         },
         "rejectionCounts": rejection_counts,
+        "reusableCandidatesByVisualEvent": reusable_by_event,
         "weakSelectionWarnings": weak_warnings,
     }
 
