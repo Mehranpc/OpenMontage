@@ -500,3 +500,43 @@ def test_sibling_candidate_continuity_is_measured_against_its_parent(tmp_path: P
     )
     assert sibling["removedEditorialMomentIds"] == []
     assert sibling["editorialMomentIds"] == ["hook-1"]
+
+
+
+def test_cached_retention_blocker_remains_blocking_without_browser_rerun(monkeypatch, tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    calls = {"retention": 0, "browser": 0}
+
+    monkeypatch.setattr(preflight, "collect_persian_edit_diagnostics", lambda edit, *, base_dir=None: [])
+
+    def fake_retention(persian):
+        calls["retention"] += 1
+        return {"problems": ["cached retention blocker"], "advisories": [], "marker": 1}
+
+    def fake_browser(edit, *, base_dir=None):
+        calls["browser"] += 1
+        return {"warnings": [], "watermarkDiagnostics": None}
+
+    monkeypatch.setattr(preflight, "audit_persian_retention", fake_retention)
+    monkeypatch.setattr(preflight, "audit_persian_hook_quality", lambda edit: {"problems": [], "advisories": []})
+    monkeypatch.setattr(preflight, "browser_preflight_edit_decisions", fake_browser)
+
+    workspace.stage_edit_draft(project, "base", _edit(), max_candidates=10)
+    first = workspace.preflight_edit_draft(project, "base")
+    assert first["ok"] is False
+    assert first["blockingIssues"][0]["code"] == "RETENTION_GATE"
+
+    workspace.stage_edit_draft(
+        project,
+        "child",
+        _edit(recipe="recipe-b"),
+        parent_attempt_id="base",
+        max_candidates=10,
+    )
+    second = workspace.preflight_edit_draft(project, "child")
+
+    assert second["ok"] is False
+    assert second["componentCacheHits"]["retention"] is True
+    assert second["blockingIssues"][0]["code"] == "RETENTION_GATE"
+    assert second["evidence"]["retentionAudit"]["marker"] == 1
+    assert calls == {"retention": 1, "browser": 0}
