@@ -38,6 +38,7 @@ class FakeTool:
             return ToolResult(success=False, error=f"{self.name} semantic failure")
         return ToolResult(
             success=True,
+            duration_seconds=0.25,
             data={
                 "provider": self.provider,
                 "word_timestamps": [
@@ -106,6 +107,9 @@ def test_known_unavailable_primary_is_skipped_before_execution_and_mlx_is_select
     assert primary.execute_calls in (None, [])
     assert len(mlx.execute_calls or []) == 1
     assert result["provider_decision"]["selectedTool"] == "mlx_whisper_transcriber"
+    assert result["provider_decision"]["selectedModel"] == "mlx-community/whisper-small-mlx"
+    assert result["provider_decision"]["semanticOutcome"] == "succeeded"
+    assert result["provider_decision"]["attempts"][-1]["durationSeconds"] == 0.25
     assert result["provider_decision"]["heavyRecoveryUsed"] is False
 
 
