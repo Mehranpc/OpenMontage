@@ -6,15 +6,12 @@ from pathlib import Path
 import pytest
 
 import lib.persian_preflight as preflight
-import lib.persian_video_workflow as workflow
 from lib.persian_edit_workspace import stage_edit_draft
 from lib.persian_film_type import FilmTypePreflightError
 from lib.persian_recovery_policy import recovery_policy_for_issue
-from lib.persian_video_workflow import (
-    PHASES,
-    PersianVideoWorkflowError,
-    bootstrap_persian_video,
-    complete_phase,
+from lib.persian_subject_region_review import (
+    SubjectRegionReviewError,
+    validate_subject_region_review_evidence,
 )
 
 
@@ -64,9 +61,10 @@ def test_subject_region_recovery_owns_only_subject_regions(tmp_path: Path) -> No
     })
     assert plan["recoveryClass"] == "SUBJECT_REGION_REVIEW"
     assert plan["strategies"] == ["attach_reviewed_subject_regions"]
-    assert plan["mutationSurface"] == ["subject_regions"]
-    assert "typography" in plan["preserve"]
-    assert "assets" in plan["preserve"]
+    assert plan["mutationSurface"] == ["diagnostic.named_contract_field"]
+    for locked in ("hook", "captions", "timeline", "watermark", "typography", "assets", "scenes", "audio_mix", "copy", "unclassified"):
+        assert locked in plan["preserve"]
+    assert "subject_regions" not in plan["preserve"]
 
     base = _edit()
     stage_edit_draft(tmp_path, "base", base, max_candidates=3, revision_cycle=1)
@@ -103,26 +101,26 @@ def test_missing_reviewed_regions_are_not_misclassified_as_typography(
     issue = report["blockingIssues"][0]
     assert issue["code"] == "SUBJECT_REGION_REVIEW_REQUIRED"
     assert issue["recoveryClass"] == "SUBJECT_REGION_REVIEW"
-    assert report["recoveryPlans"]["SUBJECT_REGION_REVIEW"]["mutationSurface"] == ["subject_regions"]
+    plan = issue["recoveryPlan"]
+    assert plan["strategies"] == ["attach_reviewed_subject_regions"]
+    assert "subject_regions" not in plan["preserve"]
 
 
-def test_review_subject_regions_phase_requires_valid_per_shot_geometry(tmp_path: Path) -> None:
-    state = bootstrap_persian_video(
-        title="Run", approved_script="متن تأییدشده", project_id="run",
-        pipeline_dir=tmp_path, backlot_opener=lambda _: 0,
+def test_subject_region_evidence_validator_is_fail_closed_and_complete() -> None:
+    with pytest.raises(SubjectRegionReviewError, match="shot_regions"):
+        validate_subject_region_review_evidence({}, expected_shot_ids=["shot-1"])
+
+    normalized = validate_subject_region_review_evidence(
+        _review_evidence(), expected_shot_ids=["shot-1"]
     )
-    state["completed_phases"] = list(PHASES[:7])
-    state["next_phase"] = "review_subject_regions"
-    state.setdefault("attempts", {})["review_subject_regions"] = 1
-    workflow._write_state(tmp_path / "run", state)
+    assert normalized["shot_regions"][0]["shot_id"] == "shot-1"
+    assert normalized["shot_regions"][0]["avoidRegions"][0] == {
+        "x": 0.1, "y": 0.2, "w": 0.6, "h": 0.7
+    }
 
-    with pytest.raises(PersianVideoWorkflowError, match="shot_regions"):
-        complete_phase("run", "review_subject_regions", evidence={}, pipeline_dir=tmp_path)
 
-    completed = complete_phase(
-        "run", "review_subject_regions", evidence=_review_evidence(), pipeline_dir=tmp_path
-    )
-    assert completed["next_phase"] == "no_copy_preflight"
-    stored = completed["evidence"]["review_subject_regions"]["shot_regions"]
-    assert stored[0]["shot_id"] == "shot-1"
-    assert stored[0]["avoidRegions"][0] == {"x": 0.1, "y": 0.2, "w": 0.6, "h": 0.7}
+def test_subject_region_evidence_validator_requires_every_expected_shot() -> None:
+    with pytest.raises(SubjectRegionReviewError, match="missing reviewed shot ids"):
+        validate_subject_region_review_evidence(
+            _review_evidence(), expected_shot_ids=["shot-1", "shot-2"]
+        )
