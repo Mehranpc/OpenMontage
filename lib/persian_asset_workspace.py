@@ -587,6 +587,17 @@ def validate_asset_manifest_against_workspace(
     """
     selections = _read_selections(project_dir)
     if not selections:
+        discovery_root = _discovery_root(project_dir) / "candidates"
+        candidate_root = _root(project_dir) / "candidates"
+        workspace_active = (
+            (discovery_root.is_dir() and any(discovery_root.glob("*.json")))
+            or (candidate_root.is_dir() and any(candidate_root.glob("asset-*.json")))
+        )
+        if workspace_active:
+            raise PersianAssetWorkspaceError(
+                "asset workspace has discovered/staged candidates but no selected candidates; "
+                "select reviewed candidates before writing the canonical asset_manifest"
+            )
         return {"enforced": False, "selectedCount": 0, "validatedVisualEventIds": []}
     if not isinstance(manifest, Mapping):
         raise PersianAssetWorkspaceError("canonical asset_manifest must be an object")
@@ -601,6 +612,13 @@ def validate_asset_manifest_against_workspace(
         event_id = str(raw.get("visual_event_id") or "").strip()
         if event_id:
             by_event.setdefault(event_id, []).append(raw)
+
+    unselected_events = sorted(set(by_event) - set(selections))
+    if unselected_events:
+        raise PersianAssetWorkspaceError(
+            "asset_manifest contains visual_event_id rows not selected in the asset workspace: "
+            + ", ".join(unselected_events)
+        )
 
     validated: list[str] = []
     for event_id, selection in selections.items():
