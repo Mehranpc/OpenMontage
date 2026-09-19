@@ -342,8 +342,6 @@ def causal_time_accounting(
         category = str(raw.get("category") or "")
         if category in category_seconds:
             category_seconds[category] += duration
-    if counted == 0:
-        return None
     covered = _interval_union_seconds(intervals)
     wall = max(0.0, (current - origin).total_seconds())
     unattributed = max(0.0, wall - covered)
