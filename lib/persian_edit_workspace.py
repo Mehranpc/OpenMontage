@@ -667,7 +667,7 @@ def stage_edit_draft(
         existing_manifest = load_convergence_candidate(project_dir, attempt_id)
         if _candidate_identity(existing_manifest) != expected_identity:
             raise PersianEditWorkspaceError(
-                "candidate identity is immutable; use a new attempt_id for changed bytes or recovery metadata"
+                "attempt_id already exists with different edit bytes or recovery metadata; candidate identity is immutable"
             )
         if draft.is_file() and artifact_sha256(json.loads(draft.read_text(encoding="utf-8"))) != digest:
             raise PersianEditWorkspaceError(
