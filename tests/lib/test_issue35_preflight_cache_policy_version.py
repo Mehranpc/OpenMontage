@@ -4,7 +4,7 @@ import lib.persian_edit_workspace as workspace
 import lib.persian_preflight as preflight
 
 
-def test_preflight_policy_version_invalidates_pre_subject-region-cache() -> None:
+def test_preflight_policy_version_invalidates_pre_subject_region_cache() -> None:
     digest = "a" * 64
     stale = {
         "artifactSha256": digest,
