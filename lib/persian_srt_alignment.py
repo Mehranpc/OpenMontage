@@ -499,6 +499,37 @@ def _audit_aligned_cues(
     return problems
 
 
+def _aligned_script_word_timings(
+    approved_script: Mapping[str, Any] | None,
+    words: Iterable[Mapping[str, Any]],
+) -> tuple[ApprovedScript, list[_AsrWord], list[dict[str, Any]]]:
+    script_record = _parse_approved_script(approved_script)
+    script_tokens = _script_tokens(script_record)
+    asr_words = _asr_words(words)
+    matches = _align_tokens(script_tokens, asr_words)
+    timed_words = _timed_script_words(script_tokens, asr_words, matches)
+    runtime_words = [
+        {"word": word.text, "start": word.start, "end": word.end}
+        for word in timed_words
+    ]
+    return script_record, asr_words, runtime_words
+
+
+def build_script_aligned_word_timings(
+    approved_script: Mapping[str, Any] | None,
+    words: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return approved-script lexemes on the authoritative ASR timing clock.
+
+    The approved script owns lexical text; ASR owns timing evidence only. This
+    exposes the same validated alignment used by subtitle delivery so runtime
+    sync/ducking/render mechanics cannot accidentally treat raw ASR spelling as
+    authoritative copy.
+    """
+    _, _, runtime_words = _aligned_script_word_timings(approved_script, words)
+    return runtime_words
+
+
 def build_script_aligned_cues(
     approved_script: Mapping[str, Any] | None,
     words: Iterable[Mapping[str, Any]],
@@ -518,16 +549,11 @@ def build_script_aligned_cues(
     Raises:
         SubtitleAlignmentError: for any uncertainty or delivery-policy violation.
     """
-    script_record = _parse_approved_script(approved_script)
-    script_tokens = _script_tokens(script_record)
-    asr_words = _asr_words(words)
-    matches = _align_tokens(script_tokens, asr_words)
-    timed_words = _timed_script_words(script_tokens, asr_words, matches)
+    script_record, asr_words, timed_words = _aligned_script_word_timings(
+        approved_script, words
+    )
     cues = build_cues(
-        [
-            {"word": word.text, "start": word.start, "end": word.end}
-            for word in timed_words
-        ],
+        timed_words,
         persian_digits=False,
         id_prefix=id_prefix,
         max_visible_chars=(
@@ -553,5 +579,6 @@ __all__ = [
     "MAX_ASR_INSERTION_FRACTION",
     "SubtitleAlignmentError",
     "ApprovedScript",
+    "build_script_aligned_word_timings",
     "build_script_aligned_cues",
 ]
