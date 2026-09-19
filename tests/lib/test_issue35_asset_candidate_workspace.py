@@ -421,3 +421,37 @@ def test_acquire_assets_completion_consumes_workspace_manifest_binding(tmp_path:
     )
     assert observed["manifest"] == checkpoint["artifacts"]["asset_manifest"]
     assert state["evidence"]["acquire_assets"]["assetWorkspaceBinding"]["selectedCount"] == 2
+
+
+def test_selection_returns_manifest_semantic_evidence_and_rejects_drift(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    candidate, selected = _selected_candidate(project)
+    evidence = selected["manifestEvidence"]
+    assert evidence["visual_event_id"] == "event-1"
+    assert evidence["semantic_beat_id"] == "beat-1"
+    assert evidence["query"] == "person thinking at desk"
+    assert evidence["candidate_rank"] == 1
+    assert evidence["narration_span"] == "این یک جمله نمونه است"
+    assert evidence["relevance_reason"] == "The visible action matches the beat."
+    assert evidence["selection_reason"] == "A real person remains visible and readable in the crop."
+    assert evidence["affect_match"] is True
+    assert evidence["staged_stock_risk"] == "low"
+    assert evidence["human_presence"] is True
+    assert evidence["shows_subject"] is True
+    assert evidence["frame_review"]["observed"]
+
+    asset = {
+        "id": "asset-1", "type": "video", "path": "unused.mp4",
+        "source_tool": "direct_clip_search", "scene_id": "scene-1",
+        **selected["manifestBinding"], **evidence,
+    }
+    assert workspace.validate_asset_manifest_against_workspace(
+        project, {"version": "1.0", "assets": [asset]}
+    )["enforced"] is True
+
+    drifted = dict(asset)
+    drifted["relevance_reason"] = "A different explanation reconstructed later."
+    with pytest.raises(PersianAssetWorkspaceError, match="relevance_reason"):
+        workspace.validate_asset_manifest_against_workspace(
+            project, {"version": "1.0", "assets": [drifted]}
+        )
