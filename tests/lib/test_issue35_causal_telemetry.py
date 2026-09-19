@@ -90,6 +90,10 @@ def test_durable_job_records_child_span_with_explicit_semantic_category(tmp_path
     spans = state["causal_telemetry"]["spans"]
     phase_span = next(span for span in spans if span.get("kind") == "phase_attempt")
     job_span = next(span for span in spans if span.get("kind") == "durable_job")
+    envelope = final["executionEnvelope"]
+    assert envelope["traceId"] == state["causal_telemetry"]["trace_id"]
+    assert envelope["causalSpanId"] == job_span["span_id"]
+    assert envelope["parentSpanId"] == phase_span["span_id"]
     assert job_span["parent_span_id"] == phase_span["span_id"]
     assert job_span["category"] == "provider_network_wait"
     assert job_span["finished_at"]
@@ -267,3 +271,67 @@ def test_workflow_commit_lag_is_a_child_accounting_span(tmp_path: Path) -> None:
     assert transition_span["parent_span_id"] == reconcile_span["parent_span_id"]
     assert transition_span["started_at"] == reconcile_span["finished_at"]
     assert transition_span["outcome"] == "succeeded"
+
+
+def test_all_required_causal_categories_are_accounted_without_relabeling() -> None:
+    state = {
+        "created_at": BASE.isoformat(),
+        "causal_telemetry": telemetry.new_causal_trace("trace-categories", started_at=BASE),
+    }
+    cases = [
+        ("machine_local_execution", "machine_execution_seconds"),
+        ("provider_network_wait", "provider_wait_seconds"),
+        ("agent_editorial_work", "editorial_wall_seconds"),
+        ("browser_render_execution", "browser_render_seconds"),
+        ("review_evidence_assembly", "review_phase_seconds"),
+        ("accounting_reconciliation", "accounting_lag_seconds"),
+        ("automated_recovery", "automated_recovery_seconds"),
+        ("human_idle", "human_idle_seconds"),
+    ]
+    for index, (category, _metric) in enumerate(cases):
+        telemetry.record_causal_interval(
+            state,
+            span_id=f"category-{index}",
+            name=category,
+            category=category,
+            started_at=BASE + timedelta(seconds=index),
+            finished_at=BASE + timedelta(seconds=index + 1),
+        )
+    result = workflow.phase_time_accounting(
+        state, now=BASE + timedelta(seconds=len(cases))
+    )
+    for _category, metric in cases:
+        assert result[metric] == 1.0
+    assert result["causal_coverage_percent"] == 100.0
+    assert result["unattributed_wall_seconds"] == 0.0
+
+
+def test_structural_phase_span_does_not_inflate_render_duration() -> None:
+    state = {
+        "created_at": BASE.isoformat(),
+        "causal_telemetry": telemetry.new_causal_trace("trace-render", started_at=BASE),
+    }
+    telemetry.record_causal_interval(
+        state,
+        span_id="phase:render:1",
+        name="render phase container",
+        category="agent_editorial_work",
+        started_at=BASE,
+        finished_at=BASE + timedelta(seconds=100),
+        kind="phase_attempt",
+        count_toward_wall=False,
+    )
+    telemetry.record_causal_interval(
+        state,
+        span_id="renderer",
+        name="actual browser renderer",
+        category="browser_render_execution",
+        started_at=BASE + timedelta(seconds=20),
+        finished_at=BASE + timedelta(seconds=30),
+        parent_span_id="phase:render:1",
+    )
+    result = workflow.phase_time_accounting(state, now=BASE + timedelta(seconds=100))
+    assert result["workflow_wall_seconds"] == 100.0
+    assert result["browser_render_seconds"] == 10.0
+    assert result["causal_covered_seconds"] == 10.0
+    assert result["unattributed_wall_seconds"] == 90.0
