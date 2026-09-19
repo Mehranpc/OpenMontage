@@ -30,6 +30,11 @@ from lib.persian_editorial_hook import (
     validate_edit_hook_authority,
 )
 from lib.persian_durable_job import DurableJobError, reconcile_job, start_job
+from lib.persian_alignment_provider import (
+    AlignmentProviderError,
+    build_alignment_provider_plan,
+    validate_alignment_provider_decision,
+)
 from lib.persian_asset_workspace import (
     PersianAssetWorkspaceError,
     asset_workspace_status,
@@ -261,6 +266,111 @@ def alignment_execution_policy(state: Mapping[str, Any]) -> dict[str, Any]:
         "primaryModelClass": "speech_transcription",
         "heavyTranscriptionRecoveryOnly": False,
     }
+
+
+def alignment_provider_plan_for_project(
+    project_id: str, *, pipeline_dir: Path | None = None, registry=None
+) -> dict[str, Any]:
+    """Probe live provider capability/availability for the current workflow policy."""
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    policy = state.get("alignment_policy") or alignment_execution_policy(state)
+    try:
+        if registry is None:
+            return build_alignment_provider_plan(policy)
+        return build_alignment_provider_plan(policy, registry=registry)
+    except AlignmentProviderError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+
+
+def _validate_alignment_completion(
+    state: Mapping[str, Any], evidence: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Require durable provider-selection truth before alignment can advance."""
+    policy = state.get("alignment_policy") or alignment_execution_policy(state)
+    decision = evidence.get("provider_decision")
+    if not isinstance(decision, Mapping):
+        raise PersianVideoWorkflowError(
+            "align_script_timing completion requires a persisted provider decision"
+        )
+    try:
+        validate_alignment_provider_decision(decision, policy)
+    except AlignmentProviderError as exc:
+        raise PersianVideoWorkflowError(
+            f"alignment provider decision is invalid: {exc}"
+        ) from exc
+    count = evidence.get("word_timing_count")
+    if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+        raise PersianVideoWorkflowError(
+            "align_script_timing completion requires positive word_timing_count"
+        )
+    mode = str(evidence.get("alignment_mode") or decision.get("mode") or "")
+    if mode != str(policy.get("mode") or ""):
+        raise PersianVideoWorkflowError(
+            "alignment_mode does not match the workflow alignment policy"
+        )
+    selected_provider = str(decision.get("selectedProvider") or "")
+    selected_tool = str(decision.get("selectedTool") or "")
+    selected_model = str(decision.get("selectedModel") or "")
+    if str(evidence.get("provider") or selected_provider) != selected_provider:
+        raise PersianVideoWorkflowError(
+            "alignment completion provider does not match provider decision"
+        )
+    if str(evidence.get("model") or selected_model) != selected_model:
+        raise PersianVideoWorkflowError(
+            "alignment completion model does not match provider decision"
+        )
+    normalized = {
+        "alignment_mode": mode,
+        "provider": selected_provider,
+        "provider_tool": selected_tool,
+        "model": selected_model,
+        "provider_execution_seconds": float(decision.get("executionDurationSeconds") or 0.0),
+        "word_timing_count": count,
+        "heavy_recovery_used": bool(decision.get("heavyRecoveryUsed")),
+        "provider_fallback_reason": decision.get("fallbackReason"),
+        "provider_decision": dict(decision),
+    }
+    for key in (
+        "alignment_result_path", "alignment_result_sha256",
+        "provider_plan_path", "provider_plan_sha256",
+    ):
+        value = evidence.get(key)
+        if value is not None:
+            normalized[key] = value
+    return normalized
+
+
+def start_alignment_job_for_project(
+    project_id: str, *, pipeline_dir: Path | None = None, job_id: str | None = None
+) -> dict[str, Any]:
+    """Start the canonical durable alignment job after provider availability probing."""
+    from lib.persian_alignment_job import AlignmentJobError, start_alignment_job
+    try:
+        return start_alignment_job(
+            project_id, pipeline_dir=pipeline_dir, job_id=job_id, launch=True
+        )
+    except AlignmentJobError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+
+
+def alignment_job_status_for_project(
+    project_id: str, job_id: str, *, pipeline_dir: Path | None = None
+) -> dict[str, Any]:
+    from lib.persian_alignment_job import AlignmentJobError, reconcile_alignment_job
+    try:
+        return reconcile_alignment_job(project_id, job_id, pipeline_dir=pipeline_dir)
+    except AlignmentJobError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+
+
+def commit_alignment_job_for_project(
+    project_id: str, job_id: str, *, pipeline_dir: Path | None = None
+) -> dict[str, Any]:
+    from lib.persian_alignment_job import AlignmentJobError, commit_alignment_job
+    try:
+        return commit_alignment_job(project_id, job_id, pipeline_dir=pipeline_dir)
+    except AlignmentJobError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
 
 
 def repair_trivial_zero_length_timings(
@@ -1048,9 +1158,32 @@ def _complete_phase_impl(
         raise PersianVideoWorkflowError(
             f"phase {phase!r} must be attempted before it can complete"
         )
+    # Checkpoint-backed phases are transaction-like: durable checkpoint truth is
+    # the outer commit prerequisite. Validate it before phase-specific evidence so
+    # a missing canonical checkpoint cannot be obscured by a newer validator.
+    stage = _PHASE_CHECKPOINT.get(phase)
+    checkpoint: Mapping[str, Any] | None = None
+    if stage is not None:
+        try:
+            checkpoint = read_checkpoint(
+                Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve(),
+                project_id,
+                stage,
+            )
+        except (CheckpointValidationError, OSError, json.JSONDecodeError) as exc:
+            raise PersianVideoWorkflowError(
+                f"checkpoint_{stage}.json must be valid before {phase} can complete"
+            ) from exc
+        if not checkpoint or checkpoint.get("status") != "completed":
+            raise PersianVideoWorkflowError(
+                f"checkpoint_{stage}.json must be completed before {phase} can complete"
+            )
+
     phase_evidence = dict(evidence or {})
     if phase == "prepare_inputs":
         phase_evidence.update(_validate_prepare_inputs_completion(state, phase_evidence))
+    if phase == "align_script_timing":
+        phase_evidence.update(_validate_alignment_completion(state, phase_evidence))
     if phase == "plan_scenes_moments" and "sourcing_order" in phase_evidence:
         raw_order = phase_evidence.get("sourcing_order")
         if not isinstance(raw_order, list) or not raw_order:
@@ -1074,36 +1207,16 @@ def _complete_phase_impl(
     if phase == "awaiting_human":
         phase_evidence.update(_validate_awaiting_human_candidate(state))
 
-    # Checkpoint-backed phases are transaction-like: durable checkpoint truth must
-    # exist before workflow state is allowed to advance. The specialized edit
-    # preflight validator above already verifies digest binding, but the generic
-    # stage checkpoint remains the commit point for the lifecycle.
-    stage = _PHASE_CHECKPOINT.get(phase)
-    if stage is not None:
-        try:
-            checkpoint = read_checkpoint(
-                Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve(),
-                project_id,
-                stage,
-            )
-        except (CheckpointValidationError, OSError, json.JSONDecodeError) as exc:
+    if phase == "acquire_assets" and checkpoint is not None:
+        artifacts = checkpoint.get("artifacts") if isinstance(checkpoint.get("artifacts"), Mapping) else {}
+        manifest = artifacts.get("asset_manifest") if isinstance(artifacts, Mapping) else None
+        if not isinstance(manifest, Mapping):
             raise PersianVideoWorkflowError(
-                f"checkpoint_{stage}.json must be valid before {phase} can complete"
-            ) from exc
-        if not checkpoint or checkpoint.get("status") != "completed":
-            raise PersianVideoWorkflowError(
-                f"checkpoint_{stage}.json must be completed before {phase} can complete"
+                "completed assets checkpoint requires an asset_manifest artifact"
             )
-        if phase == "acquire_assets":
-            artifacts = checkpoint.get("artifacts") if isinstance(checkpoint.get("artifacts"), Mapping) else {}
-            manifest = artifacts.get("asset_manifest") if isinstance(artifacts, Mapping) else None
-            if not isinstance(manifest, Mapping):
-                raise PersianVideoWorkflowError(
-                    "completed assets checkpoint requires an asset_manifest artifact"
-                )
-            phase_evidence["assetWorkspaceBinding"] = (
-                validate_asset_manifest_against_workspace(_project_root(state), manifest)
-            )
+        phase_evidence["assetWorkspaceBinding"] = (
+            validate_asset_manifest_against_workspace(_project_root(state), manifest)
+        )
 
     completed = list(state.get("completed_phases") or [])
     if phase not in completed:
@@ -2465,6 +2578,30 @@ def build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status", help="show bounded workflow state")
     status.add_argument("project_id")
 
+    alignment_plan = sub.add_parser(
+        "alignment-plan",
+        help="probe capability/status and select the policy-valid timing/transcription provider",
+    )
+    alignment_plan.add_argument("project_id")
+
+    alignment_start = sub.add_parser(
+        "alignment-start", help="start canonical durable alignment through the run kernel"
+    )
+    alignment_start.add_argument("project_id")
+    alignment_start.add_argument("--job-id")
+
+    alignment_status = sub.add_parser(
+        "alignment-status", help="reconcile one canonical durable alignment job"
+    )
+    alignment_status.add_argument("project_id")
+    alignment_status.add_argument("job_id")
+
+    alignment_commit = sub.add_parser(
+        "alignment-commit", help="commit successful durable alignment into workflow state"
+    )
+    alignment_commit.add_argument("project_id")
+    alignment_commit.add_argument("job_id")
+
     resume = sub.add_parser("resume", help="start a new bounded session and reopen Backlot")
     resume.add_argument("project_id")
 
@@ -2598,6 +2735,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             _print_json(workflow_status(state["project_id"]))
         elif args.command == "status":
             _print_json(workflow_status(args.project_id))
+        elif args.command == "alignment-plan":
+            _print_json(alignment_provider_plan_for_project(args.project_id))
+        elif args.command == "alignment-start":
+            _print_json(start_alignment_job_for_project(args.project_id, job_id=args.job_id))
+        elif args.command == "alignment-status":
+            _print_json(alignment_job_status_for_project(args.project_id, args.job_id))
+        elif args.command == "alignment-commit":
+            _print_json(commit_alignment_job_for_project(args.project_id, args.job_id))
         elif args.command == "resume":
             _print_json(resume_workflow(args.project_id))
         elif args.command == "attempt":
