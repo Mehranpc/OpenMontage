@@ -45,7 +45,7 @@ string equality, which fails on exactly the common words an anchor is made of.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Iterable, Sequence
 
 from lib.persian_moments import PersianMoment
@@ -75,6 +75,12 @@ ANCHOR_HOLD_SECONDS = 0.35
 #: thing being protected. The rescaled set this module was written against had
 #: drifts of 3.41s.
 MAX_START_DRIFT_SECONDS = 0.5
+
+#: Film Type 2.16 opening hooks are complete simultaneous compositions rather than
+#: sequential reading windows. Retiming binds their start to narration while the
+#: product contract owns the display duration.
+SIMULTANEOUS_HOOK_MIN_SECONDS = 3.0
+SIMULTANEOUS_HOOK_MAX_SECONDS = 5.0
 
 #: Shortest anchor phrase, in visible characters. An anchor of one or two letters
 #: matches words all over the transcript and the derived position is noise.
@@ -331,7 +337,8 @@ def audit_sync(
 
 
 def retime_moments(
-    moments: Sequence[PersianMoment], words: Sequence[TimedWord]
+    moments: Sequence[PersianMoment], words: Sequence[TimedWord], *,
+    simultaneous_hook_typography: bool = False,
 ) -> list[PersianMoment]:
     """Return a *new* moment list with timings re-derived from the narration.
 
@@ -347,14 +354,18 @@ def retime_moments(
             retimed.append(moment)
             continue
         assert binding.derived_start is not None and binding.derived_end is not None
+        derived_end = binding.derived_end
+        if simultaneous_hook_typography and moment.kind == "hook":
+            product_duration = min(
+                SIMULTANEOUS_HOOK_MAX_SECONDS,
+                max(SIMULTANEOUS_HOOK_MIN_SECONDS, moment.duration),
+            )
+            derived_end = binding.derived_start + product_duration
         retimed.append(
-            PersianMoment(
-                id=moment.id,
-                kind=moment.kind,
+            replace(
+                moment,
                 start_seconds=binding.derived_start,
-                end_seconds=binding.derived_end,
-                segments=moment.segments,
-                anchor_text=moment.anchor_text,
+                end_seconds=derived_end,
             )
         )
     return retimed
@@ -364,6 +375,8 @@ __all__ = [
     "ANCHOR_LEAD_IN_SECONDS",
     "ANCHOR_HOLD_SECONDS",
     "MAX_START_DRIFT_SECONDS",
+    "SIMULTANEOUS_HOOK_MIN_SECONDS",
+    "SIMULTANEOUS_HOOK_MAX_SECONDS",
     "MIN_ANCHOR_CHARS",
     "TimedWord",
     "AnchorBinding",
@@ -377,7 +390,11 @@ __all__ = [
 
 
 def retime_moments_from_dicts(
-    moments: Sequence[PersianMoment], word_dicts: Iterable[dict[str, Any]]
+    moments: Sequence[PersianMoment], word_dicts: Iterable[dict[str, Any]], *,
+    simultaneous_hook_typography: bool = False,
 ) -> list[PersianMoment]:
     """`retime_moments` for callers holding raw transcriber rows."""
-    return retime_moments(moments, TimedWord.from_dicts(word_dicts))
+    return retime_moments(
+        moments, TimedWord.from_dicts(word_dicts),
+        simultaneous_hook_typography=simultaneous_hook_typography,
+    )

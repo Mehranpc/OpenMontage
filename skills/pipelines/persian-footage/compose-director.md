@@ -104,7 +104,10 @@ upstream:
   shape of the old edit and drifted up to 3.41s against the new voice. The fix is
   `retime_moments` with the word timings, not editing `startSeconds` by hand until
   the audit stops complaining; hand-nudging produces a set that passes today's
-  threshold and is still wrong at the next word.
+  threshold and is still wrong at the next word. On Film Type 2.16, use
+  `simultaneous_hook_typography=True` so the hook start is narration-bound while its
+  complete 3–5 second simultaneous product window is not stretched by the retired
+  sequential-reading proxy.
 - **A music refusal means the bed's licence record, not the bed.** Narrated mode
   requires a music bed; the refusal is about the record — a `musicTrack` with
   `license{name,url,downloadedAt}` and `contentIdRisk{level,reason}`. `high` risk is

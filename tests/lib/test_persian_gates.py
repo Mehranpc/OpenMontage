@@ -1039,6 +1039,14 @@ class TestMomentAudit:
         problems = audit_moments(moments, duration_seconds=47.472).problems
         assert not any("empty frame" in problem for problem in problems)
 
+    def test_exact_decimal_duration_floor_is_not_rejected_by_float_rounding(self) -> None:
+        """A serialized 29.67 -> 32.07 span is exactly 2.4s by contract."""
+        moments = build_moments(
+            [_moment(startSeconds=29.67, endSeconds=32.07)]
+        )
+        problems = audit_moments(moments, duration_seconds=47.472).problems
+        assert not any("flash" in problem for problem in problems)
+
     def test_an_overlap_is_a_problem(self) -> None:
         moments = build_moments(
             [
@@ -1783,6 +1791,31 @@ class TestSyncAudit:
         assert retimed[0].end_seconds == pytest.approx(0.75 + moments[0].min_read_seconds)
         # And the retimed set now passes its own audit.
         assert audit_sync(retimed, words).problems == []
+
+    def test_retime_simultaneous_hook_preserves_product_duration_and_metadata(self, words) -> None:
+        hook = build_moments([
+            {
+                "id": "hook",
+                "kind": "hook",
+                "purpose": "hook-pattern-interrupt",
+                "startSeconds": 0.0,
+                "endSeconds": 5.4,
+                "anchorText": "مطالعهٔ دانشگاه اولو روی ۲۲۶۴ نفر",
+                "presentation": {"recipeId": "editorial-hero-balanced"},
+                "segments": [
+                    {"role": "hero", "text": "یک هوک کامل و همزمان که مدل قدیمی نباید تا زمان خواندنش کش بدهد"}
+                ],
+            }
+        ])[0]
+
+        retimed = retime_moments([hook], words, simultaneous_hook_typography=True)
+
+        assert retimed[0].start_seconds == pytest.approx(0.75)
+        assert retimed[0].duration == pytest.approx(5.0)
+        assert retimed[0].purpose == hook.purpose
+        assert retimed[0].presentation == hook.presentation
+        assert retimed[0].segments == hook.segments
+        assert retimed[0].anchor_text == hook.anchor_text
 
     def test_retime_leaves_unlocatable_moments_alone(self, words) -> None:
         moments = build_moments(
