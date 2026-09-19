@@ -216,21 +216,22 @@ def _copy_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
 def _typography_payload(edit: Mapping[str, Any]) -> list[dict[str, Any]]:
     persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
     result: list[dict[str, Any]] = []
-    ignored = {"id", "kind", "startSeconds", "endSeconds", "segments"}
-    for raw in persian.get("moments") or []:
-        if not isinstance(raw, Mapping):
-            continue
-        style = {
-            str(key): value
-            for key, value in raw.items()
-            if key not in ignored
-            and any(
-                token in str(key).lower()
-                for token in ("recipe", "layout", "typograph", "font", "style", "line", "placement")
-            )
-        }
-        if style:
-            result.append({"id": raw.get("id"), **style})
+    ignored = {"id", "kind", "startSeconds", "endSeconds", "segments", "text"}
+    for collection in ("moments", "typographicBeats"):
+        for raw in persian.get(collection) or []:
+            if not isinstance(raw, Mapping):
+                continue
+            style = {
+                str(key): value
+                for key, value in raw.items()
+                if key not in ignored
+                and any(
+                    token in str(key).lower()
+                    for token in ("recipe", "layout", "typograph", "font", "style", "line", "placement")
+                )
+            }
+            if style:
+                result.append({"collection": collection, "id": raw.get("id"), **style})
     return result
 
 
@@ -279,6 +280,75 @@ def _hook_scope_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
     return _hook_dependency_payload(edit)
 
 
+def _unclassified_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
+    """Capture edit fields not owned by a named convergence mutation scope."""
+    persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
+    metadata = edit.get("metadata") if isinstance(edit.get("metadata"), Mapping) else {}
+    root_unknown = {
+        str(key): value
+        for key, value in edit.items()
+        if key not in {"persian", "metadata"}
+    }
+    metadata_unknown = {
+        str(key): value
+        for key, value in metadata.items()
+        if key not in {"hookQuality", "targetPlatform", "target_platform"}
+    }
+    known_persian = {
+        "durationSeconds", "platformTarget", "shots", "moments", "typographicBeats",
+        "captions", "audio", "watermark",
+    }
+    persian_unknown = {
+        str(key): value for key, value in persian.items() if key not in known_persian
+    }
+
+    asset_tokens = (
+        "src", "source", "asset", "provider", "clip", "query", "crop",
+        "window", "media", "path", "url", "video",
+    )
+    known_shot = {
+        "id", "startSeconds", "endSeconds", "visualEventId", "changeType",
+        "narrativeRole", "humanPresence", "semanticRole", "semanticDirection",
+        "selectionReason", "openingSemanticMatch", "avoidRegions",
+    }
+    shot_unknown: list[dict[str, Any]] = []
+    for raw in persian.get("shots") or []:
+        if not isinstance(raw, Mapping):
+            continue
+        extras = {
+            str(key): value
+            for key, value in raw.items()
+            if key not in known_shot
+            and not any(token in str(key).lower() for token in asset_tokens)
+        }
+        if extras:
+            shot_unknown.append({"id": raw.get("id"), **extras})
+
+    style_tokens = ("recipe", "layout", "typograph", "font", "style", "line", "placement")
+    known_moment = {"id", "kind", "startSeconds", "endSeconds", "segments", "text", "userAuthoredShortHook"}
+    moment_unknown: list[dict[str, Any]] = []
+    for collection in ("moments", "typographicBeats"):
+        for raw in persian.get(collection) or []:
+            if not isinstance(raw, Mapping):
+                continue
+            extras = {
+                str(key): value
+                for key, value in raw.items()
+                if key not in known_moment
+                and not any(token in str(key).lower() for token in style_tokens)
+            }
+            if extras:
+                moment_unknown.append({"collection": collection, "id": raw.get("id"), **extras})
+
+    return {
+        "root": root_unknown,
+        "metadata": metadata_unknown,
+        "persian": persian_unknown,
+        "shots": shot_unknown,
+        "moments": moment_unknown,
+    }
+
+
 def _scope_digests(edit: Mapping[str, Any]) -> dict[str, str]:
     persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
     scope_payloads: dict[str, Any] = {
@@ -296,6 +366,7 @@ def _scope_digests(edit: Mapping[str, Any]) -> dict[str, str]:
             for raw in (persian.get("shots") or [])
             if isinstance(raw, Mapping)
         ],
+        "unclassified": _unclassified_payload(edit),
     }
     return {name: _stable_digest(value) for name, value in scope_payloads.items()}
 
@@ -834,10 +905,12 @@ def preflight_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
         report = cached
         report["cacheHit"] = True
         report["cacheKey"] = digest
+        # The whole report cache short-circuited component lookup. Do not claim
+        # component-level hits that did not actually occur.
         report["componentCacheHits"] = {
-            "retention": True,
-            "hook": True,
-            "browser": True,
+            "retention": False,
+            "hook": False,
+            "browser": False,
         }
         report["dependencyDigests"] = dependency_digests
 
@@ -870,8 +943,23 @@ def load_promotable_edit_draft(
             "promotion requires both the staged draft and its persisted preflight report"
         )
     edit = json.loads(draft.read_text(encoding="utf-8"))
-    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report_bytes = report_path.read_bytes()
+    report = json.loads(report_bytes.decode("utf-8"))
     digest = artifact_sha256(edit)
+    candidate_path = _candidate_path(project_dir, attempt_id)
+    if candidate_path.is_file():
+        manifest = load_convergence_candidate(project_dir, attempt_id)
+        expected_report_sha = str(manifest.get("preflightReportSha256") or "")
+        actual_report_sha = hashlib.sha256(report_bytes).hexdigest()
+        if expected_report_sha and actual_report_sha != expected_report_sha:
+            raise PersianEditWorkspaceError(
+                "refusing promotion: preflight report changed after candidate preflight"
+            )
+        expected_artifact_sha = str(manifest.get("preflightArtifactSha256") or "")
+        if expected_artifact_sha and expected_artifact_sha != digest:
+            raise PersianEditWorkspaceError(
+                "refusing promotion: candidate manifest preflight digest differs from staged draft"
+            )
     if report.get("ok") is not True:
         raise PersianEditWorkspaceError("refusing promotion: preflight report did not pass")
     if report.get("artifactSha256") != digest:
