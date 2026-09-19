@@ -456,3 +456,36 @@ def test_selection_returns_manifest_semantic_evidence_and_rejects_drift(tmp_path
         workspace.validate_asset_manifest_against_workspace(
             project, {"version": "1.0", "assets": [drifted]}
         )
+
+
+def test_active_discovery_workspace_cannot_be_bypassed_by_direct_manifest(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    workspace.record_discovery_pass(project, 0, [_discovered(project)])
+    with pytest.raises(PersianAssetWorkspaceError, match="no selected candidates"):
+        workspace.validate_asset_manifest_against_workspace(
+            project,
+            {"version": "1.0", "assets": [{
+                "id": "asset-1", "type": "video", "path": "unused.mp4",
+                "source_tool": "direct_clip_search", "scene_id": "scene-1",
+                "visual_event_id": "event-1",
+            }]},
+        )
+
+
+def test_workspace_bound_manifest_rejects_unselected_visual_event_rows(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    _, selected = _selected_candidate(project)
+    selected_row = {
+        "id": "asset-1", "type": "video", "path": "unused.mp4",
+        "source_tool": "direct_clip_search", "scene_id": "scene-1",
+        **selected["manifestBinding"], **selected["manifestEvidence"],
+    }
+    extra = {
+        "id": "asset-2", "type": "video", "path": "other.mp4",
+        "source_tool": "direct_clip_search", "scene_id": "scene-1",
+        "visual_event_id": "event-2",
+    }
+    with pytest.raises(PersianAssetWorkspaceError, match="not selected in the asset workspace"):
+        workspace.validate_asset_manifest_against_workspace(
+            project, {"version": "1.0", "assets": [selected_row, extra]}
+        )
