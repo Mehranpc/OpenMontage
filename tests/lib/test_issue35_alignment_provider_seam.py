@@ -9,6 +9,7 @@ from lib.persian_alignment_provider import (
     AlignmentProviderError,
     build_alignment_provider_plan,
     execute_alignment_with_fallback,
+    validate_alignment_provider_decision,
 )
 from tools.base_tool import ToolResult, ToolStatus
 
@@ -206,3 +207,35 @@ def test_word_timing_validator_can_force_provider_fallback() -> None:
     assert decision["selectedTool"] == "mlx_whisper_transcriber"
     assert "timing_validation_failure:transcriber" in decision["fallbackReason"]
     assert decision["heavyRecoveryUsed"] is False
+
+
+def test_persisted_decision_rejects_attempts_on_known_unavailable_provider() -> None:
+    primary = _tool("transcriber", "whisperx", ToolStatus.UNAVAILABLE)
+    mlx = _tool("mlx_whisper_transcriber", "mlx_whisper")
+    registry = FakeRegistry([primary, mlx])
+    plan = build_alignment_provider_plan(_policy(), registry=registry)
+    result = execute_alignment_with_fallback(
+        plan, input_path="narration.wav", output_dir="artifacts/transcription", registry=registry
+    )
+    decision = result["provider_decision"]
+    validate_alignment_provider_decision(decision, _policy())
+
+    tampered = {**decision, "attempts": [
+        {"tool": "transcriber", "provider": "whisperx", "profile": "lightweight", "semanticSuccess": False},
+        *decision["attempts"],
+    ]}
+    with pytest.raises(AlignmentProviderError, match="unavailable|policy-valid"):
+        validate_alignment_provider_decision(tampered, _policy())
+
+
+def test_persisted_decision_rejects_heavy_recovery_when_policy_forbids_it() -> None:
+    primary = _tool("transcriber", "whisperx", lightweight_success=False, heavy_success=True)
+    registry = FakeRegistry([primary])
+    plan = build_alignment_provider_plan(_policy(), registry=registry)
+    result = execute_alignment_with_fallback(
+        plan, input_path="narration.wav", output_dir="artifacts/transcription", registry=registry
+    )
+    decision = result["provider_decision"]
+    forbidden = {**_policy(), "heavyTranscriptionRecoveryOnly": False}
+    with pytest.raises(AlignmentProviderError, match="heavy recovery"):
+        validate_alignment_provider_decision(decision, forbidden)
