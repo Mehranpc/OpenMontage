@@ -196,3 +196,10 @@ def test_terminal_job_records_reconciliation_lag_separately(tmp_path: Path) -> N
     assert lag_span["parent_span_id"] == job_span["parent_span_id"]
     assert lag_span["started_at"] == job_span["finished_at"]
     assert lag_span["finished_at"] >= lag_span["started_at"]
+
+
+def test_workflow_status_surfaces_causal_trace_identity(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path)
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    status = workflow.workflow_status("run", pipeline_dir=projects_root)
+    assert status["causal_trace_id"] == state["causal_telemetry"]["trace_id"]
