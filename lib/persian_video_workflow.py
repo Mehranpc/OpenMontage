@@ -30,6 +30,15 @@ from lib.persian_editorial_hook import (
     validate_edit_hook_authority,
 )
 from lib.persian_durable_job import DurableJobError, reconcile_job, start_job
+from lib.persian_asset_workspace import (
+    PersianAssetWorkspaceError,
+    asset_workspace_status,
+    record_candidate_review,
+    record_discovery_pass,
+    reject_asset_candidate,
+    select_asset_candidate,
+    stage_asset_candidate,
+)
 from lib.persian_edit_workspace import (
     PersianEditWorkspaceError, artifact_sha256, compare_edit_candidates, convergence_status,
     load_promotable_edit_draft, preflight_edit_draft, promote_edit_draft, stage_edit_draft,
@@ -1653,6 +1662,15 @@ def record_asset_search_result(
         if clip_bytes > clip_ceiling:
             raise PersianVideoWorkflowError("asset result exceeded its issued per-clip byte ceiling")
 
+    identified_clips = [
+        dict(clip) for clip in clips
+        if isinstance(clip, Mapping)
+        and str(clip.get("source") or clip.get("provider") or "").strip()
+        and str(clip.get("source_id") or clip.get("clip_id") or "").strip()
+    ]
+    if identified_clips:
+        record_discovery_pass(project_root, retry_pass, identified_clips)
+
     candidates += int(usage.get("candidates_considered", 0))
     semantic_candidates += int(
         usage.get("semantic_candidates_reviewed", usage.get("candidates_considered", 0))
@@ -1674,10 +1692,77 @@ def record_asset_search_result(
         technical_rejects=technical_rejects,
         duplicate_technical_rejects=duplicate_technical_rejects,
         bytes_downloaded=downloaded_bytes,
+        workspace_discovery_candidates=asset_workspace_status(project_root)["discoveryCandidateCount"],
+        workspace_discovery_passes=asset_workspace_status(project_root)["discoveryPassCount"],
     )
     state["asset_usage"] = usage
     _write_state(_project_root(state), state)
     return state
+
+
+def _require_asset_candidate_phase(state: Mapping[str, Any]) -> None:
+    if state.get("status") != "active" or state.get("next_phase") != "acquire_assets":
+        raise PersianVideoWorkflowError(
+            "asset candidate lifecycle is available only during active acquire_assets"
+        )
+
+
+def stage_workflow_asset_candidate(
+    project_id: str, input_path: str | Path, *, pipeline_dir: Path | None = None
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    _require_asset_candidate_phase(state)
+    source = assert_read_allowed(state, str(input_path))
+    payload = _read_json(str(source))
+    return stage_asset_candidate(
+        _project_root(state),
+        discovery_id=str(payload.get("discovery_id") or payload.get("discoveryId") or ""),
+        visual_event_id=str(payload.get("visual_event_id") or payload.get("visualEventId") or ""),
+        semantic_beat_id=str(payload.get("semantic_beat_id") or payload.get("semanticBeatId") or ""),
+        narrative_role=(str(payload.get("narrative_role") or payload.get("narrativeRole") or "") or None),
+        source_in_seconds=payload.get("source_in_seconds", payload.get("sourceInSeconds", 0.0)),
+        duration_seconds=payload.get("duration_seconds", payload.get("durationSeconds")),
+        intended_crop=payload.get("intended_crop") or payload.get("intendedCrop") or {},
+        candidate_rank=payload.get("candidate_rank", payload.get("candidateRank")),
+        query=str(payload.get("query") or ""),
+        narration_span=str(payload.get("narration_span") or payload.get("narrationSpan") or ""),
+    )
+
+
+def review_workflow_asset_candidate(
+    project_id: str, candidate_id: str, input_path: str | Path, *, pipeline_dir: Path | None = None
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    _require_asset_candidate_phase(state)
+    source = assert_read_allowed(state, str(input_path))
+    return record_candidate_review(
+        _project_root(state), candidate_id, _read_json(str(source))
+    )
+
+
+def reject_workflow_asset_candidate(
+    project_id: str, candidate_id: str, *, category: str, reason: str,
+    pipeline_dir: Path | None = None,
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    _require_asset_candidate_phase(state)
+    return reject_asset_candidate(
+        _project_root(state), candidate_id, category=category, reason=reason
+    )
+
+
+def select_workflow_asset_candidate(
+    project_id: str, visual_event_id: str, candidate_id: str, *,
+    rejected_alternatives: Mapping[str, str], replace_existing: bool = False,
+    pipeline_dir: Path | None = None,
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    _require_asset_candidate_phase(state)
+    return select_asset_candidate(
+        _project_root(state), visual_event_id, candidate_id,
+        rejected_alternatives=rejected_alternatives,
+        replace_existing=replace_existing,
+    )
 
 
 def _candidate_path(project_root: Path, reported: str) -> Path:
@@ -2049,6 +2134,7 @@ def workflow_status(
             revision_cycle=int(state.get("user_revision_cycles") or 0),
         ),
         "asset_usage": state.get("asset_usage", {}),
+        "asset_workspace": asset_workspace_status(_project_root(state)),
         "alignment_policy": state.get("alignment_policy") or alignment_execution_policy(state),
         "causal_trace_id": (state.get("causal_telemetry") or {}).get("trace_id"),
         "time_accounting": phase_time_accounting(state),
@@ -2338,6 +2424,28 @@ def build_parser() -> argparse.ArgumentParser:
     asset_result.add_argument("--retry-pass", type=int, required=True)
     asset_result.add_argument("--json", required=True, metavar="PATH")
 
+    asset_candidate_stage = sub.add_parser("asset-candidate-stage", help="stage one durable source-window/crop candidate")
+    asset_candidate_stage.add_argument("project_id")
+    asset_candidate_stage.add_argument("--json", required=True, metavar="PATH")
+
+    asset_candidate_review = sub.add_parser("asset-candidate-review", help="persist immutable review evidence for a candidate")
+    asset_candidate_review.add_argument("project_id")
+    asset_candidate_review.add_argument("candidate_id")
+    asset_candidate_review.add_argument("--json", required=True, metavar="PATH")
+
+    asset_candidate_reject = sub.add_parser("asset-candidate-reject", help="record a technical, semantic, or editorial rejection")
+    asset_candidate_reject.add_argument("project_id")
+    asset_candidate_reject.add_argument("candidate_id")
+    asset_candidate_reject.add_argument("--category", choices=["technical", "semantic", "editorial"], required=True)
+    asset_candidate_reject.add_argument("--reason", required=True)
+
+    asset_candidate_select = sub.add_parser("asset-candidate-select", help="select one reviewed candidate for a visual event")
+    asset_candidate_select.add_argument("project_id")
+    asset_candidate_select.add_argument("visual_event_id")
+    asset_candidate_select.add_argument("candidate_id")
+    asset_candidate_select.add_argument("--rejections-json", metavar="PATH")
+    asset_candidate_select.add_argument("--replace-existing", action="store_true")
+
     edit_stage = sub.add_parser("edit-stage", help="stage an immutable edit draft inside the project")
     edit_stage.add_argument("project_id")
     edit_stage.add_argument("attempt_id")
@@ -2456,6 +2564,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                     result_data=_read_json(args.json),
                 )
             )
+        elif args.command == "asset-candidate-stage":
+            _print_json(stage_workflow_asset_candidate(args.project_id, args.json))
+        elif args.command == "asset-candidate-review":
+            _print_json(review_workflow_asset_candidate(
+                args.project_id, args.candidate_id, args.json
+            ))
+        elif args.command == "asset-candidate-reject":
+            _print_json(reject_workflow_asset_candidate(
+                args.project_id, args.candidate_id,
+                category=args.category, reason=args.reason,
+            ))
+        elif args.command == "asset-candidate-select":
+            rejections = _read_json(args.rejections_json) if args.rejections_json else {}
+            _print_json(select_workflow_asset_candidate(
+                args.project_id, args.visual_event_id, args.candidate_id,
+                rejected_alternatives={str(k): str(v) for k, v in rejections.items()},
+                replace_existing=args.replace_existing,
+            ))
         elif args.command == "edit-stage":
             _print_json(stage_workflow_edit_draft(
                 args.project_id,
@@ -2487,7 +2613,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "job-status":
             _print_json(reconcile_workflow_job(args.project_id, args.job_id))
         return 0
-    except (PersianVideoWorkflowError, PersianEditWorkspaceError, DurableJobError, CheckpointValidationError) as exc:
+    except (PersianVideoWorkflowError, PersianAssetWorkspaceError, PersianEditWorkspaceError, DurableJobError, CheckpointValidationError) as exc:
         parser = build_parser()
         parser.error(str(exc))
     return 2
