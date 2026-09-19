@@ -362,3 +362,79 @@ def test_workflow_status_surfaces_convergence_workspace_without_file_probing(tmp
     status = workflow.workflow_status("run", pipeline_dir=tmp_path)
     assert status["convergence"]["candidateCount"] == 2
     assert status["convergence"]["candidateIds"] == ["base", "layout-1"]
+
+
+
+def test_full_report_cache_hit_does_not_fabricate_component_cache_hits(monkeypatch, tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    calls = 0
+
+    def fake_aggregate(edit, *, base_dir=None, precomputed_components=None):
+        nonlocal calls
+        calls += 1
+        return {
+            "version": 1,
+            "policyVersion": preflight.PREFLIGHT_POLICY_VERSION,
+            "ok": True,
+            "status": "pass",
+            "artifactSha256": workspace.artifact_sha256(edit),
+            "blockingIssues": [],
+            "recoveryBudgets": {},
+            "warnings": [],
+            "watermarkDiagnostics": None,
+            "nextActions": [],
+            "diagnosticLayers": [],
+            "mediaCopies": 0,
+            "evidence": {},
+        }
+
+    monkeypatch.setattr(workspace, "aggregate_preflight_edit_decisions", fake_aggregate)
+    workspace.stage_edit_draft(project, "base", _edit(), max_candidates=10)
+    first = workspace.preflight_edit_draft(project, "base")
+    workspace.stage_edit_draft(project, "same-edit", _edit(), max_candidates=10)
+    second = workspace.preflight_edit_draft(project, "same-edit")
+
+    assert calls == 1
+    assert first["cacheHit"] is False
+    assert second["cacheHit"] is True
+    assert second["componentCacheHits"] == {
+        "retention": False,
+        "hook": False,
+        "browser": False,
+    }
+    manifest = workspace.load_convergence_candidate(project, "same-edit")
+    assert manifest["cacheHits"]["fullReport"] is True
+    assert manifest["cacheHits"]["browser"] is False
+
+
+def test_promotion_rejects_preflight_report_changed_after_candidate_binding(monkeypatch, tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    monkeypatch.setattr(preflight, "collect_persian_edit_diagnostics", lambda edit, *, base_dir=None: [])
+    monkeypatch.setattr(preflight, "audit_persian_retention", lambda persian: {"problems": [], "advisories": []})
+    monkeypatch.setattr(preflight, "audit_persian_hook_quality", lambda edit: {"problems": [], "advisories": []})
+    monkeypatch.setattr(
+        preflight,
+        "browser_preflight_edit_decisions",
+        lambda edit, *, base_dir=None: {"warnings": [], "watermarkDiagnostics": None},
+    )
+
+    workspace.stage_edit_draft(project, "base", _edit(), max_candidates=10)
+    report = workspace.preflight_edit_draft(project, "base")
+    assert report["ok"] is True
+    report_path = project / ".preflight" / "edit" / "base" / "preflight_report.json"
+    raw = __import__("json").loads(report_path.read_text(encoding="utf-8"))
+    raw["warnings"] = ["tampered after preflight"]
+    report_path.write_text(__import__("json").dumps(raw, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(PersianEditWorkspaceError, match="preflight report changed"):
+        workspace.promote_edit_draft(project, "base")
+
+
+def test_layout_recovery_rejects_unclassified_render_affecting_changes(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    workspace.stage_edit_draft(project, "base", _edit(), max_candidates=10)
+    forbidden = deepcopy(_edit())
+    forbidden["persian"]["format"] = "square"
+
+    with pytest.raises(PersianEditWorkspaceError, match="mutation surface"):
+        _stage_layout(project, "bad-format", forbidden, parent="base")
