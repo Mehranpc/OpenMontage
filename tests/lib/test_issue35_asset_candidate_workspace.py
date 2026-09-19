@@ -520,4 +520,3 @@ def test_status_surfaces_reviewed_reusable_candidates_by_visual_event(tmp_path: 
     assert reusable[1]["reviewSha256"] == workspace.load_asset_candidate(
         project, alternate["candidateId"]
     )["reviewSha256"]
-
