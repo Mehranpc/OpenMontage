@@ -14,6 +14,8 @@ Read the current project's workflow state. `input.mode` is one of:
 
 The initial script/audio inputs are copied under the current project's `inputs/` directory at bootstrap. Do not reach back to an article, earlier writing session, sibling project, or external draft for alternate wording.
 
+All mechanical probe/cache/helper/debug output belongs to the current project's official workspace. Never create temporary approved-copy, probe, or helper files in repository root. If approved copy is held by the agent rather than an existing external user file, bootstrap it directly or through stdin (`--approved-script-file -`) so the first durable copy is project-local.
+
 ### Approved script is authoritative
 
 When an approved script exists, preserve its lexical wording. Read `skills/pipelines/persian-footage/script-director.md` in its **authoritative-input/fidelity mode**: validate and package the supplied copy; do not author a replacement.

@@ -12,6 +12,7 @@ import hashlib
 import json
 import re
 import shutil
+import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -2340,10 +2341,16 @@ def workflow_status(
 
 
 def _load_text_file(path: str) -> str:
+    if str(path).strip() == "-":
+        text = sys.stdin.read()
+        if not text.strip():
+            raise PersianVideoWorkflowError("approved script stdin must not be empty")
+        return text
     source = Path(path).expanduser().resolve()
-    if _is_within(source, PROJECTS_DIR.resolve()):
+    if _is_within(source, REPO_ROOT.resolve()):
         raise PersianVideoWorkflowError(
-            "refusing text input from an existing project directory"
+            "refusing approved-script scratch from the repository; use --approved-script, "
+            "--approved-script-file -, or a source file outside the repository"
         )
     if not source.is_file():
         raise PersianVideoWorkflowError(f"text input file does not exist: {source}")
