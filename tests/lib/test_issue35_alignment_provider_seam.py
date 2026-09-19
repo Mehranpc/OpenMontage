@@ -239,3 +239,74 @@ def test_persisted_decision_rejects_heavy_recovery_when_policy_forbids_it() -> N
     forbidden = {**_policy(), "heavyTranscriptionRecoveryOnly": False}
     with pytest.raises(AlignmentProviderError, match="heavy recovery"):
         validate_alignment_provider_decision(decision, forbidden)
+
+
+def test_transcription_oriented_mode_preserves_full_transcription_primary_profile() -> None:
+    primary = _tool("transcriber", "whisperx")
+    registry = FakeRegistry([primary])
+    policy = {
+        "mode": "transcription_oriented",
+        "scriptAuthority": "spoken_narration",
+        "primaryModelClass": "speech_transcription",
+        "heavyTranscriptionRecoveryOnly": False,
+    }
+    plan = build_alignment_provider_plan(policy, registry=registry)
+    assert plan["primaryProfile"] == "transcription_primary"
+    result = execute_alignment_with_fallback(
+        plan, input_path="narration.wav", output_dir="artifacts/transcription", registry=registry
+    )
+    assert primary.execute_calls[0]["model_size"] == "large-v3"
+    assert result["provider_decision"]["heavyRecoveryUsed"] is False
+    assert result["provider_decision"]["attempts"][0]["profile"] == "transcription_primary"
+
+
+def test_front_door_alignment_plan_uses_workflow_policy_and_live_registry(tmp_path) -> None:
+    import lib.persian_video_workflow as workflow
+    from tests.lib.test_persian_video_workflow import _advance_to, _bootstrap
+
+    _bootstrap(tmp_path)
+    state = _advance_to(tmp_path, "align_script_timing")
+    primary = _tool("transcriber", "whisperx", ToolStatus.UNAVAILABLE)
+    mlx = _tool("mlx_whisper_transcriber", "mlx_whisper")
+    registry = FakeRegistry([primary, mlx])
+
+    plan = workflow.alignment_provider_plan_for_project(
+        "run", pipeline_dir=tmp_path, registry=registry
+    )
+    assert plan["mode"] == state["alignment_policy"]["mode"]
+    assert plan["selectedTool"] == "mlx_whisper_transcriber"
+    assert plan["fallbackReason"] == "primary_unavailable:transcriber"
+
+
+def test_alignment_completion_requires_valid_provider_decision_and_word_timing_count(tmp_path) -> None:
+    import lib.persian_video_workflow as workflow
+    from tests.lib.test_persian_video_workflow import _advance_to, _bootstrap
+
+    _bootstrap(tmp_path)
+    state = _advance_to(tmp_path, "align_script_timing")
+    registry = FakeRegistry([_tool("transcriber", "whisperx")])
+    plan = build_alignment_provider_plan(state["alignment_policy"], registry=registry)
+    result = execute_alignment_with_fallback(
+        plan, input_path="narration.wav", output_dir="artifacts/transcription", registry=registry
+    )
+
+    with pytest.raises(workflow.PersianVideoWorkflowError, match="provider decision"):
+        workflow._validate_alignment_completion(state, {"word_timing_count": 2})
+
+    normalized = workflow._validate_alignment_completion(state, {
+        "provider_decision": result["provider_decision"],
+        "word_timing_count": 2,
+        "alignment_mode": "timing_oriented",
+    })
+    assert normalized["provider"] == "whisperx"
+    assert normalized["provider_tool"] == "transcriber"
+    assert normalized["word_timing_count"] == 2
+    assert normalized["provider_decision"]["attempts"][-1]["semanticSuccess"] is True
+
+
+def test_parser_exposes_alignment_plan_command() -> None:
+    import lib.persian_video_workflow as workflow
+
+    args = workflow.build_parser().parse_args(["alignment-plan", "run"])
+    assert args.command == "alignment-plan"
+    assert args.project_id == "run"
