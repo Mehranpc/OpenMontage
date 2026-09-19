@@ -45,9 +45,17 @@ Complete `prepare_inputs` only when the project has both an authoritative produc
 
 Read `skills/pipelines/persian-footage/subtitle-alignment.md` before alignment. Approved-script wording owns every delivered character; ASR owns timing evidence only. For narration-only projects, the reviewed faithful transcript becomes the approved production text for this rule.
 
-Read the workflow's `alignment_policy` before choosing a model or provider. When `scriptAuthority` is `approved_script`, the default is `mode: timing_oriented`: use the smallest adequate word-timing path first. Do **not** start with a heavy transcription-oriented model merely because it is available; the text is already authoritative and only timing evidence is missing.
+Read the workflow's `alignment_policy`, then run the official capability probe before starting any semantic job:
 
-A heavy transcription model is recovery-only in approved-script mode. Use it only if the lightweight timing attempt cannot produce alignment-safe word timings or fails the canonical alignment gates. When recovery is needed, persist the lightweight failure/recovery reason, provider/model used, and `heavy_recovery_used: true` in phase evidence so the extra cost is auditable rather than implicit.
+```bash
+python -m lib.persian_video_workflow alignment-plan <project-id>
+```
+
+The plan is authoritative for provider routing on the execution machine. It records every considered provider, live availability, `word_timestamps` capability/input fit, and the first policy-valid provider. Do **not** execute a provider that the plan already marks unavailable or incompatible. Normal production uses `lib.persian_alignment_provider.execute_alignment_with_fallback` (directly or through the canonical harness), which rechecks status immediately before invocation and exhausts available lightweight providers before heavy recovery.
+
+When `scriptAuthority` is `approved_script`, the default is `mode: timing_oriented`: use the smallest adequate word-timing profile first. Do **not** start with a heavy transcription-oriented model merely because it is available; the text is already authoritative and only timing evidence is missing. A heavy transcription model is recovery-only in approved-script mode and may begin only after all policy-valid lightweight providers fail semantic/timing validation.
+
+Persist the returned `provider_decision` when completing `align_script_timing`. It records considered providers, availability/fit, selected provider/tool/model, semantic outcomes, provider execution timing, fallback history/reason, and whether heavy recovery was used. Completion also requires a positive `word_timing_count`; process exit success alone never certifies alignment success.
 
 For `narration_only`, use the transcription-oriented policy because the recording still owns the lexical content as well as timing. Review and correct uncertain ASR spelling against the recording before treating the transcript as authoritative.
 

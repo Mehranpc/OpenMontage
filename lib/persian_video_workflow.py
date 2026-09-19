@@ -310,14 +310,21 @@ def _validate_alignment_completion(
         )
     selected_provider = str(decision.get("selectedProvider") or "")
     selected_tool = str(decision.get("selectedTool") or "")
+    selected_model = str(decision.get("selectedModel") or "")
     if str(evidence.get("provider") or selected_provider) != selected_provider:
         raise PersianVideoWorkflowError(
             "alignment completion provider does not match provider decision"
+        )
+    if str(evidence.get("model") or selected_model) != selected_model:
+        raise PersianVideoWorkflowError(
+            "alignment completion model does not match provider decision"
         )
     return {
         "alignment_mode": mode,
         "provider": selected_provider,
         "provider_tool": selected_tool,
+        "model": selected_model,
+        "provider_execution_seconds": float(decision.get("executionDurationSeconds") or 0.0),
         "word_timing_count": count,
         "heavy_recovery_used": bool(decision.get("heavyRecoveryUsed")),
         "provider_fallback_reason": decision.get("fallbackReason"),

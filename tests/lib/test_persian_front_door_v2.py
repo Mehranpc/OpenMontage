@@ -21,8 +21,12 @@ def _fake_alignment(*_args, **_kwargs):
         "selectionPolicy": "first_available_policy_valid_provider",
         "selectedTool": "transcriber",
         "selectedProvider": "fixture",
+        "selectedModel": "fixture-word-timing",
+        "semanticOutcome": "succeeded",
+        "executionDurationSeconds": 0.0,
         "fallbackReason": None,
         "fallbackHistory": [],
+        "recoveryReason": None,
         "heavyRecoveryUsed": False,
         "candidates": [{
             "tool": "transcriber",
@@ -42,6 +46,9 @@ def _fake_alignment(*_args, **_kwargs):
             "tool": "transcriber",
             "provider": "fixture",
             "profile": "lightweight",
+            "model": "fixture-word-timing",
+            "durationSeconds": 0.0,
+            "invoked": True,
             "semanticSuccess": True,
         }],
     }

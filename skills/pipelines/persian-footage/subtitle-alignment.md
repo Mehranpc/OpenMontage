@@ -28,6 +28,13 @@ The approved-script record is:
 `maxCps` may lower the repository ceiling but cannot raise it above 21 visible
 characters per second.
 
+
+## Provider capability routing
+
+Provider choice is a capability decision, not an agent preference. Before alignment execution, use the Persian front door `alignment-plan` command. A provider must be live-available, accept project-local `input_path` audio, and expose `word_timestamps`; known-unavailable providers are skipped without invocation. The deterministic fallback order is persisted with the alignment result, including selected provider/model, semantic outcome, execution duration, fallback reason/history, and heavy-recovery status.
+
+In approved-script mode, the provider supplies timing evidence only. Exhaust policy-valid lightweight timing providers before any heavy transcription recovery. In narration-only mode, preserve the transcription-oriented full-transcription profile because the recording still owns lexical content. Never infer successful alignment from a wrapper/process exit code when the provider `ToolResult.success` is false or no word timestamps are produced.
+
 ## Required gate
 
 The registered `persian_compose` implementation aligns groups of approved tokens to
