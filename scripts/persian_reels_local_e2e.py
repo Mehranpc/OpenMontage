@@ -32,6 +32,7 @@ from lib.persian_rendered_review import (
     validate_rendered_hook_review,
 )
 from lib.persian_retention import audit_persian_retention
+from lib.persian_quality_evidence import compose_quality_evidence
 from lib.persian_scenes import audit_scene_plan
 from lib.persian_srt_alignment import build_script_aligned_cues
 from lib.persian_video_workflow import (
@@ -493,7 +494,7 @@ def _extract_frames(candidate: Path, target: Path, times: list[float], prefix: s
 
 def _build_opening_review(
     opening: Path, frames: list[str], project: Path, hook_audit: dict[str, Any],
-    *, edit_artifact_sha256: str,
+    retention: dict[str, Any], motion_qa: dict[str, Any], *, edit_artifact_sha256: str,
 ) -> tuple[Path, dict[str, Any]]:
     opening_sha = _sha(opening)
     cold_input = build_cold_viewer_review_input(
@@ -552,6 +553,9 @@ def _build_opening_review(
     validate_rendered_hook_review(
         hook_review, candidate_sha256=opening_sha, require_pass=True
     )
+    quality_evidence = compose_quality_evidence(
+        retention, motion_qa, hook_review=hook_review
+    )
     review = {
         "version": "1.0",
         "status": "pass",
@@ -560,6 +564,9 @@ def _build_opening_review(
         "editArtifactSha256": edit_artifact_sha256,
         "hookQualityAudit": hook_audit,
         "hookQualityReview": hook_review,
+        "retentionAudit": retention,
+        "postRenderMotionQa": motion_qa,
+        "qualityEvidence": quality_evidence,
         "coldViewerReviewInput": {"path": str(cold_path), "sha256": cold_sha},
     }
     path = _write_json(project / "artifacts" / "opening_review.json", review)
@@ -792,6 +799,7 @@ def _render_report(data: dict[str, Any], candidate: Path, retention: dict[str, A
         "delivery_status": "final_candidate", "human_visual_approval": False,
         "persian_text_verified": False, "retention_audit": retention,
         "post_render_motion_qa": data["post_render_motion_qa"],
+        "quality_evidence": compose_quality_evidence(retention, data["post_render_motion_qa"]),
         "silent_watch_audit": {"main_point_understood": True,
             "hook_direction_understood": True, "conclusion_understood": True,
             "notes": ["Trial-only fixture assertion: approved-script hybrid captions exercise muted-view semantics; not production creative certification."]},
@@ -960,7 +968,8 @@ def run_local(root: Path) -> dict[str, Any]:
             [0.25, 1.0, 2.4, 4.2], "opening"
         )
         opening_review_path, opening_review = _build_opening_review(
-            opening, opening_frames, project, hook_audit,
+            opening, opening_frames, project, hook_audit, retention,
+            dict(opening_result.data or {}).get("post_render_motion_qa") or {},
             edit_artifact_sha256=edit_artifact_sha256,
         )
     except Exception as exc:
@@ -1037,12 +1046,19 @@ def run_local(root: Path) -> dict[str, Any]:
         pipeline_dir=root,
     )
     terminal = complete_phase(PROJECT_ID, "awaiting_human", pipeline_dir=root)
+    final_quality_ref = terminal["evidence"]["final_review"]
+    final_quality_path = Path(final_quality_ref["quality_evidence_path"])
+    final_quality_evidence = json.loads(final_quality_path.read_text(encoding="utf-8"))
     summary = {
         "ok": True, "production_certified": False, "disclaimer": DISCLAIMER,
         "project_root": str(project), "candidate_path": str(candidate),
         "candidate_sha256": _sha(candidate), "workflow_status": terminal["status"],
         "opening_review_path": str(opening_review_path),
         "opening_candidate_sha256": opening_review["openingCandidateSha256"],
+        "opening_quality_evidence": opening_review["qualityEvidence"],
+        "final_quality_evidence": final_quality_evidence,
+        "final_quality_evidence_path": str(final_quality_path),
+        "final_quality_evidence_sha256": final_quality_ref["quality_evidence_sha256"],
         "mastering": mastering,
         "next_phase": terminal.get("next_phase"), "caption_mode": data["caption_mode"],
         "burned_caption_count": data["burned_caption_count"],

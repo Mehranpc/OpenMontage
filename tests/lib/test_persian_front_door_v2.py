@@ -203,6 +203,11 @@ def test_full_front_door_reaches_awaiting_human_with_opening_gate_and_mastering(
     assert result["preflight_report_path"]
     assert result["opening_review_path"]
     assert result["final_review_path"]
+    assert result["opening_quality_evidence"]["openingSummary"]["coldViewComprehension"] is True
+    assert result["final_quality_evidence"]["openingSummary"]["coldViewComprehension"] is True
+    assert {item["provenance"]["domain"] for item in result["final_quality_evidence"]["evidence"]} == {
+        "authored_timeline", "rendered_pixels", "semantic_review"
+    }
     assert result["candidate_sha256"] == result["mastering"]["candidateSha256"]
 
 

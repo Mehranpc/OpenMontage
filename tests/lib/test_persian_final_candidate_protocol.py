@@ -240,7 +240,7 @@ def test_structural_retention_treats_a_single_shot_opening_as_advisory():
     assert audit["problems"] == []
     assert audit["first3Seconds"]["baselineFrameCounted"] is False
     assert audit["first3Seconds"]["meaningfulEventCount"] == 0
-    assert any("meaningful post-start" in item for item in audit["advisories"])
+    assert any("authored post-start shot/reveal change" in item for item in audit["advisories"])
 
 
 def test_summary_can_carry_retention_audit_without_media_copies():
