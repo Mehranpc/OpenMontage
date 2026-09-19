@@ -136,6 +136,7 @@ def build_alignment_provider_plan(
         "capability": _REQUIRED_CAPABILITY,
         "mode": mode,
         "scriptAuthority": authority,
+        "primaryProfile": "lightweight" if mode == "timing_oriented" else "transcription_primary",
         "heavyRecoveryAllowed": bool(policy.get("heavyTranscriptionRecoveryOnly")),
         "selectionPolicy": "first_available_policy_valid_provider",
         "selectedTool": selected["tool"],
@@ -154,7 +155,10 @@ def _inputs_for_candidate(
     language: str | None,
     initial_prompt: str | None,
 ) -> dict[str, Any]:
-    args_key = "heavyArgs" if profile == "heavy_recovery" else "lightweightArgs"
+    if profile in {"heavy_recovery", "transcription_primary"} and candidate.get("heavyArgs") is not None:
+        args_key = "heavyArgs"
+    else:
+        args_key = "lightweightArgs"
     model_args = candidate.get(args_key)
     if model_args is None:
         raise AlignmentProviderError(
@@ -299,8 +303,11 @@ def execute_alignment_with_fallback(
         data["heavy_recovery_used"] = profile == "heavy_recovery"
         return data
 
+    primary_profile = str(plan.get("primaryProfile") or "lightweight")
+    if primary_profile not in {"lightweight", "transcription_primary"}:
+        raise AlignmentProviderError(f"unsupported primary alignment profile: {primary_profile}")
     for candidate in candidates:
-        data = attempt(candidate, "lightweight")
+        data = attempt(candidate, primary_profile)
         if data is not None:
             return data
 
@@ -319,9 +326,93 @@ def execute_alignment_with_fallback(
     raise AlignmentProviderError("alignment providers exhausted without valid word timing evidence: " + summary)
 
 
+def validate_alignment_provider_decision(
+    decision: Mapping[str, Any], policy: Mapping[str, Any]
+) -> None:
+    """Validate persisted selection/fallback evidence without reprobeing providers."""
+    if not isinstance(decision, Mapping):
+        raise AlignmentProviderError("alignment provider decision must be an object")
+    if str(decision.get("version") or "") != ALIGNMENT_PROVIDER_DECISION_VERSION:
+        raise AlignmentProviderError("alignment provider decision version is unsupported")
+    if str(decision.get("capability") or "") != _REQUIRED_CAPABILITY:
+        raise AlignmentProviderError("alignment provider decision must certify word_timestamps capability")
+    expected_mode = str(policy.get("mode") or "")
+    if str(decision.get("mode") or "") != expected_mode:
+        raise AlignmentProviderError("alignment provider decision mode does not match workflow policy")
+    expected_authority = str(policy.get("scriptAuthority") or "")
+    if str(decision.get("scriptAuthority") or "") != expected_authority:
+        raise AlignmentProviderError("alignment provider decision script authority does not match workflow policy")
+
+    candidates_raw = decision.get("candidates")
+    if not isinstance(candidates_raw, list) or not candidates_raw:
+        raise AlignmentProviderError("alignment provider decision requires candidate availability evidence")
+    candidates: dict[str, Mapping[str, Any]] = {}
+    for item in candidates_raw:
+        if not isinstance(item, Mapping):
+            raise AlignmentProviderError("alignment provider candidates must be objects")
+        name = str(item.get("tool") or "")
+        if not name or name in candidates:
+            raise AlignmentProviderError("alignment provider candidates require unique tool names")
+        candidates[name] = item
+
+    selected_tool = str(decision.get("selectedTool") or "")
+    selected_provider = str(decision.get("selectedProvider") or "")
+    selected = candidates.get(selected_tool)
+    if selected is None or not selected_provider:
+        raise AlignmentProviderError("alignment provider decision requires a selected provider/tool")
+    if selected.get("fit") is not True or str(selected.get("availability") or "") != ToolStatus.AVAILABLE.value:
+        raise AlignmentProviderError("selected alignment provider was not policy-valid and available at planning time")
+    if selected.get("supportsInputPath") is not True or str(selected.get("requiredCapability") or "") != _REQUIRED_CAPABILITY:
+        raise AlignmentProviderError("selected alignment provider lacks required input_path/word_timestamps fit evidence")
+
+    attempts = decision.get("attempts")
+    if not isinstance(attempts, list) or not attempts:
+        raise AlignmentProviderError("alignment provider decision requires execution attempts")
+    heavy_used = decision.get("heavyRecoveryUsed")
+    if not isinstance(heavy_used, bool):
+        raise AlignmentProviderError("alignment provider decision heavyRecoveryUsed must be boolean")
+    policy_heavy_allowed = bool(policy.get("heavyTranscriptionRecoveryOnly"))
+    if heavy_used and not policy_heavy_allowed:
+        raise AlignmentProviderError("heavy recovery is forbidden by the current alignment policy")
+
+    for raw in attempts:
+        if not isinstance(raw, Mapping):
+            raise AlignmentProviderError("alignment provider attempts must be objects")
+        name = str(raw.get("tool") or "")
+        candidate = candidates.get(name)
+        if candidate is None:
+            raise AlignmentProviderError(f"alignment attempt references unknown provider tool: {name}")
+        if candidate.get("fit") is not True or str(candidate.get("availability") or "") != ToolStatus.AVAILABLE.value:
+            raise AlignmentProviderError(
+                f"alignment attempt executed provider {name!r} that was unavailable or not policy-valid"
+            )
+        profile = str(raw.get("profile") or "")
+        if profile not in {"lightweight", "transcription_primary", "heavy_recovery"}:
+            raise AlignmentProviderError(f"alignment attempt has unsupported profile: {profile}")
+        if profile == "heavy_recovery" and not policy_heavy_allowed:
+            raise AlignmentProviderError("heavy recovery attempt is forbidden by the current alignment policy")
+
+    final = attempts[-1]
+    if final.get("semanticSuccess") is not True:
+        raise AlignmentProviderError("final alignment provider attempt must be semantically successful")
+    if str(final.get("tool") or "") != selected_tool:
+        raise AlignmentProviderError("selected alignment tool must match the successful final attempt")
+    final_profile = str(final.get("profile") or "")
+    if heavy_used != (final_profile == "heavy_recovery"):
+        raise AlignmentProviderError("heavyRecoveryUsed does not match the successful execution profile")
+
+    fallback_needed = (
+        selected_tool != str(candidates_raw[0].get("tool") or "")
+        or any(item.get("semanticSuccess") is not True for item in attempts[:-1] if isinstance(item, Mapping))
+    )
+    if fallback_needed and not str(decision.get("fallbackReason") or "").strip():
+        raise AlignmentProviderError("alignment provider fallback reason must be persisted")
+
+
 __all__ = [
     "ALIGNMENT_PROVIDER_DECISION_VERSION",
     "AlignmentProviderError",
     "build_alignment_provider_plan",
     "execute_alignment_with_fallback",
+    "validate_alignment_provider_decision",
 ]
