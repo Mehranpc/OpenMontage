@@ -253,3 +253,112 @@ def test_candidate_compare_and_digest_bound_promotion_update_lifecycle(monkeypat
     manifest = workspace.load_convergence_candidate(project, "layout-1")
     assert manifest["disposition"] == "promoted"
     assert workspace.convergence_status(project)["promotedCandidateId"] == "layout-1"
+
+
+
+def test_front_door_edit_stage_derives_workspace_budget_cycle_and_recovery_metadata(tmp_path: Path, monkeypatch) -> None:
+    from lib import persian_video_workflow as workflow
+
+    source = tmp_path / "candidate.json"
+    source.write_text("{}", encoding="utf-8")
+    project = tmp_path / "run"
+    state = {
+        "project_id": "run",
+        "status": "active",
+        "next_phase": "no_copy_preflight",
+        "budgets": {"max_revisions_per_stage": 3},
+        "user_revision_cycles": 2,
+        "hook_selection": {"authority": "test"},
+        "read_allowlist": {"project_root": str(project)},
+    }
+    captured = {}
+    monkeypatch.setattr(workflow, "load_workflow_state", lambda *args, **kwargs: state)
+    monkeypatch.setattr(workflow, "assert_read_allowed", lambda _state, path: Path(path))
+    monkeypatch.setattr(workflow, "_read_json", lambda _path: {"persian": {}})
+    monkeypatch.setattr(workflow, "validate_edit_hook_authority", lambda *args, **kwargs: {"valid": True})
+
+    def fake_stage(project_dir, attempt_id, payload, **kwargs):
+        captured.update({"project_dir": project_dir, "attempt_id": attempt_id, "payload": payload, **kwargs})
+        return {"candidateId": attempt_id, "artifactSha256": "a" * 64}
+
+    monkeypatch.setattr(workflow, "stage_edit_draft", fake_stage)
+    result = workflow.stage_workflow_edit_draft(
+        "run",
+        "layout-1",
+        source,
+        parent_attempt_id="base",
+        diagnostic_code="FILM_TYPE_LAYOUT_OVERFLOW",
+        recovery_class="FILM_TYPE_LAYOUT",
+        strategy="select_curated_typography_recipe",
+        changed_fields=["typography.recipe"],
+        pipeline_dir=tmp_path,
+    )
+
+    assert captured["parent_attempt_id"] == "base"
+    assert captured["diagnostic_issue"] == {
+        "code": "FILM_TYPE_LAYOUT_OVERFLOW",
+        "recoveryClass": "FILM_TYPE_LAYOUT",
+    }
+    assert captured["strategy"] == "select_curated_typography_recipe"
+    assert captured["changed_fields"] == ["typography.recipe"]
+    assert captured["max_candidates"] == 4
+    assert captured["revision_cycle"] == 2
+    assert result["convergenceBudget"] == {"maxCandidates": 4, "revisionCycle": 2}
+
+
+def test_front_door_parser_exposes_recovery_candidate_metadata_and_compare_command() -> None:
+    from lib import persian_video_workflow as workflow
+
+    parser = workflow.build_parser()
+    staged = parser.parse_args([
+        "edit-stage", "run", "layout-1", "--json", "/tmp/edit.json",
+        "--parent", "base",
+        "--diagnostic-code", "FILM_TYPE_LAYOUT_OVERFLOW",
+        "--recovery-class", "FILM_TYPE_LAYOUT",
+        "--strategy", "select_curated_typography_recipe",
+        "--changed-field", "typography.recipe",
+    ])
+    assert staged.parent_attempt_id == "base"
+    assert staged.diagnostic_code == "FILM_TYPE_LAYOUT_OVERFLOW"
+    assert staged.recovery_class == "FILM_TYPE_LAYOUT"
+    assert staged.changed_fields == ["typography.recipe"]
+
+    compared = parser.parse_args(["edit-compare", "run", "base", "layout-1"])
+    assert compared.command == "edit-compare"
+    assert compared.left_attempt_id == "base"
+    assert compared.right_attempt_id == "layout-1"
+
+
+def test_workflow_status_surfaces_convergence_workspace_without_file_probing(tmp_path: Path, monkeypatch) -> None:
+    from lib import persian_video_workflow as workflow
+
+    project = tmp_path / "run"
+    state = {
+        "project_id": "run",
+        "status": "active",
+        "next_phase": "no_copy_preflight",
+        "input": {},
+        "completed_phases": [],
+        "attempts": {},
+        "send_backs": 0,
+        "recovery_attempts": {},
+        "asset_usage": {},
+        "alignment_policy": {},
+        "read_allowlist": {"project_root": str(project)},
+    }
+    monkeypatch.setattr(workflow, "load_workflow_state", lambda *args, **kwargs: state)
+    monkeypatch.setattr(workflow, "phase_time_accounting", lambda _state: {})
+    monkeypatch.setattr(
+        workflow,
+        "convergence_status",
+        lambda project_dir: {
+            "status": "active",
+            "candidateCount": 2,
+            "candidateIds": ["base", "layout-1"],
+            "promotedCandidateId": None,
+            "unresolved": None,
+        },
+    )
+    status = workflow.workflow_status("run", pipeline_dir=tmp_path)
+    assert status["convergence"]["candidateCount"] == 2
+    assert status["convergence"]["candidateIds"] == ["base", "layout-1"]
