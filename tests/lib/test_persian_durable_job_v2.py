@@ -61,7 +61,9 @@ def test_real_worker_imports_repo_and_persists_separate_outcomes(tmp_path: Path)
     final = None
     for _ in range(80):
         final = reconcile_job(tmp_path, "real")
-        if final.get("status") in {"succeeded", "failed", "interrupted"}:
+        execution_terminal = final.get("status") in {"succeeded", "failed", "interrupted"}
+        reporting_terminal = final.get("reportingOutcome") in {"succeeded", "failed"}
+        if execution_terminal and (final.get("status") == "interrupted" or reporting_terminal):
             break
         time.sleep(0.1)
     assert final is not None and final["status"] == "succeeded"
