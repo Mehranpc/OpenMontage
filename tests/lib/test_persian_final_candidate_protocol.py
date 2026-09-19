@@ -322,6 +322,8 @@ def test_protocol_is_required_and_bounded():
     protocol = (ROOT / "skills/pipelines/persian-footage/final-candidate-protocol.md").read_text()
     assert "pipelines/persian-footage/final-candidate-protocol" in manifest
     assert "Never call `PersianCompose._build_props` directly" in protocol
-    assert "three footage/layout candidates per beat" in protocol
+    assert "durable candidate workspace" in protocol
+    assert "global candidate ceiling" in protocol
+    assert "`needs_revision`" in protocol
     assert "candidate_sha256" in protocol
     assert "recomputes it" in protocol

@@ -74,7 +74,7 @@ def test_watermark_preflight_is_subject_geometry_agnostic(monkeypatch, tmp_path:
     ]
     monkeypatch.setattr(preflight, "audit_persian_retention", lambda _: {"problems": []})
     monkeypatch.setattr(preflight, "audit_persian_hook_quality", lambda _: {"version": "2.0", "required": False, "problems": [], "advisories": []})
-    monkeypatch.setattr(preflight, "preflight_edit_decisions", lambda *a, **k: {"warnings": [], "watermarkDiagnostics": None})
+    monkeypatch.setattr(preflight, "browser_preflight_edit_decisions", lambda *a, **k: {"warnings": [], "watermarkDiagnostics": None})
 
     report = preflight.aggregate_preflight_edit_decisions(payload, base_dir=tmp_path)
 
