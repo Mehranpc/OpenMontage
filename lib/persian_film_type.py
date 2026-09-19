@@ -11,6 +11,8 @@ import subprocess
 import tempfile
 from typing import Any
 
+from lib.persian_project_workspace import active_scratch_root
+
 
 class FilmTypePreflightError(ValueError):
     """Structured browser-prepass refusal with machine-readable diagnostics."""
@@ -36,7 +38,9 @@ def _split_diagnostics(detail: str) -> tuple[str, str, dict[str, Any]]:
     return human.strip(), str(payload.get("code") or "FILM_TYPE_PREPASS"), diagnostics if isinstance(diagnostics, dict) else {}
 
 
-def prepare_film_type_props(props: dict[str, Any], composer: Path) -> dict[str, Any]:
+def prepare_film_type_props(
+    props: dict[str, Any], composer: Path, *, scratch_dir: Path | None = None
+) -> dict[str, Any]:
     """Return props measured by the same browser/renderer code that will paint.
 
     Input/output and bundle files are temporary. Media remains in the staging
@@ -46,7 +50,13 @@ def prepare_film_type_props(props: dict[str, Any], composer: Path) -> dict[str, 
     script = composer / "scripts" / "prepare-persian-film-type.mjs"
     if not script.is_file():
         raise ValueError("Film Type preparation script is missing; apply the complete patch.")
-    with tempfile.TemporaryDirectory(prefix="persian-film-type-") as temp:
+    scratch = scratch_dir.expanduser().resolve() if scratch_dir is not None else active_scratch_root()
+    if scratch is not None:
+        scratch.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix="persian-film-type-",
+        dir=str(scratch) if scratch is not None else None,
+    ) as temp:
         directory = Path(temp)
         source = directory / "input.json"
         result = directory / "measured.json"
