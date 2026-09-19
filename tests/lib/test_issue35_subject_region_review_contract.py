@@ -79,7 +79,7 @@ def test_subject_region_recovery_owns_only_subject_regions(tmp_path: Path) -> No
         changed_fields=["persian.shots[0].avoidRegions"],
         max_candidates=3, revision_cycle=1,
     )
-    assert staged["candidate"]["changedScopes"] == ["subject_regions"]
+    assert staged["changedScopes"] == ["subject_regions"]
 
 
 def test_missing_reviewed_regions_are_not_misclassified_as_typography(
