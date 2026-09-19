@@ -555,15 +555,26 @@ def aggregate_preflight_edit_decisions(
             next_actions=actions,
             diagnostic_layers=["browser"],
         )
-    except (OSError, ValueError, TypeError, KeyError) as exc:
+    except ValueError as exc:
+        # Browser preflight uses ValueError for deterministic refusals caused by
+        # authored edit fields (for example moment pacing or brand governance).
+        # These must be repairable through bounded edit convergence; treating
+        # them as runtime failures freezes the edit digest and creates a
+        # recovery dead-end.
         message = str(exc)
-        fallback_code = (
-            "EDIT_ARTIFACT"
-            if "non-canonical Persian watermark requires overrideAuthorization" in message
-            else "PREFLIGHT_RUNTIME"
+        code = _problem_code(message, "EDIT_ARTIFACT")
+        recovery_class = recovery_class_for_code(code, "EDIT_ARTIFACT")
+        return _report(
+            ok=False, edit=edit,
+            blocking=[{"code": code, "message": message, "recoveryClass": recovery_class}],
+            evidence=evidence,
+            next_actions=["Repair only the reported edit-contract field, then rerun the same dependency set."],
+            diagnostic_layers=["browser"],
         )
-        code = _problem_code(message, fallback_code)
-        recovery_class = recovery_class_for_code(code, fallback_code)
+    except (OSError, TypeError, KeyError) as exc:
+        message = str(exc)
+        code = _problem_code(message, "PREFLIGHT_RUNTIME")
+        recovery_class = recovery_class_for_code(code, "PREFLIGHT_RUNTIME")
         return _report(
             ok=False, edit=edit,
             blocking=[{"code": code, "message": message, "recoveryClass": recovery_class}],

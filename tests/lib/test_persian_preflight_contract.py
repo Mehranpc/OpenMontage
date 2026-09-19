@@ -222,3 +222,47 @@ def test_brand_contract_failure_is_edit_artifact_not_runtime_recovery(
     assert issue["code"] == "EDIT_ARTIFACT"
     assert issue["recoveryClass"] == "EDIT_ARTIFACT"
     assert report["recoveryBudgets"]["EDIT_ARTIFACT"] == 2
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "the moment set breaks its pacing rules, so it is refused before rendering rather than after",
+        "non-canonical Persian watermark requires overrideAuthorization",
+    ],
+)
+def test_browser_value_error_for_edit_contract_is_edit_artifact_recovery(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, message: str
+) -> None:
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"fixture")
+    payload = _payload(str(source))
+
+    def edit_contract_refusal(*args, **kwargs):
+        raise ValueError(message)
+
+    monkeypatch.setattr(preflight, "browser_preflight_edit_decisions", edit_contract_refusal)
+    report = preflight.aggregate_preflight_edit_decisions(payload, base_dir=tmp_path)
+
+    assert report["ok"] is False
+    issue = report["blockingIssues"][0]
+    assert issue["code"] == "EDIT_ARTIFACT"
+    assert issue["recoveryClass"] == "EDIT_ARTIFACT"
+    assert report["recoveryBudgets"]["EDIT_ARTIFACT"] == 2
+
+
+def test_browser_oserror_remains_runtime_recovery(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"fixture")
+    payload = _payload(str(source))
+
+    def runtime_failure(*args, **kwargs):
+        raise OSError("chromium process unavailable")
+
+    monkeypatch.setattr(preflight, "browser_preflight_edit_decisions", runtime_failure)
+    report = preflight.aggregate_preflight_edit_decisions(payload, base_dir=tmp_path)
+
+    issue = report["blockingIssues"][0]
+    assert issue["code"] == "PREFLIGHT_RUNTIME"
+    assert issue["recoveryClass"] == "PREFLIGHT_RUNTIME"
