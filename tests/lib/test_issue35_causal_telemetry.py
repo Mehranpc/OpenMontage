@@ -230,3 +230,40 @@ def test_causal_span_identity_and_parentage_are_guarded() -> None:
             finished_at=BASE + timedelta(seconds=1),
             fields={"span_id": "evil"},
         )
+
+
+def test_workflow_commit_lag_is_a_child_accounting_span(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path)
+    kernel.start_phase_job(
+        "run",
+        job_id="commit-lag",
+        phase="prepare_inputs",
+        argv=["python", "-c", _semantic_child()],
+        idempotence_key="commit-lag-v1",
+        telemetry_category="machine_local_execution",
+        pipeline_dir=projects_root,
+        now=BASE + timedelta(seconds=5),
+    )
+    _wait(projects_root, "commit-lag")
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    evidence = {
+        "authoritative_script_sha256": state["input"]["approved_script"]["sha256"],
+        "narration_sha256": state["input"]["narration"]["sha256"],
+    }
+    kernel.commit_phase_job(
+        "run", "commit-lag", evidence=evidence, pipeline_dir=projects_root
+    )
+
+    committed = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    spans = committed["causal_telemetry"]["spans"]
+    reconcile_span = next(
+        span for span in spans if span.get("span_id") == "reconcile:commit-lag"
+    )
+    transition_span = next(
+        span for span in spans if span.get("kind") == "workflow_transition"
+        and span.get("job_id") == "commit-lag"
+    )
+    assert transition_span["category"] == "accounting_reconciliation"
+    assert transition_span["parent_span_id"] == reconcile_span["parent_span_id"]
+    assert transition_span["started_at"] == reconcile_span["finished_at"]
+    assert transition_span["outcome"] == "succeeded"
