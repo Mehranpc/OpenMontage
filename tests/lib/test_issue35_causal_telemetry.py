@@ -126,6 +126,7 @@ def test_causal_accounting_conserves_wall_clock_and_exposes_unattributed_time() 
     assert result["provider_wait_seconds"] == 20.0
     assert result["browser_render_seconds"] == 30.0
     assert result["telemetry_span_count"] == 2
+    assert result["causal_coverage_percent"] == 50.0
 
 
 def test_overlapping_accounting_spans_require_explicit_concurrency() -> None:
@@ -169,3 +170,29 @@ def test_overlapping_accounting_spans_require_explicit_concurrency() -> None:
     assert result["causal_covered_seconds"] == 10.0
     assert result["explicit_concurrency_seconds"] == 10.0
     assert result["unattributed_wall_seconds"] == 0.0
+    assert result["causal_coverage_percent"] == 100.0
+
+
+def test_terminal_job_records_reconciliation_lag_separately(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path)
+    kernel.start_phase_job(
+        "run",
+        job_id="lag-job",
+        phase="prepare_inputs",
+        argv=["python", "-c", _semantic_child()],
+        idempotence_key="lag-job-v1",
+        telemetry_category="machine_local_execution",
+        pipeline_dir=projects_root,
+        now=BASE + timedelta(seconds=5),
+    )
+    final = _wait(projects_root, "lag-job")
+    assert final["executionOutcome"] == "succeeded"
+
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    spans = state["causal_telemetry"]["spans"]
+    job_span = next(span for span in spans if span.get("span_id") == "job:lag-job")
+    lag_span = next(span for span in spans if span.get("span_id") == "reconcile:lag-job")
+    assert lag_span["category"] == "accounting_reconciliation"
+    assert lag_span["parent_span_id"] == job_span["parent_span_id"]
+    assert lag_span["started_at"] == job_span["finished_at"]
+    assert lag_span["finished_at"] >= lag_span["started_at"]
