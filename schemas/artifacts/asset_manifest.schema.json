@@ -96,6 +96,11 @@
             "minimum": 0,
             "description": "In-point inside the source clip. Stock footage frequently opens on a fade or the wrong framing, so 0 is a default rather than a decision."
           },
+          "source_window_end_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Out-point of the exact reviewed source-time window. Kept separate from duration_seconds, which remains the full source clip duration."
+          },
           "intended_crop": {
             "type": "object",
             "required": ["mode"],

@@ -540,7 +540,8 @@ def _manifest_binding(candidate: Mapping[str, Any]) -> dict[str, Any]:
         "provider": str(identity.get("provider") or ""),
         "source_id": str(identity.get("sourceId") or ""),
         "source_in_seconds": round(start, 6),
-        "duration_seconds": round(end - start, 6),
+        "source_window_end_seconds": round(end, 6),
+        "duration_seconds": round(float((candidate.get("source") or {}).get("durationSeconds") or 0.0), 6),
         "intended_crop": dict(identity.get("intendedCrop") or {}),
     }
 
@@ -612,7 +613,9 @@ def validate_asset_manifest_against_workspace(
             raise PersianAssetWorkspaceError(
                 f"asset_manifest {event_id!r} provider does not match selected workspace candidate"
             )
-        for field in ("source_in_seconds", "duration_seconds"):
+        for field in (
+            "source_in_seconds", "source_window_end_seconds", "duration_seconds"
+        ):
             if not _same_number(row.get(field), expected[field]):
                 raise PersianAssetWorkspaceError(
                     f"asset_manifest {event_id!r} {field} does not match selected workspace candidate"
