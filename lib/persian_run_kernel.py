@@ -389,6 +389,9 @@ def start_phase_job(
             f"idempotence key belongs to existing durable job {actual_job_id!r}; reuse that job id"
         )
 
+    trace = state.get("causal_telemetry")
+    trace_id = str(trace.get("trace_id")) if isinstance(trace, Mapping) and trace.get("trace_id") else None
+    parent_span_id = causal_phase_span_id(phase, int(phase_attempt))
     envelope = {
         "version": _ENVELOPE_VERSION,
         "path": str(path),
@@ -396,6 +399,9 @@ def start_phase_job(
         "phase": phase,
         "phaseAttempt": int(phase_attempt),
         "jobId": actual_job_id,
+        "traceId": trace_id,
+        "causalSpanId": f"job:{actual_job_id}",
+        "parentSpanId": parent_span_id,
         "idempotenceKey": idempotence_key,
         "commandSha256": str(job.get("commandSha256") or durable_command_sha256(argv)),
         "telemetryCategory": telemetry_category,
