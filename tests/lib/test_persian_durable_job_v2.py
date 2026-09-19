@@ -39,7 +39,7 @@ def test_start_job_records_canonical_execution_environment(tmp_path: Path) -> No
     expected_runtime = (tmp_path / ".workspace" / "runtime").resolve()
     assert Path(context["cwd"]).resolve() == expected_runtime
     assert Path(context["workspaceDir"]).resolve() == (tmp_path / ".workspace").resolve()
-    assert Path(context["tempDir"]).resolve() == (tmp_path / ".workspace" / "temp").resolve()
+    assert Path(context["tempDir"]).resolve() == (tmp_path / ".workspace" / "tmp").resolve()
     assert Path(context["interpreter"]).resolve() == Path(sys.executable).resolve()
     assert str(REPO_ROOT.resolve()) in context["pythonPath"].split(":")
     assert state["command"][0] == sys.executable
