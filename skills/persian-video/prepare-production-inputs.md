@@ -51,7 +51,15 @@ Read the workflow's `alignment_policy`, then run the official capability probe b
 python -m lib.persian_video_workflow alignment-plan <project-id>
 ```
 
-The plan is authoritative for provider routing on the execution machine. It records every considered provider, live availability, `word_timestamps` capability/input fit, and the first policy-valid provider. Do **not** execute a provider that the plan already marks unavailable or incompatible. Normal production uses `lib.persian_alignment_provider.execute_alignment_with_fallback` (directly or through the canonical harness), which rechecks status immediately before invocation and exhausts available lightweight providers before heavy recovery.
+The plan is authoritative for provider routing on the execution machine. It records every considered provider, live availability, `word_timestamps` capability/input fit, and the first policy-valid provider. Do **not** execute a provider that the plan already marks unavailable or incompatible. Normal production must then use the durable front door:
+
+```bash
+python -m lib.persian_video_workflow alignment-start <project-id>
+python -m lib.persian_video_workflow alignment-status <project-id> <job-id>
+python -m lib.persian_video_workflow alignment-commit <project-id> <job-id>
+```
+
+`alignment-start` freezes the live provider decision before the run-kernel job launches. The child rechecks provider status, persists a digest-bound alignment result, and writes semantic success/failure through the run-kernel result envelope. `alignment-commit` re-hashes the frozen plan and result before workflow advancement. The synchronous `execute_alignment_with_fallback` function is a low-level worker/test primitive, not a normal production entrypoint.
 
 When `scriptAuthority` is `approved_script`, the default is `mode: timing_oriented`: use the smallest adequate word-timing profile first. Do **not** start with a heavy transcription-oriented model merely because it is available; the text is already authoritative and only timing evidence is missing. A heavy transcription model is recovery-only in approved-script mode and may begin only after all policy-valid lightweight providers fail semantic/timing validation.
 

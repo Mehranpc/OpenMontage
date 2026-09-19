@@ -340,6 +340,39 @@ def _validate_alignment_completion(
     return normalized
 
 
+def start_alignment_job_for_project(
+    project_id: str, *, pipeline_dir: Path | None = None, job_id: str | None = None
+) -> dict[str, Any]:
+    """Start the canonical durable alignment job after provider availability probing."""
+    from lib.persian_alignment_job import AlignmentJobError, start_alignment_job
+    try:
+        return start_alignment_job(
+            project_id, pipeline_dir=pipeline_dir, job_id=job_id, launch=True
+        )
+    except AlignmentJobError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+
+
+def alignment_job_status_for_project(
+    project_id: str, job_id: str, *, pipeline_dir: Path | None = None
+) -> dict[str, Any]:
+    from lib.persian_alignment_job import AlignmentJobError, reconcile_alignment_job
+    try:
+        return reconcile_alignment_job(project_id, job_id, pipeline_dir=pipeline_dir)
+    except AlignmentJobError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+
+
+def commit_alignment_job_for_project(
+    project_id: str, job_id: str, *, pipeline_dir: Path | None = None
+) -> dict[str, Any]:
+    from lib.persian_alignment_job import AlignmentJobError, commit_alignment_job
+    try:
+        return commit_alignment_job(project_id, job_id, pipeline_dir=pipeline_dir)
+    except AlignmentJobError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+
+
 def repair_trivial_zero_length_timings(
     timings: Sequence[Mapping[str, Any]], *, epsilon_seconds: float = 0.08
 ) -> list[dict[str, Any]]:
@@ -2550,6 +2583,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     alignment_plan.add_argument("project_id")
 
+    alignment_start = sub.add_parser(
+        "alignment-start", help="start canonical durable alignment through the run kernel"
+    )
+    alignment_start.add_argument("project_id")
+    alignment_start.add_argument("--job-id")
+
+    alignment_status = sub.add_parser(
+        "alignment-status", help="reconcile one canonical durable alignment job"
+    )
+    alignment_status.add_argument("project_id")
+    alignment_status.add_argument("job_id")
+
+    alignment_commit = sub.add_parser(
+        "alignment-commit", help="commit successful durable alignment into workflow state"
+    )
+    alignment_commit.add_argument("project_id")
+    alignment_commit.add_argument("job_id")
+
     resume = sub.add_parser("resume", help="start a new bounded session and reopen Backlot")
     resume.add_argument("project_id")
 
@@ -2685,6 +2736,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             _print_json(workflow_status(args.project_id))
         elif args.command == "alignment-plan":
             _print_json(alignment_provider_plan_for_project(args.project_id))
+        elif args.command == "alignment-start":
+            _print_json(start_alignment_job_for_project(args.project_id, job_id=args.job_id))
+        elif args.command == "alignment-status":
+            _print_json(alignment_job_status_for_project(args.project_id, args.job_id))
+        elif args.command == "alignment-commit":
+            _print_json(commit_alignment_job_for_project(args.project_id, args.job_id))
         elif args.command == "resume":
             _print_json(resume_workflow(args.project_id))
         elif args.command == "attempt":

@@ -87,7 +87,7 @@ def test_alignment_worker_persists_digest_bound_success_result(tmp_path, monkeyp
     narration = tmp_path / "narration.wav"
     narration.write_bytes(b"audio")
     script = tmp_path / "approved_script.txt"
-    script.write_text("متن تأییدشده", encoding="utf-8")
+    script.write_text("سلام دنیا", encoding="utf-8")
     result_path = tmp_path / "alignment-result.json"
     semantic_path = tmp_path / "semantic.json"
     registry = FakeRegistry([_tool("transcriber", "whisperx")])

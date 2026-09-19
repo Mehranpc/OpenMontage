@@ -209,13 +209,14 @@ owned by the Persian production front door. Before `align_script_timing`, run:
 python -m lib.persian_video_workflow alignment-plan <project-id>
 ```
 
-Then execute through `lib.persian_alignment_provider.execute_alignment_with_fallback`
-(or the canonical production harness) and complete the phase with its persisted
-`provider_decision`. Never call `mlx_whisper_transcriber`, `transcriber`, or a cloud ASR
-directly from asset sourcing, and never invent a local fallback order here. The provider
-seam live-probes availability and `word_timestamps`/`input_path` fit before invocation,
-rechecks availability at execution time, and exhausts policy-valid lightweight timing
-paths before approved-script heavy recovery.
+Then use the durable `alignment-start` → `alignment-status` → `alignment-commit`
+commands from `lib.persian_video_workflow`. The synchronous
+`execute_alignment_with_fallback` function is a low-level worker/test primitive, not a
+production lifecycle entrypoint. Never call `mlx_whisper_transcriber`, `transcriber`, or a
+cloud ASR directly from asset sourcing, and never invent a local fallback order here. The
+provider seam live-probes availability and `word_timestamps`/`input_path` fit **before**
+the durable semantic job starts, rechecks availability inside the frozen job, and exhausts
+policy-valid lightweight timing paths before approved-script heavy recovery.
 
 `language: "fa"` remains required for Persian timing execution. Timings are a **clock**,
 never delivery copy. The approved script owns the words; provider word timings align that
