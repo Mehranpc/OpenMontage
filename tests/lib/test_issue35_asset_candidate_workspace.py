@@ -201,3 +201,81 @@ def test_weak_resolution_selection_is_visible_before_asset_completion(tmp_path: 
     assert status["weakSelectionWarnings"]
     assert status["weakSelectionWarnings"][0]["visualEventId"] == "ending-event"
     assert status["weakSelectionWarnings"][0]["reason"] == "weak_resolution_quality"
+
+
+def test_asset_search_result_populates_workspace_discovery_pool(tmp_path: Path) -> None:
+    from tests.lib.test_persian_video_workflow import BASE, _asset_result, _bootstrap_to_assets
+    from lib.persian_video_workflow import bounded_asset_search_request, record_asset_search_result
+
+    _bootstrap_to_assets(tmp_path)
+    request = bounded_asset_search_request("run", {}, retry_pass=0, pipeline_dir=tmp_path, now=BASE)
+    project = tmp_path / "run"
+    clip = _discovered(project, source_id="auto-import", name="auto.mp4")
+    clip["file_size_bytes"] = Path(clip["path"]).stat().st_size
+    result = _asset_result(request, candidates=1, downloaded_bytes=clip["file_size_bytes"], clips=[clip])
+    state = record_asset_search_result(
+        "run", retry_pass=0, result_data=result, pipeline_dir=tmp_path, now=BASE
+    )
+
+    status = workspace.asset_workspace_status(project)
+    assert status["discoveryPassCount"] == 1
+    assert status["discoveryCandidateCount"] == 1
+    assert state["asset_usage"]["workspace_discovery_candidates"] == 1
+
+
+def test_workflow_status_surfaces_asset_workspace_state(tmp_path: Path, monkeypatch) -> None:
+    from lib import persian_video_workflow as workflow
+
+    project = tmp_path / "run"
+    state = {
+        "project_id": "run",
+        "status": "active",
+        "next_phase": "acquire_assets",
+        "input": {},
+        "completed_phases": [],
+        "attempts": {},
+        "send_backs": 0,
+        "recovery_attempts": {},
+        "asset_usage": {},
+        "alignment_policy": {},
+        "read_allowlist": {"project_root": str(project)},
+        "user_revision_cycles": 0,
+    }
+    monkeypatch.setattr(workflow, "load_workflow_state", lambda *args, **kwargs: state)
+    monkeypatch.setattr(workflow, "phase_time_accounting", lambda _state: {})
+    monkeypatch.setattr(workflow, "convergence_status", lambda *args, **kwargs: {"status": "active"})
+    monkeypatch.setattr(
+        workflow,
+        "asset_workspace_status",
+        lambda project_dir: {
+            "discoveryPassCount": 1,
+            "candidateCount": 3,
+            "reviewedCandidateCount": 2,
+            "selectedCount": 1,
+            "rejectionCounts": {"technical": 0, "semantic": 1, "editorial": 0},
+            "weakSelectionWarnings": [],
+        },
+    )
+    status = workflow.workflow_status("run", pipeline_dir=tmp_path)
+    assert status["asset_workspace"]["candidateCount"] == 3
+    assert status["asset_workspace"]["selectedCount"] == 1
+
+
+def test_front_door_exposes_asset_candidate_lifecycle_commands() -> None:
+    from lib import persian_video_workflow as workflow
+
+    parser = workflow.build_parser()
+    staged = parser.parse_args(["asset-candidate-stage", "run", "--json", "/tmp/candidate.json"])
+    assert staged.command == "asset-candidate-stage"
+    reviewed = parser.parse_args(["asset-candidate-review", "run", "asset-1", "--json", "/tmp/review.json"])
+    assert reviewed.command == "asset-candidate-review"
+    rejected = parser.parse_args([
+        "asset-candidate-reject", "run", "asset-1", "--category", "semantic", "--reason", "wrong meaning"
+    ])
+    assert rejected.category == "semantic"
+    selected = parser.parse_args([
+        "asset-candidate-select", "run", "event-1", "asset-1",
+        "--rejections-json", "/tmp/rejections.json", "--replace-existing",
+    ])
+    assert selected.command == "asset-candidate-select"
+    assert selected.replace_existing is True
