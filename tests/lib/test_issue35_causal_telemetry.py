@@ -335,3 +335,79 @@ def test_structural_phase_span_does_not_inflate_render_duration() -> None:
     assert result["browser_render_seconds"] == 10.0
     assert result["causal_covered_seconds"] == 10.0
     assert result["unattributed_wall_seconds"] == 90.0
+
+
+def test_telemetry_reporting_failure_preserves_execution_truth_and_blocks_commit(
+    tmp_path: Path, monkeypatch
+) -> None:
+    projects_root = _fresh_project(tmp_path)
+    kernel.start_phase_job(
+        "run",
+        job_id="telemetry-failure",
+        phase="prepare_inputs",
+        argv=["python", "-c", _semantic_child()],
+        idempotence_key="telemetry-failure-v1",
+        telemetry_category="machine_local_execution",
+        pipeline_dir=projects_root,
+        now=BASE + timedelta(seconds=5),
+    )
+
+    durable = workflow.reconcile_workflow_job(
+        "run", "telemetry-failure", pipeline_dir=projects_root
+    )
+    for _ in range(100):
+        if durable.get("status") in {"succeeded", "failed", "interrupted"}:
+            break
+        time.sleep(0.05)
+        durable = workflow.reconcile_workflow_job(
+            "run", "telemetry-failure", pipeline_dir=projects_root
+        )
+    assert durable["executionOutcome"] == "succeeded"
+
+    original = kernel._persist_job_causal_span
+    monkeypatch.setattr(
+        kernel,
+        "_persist_job_causal_span",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("telemetry storage failed")),
+    )
+    reconciled = kernel.reconcile_phase_job(
+        "run", "telemetry-failure", pipeline_dir=projects_root
+    )
+    assert reconciled["executionOutcome"] == "succeeded"
+    envelope = kernel.load_execution_envelope(
+        "run", "telemetry-failure", pipeline_dir=projects_root
+    )
+    assert envelope["executionOutcome"] == "succeeded"
+    assert envelope["telemetryOutcome"] == "failed"
+    assert "telemetry storage failed" in envelope["telemetryError"]
+    assert workflow.load_workflow_state(
+        "run", pipeline_dir=projects_root
+    )["next_phase"] == "prepare_inputs"
+
+    with pytest.raises(kernel.PersianRunKernelError, match="causal telemetry"):
+        kernel.commit_phase_job(
+            "run", "telemetry-failure", pipeline_dir=projects_root
+        )
+
+    monkeypatch.setattr(kernel, "_persist_job_causal_span", original)
+    recovered = kernel.reconcile_phase_job(
+        "run", "telemetry-failure", pipeline_dir=projects_root
+    )
+    assert recovered["executionOutcome"] == "succeeded"
+    envelope = kernel.load_execution_envelope(
+        "run", "telemetry-failure", pipeline_dir=projects_root
+    )
+    assert envelope["telemetryOutcome"] == "succeeded"
+    assert "telemetryError" not in envelope
+
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    committed = kernel.commit_phase_job(
+        "run",
+        "telemetry-failure",
+        evidence={
+            "authoritative_script_sha256": state["input"]["approved_script"]["sha256"],
+            "narration_sha256": state["input"]["narration"]["sha256"],
+        },
+        pipeline_dir=projects_root,
+    )
+    assert committed["next_phase"] == "align_script_timing"
