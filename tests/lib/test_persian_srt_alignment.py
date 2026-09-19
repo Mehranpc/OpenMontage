@@ -404,3 +404,23 @@ def test_short_hybrid_film_type_keeps_watermark_after_intro_delay(tmp_path) -> N
     assert props["watermarkPlan"]
     assert props["watermarkPlan"][0]["startSeconds"] >= 5.0
     assert props["watermarkPlan"][-1]["endSeconds"] == pytest.approx(10.5)
+
+def test_runtime_word_timings_use_approved_script_lexemes_not_raw_asr() -> None:
+    script = "درخواست کردن همیشه آسان نیست."
+    record = approved(script)
+    raw = timed(["درخواست", "گردن", "همیشه", "آسان", "نیست."])
+    edit = {
+        "metadata": {"persianSubtitleScript": record},
+        "persian": {"audio": {"wordTimings": raw}},
+    }
+
+    runtime = ScriptAlignedPersianCompose._runtime_persian(edit)
+
+    assert runtime is not None
+    runtime_words = runtime["audio"]["wordTimings"]
+    assert [row["word"] for row in runtime_words] == script.split()
+    assert runtime_words[0]["start"] == pytest.approx(raw[0]["start"])
+    assert runtime_words[-1]["end"] == pytest.approx(raw[-1]["end"])
+    assert [row["word"] for row in edit["persian"]["audio"]["wordTimings"]] == [
+        "درخواست", "گردن", "همیشه", "آسان", "نیست."
+    ]

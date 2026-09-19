@@ -21,7 +21,11 @@ from lib.persian_captions import (
     resolve_caption_mode,
 )
 from lib.persian_design import resolve_design
-from lib.persian_srt_alignment import SubtitleAlignmentError, build_script_aligned_cues
+from lib.persian_srt_alignment import (
+    SubtitleAlignmentError,
+    build_script_aligned_cues,
+    build_script_aligned_word_timings,
+)
 from tools.video.persian_compose import PersianCompose
 
 
@@ -61,6 +65,13 @@ class ScriptAlignedPersianCompose(PersianCompose):
         semantic_poster = metadata.get("semanticPosterStack") if isinstance(metadata, dict) else None
         if approved_script is not None:
             runtime_persian["_approvedSubtitleScript"] = approved_script
+            audio = runtime_persian.get("audio")
+            if isinstance(audio, dict) and audio.get("wordTimings"):
+                runtime_audio = dict(audio)
+                runtime_audio["wordTimings"] = build_script_aligned_word_timings(
+                    approved_script, audio["wordTimings"]
+                )
+                runtime_persian["audio"] = runtime_audio
         if hook_handoff is not None:
             # Runtime-only injection keeps the public edit schema stable while making
             # the explicit handoff available before burned-caption geometry freezes.
