@@ -188,16 +188,19 @@ def start_alignment_job(
     if script_path is not None:
         argv.extend(["--approved-script", str(script_path)])
 
-    started = kernel.start_phase_job(
-        project_id,
-        job_id=effective_job_id,
-        phase="align_script_timing",
-        argv=argv,
-        idempotence_key=idempotence_key,
-        telemetry_category=_telemetry_category(plan),
-        pipeline_dir=pipeline_dir,
-        launch=launch,
-    )
+    try:
+        started = kernel.start_phase_job(
+            project_id,
+            job_id=effective_job_id,
+            phase="align_script_timing",
+            argv=argv,
+            idempotence_key=idempotence_key,
+            telemetry_category=_telemetry_category(plan),
+            pipeline_dir=pipeline_dir,
+            launch=launch,
+        )
+    except kernel.PersianRunKernelError as exc:
+        raise AlignmentJobError(str(exc)) from exc
     return {
         **dict(started),
         "providerPlanPath": str(plan_path),
@@ -349,7 +352,10 @@ def run_alignment_worker(
 def reconcile_alignment_job(
     project_id: str, job_id: str, *, pipeline_dir: Path | None = None
 ) -> dict[str, Any]:
-    return kernel.reconcile_phase_job(project_id, job_id, pipeline_dir=pipeline_dir)
+    try:
+        return kernel.reconcile_phase_job(project_id, job_id, pipeline_dir=pipeline_dir)
+    except kernel.PersianRunKernelError as exc:
+        raise AlignmentJobError(str(exc)) from exc
 
 
 def _completion_evidence_from_job(
@@ -372,21 +378,37 @@ def _completion_evidence_from_job(
     if _sha(result_path) != expected_result_sha:
         raise AlignmentJobError("alignment result sha256 does not match persisted artifact bytes")
 
-    plan_path = Path(str(data.get("providerPlanPath") or "")).expanduser().resolve()
+    raw_plan_path = str(data.get("providerPlanPath") or "").strip()
+    if not raw_plan_path:
+        raise AlignmentJobError("provider plan artifact path is required for alignment commit")
+    plan_path = Path(raw_plan_path).expanduser().resolve()
     if not plan_path.is_file() or not _within(plan_path, root):
-        # Compatibility for low-level tests that provide only a synthetic plan digest.
-        plan_path = Path()
+        raise AlignmentJobError("provider plan artifact must be a current-project file")
     expected_plan_sha = _require_digest(data.get("providerPlanSha256"), "provider plan sha256")
-    if str(plan_path) not in {"", "."} and _sha(plan_path) != expected_plan_sha:
+    if _sha(plan_path) != expected_plan_sha:
         raise AlignmentJobError("provider plan sha256 does not match persisted plan bytes")
+    plan_bundle = _read_json(plan_path, "provider plan")
+    frozen_plan = plan_bundle.get("providerPlan")
+    if not isinstance(frozen_plan, Mapping):
+        raise AlignmentJobError("provider plan artifact is missing providerPlan evidence")
 
     result = _read_json(result_path, "alignment result")
-    if str(result.get("provider_plan_sha256") or expected_plan_sha) != expected_plan_sha:
+    if str(result.get("provider_plan_sha256") or "") != expected_plan_sha:
         raise AlignmentJobError("alignment result is bound to a different provider plan")
+    narration_path, narration_sha, script_path, script_sha = _project_inputs(state)
+    if str(result.get("narration_sha256") or "") != narration_sha:
+        raise AlignmentJobError("alignment result narration identity does not match workflow input")
+    if result.get("approved_script_sha256") != script_sha:
+        raise AlignmentJobError("alignment result script identity does not match workflow input")
     decision = result.get("provider_decision")
     words = result.get("word_timestamps")
     if not isinstance(decision, Mapping) or not isinstance(words, list) or not words:
         raise AlignmentJobError("alignment result lacks provider decision or word timings")
+    for key in ("capability", "mode", "scriptAuthority", "primaryProfile", "selectionPolicy", "candidates"):
+        if decision.get(key) != frozen_plan.get(key):
+            raise AlignmentJobError(
+                f"alignment provider decision drifted from frozen plan field {key!r}"
+            )
     evidence = {
         "provider_decision": dict(decision),
         "word_timing_count": len(words),
@@ -398,9 +420,8 @@ def _completion_evidence_from_job(
         "alignment_result_path": str(result_path),
         "alignment_result_sha256": expected_result_sha,
         "provider_plan_sha256": expected_plan_sha,
+        "provider_plan_path": str(plan_path),
     }
-    if str(plan_path) not in {"", "."}:
-        evidence["provider_plan_path"] = str(plan_path)
     return evidence
 
 
@@ -408,14 +429,17 @@ def commit_alignment_job(
     project_id: str, job_id: str, *, pipeline_dir: Path | None = None
 ) -> dict[str, Any]:
     state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
-    job = kernel.reconcile_phase_job(project_id, job_id, pipeline_dir=pipeline_dir)
-    evidence = _completion_evidence_from_job(state, job)
-    return kernel.commit_phase_job(
-        project_id,
-        job_id,
-        evidence=evidence,
-        pipeline_dir=pipeline_dir,
-    )
+    try:
+        job = kernel.reconcile_phase_job(project_id, job_id, pipeline_dir=pipeline_dir)
+        evidence = _completion_evidence_from_job(state, job)
+        return kernel.commit_phase_job(
+            project_id,
+            job_id,
+            evidence=evidence,
+            pipeline_dir=pipeline_dir,
+        )
+    except kernel.PersianRunKernelError as exc:
+        raise AlignmentJobError(str(exc)) from exc
 
 
 def build_parser() -> argparse.ArgumentParser:

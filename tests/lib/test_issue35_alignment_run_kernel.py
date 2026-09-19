@@ -154,13 +154,29 @@ def test_alignment_commit_derives_phase_evidence_from_semantic_result(tmp_path, 
         output_dir=str(project / "artifacts" / "transcription"),
         registry=registry,
     )
+    alignment.update({
+        "provider_plan_sha256": "PLACEHOLDER",
+        "narration_sha256": state["input"]["narration"]["sha256"],
+        "approved_script_sha256": state["input"]["approved_script"]["sha256"],
+    })
+    plan_bundle = {
+        "version": "1.0",
+        "providerPlan": plan,
+        "narrationSha256": state["input"]["narration"]["sha256"],
+        "approvedScriptSha256": state["input"]["approved_script"]["sha256"],
+    }
+    plan_path = project / "artifacts" / "alignment" / "provider-plan.json"
+    plan_path.parent.mkdir(parents=True, exist_ok=True)
+    plan_path.write_text(json.dumps(plan_bundle), encoding="utf-8")
+    plan_sha = _sha(plan_path)
+    alignment["provider_plan_sha256"] = plan_sha
     result_path = project / "artifacts" / "alignment" / "alignment-result.json"
-    result_path.parent.mkdir(parents=True, exist_ok=True)
     result_path.write_text(json.dumps(alignment), encoding="utf-8")
     semantic_data = {
         "alignmentResultPath": str(result_path),
         "alignmentResultSha256": _sha(result_path),
-        "providerPlanSha256": "a" * 64,
+        "providerPlanPath": str(plan_path),
+        "providerPlanSha256": plan_sha,
     }
     monkeypatch.setattr(
         alignment_job.kernel,
