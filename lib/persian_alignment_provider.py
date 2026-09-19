@@ -360,6 +360,8 @@ def validate_alignment_provider_decision(
     selected = candidates.get(selected_tool)
     if selected is None or not selected_provider:
         raise AlignmentProviderError("alignment provider decision requires a selected provider/tool")
+    if selected_provider != str(selected.get("provider") or ""):
+        raise AlignmentProviderError("selected provider must match the selected candidate provider")
     if selected.get("fit") is not True or str(selected.get("availability") or "") != ToolStatus.AVAILABLE.value:
         raise AlignmentProviderError("selected alignment provider was not policy-valid and available at planning time")
     if selected.get("supportsInputPath") is not True or str(selected.get("requiredCapability") or "") != _REQUIRED_CAPABILITY:

@@ -11,10 +11,45 @@ import scripts.persian_reels_local_e2e as e2e
 
 
 def _fake_alignment(*_args, **_kwargs):
+    decision = {
+        "version": "1.0",
+        "capability": "word_timestamps",
+        "mode": "timing_oriented",
+        "scriptAuthority": "approved_script",
+        "primaryProfile": "lightweight",
+        "heavyRecoveryAllowed": True,
+        "selectionPolicy": "first_available_policy_valid_provider",
+        "selectedTool": "transcriber",
+        "selectedProvider": "fixture",
+        "fallbackReason": None,
+        "fallbackHistory": [],
+        "heavyRecoveryUsed": False,
+        "candidates": [{
+            "tool": "transcriber",
+            "provider": "fixture",
+            "availability": "available",
+            "fit": True,
+            "fitClass": "fixture_word_timing",
+            "requiredCapability": "word_timestamps",
+            "supportsInputPath": True,
+            "runtime": "local",
+            "capabilities": ["transcribe", "word_timestamps"],
+            "rejectionReasons": [],
+            "lightweightArgs": {"model_size": "base"},
+            "heavyArgs": {"model_size": "large-v3"},
+        }],
+        "attempts": [{
+            "tool": "transcriber",
+            "provider": "fixture",
+            "profile": "lightweight",
+            "semanticSuccess": True,
+        }],
+    }
     return {
         "word_timestamps": e2e._fixture_words(),
         "model": "fixture-word-timing",
         "provider": "fixture",
+        "provider_decision": decision,
         "alignment_mode": "timing_oriented",
         "heavy_recovery_used": False,
     }
