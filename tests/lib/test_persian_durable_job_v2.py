@@ -36,7 +36,10 @@ def test_start_job_records_canonical_execution_environment(tmp_path: Path) -> No
         launch=False,
     )
     context = state["executionContext"]
-    assert Path(context["cwd"]).resolve() == REPO_ROOT.resolve()
+    expected_runtime = (tmp_path / ".workspace" / "runtime").resolve()
+    assert Path(context["cwd"]).resolve() == expected_runtime
+    assert Path(context["workspaceDir"]).resolve() == (tmp_path / ".workspace").resolve()
+    assert Path(context["tempDir"]).resolve() == (tmp_path / ".workspace" / "tmp").resolve()
     assert Path(context["interpreter"]).resolve() == Path(sys.executable).resolve()
     assert str(REPO_ROOT.resolve()) in context["pythonPath"].split(":")
     assert state["command"][0] == sys.executable
@@ -65,8 +68,9 @@ def test_real_worker_imports_repo_and_persists_separate_outcomes(tmp_path: Path)
     assert final["executionOutcome"] == "succeeded"
     assert final["reportingOutcome"] == "succeeded"
     observed = json.loads(marker.read_text())
-    assert Path(observed["cwd"]).resolve() == REPO_ROOT.resolve()
+    assert Path(observed["cwd"]).resolve() == (tmp_path / ".workspace" / "runtime").resolve()
     assert Path(observed["python"]).resolve() == Path(sys.executable).resolve()
+    assert Path(observed["repo"]).resolve() == REPO_ROOT.resolve()
 
 
 def test_reporting_failure_cannot_retroactively_fail_successful_execution(tmp_path: Path, monkeypatch) -> None:

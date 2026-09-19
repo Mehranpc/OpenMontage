@@ -7,6 +7,11 @@ import lib.persian_edit_workspace as edit_workspace
 from lib.persian_hook_quality import audit_persian_hook_quality
 from lib.persian_moments import audit_moments, build_moments
 from lib.persian_edit_workspace import artifact_sha256
+from lib.paths import REPO_ROOT
+from lib.persian_project_workspace import (
+    assert_repository_root_unchanged,
+    repository_root_snapshot,
+)
 import scripts.persian_reels_local_e2e as e2e
 
 
@@ -146,6 +151,7 @@ def _fake_extract(_candidate: Path, target: Path, times: list[float], prefix: st
 
 
 def test_full_front_door_reaches_awaiting_human_with_opening_gate_and_mastering(monkeypatch, tmp_path: Path) -> None:
+    repo_before = repository_root_snapshot(REPO_ROOT)
     compose_calls: list[str] = []
     master_calls: list[str] = []
 
@@ -164,7 +170,7 @@ def test_full_front_door_reaches_awaiting_human_with_opening_gate_and_mastering(
         assert_phase_running("align_script_timing")
         return _fake_alignment(*args, **kwargs)
 
-    def fake_aggregate(payload: dict, *, base_dir=None, precomputed_components=None) -> dict:
+    def fake_aggregate(payload: dict, *, base_dir=None, precomputed_components=None, scratch_dir=None) -> dict:
         del precomputed_components
         assert_phase_running("no_copy_preflight")
         return _fake_aggregate(payload, base_dir=base_dir)
@@ -236,6 +242,7 @@ def test_full_front_door_reaches_awaiting_human_with_opening_gate_and_mastering(
 
     result = e2e.run_local(tmp_path)
 
+    assert_repository_root_unchanged(REPO_ROOT, repo_before)
     assert compose_calls == ["opening", "full"]
     assert master_calls == ["master"]
     assert result["workflow_status"] == "awaiting_human"

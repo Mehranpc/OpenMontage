@@ -21,6 +21,11 @@ from typing import Any, Mapping, Sequence
 
 from lib.json_safe import to_json_safe
 from lib.paths import REPO_ROOT
+from lib.persian_project_workspace import (
+    project_execution_environment,
+    project_workspace_root,
+    workspace_directory,
+)
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 _PYTHON_LAUNCHERS = frozenset({"python", "python3", "python.exe", "python3.exe"})
@@ -35,8 +40,8 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _canonical_env() -> dict[str, str]:
-    """Return the deterministic child environment for repo-local durable work."""
+def _canonical_env(project_dir: Path | None = None) -> dict[str, str]:
+    """Return deterministic child env while keeping production mechanics project-local."""
     env = dict(os.environ)
     repo = str(REPO_ROOT.resolve())
     existing = str(env.get("PYTHONPATH") or "")
@@ -44,6 +49,8 @@ def _canonical_env() -> dict[str, str]:
     entries = [item for item in entries if Path(item).expanduser().resolve() != REPO_ROOT.resolve()]
     env["PYTHONPATH"] = os.pathsep.join([repo, *entries])
     env["PYTHONUNBUFFERED"] = "1"
+    if project_dir is not None:
+        env = project_execution_environment(project_dir, base=env)
     return env
 
 
@@ -141,8 +148,10 @@ def start_job(
     _validate_id(phase, "phase")
     _validate_id(idempotence_key, "idempotence_key")
     command = _normalize_command(argv)
-    env = _canonical_env()
-    root = _root(project_dir)
+    project = project_dir.expanduser().resolve()
+    env = _canonical_env(project)
+    execution_cwd = workspace_directory(project, "runtime")
+    root = _root(project)
     root.mkdir(parents=True, exist_ok=True)
     index_path = _index_path(project_dir)
     index = _read_json(index_path) if index_path.exists() else {}
@@ -176,7 +185,9 @@ def start_job(
         "semanticResultPath": str(semantic_result_path),
         "logPath": str(_log_path(project_dir, job_id)),
         "executionContext": {
-            "cwd": str(REPO_ROOT.resolve()),
+            "cwd": str(execution_cwd),
+            "workspaceDir": str(project_workspace_root(project)),
+            "tempDir": str(workspace_directory(project, "temp")),
             "interpreter": str(Path(sys.executable).resolve()),
             "pythonPath": env["PYTHONPATH"],
             "semanticResultEnv": _RESULT_ENV_VAR,
@@ -194,7 +205,7 @@ def start_job(
     try:
         worker = subprocess.Popen(
             [sys.executable, "-m", "lib.persian_durable_job", "_worker", str(state_path)],
-            cwd=REPO_ROOT,
+            cwd=execution_cwd,
             env=env,
             stdin=subprocess.DEVNULL,
             stdout=handle,
@@ -347,7 +358,10 @@ def _record_finished_execution(
 
 
 def _worker(state_path: Path) -> int:
+    state_path = state_path.expanduser().resolve()
     state = _read_json(state_path)
+    project_dir = state_path.parents[2]
+    execution_cwd = workspace_directory(project_dir, "runtime")
     log_path = state_path.with_name("job.log")
     semantic_result_path = Path(
         str(state.get("semanticResultPath") or state_path.with_name("semantic-result.json"))
@@ -361,12 +375,12 @@ def _worker(state_path: Path) -> int:
     state["startedAt"] = _now()
     state["heartbeatAt"] = _now()
     _atomic_json(state_path, state)
-    child_env = _canonical_env()
+    child_env = _canonical_env(project_dir)
     child_env[_RESULT_ENV_VAR] = str(semantic_result_path)
     with log_path.open("ab") as log:
         child = subprocess.Popen(
             state["command"],
-            cwd=REPO_ROOT,
+            cwd=execution_cwd,
             env=child_env,
             stdin=subprocess.DEVNULL,
             stdout=log,

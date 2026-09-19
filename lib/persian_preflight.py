@@ -18,6 +18,7 @@ from lib.persian_edit_contract import (
     PersianEditContractError, collect_persian_edit_diagnostics, validate_persian_edit_contract,
 )
 from lib.persian_film_type import FilmTypePreflightError
+from lib.persian_project_workspace import active_scratch_root, scoped_scratch_root
 from lib.persian_recovery_policy import (
     recovery_class_for_code, recovery_policy_for_issue,
 )
@@ -246,22 +247,29 @@ def summarize(
 
 
 def browser_preflight_edit_decisions(
-    edit: dict[str, Any], *, base_dir: Path | None = None
+    edit: dict[str, Any], *, base_dir: Path | None = None, scratch_dir: Path | None = None
 ) -> dict[str, Any]:
     """Run only the browser/compose-dependent portion after cheap checks passed."""
     del base_dir
     runtime_persian = NoCopyPersianCompose._runtime_persian(edit)
     if runtime_persian is None:
         raise ValueError("Expected edit_decisions.persian for Persian preflight")
-    with tempfile.TemporaryDirectory(prefix="persian-preflight-") as temp:
-        props, attributions = NoCopyPersianCompose()._build_props(
-            runtime_persian, Path(temp), "preflight"
-        )
+    scratch = scratch_dir.expanduser().resolve() if scratch_dir is not None else active_scratch_root()
+    if scratch is not None:
+        scratch.mkdir(parents=True, exist_ok=True)
+    with scoped_scratch_root(scratch):
+        with tempfile.TemporaryDirectory(
+            prefix="persian-preflight-",
+            dir=str(scratch) if scratch is not None else None,
+        ) as temp:
+            props, attributions = NoCopyPersianCompose()._build_props(
+                runtime_persian, Path(temp), "preflight"
+            )
     return summarize(props, attributions)
 
 
 def preflight_edit_decisions(
-    payload: dict[str, Any], *, base_dir: Path | None = None
+    payload: dict[str, Any], *, base_dir: Path | None = None, scratch_dir: Path | None = None
 ) -> dict[str, Any]:
     edit = extract_edit_decisions(payload)
     validate_persian_edit_contract(edit, base_dir=base_dir)
@@ -275,7 +283,9 @@ def preflight_edit_decisions(
         raise ValueError(
             "Persian hook-quality preflight refused:\n- " + "\n- ".join(hook_quality["problems"])
         )
-    browser = browser_preflight_edit_decisions(edit, base_dir=base_dir)
+    browser = browser_preflight_edit_decisions(
+        edit, base_dir=base_dir, scratch_dir=scratch_dir
+    )
     return {**browser, "retentionAudit": retention, "hookQualityAudit": hook_quality}
 
 
@@ -413,6 +423,7 @@ def _early_watermark_feasibility(edit: dict[str, Any]) -> dict[str, Any] | None:
 def aggregate_preflight_edit_decisions(
     payload: dict[str, Any], *, base_dir: Path | None = None,
     precomputed_components: dict[str, Any] | None = None,
+    scratch_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Aggregate independent cheap blockers, then run at most one browser-heavy pass."""
     root = (base_dir or REPO_ROOT).resolve()
@@ -522,7 +533,9 @@ def aggregate_preflight_edit_decisions(
         browser_evidence = (
             dict(cached_browser)
             if isinstance(cached_browser, dict)
-            else browser_preflight_edit_decisions(edit, base_dir=root)
+            else browser_preflight_edit_decisions(
+                edit, base_dir=root, scratch_dir=scratch_dir
+            )
         )
     except FilmTypePreflightError as exc:
         actions = [

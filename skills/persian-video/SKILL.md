@@ -26,11 +26,14 @@ Create a genuinely new project only after video-production intent is explicit:
 
 ```bash
 python -m lib.persian_video_workflow bootstrap --title "Title" --narration /abs/narration.wav
-python -m lib.persian_video_workflow bootstrap --title "Title" --approved-script-file /abs/approved-script.txt
+python -m lib.persian_video_workflow bootstrap --title "Title" --approved-script "متن تأییدشده"
+printf '%s' "$APPROVED_SCRIPT" | python -m lib.persian_video_workflow bootstrap --title "Title" --approved-script-file -
 python -m lib.persian_video_workflow bootstrap --title "Title" --narration /abs/narration.wav --approved-script-file /abs/approved-script.txt
 ```
 
 Raw notes, source articles, English articles, and unapproved draft copy are intentionally not valid bootstrap inputs. Author or revise those outside this production skill first.
+
+Repository root is never a production scratch directory. Do not create `tmp_*_approved_script.txt`, `probe_*`, generated helper scripts, or debug files beside repository code. For agent-held approved copy, pass the text directly or use `--approved-script-file -`; bootstrap persists the authoritative bytes under the new project. Existing user-owned source files may be read only from outside the repository.
 
 Bootstrap creates `projects/<new-id>/`, copies the approved production inputs into that project, records hash-bound workflow state, and opens that project's Backlot board. An existing project directory is a hard refusal, never a resume shortcut.
 
