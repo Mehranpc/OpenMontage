@@ -14,12 +14,22 @@ from typing import Any
 from lib.persian_project_workspace import active_scratch_root
 
 
+def _classified_prepass_code(message: str, code: str) -> str:
+    """Separate missing review evidence from genuine Film Type layout failures."""
+    if str(code).strip().upper() != "FILM_TYPE_PREPASS":
+        return code
+    normalized = str(message).lower()
+    if "needs reviewed" in normalized and "shot.avoidregions" in normalized:
+        return "SUBJECT_REGION_REVIEW_REQUIRED"
+    return code
+
+
 class FilmTypePreflightError(ValueError):
     """Structured browser-prepass refusal with machine-readable diagnostics."""
 
     def __init__(self, message: str, *, code: str = "FILM_TYPE_PREPASS", diagnostics: dict[str, Any] | None = None):
         super().__init__(message)
-        self.code = code
+        self.code = _classified_prepass_code(message, code)
         self.diagnostics = diagnostics or {}
 
 
