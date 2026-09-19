@@ -224,3 +224,45 @@ def test_workflow_parser_exposes_durable_alignment_lifecycle() -> None:
     assert parser.parse_args(["alignment-start", "run"]).command == "alignment-start"
     assert parser.parse_args(["alignment-status", "run", "job"]).command == "alignment-status"
     assert parser.parse_args(["alignment-commit", "run", "job"]).command == "alignment-commit"
+
+
+def test_alignment_start_normalizes_run_kernel_start_failure(tmp_path, monkeypatch) -> None:
+    _bootstrap(tmp_path)
+    _advance_to(tmp_path, "align_script_timing")
+    registry = FakeRegistry([_tool("transcriber", "whisperx")])
+
+    def fail_start(*args, **kwargs):
+        raise alignment_job.kernel.PersianRunKernelError("durable start refused")
+
+    monkeypatch.setattr(alignment_job.kernel, "start_phase_job", fail_start)
+    with pytest.raises(alignment_job.AlignmentJobError, match="durable start refused"):
+        alignment_job.start_alignment_job(
+            "run", pipeline_dir=tmp_path, registry=registry, launch=False
+        )
+
+
+def test_alignment_commit_requires_digest_bound_provider_plan_artifact(tmp_path, monkeypatch) -> None:
+    _bootstrap(tmp_path)
+    state = _advance_to(tmp_path, "align_script_timing")
+    project = Path(state["read_allowlist"]["project_root"])
+    result_path = project / "artifacts" / "alignment" / "alignment-result.json"
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        alignment_job.kernel,
+        "reconcile_phase_job",
+        lambda *a, **k: {
+            "executionOutcome": "succeeded",
+            "semanticOutcome": "succeeded",
+            "semanticResult": {
+                "success": True,
+                "data": {
+                    "alignmentResultPath": str(result_path),
+                    "alignmentResultSha256": _sha(result_path),
+                    "providerPlanSha256": "a" * 64,
+                },
+            },
+        },
+    )
+    with pytest.raises(alignment_job.AlignmentJobError, match="provider plan"):
+        alignment_job.commit_alignment_job("run", "alignment-job", pipeline_dir=tmp_path)
