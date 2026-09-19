@@ -438,3 +438,65 @@ def test_layout_recovery_rejects_unclassified_render_affecting_changes(tmp_path:
 
     with pytest.raises(PersianEditWorkspaceError, match="mutation surface"):
         _stage_layout(project, "bad-format", forbidden, parent="base")
+
+
+
+def test_front_door_rejects_second_root_candidate_in_same_revision_cycle(tmp_path: Path, monkeypatch) -> None:
+    from lib import persian_video_workflow as workflow
+
+    source = tmp_path / "candidate.json"
+    source.write_text("{}", encoding="utf-8")
+    project = tmp_path / "run"
+    state = {
+        "project_id": "run",
+        "status": "active",
+        "next_phase": "no_copy_preflight",
+        "budgets": {"max_revisions_per_stage": 3},
+        "user_revision_cycles": 0,
+        "hook_selection": {"authority": "test"},
+        "read_allowlist": {"project_root": str(project)},
+    }
+    monkeypatch.setattr(workflow, "load_workflow_state", lambda *args, **kwargs: state)
+    monkeypatch.setattr(workflow, "assert_read_allowed", lambda _state, path: Path(path))
+    monkeypatch.setattr(workflow, "_read_json", lambda _path: {"persian": {}})
+    monkeypatch.setattr(workflow, "validate_edit_hook_authority", lambda *args, **kwargs: {"valid": True})
+    monkeypatch.setattr(
+        workflow,
+        "convergence_status",
+        lambda _project: {
+            "status": "active",
+            "candidateCount": 1,
+            "candidateIds": ["base"],
+            "promotedCandidateId": None,
+            "unresolved": None,
+        },
+    )
+
+    with pytest.raises(workflow.PersianVideoWorkflowError, match="base convergence candidate already exists"):
+        workflow.stage_workflow_edit_draft(
+            "run", "second-root", source, pipeline_dir=tmp_path
+        )
+
+
+def test_sibling_candidate_continuity_is_measured_against_its_parent(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    base = _edit()
+    workspace.stage_edit_draft(project, "base", base, max_candidates=10)
+
+    first_child = deepcopy(base)
+    first_child["persian"]["moments"].append({
+        "id": "child-only-moment",
+        "kind": "statement",
+        "startSeconds": 3.0,
+        "endSeconds": 4.0,
+        "segments": [{"role": "hero", "text": "فقط در شاخه اول"}],
+    })
+    workspace.stage_edit_draft(
+        project, "child-a", first_child, parent_attempt_id="base", max_candidates=10
+    )
+
+    sibling = workspace.stage_edit_draft(
+        project, "child-b", deepcopy(base), parent_attempt_id="base", max_candidates=10
+    )
+    assert sibling["removedEditorialMomentIds"] == []
+    assert sibling["editorialMomentIds"] == ["hook-1"]
