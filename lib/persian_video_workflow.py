@@ -30,6 +30,11 @@ from lib.persian_editorial_hook import (
     validate_edit_hook_authority,
 )
 from lib.persian_durable_job import DurableJobError, reconcile_job, start_job
+from lib.persian_alignment_provider import (
+    AlignmentProviderError,
+    build_alignment_provider_plan,
+    validate_alignment_provider_decision,
+)
 from lib.persian_asset_workspace import (
     PersianAssetWorkspaceError,
     asset_workspace_status,
@@ -260,6 +265,63 @@ def alignment_execution_policy(state: Mapping[str, Any]) -> dict[str, Any]:
         "scriptAuthority": authority,
         "primaryModelClass": "speech_transcription",
         "heavyTranscriptionRecoveryOnly": False,
+    }
+
+
+def alignment_provider_plan_for_project(
+    project_id: str, *, pipeline_dir: Path | None = None, registry=None
+) -> dict[str, Any]:
+    """Probe live provider capability/availability for the current workflow policy."""
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    policy = state.get("alignment_policy") or alignment_execution_policy(state)
+    try:
+        if registry is None:
+            return build_alignment_provider_plan(policy)
+        return build_alignment_provider_plan(policy, registry=registry)
+    except AlignmentProviderError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+
+
+def _validate_alignment_completion(
+    state: Mapping[str, Any], evidence: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Require durable provider-selection truth before alignment can advance."""
+    policy = state.get("alignment_policy") or alignment_execution_policy(state)
+    decision = evidence.get("provider_decision")
+    if not isinstance(decision, Mapping):
+        raise PersianVideoWorkflowError(
+            "align_script_timing completion requires a persisted provider decision"
+        )
+    try:
+        validate_alignment_provider_decision(decision, policy)
+    except AlignmentProviderError as exc:
+        raise PersianVideoWorkflowError(
+            f"alignment provider decision is invalid: {exc}"
+        ) from exc
+    count = evidence.get("word_timing_count")
+    if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+        raise PersianVideoWorkflowError(
+            "align_script_timing completion requires positive word_timing_count"
+        )
+    mode = str(evidence.get("alignment_mode") or decision.get("mode") or "")
+    if mode != str(policy.get("mode") or ""):
+        raise PersianVideoWorkflowError(
+            "alignment_mode does not match the workflow alignment policy"
+        )
+    selected_provider = str(decision.get("selectedProvider") or "")
+    selected_tool = str(decision.get("selectedTool") or "")
+    if str(evidence.get("provider") or selected_provider) != selected_provider:
+        raise PersianVideoWorkflowError(
+            "alignment completion provider does not match provider decision"
+        )
+    return {
+        "alignment_mode": mode,
+        "provider": selected_provider,
+        "provider_tool": selected_tool,
+        "word_timing_count": count,
+        "heavy_recovery_used": bool(decision.get("heavyRecoveryUsed")),
+        "provider_fallback_reason": decision.get("fallbackReason"),
+        "provider_decision": dict(decision),
     }
 
 
@@ -1051,6 +1113,8 @@ def _complete_phase_impl(
     phase_evidence = dict(evidence or {})
     if phase == "prepare_inputs":
         phase_evidence.update(_validate_prepare_inputs_completion(state, phase_evidence))
+    if phase == "align_script_timing":
+        phase_evidence.update(_validate_alignment_completion(state, phase_evidence))
     if phase == "plan_scenes_moments" and "sourcing_order" in phase_evidence:
         raw_order = phase_evidence.get("sourcing_order")
         if not isinstance(raw_order, list) or not raw_order:
@@ -2465,6 +2529,12 @@ def build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status", help="show bounded workflow state")
     status.add_argument("project_id")
 
+    alignment_plan = sub.add_parser(
+        "alignment-plan",
+        help="probe capability/status and select the policy-valid timing/transcription provider",
+    )
+    alignment_plan.add_argument("project_id")
+
     resume = sub.add_parser("resume", help="start a new bounded session and reopen Backlot")
     resume.add_argument("project_id")
 
@@ -2598,6 +2668,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             _print_json(workflow_status(state["project_id"]))
         elif args.command == "status":
             _print_json(workflow_status(args.project_id))
+        elif args.command == "alignment-plan":
+            _print_json(alignment_provider_plan_for_project(args.project_id))
         elif args.command == "resume":
             _print_json(resume_workflow(args.project_id))
         elif args.command == "attempt":

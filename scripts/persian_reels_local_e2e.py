@@ -23,6 +23,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from lib.checkpoint import write_checkpoint
+from lib.persian_alignment_provider import (
+    build_alignment_provider_plan,
+    execute_alignment_with_fallback,
+)
 from lib.persian_assets import assert_video_only, audit_asset_manifest
 from lib.persian_editorial_hook import validate_edit_hook_authority
 from lib.persian_finalization import master_final_candidate
@@ -386,31 +390,25 @@ def _transcribe_with_model(narration: Path, work: Path, model: str) -> dict[str,
 
 
 def _align_timing(narration: Path, work: Path, state: dict[str, Any]) -> dict[str, Any]:
-    """Use timing-oriented alignment for authoritative approved-script input.
-
-    The smaller timing model is the default. Large-v3 is an explicit recovery path
-    only when the lightweight attempt cannot produce alignment-safe word timings.
-    """
+    """Execute the policy-valid provider plan; unavailable providers are never called."""
     policy = alignment_execution_policy(state)
-    if policy["mode"] != "timing_oriented":
-        data = _transcribe_with_model(narration, work, RECOVERY_MODEL)
-        data.update({
-            "alignment_mode": policy["mode"],
-            "heavy_recovery_used": False,
-        })
-        return data
+    plan = build_alignment_provider_plan(policy)
 
-    try:
-        data = _transcribe_with_model(narration, work, TIMING_MODEL)
-        heavy_recovery_used = False
-    except RuntimeError as first_error:
-        data = _transcribe_with_model(narration, work, RECOVERY_MODEL)
-        data["timing_recovery_reason"] = str(first_error)
-        heavy_recovery_used = True
-    data.update({
-        "alignment_mode": policy["mode"],
-        "heavy_recovery_used": heavy_recovery_used,
-    })
+    def validate(words: list[dict[str, Any]]) -> None:
+        build_script_aligned_cues(
+            _approved_script(), words, max_visible_chars=36, id_prefix="caption"
+        )
+
+    data = execute_alignment_with_fallback(
+        plan,
+        input_path=str(narration),
+        output_dir=str(work),
+        language="fa",
+        initial_prompt=SCRIPT if policy["scriptAuthority"] == "approved_script" else None,
+        validate_word_timings=validate,
+    )
+    decision = data["provider_decision"]
+    data["provider"] = decision["selectedProvider"]
     return data
 
 
@@ -851,13 +849,17 @@ def run_local(root: Path) -> dict[str, Any]:
             PROJECT_ID, "align_script_timing", reason=str(exc), pipeline_dir=root
         )
         raise
+    words = list(alignment["word_timestamps"])
+    provider_decision = dict(alignment["provider_decision"])
     complete_phase(PROJECT_ID, "align_script_timing", evidence={
-        "provider": alignment.get("provider") or "mlx_whisper",
-        "model": alignment.get("model"),
+        "provider": provider_decision["selectedProvider"],
+        "provider_tool": provider_decision["selectedTool"],
+        "provider_decision": provider_decision,
+        "word_timing_count": len(words),
+        "model": alignment.get("model") or alignment.get("model_size"),
         "alignment_mode": alignment.get("alignment_mode"),
         "heavy_recovery_used": bool(alignment.get("heavy_recovery_used")),
     }, pipeline_dir=root)
-    words = list(alignment["word_timestamps"])
     clips = _make_synthetic_clips(project)
     plan = _scene_plan()
     scene_audit = audit_scene_plan(plan)
@@ -1075,7 +1077,7 @@ def run_local(root: Path) -> dict[str, Any]:
         "alignment_mode": alignment.get("alignment_mode"),
         "heavy_alignment_recovery_used": bool(alignment.get("heavy_recovery_used")),
         "word_timing_count": len(words),
-        "whisper_model": alignment.get("model", TIMING_MODEL),
+        "whisper_model": alignment.get("model") or alignment.get("model_size") or "provider-default",
     }
     _write_json(project / "artifacts" / "local-e2e-summary.json", summary)
     return summary
