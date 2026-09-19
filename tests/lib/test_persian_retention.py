@@ -34,7 +34,7 @@ def test_static_opening_is_structural_advisory_not_semantic_hook_failure():
     assert audit["problems"] == []
     assert audit["first3Seconds"]["eventCount"] == 0
     assert audit["first3Seconds"]["meaningfulEventCount"] == 0
-    assert any("meaningful post-start visual change" in a for a in audit["advisories"])
+    assert any("no authored post-start shot/reveal change" in a for a in audit["advisories"])
 
 
 def test_opening_moment_is_overlay_not_meaningful_visual_change():
