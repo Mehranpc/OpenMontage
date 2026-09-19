@@ -108,6 +108,33 @@ importance-3 events first, then 2, then 1. Importance changes **priority**, neve
 shared `max_candidates_total`, per-clip limit, aggregate byte ceiling, provider list, or
 number of passes. Do not widen providers, add generic queries, or start a third pass.
 
+### Durable Asset Candidate Workspace
+
+Normal Persian production separates **provider acquisition** from **durable review/selection**. `direct_clip_search` still owns search/download/ffprobe mechanics; it does not own editorial selection. Use the production front door so the bounded result is accounted and imported into the project-local candidate workspace:
+
+```bash
+python -m lib.persian_video_workflow asset-request <project-id> --retry-pass 0 --json /project/request.json
+# Run direct_clip_search with the bounded request and persist its normalized result JSON.
+python -m lib.persian_video_workflow asset-result <project-id> --retry-pass 0 --json /project/result.json
+```
+
+`asset-result` records the discovery pass and durable provider/source identity. Do not recreate that pool in chat, rename downloaded files to invent identity, or use a helper script as the selection ledger. For every source window/crop that is actually considered for an event, stage and review it through the official lifecycle:
+
+```bash
+python -m lib.persian_video_workflow asset-candidate-stage <project-id> --json /project/candidate.json
+python -m lib.persian_video_workflow asset-candidate-review <project-id> <candidate-id> --json /project/review.json
+python -m lib.persian_video_workflow asset-candidate-reject <project-id> <candidate-id> --category semantic --reason "..."
+python -m lib.persian_video_workflow asset-candidate-select <project-id> <visual-event-id> <candidate-id> --rejections-json /project/rejections.json
+```
+
+A staged candidate is identified by provider/source ID + exact source-time window + intended crop. The candidate JSON carries `discovery_id`, `visual_event_id`, `semantic_beat_id`, `source_in_seconds`, selected-window `duration_seconds`, `intended_crop`, `candidate_rank`, authored `query`, exact `narration_span`, and optional `narrative_role`. Changing the window or crop creates a distinct identity and therefore distinct review evidence.
+
+Review evidence is immutable for that identity and contains the actual start/middle/end observation, subject/human continuity, affect match, staged-stock risk, semantic/selection reasons, geometry/crop safety, and resolution quality. Technical, semantic, and editorial rejection reasons remain distinct. A previously reviewed alternate can be reused after send-back without re-downloading or re-reviewing it when its identity is unchanged.
+
+Selection rejects visible overlap with an already selected window from the same provider/source while allowing distinct non-overlapping windows from a long source. `status.asset_workspace` exposes discovery/review/selection counts, rejection categories, reusable reviewed candidates, and weak ending/resolution warnings.
+
+`asset-candidate-select` returns both `manifestBinding` and `manifestEvidence`. Copy those fields into that visual event's canonical `asset_manifest` row. Once the workspace is active, `acquire_assets` completion refuses a manifest with no workspace selection, an unselected visual-event row, stale source/window/crop identity, or semantic review evidence that drifted from the persisted review. The workspace is history/evidence; **`asset_manifest` remains the canonical selected output.**
+
 ### Ordered fallback hierarchy
 
 Search/selection follows the event's declared level in order:
@@ -273,7 +300,13 @@ Rules:
       "width": 1080,
       "height": 1920,
       "source_in_seconds": 2.0,
+      "source_window_end_seconds": 8.0,
       "provider": "pexels",
+      "source_id": "1234567",
+      "intended_crop": {"mode": "cover", "x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0},
+      "asset_candidate_id": "asset-...",
+      "asset_candidate_identity_sha256": "<64-char sha256>",
+      "asset_review_sha256": "<64-char sha256>",
       "original_url": "https://www.pexels.com/video/1234567/",
       "license": "Pexels License",
       "attribution": "Video by Jane Doe on Pexels",
@@ -321,8 +354,8 @@ assert not problems, problems
 Also confirm by hand:
 
 - Every footage visual event has exactly one asset. Legacy checkpoints without `visual_events` are treated as one implicit event per beat.
-- New visual-event assets carry the full semantic/selection evidence listed above;
-  `audit_asset_manifest` rejects missing identity, un-authored queries, affect mismatch,
+- New visual-event assets carry the full semantic/selection evidence listed above. When the Asset Candidate Workspace is active, each row also carries the exact `manifestBinding` + `manifestEvidence` returned by selection; completion validates those fields against the persisted candidate identity/review before advancing.
+- `audit_asset_manifest` rejects missing identity, un-authored queries, affect mismatch,
   high staged-stock risk, lost required human/subject presence, undocumented fallback,
   or incomplete start/middle/end inspection.
 - No clip_id fills two visual events. Reuse is visible and reads as running out of material.

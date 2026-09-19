@@ -61,6 +61,22 @@ python -m lib.persian_video_workflow attempt <project-id>
 python -m lib.persian_video_workflow complete <project-id> --evidence-json /abs/evidence.json
 ```
 
+For `acquire_assets`, use the bounded acquisition + durable candidate workspace instead of maintaining a separate selection ledger in chat or generated helper scripts. The normal lifecycle is:
+
+```bash
+python -m lib.persian_video_workflow asset-request <project-id> --retry-pass <0-or-1> --json /project/request.json
+# Execute direct_clip_search with the bounded request; persist its normalized ToolResult data.
+python -m lib.persian_video_workflow asset-result <project-id> --retry-pass <0-or-1> --json /project/result.json
+python -m lib.persian_video_workflow asset-candidate-stage <project-id> --json /project/candidate.json
+python -m lib.persian_video_workflow asset-candidate-review <project-id> <candidate-id> --json /project/review.json
+python -m lib.persian_video_workflow asset-candidate-reject <project-id> <candidate-id> --category <technical|semantic|editorial> --reason "..."
+python -m lib.persian_video_workflow asset-candidate-select <project-id> <visual-event-id> <candidate-id> --rejections-json /project/rejections.json
+```
+
+`asset-result` imports provider/source discoveries into project-local durable state. Candidate identity is provider/source ID + exact source-time window + intended crop; review evidence is immutable for that identity. Overlapping reuse of the same source window is blocked, while distinct non-overlapping windows remain legal. Reviewed alternates remain reusable after send-back without reacquisition/re-review when identity is unchanged.
+
+`asset-candidate-select` returns `manifestBinding` and `manifestEvidence`; use those exact fields in the canonical `asset_manifest` row. Once asset workspace state exists, `complete --phase acquire_assets` enforces that every workspace-bound visual event has exactly one selected row with matching identity and review evidence. `status.asset_workspace` is the durable source for candidate/reuse/rejection/weak-resolution state. `asset_manifest` remains the canonical selected artifact; the workspace is durable discovery/review history.
+
 For `no_copy_preflight`, never write `artifacts/edit_decisions.json` directly. Use the durable convergence workspace through the production front door. The first candidate needs only the immutable stage/preflight flow:
 
 ```bash
@@ -127,6 +143,7 @@ Always follow these sources rather than restating their rules here:
 - `skills/pipelines/persian-footage/script-director.md` — technical Persian script validation; in this front door, authoritative copy is preserved rather than newly authored.
 - `skills/pipelines/persian-footage/subtitle-alignment.md` — approved-script/timing authority boundary.
 - `skills/pipelines/persian-footage/hook-quality.md` — evidence-backed short-form hook quality, preflight recovery classes, rendered-hook review, and observational post-publish calibration.
+- `skills/pipelines/persian-footage/asset-director.md` — bounded acquisition plus durable Asset Candidate Workspace review/selection and canonical manifest binding.
 - `skills/pipelines/persian-footage/final-candidate-protocol.md` — no-copy preflight and candidate lifecycle.
 - `skills/meta/checkpoint-protocol.md` — checkpoint persistence and approval protocol.
 

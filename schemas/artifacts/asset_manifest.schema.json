@@ -32,6 +32,11 @@
           "subtype": { "type": "string", "description": "Sub-classification (e.g. 'background', 'stock', 'generated')" },
           "generation_summary": { "type": "string", "description": "Brief summary of how the asset was generated or sourced" },
           "provider": { "type": "string", "description": "Provider name (e.g. pixabay, google_imagen)" },
+          "source_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Stable provider-side source identifier used by the Persian asset candidate workspace. Distinct from local filename/path."
+          },
           "license": { "type": "string", "description": "License type (e.g. Pixabay License, CC0)" },
           "original_url": { "type": "string", "description": "Source URL if downloaded from a stock service" },
           "voice_performance": {
@@ -90,6 +95,39 @@
             "type": "number",
             "minimum": 0,
             "description": "In-point inside the source clip. Stock footage frequently opens on a fade or the wrong framing, so 0 is a default rather than a decision."
+          },
+          "source_window_end_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Out-point of the exact reviewed source-time window. Kept separate from duration_seconds, which remains the full source clip duration."
+          },
+          "intended_crop": {
+            "type": "object",
+            "required": ["mode"],
+            "properties": {
+              "mode": { "type": "string", "minLength": 1 },
+              "x": { "type": "number", "minimum": 0, "maximum": 1 },
+              "y": { "type": "number", "minimum": 0, "maximum": 1 },
+              "w": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+              "h": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+            },
+            "additionalProperties": true,
+            "description": "Crop identity reviewed for the selected source-time window. Optional outside Persian asset-workspace production."
+          },
+          "asset_candidate_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Durable Persian asset-workspace candidate id for this selected manifest row."
+          },
+          "asset_candidate_identity_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Digest binding provider/source id + source-time window + intended crop."
+          },
+          "asset_review_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Digest of immutable review evidence bound to the selected candidate identity."
           },
           "attribution": {
             "type": "string",
