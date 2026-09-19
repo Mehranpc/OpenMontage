@@ -562,16 +562,166 @@ def _validate_editorial_moment_continuity(
     }
 
 def stage_edit_draft(
-    project_dir: Path, attempt_id: str, payload: Mapping[str, Any]
+    project_dir: Path,
+    attempt_id: str,
+    payload: Mapping[str, Any],
+    *,
+    parent_attempt_id: str | None = None,
+    diagnostic_issue: Mapping[str, Any] | None = None,
+    recovery_class: str | None = None,
+    strategy: str | None = None,
+    changed_fields: Sequence[str] | None = None,
+    max_candidates: int = 4,
+    revision_cycle: int = 0,
 ) -> dict[str, Any]:
-    draft, report, _ = _paths(project_dir, attempt_id)
+    draft, report, canonical = _paths(project_dir, attempt_id)
     edit = extract_edit_decisions(dict(payload))
-    # The mix becomes part of the candidate bytes before digesting. The render does
-    # not make an independent late mix decision, so preflight and promotion remain
-    # digest-bound to the exact speech-time gain that will execute.
     edit = materialize_loudness_aware_mix(edit, base_dir=REPO_ROOT)
-    continuity = _validate_editorial_moment_continuity(project_dir, attempt_id, edit)
     digest = artifact_sha256(edit)
+    dependency_digests = _dependency_digests(edit)
+
+    if not isinstance(max_candidates, int) or isinstance(max_candidates, bool) or max_candidates <= 0:
+        raise PersianEditWorkspaceError("max_candidates must be a positive integer")
+    if not isinstance(revision_cycle, int) or isinstance(revision_cycle, bool) or revision_cycle < 0:
+        raise PersianEditWorkspaceError("revision_cycle must be a non-negative integer")
+
+    parent_id = _attempt(parent_attempt_id) if parent_attempt_id else None
+    base_edit: dict[str, Any] | None = None
+    base_digest: str | None = None
+    if parent_id:
+        parent_manifest = load_convergence_candidate(project_dir, parent_id)
+        base_edit = _load_draft(project_dir, parent_id)
+        base_digest = str(parent_manifest.get("artifactSha256") or artifact_sha256(base_edit))
+    elif canonical.is_file():
+        try:
+            raw_base = json.loads(canonical.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise PersianEditWorkspaceError("canonical edit artifact is unreadable") from exc
+        if isinstance(raw_base, dict):
+            base_edit = raw_base
+            base_digest = artifact_sha256(raw_base)
+
+    issue = dict(diagnostic_issue or {})
+    if recovery_class:
+        issue["recoveryClass"] = recovery_class
+    plan: dict[str, Any] | None = None
+    resolved_class: str | None = None
+    mutation_surface: list[str] = []
+    preserve: list[str] = []
+    clean_changed_fields = [str(item).strip() for item in (changed_fields or []) if str(item).strip()]
+    if issue or recovery_class:
+        plan = recovery_policy_for_issue(issue)
+        resolved_class = str(plan["recoveryClass"])
+        mutation_surface = list(plan["mutationSurface"])
+        preserve = list(plan["preserve"])
+        if not strategy or strategy not in plan["strategies"]:
+            raise PersianEditWorkspaceError(
+                f"strategy {strategy!r} is not allowed for {resolved_class}; allowed={plan['strategies']}"
+            )
+        if not clean_changed_fields and resolved_class != "PREFLIGHT_RUNTIME":
+            raise PersianEditWorkspaceError(
+                f"recovery candidate {attempt_id!r} must declare changed_fields"
+            )
+        if "diagnostic.named_contract_field" not in mutation_surface:
+            undeclared = [item for item in clean_changed_fields if item not in mutation_surface]
+            if undeclared:
+                raise PersianEditWorkspaceError(
+                    "declared changed_fields exceed the recovery mutation surface: "
+                    f"{undeclared}; allowed={mutation_surface}"
+                )
+
+    changed_scopes = _changed_scopes(base_edit, edit)
+    if plan is not None:
+        allowed_scopes = _allowed_scopes(mutation_surface)
+        forbidden = changed_scopes if "*" not in allowed_scopes else []
+        if "*" not in allowed_scopes:
+            forbidden = [scope for scope in changed_scopes if scope not in allowed_scopes]
+        preserved_changed = [scope for scope in changed_scopes if scope in preserve]
+        if "edit_digest" in preserve and base_digest is not None and base_digest != digest:
+            preserved_changed.append("edit_digest")
+        if forbidden or preserved_changed:
+            details = sorted(set(forbidden + preserved_changed))
+            raise PersianEditWorkspaceError(
+                f"recovery mutation surface violation for {resolved_class}: changed scopes {details}; "
+                f"allowed={mutation_surface}; preserve={preserve}"
+            )
+
+    diagnostic_cause = dict(issue) if issue else None
+    expected_identity = {
+        "candidateId": attempt_id,
+        "parentCandidateId": parent_id,
+        "baseArtifactSha256": base_digest,
+        "artifactSha256": digest,
+        "dependencyDigests": dependency_digests,
+        "recoveryClass": resolved_class,
+        "strategy": strategy,
+        "mutationSurface": mutation_surface,
+        "preserve": preserve,
+        "changedFields": clean_changed_fields,
+        "changedScopes": changed_scopes,
+        "diagnosticCause": diagnostic_cause,
+        "revisionCycle": int(revision_cycle),
+    }
+    candidate_path = _candidate_path(project_dir, attempt_id)
+    if candidate_path.is_file():
+        existing_manifest = load_convergence_candidate(project_dir, attempt_id)
+        if _candidate_identity(existing_manifest) != expected_identity:
+            raise PersianEditWorkspaceError(
+                "candidate identity is immutable; use a new attempt_id for changed bytes or recovery metadata"
+            )
+        if draft.is_file() and artifact_sha256(json.loads(draft.read_text(encoding="utf-8"))) != digest:
+            raise PersianEditWorkspaceError(
+                "candidate identity is immutable; staged draft bytes no longer match its manifest"
+            )
+        return {
+            "attemptId": attempt_id,
+            "candidateId": attempt_id,
+            "draftPath": str(draft),
+            "artifactSha256": digest,
+            "candidateManifestPath": str(candidate_path),
+            "idempotent": True,
+            "disposition": existing_manifest.get("disposition"),
+        }
+
+    manifests = [
+        item for item in _candidate_manifests(project_dir)
+        if int(item.get("revisionCycle") or 0) == int(revision_cycle)
+    ]
+    if len(manifests) >= max_candidates:
+        _write_unresolved(
+            project_dir,
+            reason="global_candidate_budget_exhausted",
+            recovery_class=resolved_class,
+            attempts_used=sum(1 for item in manifests if item.get("recoveryClass") == resolved_class),
+            max_attempts=(int(plan["maxAttempts"]) if plan else None),
+            global_used=len(manifests),
+            global_max=max_candidates,
+            diagnostic_issue=diagnostic_cause,
+            revision_cycle=revision_cycle,
+        )
+        raise PersianEditWorkspaceError(
+            f"global candidate budget exhausted: {len(manifests)} used >= {max_candidates} allowed"
+        )
+    if plan is not None and resolved_class:
+        class_used = sum(1 for item in manifests if item.get("recoveryClass") == resolved_class)
+        class_max = int(plan["maxAttempts"])
+        if class_used >= class_max:
+            _write_unresolved(
+                project_dir,
+                reason="recovery_class_candidate_budget_exhausted",
+                recovery_class=resolved_class,
+                attempts_used=class_used,
+                max_attempts=class_max,
+                global_used=len(manifests),
+                global_max=max_candidates,
+                diagnostic_issue=diagnostic_cause,
+                revision_cycle=revision_cycle,
+            )
+            raise PersianEditWorkspaceError(
+                f"candidate budget exhausted for {resolved_class}: {class_used} used >= {class_max} allowed"
+            )
+
+    continuity = _validate_editorial_moment_continuity(project_dir, attempt_id, edit)
     if draft.exists():
         existing = json.loads(draft.read_text(encoding="utf-8"))
         if artifact_sha256(existing) != digest:
@@ -584,13 +734,37 @@ def stage_edit_draft(
         old = json.loads(report.read_text(encoding="utf-8"))
         if old.get("artifactSha256") != digest:
             report.unlink()
+
+    now = datetime.now(timezone.utc).isoformat()
+    manifest = {
+        "version": "1.0",
+        **expected_identity,
+        "producedDiagnostics": [],
+        "cacheHits": {},
+        "disposition": "staged",
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    _atomic_json(candidate_path, manifest)
+    unresolved_path = _unresolved_path(project_dir)
+    if unresolved_path.is_file():
+        try:
+            unresolved = json.loads(unresolved_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            unresolved = None
+        if isinstance(unresolved, Mapping) and int(unresolved.get("revisionCycle") or 0) < revision_cycle:
+            unresolved_path.unlink(missing_ok=True)
     return {
         "attemptId": attempt_id,
+        "candidateId": attempt_id,
         "draftPath": str(draft),
         "artifactSha256": digest,
+        "candidateManifestPath": str(candidate_path),
+        "dependencyDigests": dependency_digests,
+        "changedScopes": changed_scopes,
+        "disposition": "staged",
         **continuity,
     }
-
 
 def preflight_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
     draft, report_path, _ = _paths(project_dir, attempt_id)
