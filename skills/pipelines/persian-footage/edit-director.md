@@ -105,6 +105,11 @@ Interaction is structural, not a convention:
 - burned captions are one or two lines, never karaoke;
 - captions live inside the platform safe area;
 - while any editorial moment is active, the caption component paints nothing;
+- in hybrid mode, a burned cue whose timing substantially overlaps a moment and whose
+  words already carry most of that moment's `anchorText` is suppressed as one semantic
+  unit, including its leading fragment before the moment begins. The sidecar SRT stays
+  complete; do not show a black caption and then immediately restate the same concept
+  in the stronger editorial treatment;
 - the caption band is reserved during watermark planning, so the brand does not park
   on top of running captions;
 - moments remain above captions in the layer order.
@@ -130,6 +135,13 @@ across that boundary merely to satisfy the minimum cue duration; keep the short 
 A moment is **one grammatical Persian phrase with one emphasised span inside it**. It
 is carried by `segments`, an ordered list where **the array order is the reading
 order, top to bottom**. The renderer paints in that order with no sorting of its own.
+
+When `anchorText` is an explicit comma/semicolon list, shortening a display item may
+drop whole anchored words but must not invent or morphologically truncate a replacement
+label. For example, `توجه دیداری، درک فضایی، حافظه` may become
+`توجه، درک فضایی، حافظه`; it may **not** become `توجه، فضا، حافظه`, because `فضا` is
+not a whole token in the anchored concept `درک فضایی` and changes what the label means.
+`audit_moments` enforces this narrow list-integrity rule before render.
 
 ```json
 {

@@ -79,6 +79,11 @@ editorial treatment is not part of 2.16. Hooks may occupy up to five measured li
 and are never truncated. A soft local dark field and glyph shadow preserve contrast
 without a full-frame wash.
 
+This Kahroba treatment is the protected 2.16 editorial baseline. Fixes to captions,
+timing, semantic copy, or recovery logic must not silently swap the font family, flatten
+the measured size hierarchy, or replace the right/center placement grammar. Any future
+visual redesign is a deliberate profile revision with its own browser/render evidence.
+
 Kahroba is a private licensed runtime asset, not redistributed by the repository.
 Install the licensed `Kahroba EB-LC.woff2` with `scripts/install_kahroba_font.py`;
 the installer and browser both verify SHA-256

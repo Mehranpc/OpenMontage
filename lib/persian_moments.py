@@ -69,6 +69,7 @@ toward being a caption track.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Any, Iterable, Literal
 
 from lib.persian_brand import validate_exact_text_record
@@ -844,6 +845,54 @@ def is_flat_display_hook(moment: PersianMoment) -> bool:
     )
 
 
+_ENUMERATION_SPLIT_RE = re.compile(r"\s*[،,؛;]\s*")
+
+
+def _enumeration_parts(text: str) -> list[str]:
+    parts = [part.strip() for part in _ENUMERATION_SPLIT_RE.split(str(text or "")) if part.strip()]
+    return parts if len(parts) >= 2 else []
+
+
+def _enumerated_anchor_integrity_violations(moment: PersianMoment) -> list[str]:
+    """Keep list-style callouts lexically inside their spoken anchor items.
+
+    Editorial shortening may drop whole words (``توجه دیداری`` -> ``توجه``), but
+    it may not manufacture or morphologically truncate a replacement label
+    (``درک فضایی`` -> ``فضا``). This narrow rule applies only when the narration
+    anchor is an explicit comma/semicolon list and the display exposes the same
+    number of list items, so ordinary paraphrase remains editorially available.
+    """
+    anchor_parts = _enumeration_parts(moment.anchor_text)
+    if len(anchor_parts) < 2:
+        return []
+    visible = [segment.text for segment in moment.segments if segment.role != "source"]
+    display_parts = _enumeration_parts(" ".join(visible))
+    if len(display_parts) < 2 and len(visible) == len(anchor_parts):
+        display_parts = [text.strip() for text in visible]
+    if len(display_parts) != len(anchor_parts):
+        return []
+
+    problems: list[str] = []
+    for index, (anchor_part, display_part) in enumerate(zip(anchor_parts, display_parts, strict=True), start=1):
+        anchor_tokens = {
+            compare_key(word) for word in split_words(anchor_part)
+            if word != "\n" and compare_key(word)
+        }
+        display_tokens = [
+            compare_key(word) for word in split_words(display_part)
+            if word != "\n" and compare_key(word)
+        ]
+        foreign = [token for token in display_tokens if token not in anchor_tokens]
+        if foreign:
+            problems.append(
+                f"{moment.id}: enumerated anchor item {index} is {anchor_part!r} but "
+                f"display item {display_part!r} introduces token(s) {', '.join(foreign)!r}. "
+                "List callouts may shorten by dropping whole anchored words, but may not "
+                "invent or morphologically truncate a concept label."
+            )
+    return problems
+
+
 def _audit_one(
     moment: PersianMoment, *, adaptive_pixel_typography: bool = False,
     simultaneous_hook_typography: bool = False,
@@ -1046,6 +1095,7 @@ def _audit_one(
             )
 
     problems.extend(_phrase_break_violations(moment))
+    problems.extend(_enumerated_anchor_integrity_violations(moment))
     return problems
 
 
