@@ -1158,6 +1158,27 @@ def _complete_phase_impl(
         raise PersianVideoWorkflowError(
             f"phase {phase!r} must be attempted before it can complete"
         )
+    # Checkpoint-backed phases are transaction-like: durable checkpoint truth is
+    # the outer commit prerequisite. Validate it before phase-specific evidence so
+    # a missing canonical checkpoint cannot be obscured by a newer validator.
+    stage = _PHASE_CHECKPOINT.get(phase)
+    checkpoint: Mapping[str, Any] | None = None
+    if stage is not None:
+        try:
+            checkpoint = read_checkpoint(
+                Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve(),
+                project_id,
+                stage,
+            )
+        except (CheckpointValidationError, OSError, json.JSONDecodeError) as exc:
+            raise PersianVideoWorkflowError(
+                f"checkpoint_{stage}.json must be valid before {phase} can complete"
+            ) from exc
+        if not checkpoint or checkpoint.get("status") != "completed":
+            raise PersianVideoWorkflowError(
+                f"checkpoint_{stage}.json must be completed before {phase} can complete"
+            )
+
     phase_evidence = dict(evidence or {})
     if phase == "prepare_inputs":
         phase_evidence.update(_validate_prepare_inputs_completion(state, phase_evidence))
@@ -1186,36 +1207,16 @@ def _complete_phase_impl(
     if phase == "awaiting_human":
         phase_evidence.update(_validate_awaiting_human_candidate(state))
 
-    # Checkpoint-backed phases are transaction-like: durable checkpoint truth must
-    # exist before workflow state is allowed to advance. The specialized edit
-    # preflight validator above already verifies digest binding, but the generic
-    # stage checkpoint remains the commit point for the lifecycle.
-    stage = _PHASE_CHECKPOINT.get(phase)
-    if stage is not None:
-        try:
-            checkpoint = read_checkpoint(
-                Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve(),
-                project_id,
-                stage,
-            )
-        except (CheckpointValidationError, OSError, json.JSONDecodeError) as exc:
+    if phase == "acquire_assets" and checkpoint is not None:
+        artifacts = checkpoint.get("artifacts") if isinstance(checkpoint.get("artifacts"), Mapping) else {}
+        manifest = artifacts.get("asset_manifest") if isinstance(artifacts, Mapping) else None
+        if not isinstance(manifest, Mapping):
             raise PersianVideoWorkflowError(
-                f"checkpoint_{stage}.json must be valid before {phase} can complete"
-            ) from exc
-        if not checkpoint or checkpoint.get("status") != "completed":
-            raise PersianVideoWorkflowError(
-                f"checkpoint_{stage}.json must be completed before {phase} can complete"
+                "completed assets checkpoint requires an asset_manifest artifact"
             )
-        if phase == "acquire_assets":
-            artifacts = checkpoint.get("artifacts") if isinstance(checkpoint.get("artifacts"), Mapping) else {}
-            manifest = artifacts.get("asset_manifest") if isinstance(artifacts, Mapping) else None
-            if not isinstance(manifest, Mapping):
-                raise PersianVideoWorkflowError(
-                    "completed assets checkpoint requires an asset_manifest artifact"
-                )
-            phase_evidence["assetWorkspaceBinding"] = (
-                validate_asset_manifest_against_workspace(_project_root(state), manifest)
-            )
+        phase_evidence["assetWorkspaceBinding"] = (
+            validate_asset_manifest_against_workspace(_project_root(state), manifest)
+        )
 
     completed = list(state.get("completed_phases") or [])
     if phase not in completed:
