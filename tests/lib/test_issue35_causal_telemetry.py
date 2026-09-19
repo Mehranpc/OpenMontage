@@ -203,3 +203,30 @@ def test_workflow_status_surfaces_causal_trace_identity(tmp_path: Path) -> None:
     state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
     status = workflow.workflow_status("run", pipeline_dir=projects_root)
     assert status["causal_trace_id"] == state["causal_telemetry"]["trace_id"]
+
+
+def test_causal_span_identity_and_parentage_are_guarded() -> None:
+    state = {
+        "created_at": BASE.isoformat(),
+        "causal_telemetry": telemetry.new_causal_trace("trace-guard", started_at=BASE),
+    }
+    with pytest.raises(ValueError, match="parent span"):
+        telemetry.record_causal_interval(
+            state,
+            span_id="orphan",
+            name="orphan",
+            category="machine_local_execution",
+            started_at=BASE,
+            finished_at=BASE + timedelta(seconds=1),
+            parent_span_id="missing-parent",
+        )
+    with pytest.raises(ValueError, match="reserved span fields"):
+        telemetry.record_causal_interval(
+            state,
+            span_id="safe",
+            name="safe",
+            category="machine_local_execution",
+            started_at=BASE,
+            finished_at=BASE + timedelta(seconds=1),
+            fields={"span_id": "evil"},
+        )
