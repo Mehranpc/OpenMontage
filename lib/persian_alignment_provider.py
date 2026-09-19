@@ -177,12 +177,22 @@ def _inputs_for_candidate(
 
 
 def _attempt_failure(
-    *, candidate: Mapping[str, Any], profile: str, kind: str, error: str
+    *,
+    candidate: Mapping[str, Any],
+    profile: str,
+    kind: str,
+    error: str,
+    model: str | None = None,
+    duration_seconds: float | None = None,
+    invoked: bool,
 ) -> dict[str, Any]:
     return {
         "tool": candidate["tool"],
         "provider": candidate.get("provider"),
         "profile": profile,
+        "model": model or "provider-default",
+        "durationSeconds": round(max(0.0, float(duration_seconds or 0.0)), 3),
+        "invoked": bool(invoked),
         "semanticSuccess": False,
         "failureKind": kind,
         "error": str(error),
@@ -202,12 +212,22 @@ def _success_decision(
     if plan.get("fallbackReason"):
         history.append(str(plan["fallbackReason"]))
     history.extend(str(item) for item in fallback_history)
+    final_attempt = dict(attempts[-1]) if attempts else {}
+    execution_seconds = sum(
+        float(item.get("durationSeconds") or 0.0)
+        for item in attempts
+        if isinstance(item, Mapping) and item.get("invoked") is True
+    )
     return {
         **{key: deepcopy(value) for key, value in plan.items() if key not in {"selectedTool", "selectedProvider", "fallbackReason"}},
         "selectedTool": candidate["tool"],
         "selectedProvider": candidate.get("provider"),
+        "selectedModel": str(final_attempt.get("model") or "provider-default"),
+        "semanticOutcome": "succeeded",
+        "executionDurationSeconds": round(execution_seconds, 3),
         "fallbackReason": fallback_reason,
         "fallbackHistory": history,
+        "recoveryReason": "lightweight_providers_exhausted" if heavy_used else None,
         "heavyRecoveryUsed": heavy_used,
         "attempts": [dict(item) for item in attempts],
     }
@@ -246,14 +266,20 @@ def execute_alignment_with_fallback(
         tool = registry.get(str(candidate["tool"]))
         if tool is None:
             error = "tool disappeared after provider planning"
-            attempts.append(_attempt_failure(candidate=candidate, profile=profile, kind="provider_missing", error=error))
+            attempts.append(_attempt_failure(
+                candidate=candidate, profile=profile, kind="provider_missing", error=error,
+                invoked=False,
+            ))
             fallback_history.append(f"provider_missing:{candidate['tool']}")
             return None
         # Recheck status immediately before execution: a dependency can disappear
         # between planning and invocation. A known-unavailable provider is skipped.
         status = _status_value(tool.get_status())
         if status != ToolStatus.AVAILABLE.value:
-            attempts.append(_attempt_failure(candidate=candidate, profile=profile, kind="provider_unavailable", error=status))
+            attempts.append(_attempt_failure(
+                candidate=candidate, profile=profile, kind="provider_unavailable", error=status,
+                invoked=False,
+            ))
             fallback_history.append(f"provider_unavailable:{candidate['tool']}")
             return None
         inputs = _inputs_for_candidate(
@@ -264,17 +290,25 @@ def execute_alignment_with_fallback(
             language=language,
             initial_prompt=initial_prompt,
         )
+        model = str(inputs.get("model") or inputs.get("model_size") or "provider-default")
         result = tool.execute(inputs)
+        duration = result.duration_seconds if isinstance(result.duration_seconds, (int, float)) else 0.0
         if not result.success:
             error = str(result.error or "semantic tool failure")
-            attempts.append(_attempt_failure(candidate=candidate, profile=profile, kind="semantic_failure", error=error))
+            attempts.append(_attempt_failure(
+                candidate=candidate, profile=profile, kind="semantic_failure", error=error,
+                model=model, duration_seconds=duration, invoked=True,
+            ))
             fallback_history.append(f"semantic_failure:{candidate['tool']}:{error}")
             return None
         data = dict(result.data or {})
         words = list(data.get("word_timestamps") or [])
         if not words:
             error = "provider returned no word_timestamps"
-            attempts.append(_attempt_failure(candidate=candidate, profile=profile, kind="semantic_failure", error=error))
+            attempts.append(_attempt_failure(
+                candidate=candidate, profile=profile, kind="semantic_failure", error=error,
+                model=model, duration_seconds=duration, invoked=True,
+            ))
             fallback_history.append(f"semantic_failure:{candidate['tool']}:{error}")
             return None
         if validate_word_timings is not None:
@@ -282,13 +316,19 @@ def execute_alignment_with_fallback(
                 validate_word_timings(words)
             except Exception as exc:  # validation is caller-owned policy evidence
                 error = str(exc)
-                attempts.append(_attempt_failure(candidate=candidate, profile=profile, kind="timing_validation_failure", error=error))
+                attempts.append(_attempt_failure(
+                    candidate=candidate, profile=profile, kind="timing_validation_failure", error=error,
+                    model=model, duration_seconds=duration, invoked=True,
+                ))
                 fallback_history.append(f"timing_validation_failure:{candidate['tool']}:{error}")
                 return None
         attempts.append({
             "tool": candidate["tool"],
             "provider": candidate.get("provider"),
             "profile": profile,
+            "model": model,
+            "durationSeconds": round(max(0.0, float(duration or 0.0)), 3),
+            "invoked": True,
             "semanticSuccess": True,
         })
         decision = _success_decision(
@@ -367,6 +407,14 @@ def validate_alignment_provider_decision(
     if selected.get("supportsInputPath") is not True or str(selected.get("requiredCapability") or "") != _REQUIRED_CAPABILITY:
         raise AlignmentProviderError("selected alignment provider lacks required input_path/word_timestamps fit evidence")
 
+    if str(decision.get("semanticOutcome") or "") != "succeeded":
+        raise AlignmentProviderError("alignment provider decision semantic outcome must be succeeded")
+    selected_model = str(decision.get("selectedModel") or "").strip()
+    if not selected_model:
+        raise AlignmentProviderError("alignment provider decision requires selected model evidence")
+    execution_duration = decision.get("executionDurationSeconds")
+    if not isinstance(execution_duration, (int, float)) or isinstance(execution_duration, bool) or execution_duration < 0:
+        raise AlignmentProviderError("alignment provider decision requires non-negative execution timing")
     attempts = decision.get("attempts")
     if not isinstance(attempts, list) or not attempts:
         raise AlignmentProviderError("alignment provider decision requires execution attempts")
@@ -376,6 +424,8 @@ def validate_alignment_provider_decision(
     policy_heavy_allowed = bool(policy.get("heavyTranscriptionRecoveryOnly"))
     if heavy_used and not policy_heavy_allowed:
         raise AlignmentProviderError("heavy recovery is forbidden by the current alignment policy")
+    if heavy_used and str(decision.get("recoveryReason") or "") != "lightweight_providers_exhausted":
+        raise AlignmentProviderError("heavy recovery requires persisted lightweight exhaustion reason")
 
     for raw in attempts:
         if not isinstance(raw, Mapping):
@@ -388,6 +438,13 @@ def validate_alignment_provider_decision(
             raise AlignmentProviderError(
                 f"alignment attempt executed provider {name!r} that was unavailable or not policy-valid"
             )
+        duration = raw.get("durationSeconds")
+        if not isinstance(duration, (int, float)) or isinstance(duration, bool) or duration < 0:
+            raise AlignmentProviderError("alignment provider attempt requires non-negative durationSeconds")
+        if not str(raw.get("model") or "").strip():
+            raise AlignmentProviderError("alignment provider attempt requires model evidence")
+        if not isinstance(raw.get("invoked"), bool):
+            raise AlignmentProviderError("alignment provider attempt requires invoked boolean")
         profile = str(raw.get("profile") or "")
         if profile not in {"lightweight", "transcription_primary", "heavy_recovery"}:
             raise AlignmentProviderError(f"alignment attempt has unsupported profile: {profile}")
