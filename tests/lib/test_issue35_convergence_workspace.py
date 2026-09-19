@@ -540,3 +540,44 @@ def test_cached_retention_blocker_remains_blocking_without_browser_rerun(monkeyp
     assert second["blockingIssues"][0]["code"] == "RETENTION_GATE"
     assert second["evidence"]["retentionAudit"]["marker"] == 1
     assert calls == {"retention": 1, "browser": 0}
+
+
+
+def test_workflow_status_scopes_convergence_to_current_revision_cycle(tmp_path: Path, monkeypatch) -> None:
+    from lib import persian_video_workflow as workflow
+
+    project = tmp_path / "run"
+    state = {
+        "project_id": "run",
+        "status": "active",
+        "next_phase": "no_copy_preflight",
+        "user_revision_cycles": 3,
+        "input": {},
+        "completed_phases": [],
+        "attempts": {},
+        "send_backs": 0,
+        "recovery_attempts": {},
+        "asset_usage": {},
+        "alignment_policy": {},
+        "read_allowlist": {"project_root": str(project)},
+    }
+    observed = {}
+    monkeypatch.setattr(workflow, "load_workflow_state", lambda *args, **kwargs: state)
+    monkeypatch.setattr(workflow, "phase_time_accounting", lambda _state: {})
+
+    def fake_convergence_status(project_dir, *, revision_cycle=None):
+        observed["project_dir"] = project_dir
+        observed["revision_cycle"] = revision_cycle
+        return {
+            "status": "active",
+            "revisionCycle": revision_cycle,
+            "candidateCount": 0,
+            "candidateIds": [],
+            "promotedCandidateId": None,
+            "unresolved": None,
+        }
+
+    monkeypatch.setattr(workflow, "convergence_status", fake_convergence_status)
+    status = workflow.workflow_status("run", pipeline_dir=tmp_path)
+    assert observed["revision_cycle"] == 3
+    assert status["convergence"]["revisionCycle"] == 3
