@@ -217,6 +217,34 @@ def _persist_job_causal_span(
     workflow._write_state(_project_root(state), state)
 
 
+def _reconcile_job_telemetry(
+    project_id: str,
+    envelope: dict[str, Any],
+    job: Mapping[str, Any],
+    *,
+    pipeline_dir: Path | None,
+    reconciled_at: datetime | None = None,
+) -> bool:
+    """Persist causal reporting without allowing it to rewrite execution truth."""
+    try:
+        _persist_job_causal_span(
+            project_id,
+            envelope,
+            job,
+            pipeline_dir=pipeline_dir,
+            reconciled_at=reconciled_at,
+        )
+    except Exception as exc:
+        envelope["telemetryOutcome"] = "failed"
+        envelope["telemetryError"] = str(exc)
+        envelope["updatedAt"] = _now()
+        return False
+    envelope["telemetryOutcome"] = "succeeded"
+    envelope.pop("telemetryError", None)
+    envelope["updatedAt"] = _now()
+    return True
+
+
 def _persist_transition_causal_span(
     project_id: str,
     envelope: Mapping[str, Any],
@@ -405,6 +433,7 @@ def start_phase_job(
         "idempotenceKey": idempotence_key,
         "commandSha256": str(job.get("commandSha256") or durable_command_sha256(argv)),
         "telemetryCategory": telemetry_category,
+        "telemetryOutcome": "pending",
         "durableStatus": job.get("status"),
         "processOutcome": job.get("processOutcome", "pending"),
         "semanticOutcome": job.get("semanticOutcome", "pending"),
@@ -422,9 +451,10 @@ def start_phase_job(
         "updatedAt": _now(),
     }
     _atomic_json(path, envelope)
-    _persist_job_causal_span(
+    _reconcile_job_telemetry(
         project_id, envelope, job, pipeline_dir=pipeline_dir, reconciled_at=now
     )
+    _atomic_json(path, envelope)
     return _decorate_job(job, envelope)
 
 
@@ -485,7 +515,7 @@ def reconcile_phase_job(
             "process exit code alone is not success"
         )
 
-    _persist_job_causal_span(
+    _reconcile_job_telemetry(
         project_id,
         envelope,
         effective_job,
@@ -567,6 +597,12 @@ def commit_phase_job(
         raise PersianRunKernelError(
             "workflow commit requires successful semantic execution; "
             f"process={envelope.get('processOutcome')} semantic={envelope.get('semanticOutcome')}"
+        )
+    if envelope.get("telemetryOutcome") != "succeeded":
+        raise PersianRunKernelError(
+            "causal telemetry reporting failed; successful execution is preserved. "
+            "Retry reconciliation/commit for the same durable job. "
+            f"error={envelope.get('telemetryError')}"
         )
 
     if phase in list(state.get("completed_phases") or []):
