@@ -28,6 +28,21 @@ CAUSAL_CATEGORIES = frozenset(
         "human_idle",
     }
 )
+_RESERVED_SPAN_FIELDS = frozenset(
+    {
+        "trace_id",
+        "span_id",
+        "parent_span_id",
+        "name",
+        "kind",
+        "category",
+        "started_at",
+        "finished_at",
+        "outcome",
+        "count_toward_wall",
+        "concurrency_group",
+    }
+)
 
 
 def _parse(value: object) -> datetime | None:
@@ -153,6 +168,17 @@ def record_causal_interval(
     resolved_parent = parent_span_id
     if resolved_parent is None and span_id != trace.get("run_span_id"):
         resolved_parent = str(trace.get("run_span_id") or "") or None
+    spans = [dict(item) for item in list(trace.get("spans") or []) if isinstance(item, Mapping)]
+    if resolved_parent is not None and not any(
+        str(item.get("span_id")) == str(resolved_parent) for item in spans
+    ):
+        raise ValueError(f"parent span not found: {resolved_parent}")
+    if fields:
+        reserved = sorted(_RESERVED_SPAN_FIELDS.intersection(str(key) for key in fields))
+        if reserved:
+            raise ValueError(
+                "reserved span fields cannot be overridden: " + ", ".join(reserved)
+            )
     candidate: dict[str, Any] = {
         "trace_id": str(trace["trace_id"]),
         "span_id": span_id,
@@ -170,7 +196,6 @@ def record_causal_interval(
     if fields:
         candidate.update({str(key): value for key, value in fields.items()})
 
-    spans = [dict(item) for item in list(trace.get("spans") or []) if isinstance(item, Mapping)]
     _validate_overlap(spans, candidate)
     replaced = False
     for index, existing in enumerate(spans):
@@ -214,20 +239,7 @@ def finish_causal_span(
         fields={
             key: value
             for key, value in existing.items()
-            if key
-            not in {
-                "trace_id",
-                "span_id",
-                "parent_span_id",
-                "name",
-                "kind",
-                "category",
-                "started_at",
-                "finished_at",
-                "outcome",
-                "count_toward_wall",
-                "concurrency_group",
-            }
+            if key not in _RESERVED_SPAN_FIELDS
         },
     )
 
