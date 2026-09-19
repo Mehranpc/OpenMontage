@@ -456,6 +456,20 @@ def validate_alignment_provider_decision(
         raise AlignmentProviderError("final alignment provider attempt must be semantically successful")
     if str(final.get("tool") or "") != selected_tool:
         raise AlignmentProviderError("selected alignment tool must match the successful final attempt")
+    if str(final.get("model") or "") != selected_model:
+        raise AlignmentProviderError("selected model must match the successful final attempt")
+    expected_duration = round(
+        sum(
+            float(item.get("durationSeconds") or 0.0)
+            for item in attempts
+            if isinstance(item, Mapping) and item.get("invoked") is True
+        ),
+        3,
+    )
+    if abs(float(execution_duration) - expected_duration) > 1e-6:
+        raise AlignmentProviderError(
+            "alignment execution duration must equal the sum of invoked provider attempts"
+        )
     final_profile = str(final.get("profile") or "")
     if heavy_used != (final_profile == "heavy_recovery"):
         raise AlignmentProviderError("heavyRecoveryUsed does not match the successful execution profile")
