@@ -245,6 +245,21 @@ def summarize(
     }
 
 
+def browser_preflight_edit_decisions(
+    edit: dict[str, Any], *, base_dir: Path | None = None
+) -> dict[str, Any]:
+    """Run only the browser/compose-dependent portion after cheap checks passed."""
+    del base_dir
+    runtime_persian = NoCopyPersianCompose._runtime_persian(edit)
+    if runtime_persian is None:
+        raise ValueError("Expected edit_decisions.persian for Persian preflight")
+    with tempfile.TemporaryDirectory(prefix="persian-preflight-") as temp:
+        props, attributions = NoCopyPersianCompose()._build_props(
+            runtime_persian, Path(temp), "preflight"
+        )
+    return summarize(props, attributions)
+
+
 def preflight_edit_decisions(
     payload: dict[str, Any], *, base_dir: Path | None = None
 ) -> dict[str, Any]:
@@ -260,14 +275,8 @@ def preflight_edit_decisions(
         raise ValueError(
             "Persian hook-quality preflight refused:\n- " + "\n- ".join(hook_quality["problems"])
         )
-    runtime_persian = NoCopyPersianCompose._runtime_persian(edit)
-    if runtime_persian is None:
-        raise ValueError("Expected edit_decisions.persian for Persian preflight")
-    with tempfile.TemporaryDirectory(prefix="persian-preflight-") as temp:
-        props, attributions = NoCopyPersianCompose()._build_props(
-            runtime_persian, Path(temp), "preflight"
-        )
-    return summarize(props, attributions, retention, hook_quality)
+    browser = browser_preflight_edit_decisions(edit, base_dir=base_dir)
+    return {**browser, "retentionAudit": retention, "hookQualityAudit": hook_quality}
 
 
 def _artifact_sha256(edit: dict[str, Any]) -> str:
@@ -402,7 +411,8 @@ def _early_watermark_feasibility(edit: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def aggregate_preflight_edit_decisions(
-    payload: dict[str, Any], *, base_dir: Path | None = None
+    payload: dict[str, Any], *, base_dir: Path | None = None,
+    precomputed_components: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Aggregate independent cheap blockers, then run at most one browser-heavy pass."""
     root = (base_dir or REPO_ROOT).resolve()
@@ -438,7 +448,10 @@ def aggregate_preflight_edit_decisions(
 
     retention: dict[str, Any] | None = None
     persian = edit.get("persian")
-    if isinstance(persian, dict):
+    cached_retention = precomputed.get("retentionAudit")
+    if isinstance(cached_retention, dict):
+        retention = dict(cached_retention)
+    elif isinstance(persian, dict):
         try:
             retention = audit_persian_retention(persian)
         except (ValueError, TypeError, KeyError):
@@ -454,10 +467,14 @@ def aggregate_preflight_edit_decisions(
                 actions.append("Revise the edit decisions; do not weaken the retention gate.")
 
     hook_quality: dict[str, Any] | None = None
-    try:
-        hook_quality = audit_persian_hook_quality(edit)
-    except (ValueError, TypeError, KeyError):
-        hook_quality = None
+    cached_hook = precomputed.get("hookQualityAudit")
+    if isinstance(cached_hook, dict):
+        hook_quality = dict(cached_hook)
+    else:
+        try:
+            hook_quality = audit_persian_hook_quality(edit)
+        except (ValueError, TypeError, KeyError):
+            hook_quality = None
     if hook_quality is not None:
         evidence["hookQualityAudit"] = hook_quality
         if hook_quality.get("problems"):
@@ -497,8 +514,13 @@ def aggregate_preflight_edit_decisions(
             diagnostic_layers=list(dict.fromkeys(layers)),
         )
 
+    cached_browser = precomputed.get("browserEvidence")
     try:
-        browser_evidence = preflight_edit_decisions(edit, base_dir=root)
+        browser_evidence = (
+            dict(cached_browser)
+            if isinstance(cached_browser, dict)
+            else browser_preflight_edit_decisions(edit, base_dir=root)
+        )
     except FilmTypePreflightError as exc:
         actions = [
             "Use watermarkDiagnostics to choose another approved fixed anchor or suppress only the colliding watermark interval.",
@@ -534,7 +556,7 @@ def aggregate_preflight_edit_decisions(
         edit=edit,
         blocking=[],
         warnings=browser_evidence.get("warnings") or [],
-        evidence={**evidence, **browser_evidence},
+        evidence={**evidence, **browser_evidence, "browserEvidence": dict(browser_evidence)},
         watermark_diagnostics=browser_evidence.get("watermarkDiagnostics") or watermark_feasibility,
         diagnostic_layers=["contract", "retention", "hook", "watermark", "browser"],
     )
