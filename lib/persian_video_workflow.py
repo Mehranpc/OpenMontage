@@ -41,6 +41,7 @@ from lib.persian_rendered_review import (
 )
 from lib.persian_workflow_telemetry import (
     causal_time_accounting,
+    finish_causal_span,
     finish_phase_attempt_span,
     new_causal_trace,
     record_phase_attempt_span,
@@ -1093,7 +1094,16 @@ def _complete_phase_impl(
         state["next_phase"] = PHASES[_phase_index(phase) + 1]
     _finish_phase_telemetry(state, phase, outcome="succeeded", now=now)
     if phase == "awaiting_human":
-        accounting = phase_time_accounting(state, now=now or datetime.now(timezone.utc))
+        terminal_now = now or datetime.now(timezone.utc)
+        trace = state.get("causal_telemetry")
+        if isinstance(trace, Mapping) and trace.get("run_span_id"):
+            finish_causal_span(
+                state,
+                str(trace["run_span_id"]),
+                finished_at=terminal_now,
+                outcome="awaiting_human",
+            )
+        accounting = phase_time_accounting(state, now=terminal_now)
         state["performance_summary"] = {
             **accounting,
             "endToEndSloSeconds": END_TO_END_SLO_SECONDS,
@@ -2031,6 +2041,7 @@ def workflow_status(
         "recovery_stop": state.get("recovery_stop"),
         "asset_usage": state.get("asset_usage", {}),
         "alignment_policy": state.get("alignment_policy") or alignment_execution_policy(state),
+        "causal_trace_id": (state.get("causal_telemetry") or {}).get("trace_id"),
         "time_accounting": phase_time_accounting(state),
         "performance_slo": state.get("performance_slo"),
         "performance_summary": state.get("performance_summary"),
