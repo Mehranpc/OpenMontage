@@ -453,10 +453,10 @@ def _audit_aligned_cues(
     joined = " ".join(cue.text for cue in cues)
 
     if script.match_policy == "exact":
-        if joined != script.text:
+        if joined != script.display_text:
             problems.append(
-                "delivered cue text is not byte-for-byte equal to the approved script "
-                "under matchPolicy='exact'"
+                "delivered cue text differs from the exact approved script after "
+                "line-break separator canonicalization"
             )
     elif _normalized_lexical_text(joined) != _normalized_lexical_text(script.text):
         problems.append(
