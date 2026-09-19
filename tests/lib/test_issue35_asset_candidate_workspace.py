@@ -352,10 +352,11 @@ def test_manifest_binding_rejects_missing_or_changed_selected_identity(tmp_path:
     project = tmp_path / "project"
     candidate, selected = _selected_candidate(project)
     binding = dict(selected["manifestBinding"])
+    evidence = dict(selected["manifestEvidence"])
     base_asset = {
         "id": "asset-1", "type": "video", "path": "unused.mp4",
         "source_tool": "direct_clip_search", "scene_id": "scene-1",
-        "visual_event_id": "event-1", **binding,
+        **binding, **evidence,
     }
     valid = workspace.validate_asset_manifest_against_workspace(
         project, {"version": "1.0", "assets": [base_asset]}
