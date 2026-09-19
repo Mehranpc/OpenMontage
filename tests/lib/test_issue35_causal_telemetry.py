@@ -454,3 +454,14 @@ def test_transition_telemetry_failure_cannot_advance_workflow_state(
         "run", "transition-reporting-failure", pipeline_dir=projects_root
     )
     assert envelope["executionOutcome"] == "succeeded"
+
+
+def test_fresh_trace_reports_zero_percent_coverage_instead_of_legacy_fallback(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path)
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    accounting = workflow.phase_time_accounting(state, now=BASE + timedelta(seconds=20))
+    assert accounting["workflow_wall_seconds"] == 20.0
+    assert accounting["causal_covered_seconds"] == 0.0
+    assert accounting["causal_coverage_percent"] == 0.0
+    assert accounting["unattributed_wall_seconds"] == 20.0
+    assert accounting["telemetry_span_count"] == 0
