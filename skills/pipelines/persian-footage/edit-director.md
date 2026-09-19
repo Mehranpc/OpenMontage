@@ -503,13 +503,21 @@ ratio.** A ratio preserves the shape of the old edit and preserves nothing about
 the new speech; it is the one operation that produced a technically-plausible,
 fully-wrong timeline, which is why it is named here in full.
 
+For active Film Type 2.16, pass `simultaneous_hook_typography=True`: the opening
+hook is one complete 3–5 second composition, so retiming binds its **start** to the
+voice without stretching its display window to the legacy character-count reading
+model. Pinned older profiles keep the default `False`.
+
 ```python
 from lib.persian_sync import TimedWord, audit_sync, retime_moments
 
 words = TimedWord.from_dicts(audio["wordTimings"])
 audit = audit_sync(moments, words)
 assert not audit.problems, audit.problems   # anchor missing / not found / drifting
-moments = retime_moments(moments, words)     # re-derive from the voice
+moments = retime_moments(
+    moments, words,
+    simultaneous_hook_typography=True,  # active Film Type 2.16 product contract
+)
 ```
 
 ## Music is required in narrated mode

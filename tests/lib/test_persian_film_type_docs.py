@@ -55,3 +55,9 @@ def test_edit_director_uses_canonical_music_track_shape() -> None:
     assert '"audio": {\n    "narration"' in text
     assert '"audio": {\n    "narration": "assets/audio/voiceover.mp3",\n    "music":' not in text
     assert "persian.acknowledgeUnknownMusicRisk" in text
+
+
+def test_edit_director_retimes_active_216_hook_as_simultaneous_typography() -> None:
+    text = (ROOT / "skills" / "pipelines" / "persian-footage" / "edit-director.md").read_text(encoding="utf-8")
+    assert "simultaneous_hook_typography=True" in text
+    assert "complete 3–5 second composition" in text

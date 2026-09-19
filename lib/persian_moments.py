@@ -1011,12 +1011,12 @@ def _audit_one(
             "مورد چیه»."
         )
 
-    if moment.duration < MIN_SECONDS:
+    if moment.duration + TIMING_EPSILON_SECONDS < MIN_SECONDS:
         problems.append(
             f"{moment.id}: on screen for {moment.duration:.2f}s, below the "
             f"{MIN_SECONDS}s floor — reads as a flash rather than a composed frame"
         )
-    if moment.duration > MAX_SECONDS:
+    if moment.duration - TIMING_EPSILON_SECONDS > MAX_SECONDS:
         problems.append(
             f"{moment.id}: on screen for {moment.duration:.2f}s, above the "
             f"{MAX_SECONDS}s ceiling — a static text frame this long reads as "
