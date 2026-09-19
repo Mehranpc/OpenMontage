@@ -416,6 +416,7 @@ def aggregate_preflight_edit_decisions(
 ) -> dict[str, Any]:
     """Aggregate independent cheap blockers, then run at most one browser-heavy pass."""
     root = (base_dir or REPO_ROOT).resolve()
+    precomputed = dict(precomputed_components or {})
     try:
         edit = extract_edit_decisions(payload)
     except (ValueError, TypeError, KeyError) as exc:
