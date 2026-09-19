@@ -35,8 +35,8 @@ function coreFilmType(props: PersianVideoProps): PersianVideoProps["filmType"] {
         {
           ...layout,
           subjectSafety: reviewed && coreChecksSubject
-            ? "checked-against-supplied-regions"
-            : "not-checked",
+            ? "checked-against-supplied-regions" as const
+            : "not-checked" as const,
         },
       ];
     }),
@@ -84,7 +84,7 @@ function applySubjectPolicy(
   const moments = Object.fromEntries(
     Object.entries(filmType.moments).map(([id, layout]) => [
       id,
-      {...layout, subjectSafety: "not-checked"},
+      {...layout, subjectSafety: "not-checked" as const},
     ]),
   );
   const warnings = filmType.warnings.includes(SUBJECT_POLICY_WARNING)
