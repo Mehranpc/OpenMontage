@@ -102,7 +102,7 @@ def test_same_edit_digest_reuses_persisted_preflight_without_recomputing(monkeyp
     payload = _payload()
     calls = 0
 
-    def fake_preflight(edit, *, base_dir=None, precomputed_components=None):
+    def fake_preflight(edit, *, base_dir=None, precomputed_components=None, scratch_dir=None):
         del precomputed_components
         nonlocal calls
         calls += 1
