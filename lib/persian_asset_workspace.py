@@ -527,6 +527,116 @@ def _validate_selectable(candidate: Mapping[str, Any]) -> None:
         raise PersianAssetWorkspaceError("asset candidate requires semantic relevance evidence")
 
 
+
+def _manifest_binding(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    identity = candidate.get("identity") if isinstance(candidate.get("identity"), Mapping) else {}
+    window = identity.get("sourceWindow") if isinstance(identity.get("sourceWindow"), Mapping) else {}
+    start = float(window.get("startSeconds") or 0.0)
+    end = float(window.get("endSeconds") or 0.0)
+    return {
+        "asset_candidate_id": str(candidate.get("candidateId") or ""),
+        "asset_candidate_identity_sha256": str(candidate.get("identitySha256") or ""),
+        "asset_review_sha256": str(candidate.get("reviewSha256") or ""),
+        "provider": str(identity.get("provider") or ""),
+        "source_id": str(identity.get("sourceId") or ""),
+        "source_in_seconds": round(start, 6),
+        "duration_seconds": round(end - start, 6),
+        "intended_crop": dict(identity.get("intendedCrop") or {}),
+    }
+
+
+def _same_number(left: object, right: object) -> bool:
+    try:
+        return abs(float(left) - float(right)) <= 1e-6
+    except (TypeError, ValueError):
+        return False
+
+
+def validate_asset_manifest_against_workspace(
+    project_dir: Path, manifest: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Verify canonical selected rows against durable workspace selection identity.
+
+    The workspace is review/history state, not a second asset manifest.  When it has
+    no selections this validator is intentionally a no-op for legacy projects.  Once
+    selections exist, every selected visual event must bind its canonical manifest
+    row to the exact reviewed provider/source/window/crop identity.
+    """
+    selections = _read_selections(project_dir)
+    if not selections:
+        return {"enforced": False, "selectedCount": 0, "validatedVisualEventIds": []}
+    if not isinstance(manifest, Mapping):
+        raise PersianAssetWorkspaceError("canonical asset_manifest must be an object")
+    assets = manifest.get("assets")
+    if not isinstance(assets, list):
+        raise PersianAssetWorkspaceError("canonical asset_manifest.assets must be a list")
+
+    by_event: dict[str, list[Mapping[str, Any]]] = {}
+    for raw in assets:
+        if not isinstance(raw, Mapping):
+            continue
+        event_id = str(raw.get("visual_event_id") or "").strip()
+        if event_id:
+            by_event.setdefault(event_id, []).append(raw)
+
+    validated: list[str] = []
+    for event_id, selection in selections.items():
+        rows = by_event.get(event_id) or []
+        if len(rows) != 1:
+            raise PersianAssetWorkspaceError(
+                f"asset_manifest must contain exactly one selected row for visual_event_id {event_id!r}; got {len(rows)}"
+            )
+        row = rows[0]
+        candidate = load_asset_candidate(
+            project_dir, str(selection.get("candidateId") or "")
+        )
+        expected = _manifest_binding(candidate)
+        for field in (
+            "asset_candidate_id",
+            "asset_candidate_identity_sha256",
+            "asset_review_sha256",
+            "source_id",
+        ):
+            actual = str(row.get(field) or "")
+            if actual != str(expected[field]):
+                raise PersianAssetWorkspaceError(
+                    f"asset_manifest {event_id!r} {field} does not match selected workspace candidate"
+                )
+        try:
+            actual_provider = _provider(row.get("provider"))
+        except PersianAssetWorkspaceError as exc:
+            raise PersianAssetWorkspaceError(
+                f"asset_manifest {event_id!r} provider does not match selected workspace candidate"
+            ) from exc
+        if actual_provider != expected["provider"]:
+            raise PersianAssetWorkspaceError(
+                f"asset_manifest {event_id!r} provider does not match selected workspace candidate"
+            )
+        for field in ("source_in_seconds", "duration_seconds"):
+            if not _same_number(row.get(field), expected[field]):
+                raise PersianAssetWorkspaceError(
+                    f"asset_manifest {event_id!r} {field} does not match selected workspace candidate"
+                )
+        raw_crop = row.get("intended_crop")
+        if not isinstance(raw_crop, Mapping):
+            raise PersianAssetWorkspaceError(
+                f"asset_manifest {event_id!r} intended_crop is required for workspace-bound selection"
+            )
+        actual_crop = _normalize_crop(raw_crop)
+        if actual_crop != expected["intended_crop"]:
+            raise PersianAssetWorkspaceError(
+                f"asset_manifest {event_id!r} intended_crop does not match selected workspace candidate"
+            )
+        validated.append(event_id)
+
+    return {
+        "enforced": True,
+        "selectedCount": len(selections),
+        "validatedVisualEventIds": sorted(validated),
+    }
+
+
+
 def select_asset_candidate(
     project_dir: Path,
     visual_event_id: str,
@@ -546,7 +656,10 @@ def select_asset_candidate(
     selections = _read_selections(project_dir)
     existing = selections.get(event_id)
     if existing and existing.get("candidateId") == candidate_id:
-        return {"selected": False, "idempotent": True, "selection": existing}
+        return {
+            "selected": False, "idempotent": True, "selection": existing,
+            "manifestBinding": _manifest_binding(candidate),
+        }
     if existing and not replace_existing:
         raise PersianAssetWorkspaceError(
             f"visual event {event_id!r} already has a selected candidate; use replace_existing"
@@ -616,7 +729,10 @@ def select_asset_candidate(
     candidate["disposition"] = "selected"
     candidate["updatedAt"] = datetime.now(timezone.utc).isoformat()
     _atomic_json(_candidate_path(project_dir, candidate_id), candidate)
-    return {"selected": True, "idempotent": False, "selection": selection}
+    return {
+        "selected": True, "idempotent": False, "selection": selection,
+        "manifestBinding": _manifest_binding(candidate),
+    }
 
 
 def asset_workspace_status(project_dir: Path) -> dict[str, Any]:
@@ -671,4 +787,5 @@ __all__ = [
     "reusable_asset_candidates",
     "select_asset_candidate",
     "stage_asset_candidate",
+    "validate_asset_manifest_against_workspace",
 ]

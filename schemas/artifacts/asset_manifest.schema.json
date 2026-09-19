@@ -4,56 +4,146 @@
   "title": "Asset Manifest",
   "description": "Inventory of generated/sourced assets produced by the Asset Generator.",
   "type": "object",
-  "required": ["version", "assets"],
+  "required": [
+    "version",
+    "assets"
+  ],
   "properties": {
-    "version": { "type": "string", "const": "1.0" },
+    "version": {
+      "type": "string",
+      "const": "1.0"
+    },
     "assets": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "type", "path", "source_tool", "scene_id"],
+        "required": [
+          "id",
+          "type",
+          "path",
+          "source_tool",
+          "scene_id"
+        ],
         "properties": {
-          "id": { "type": "string" },
+          "id": {
+            "type": "string"
+          },
           "type": {
             "type": "string",
-            "enum": ["image", "video", "audio", "narration", "music", "sfx", "diagram", "animation", "3d_asset", "3d_world", "code_snippet", "subtitle", "font", "lut"]
+            "enum": [
+              "image",
+              "video",
+              "audio",
+              "narration",
+              "music",
+              "sfx",
+              "diagram",
+              "animation",
+              "3d_asset",
+              "3d_world",
+              "code_snippet",
+              "subtitle",
+              "font",
+              "lut"
+            ]
           },
-          "path": { "type": "string", "description": "Relative path within the pipeline project directory" },
-          "source_tool": { "type": "string" },
-          "scene_id": { "type": "string" },
-          "prompt": { "type": "string", "description": "Generation prompt if AI-generated" },
-          "seed": { "type": "integer", "description": "Seed if applicable" },
-          "model": { "type": "string", "description": "Model used for generation" },
-          "cost_usd": { "type": "number", "minimum": 0 },
-          "duration_seconds": { "type": "number", "minimum": 0 },
-          "resolution": { "type": "string" },
-          "format": { "type": "string" },
-          "quality_score": { "type": "number", "minimum": 0, "maximum": 1 },
-          "subtype": { "type": "string", "description": "Sub-classification (e.g. 'background', 'stock', 'generated')" },
-          "generation_summary": { "type": "string", "description": "Brief summary of how the asset was generated or sourced" },
-          "provider": { "type": "string", "description": "Provider name (e.g. pixabay, google_imagen)" },
-          "license": { "type": "string", "description": "License type (e.g. Pixabay License, CC0)" },
-          "original_url": { "type": "string", "description": "Source URL if downloaded from a stock service" },
+          "path": {
+            "type": "string",
+            "description": "Relative path within the pipeline project directory"
+          },
+          "source_tool": {
+            "type": "string"
+          },
+          "scene_id": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Generation prompt if AI-generated"
+          },
+          "seed": {
+            "type": "integer",
+            "description": "Seed if applicable"
+          },
+          "model": {
+            "type": "string",
+            "description": "Model used for generation"
+          },
+          "cost_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "duration_seconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "resolution": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "quality_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "subtype": {
+            "type": "string",
+            "description": "Sub-classification (e.g. 'background', 'stock', 'generated')"
+          },
+          "generation_summary": {
+            "type": "string",
+            "description": "Brief summary of how the asset was generated or sourced"
+          },
+          "provider": {
+            "type": "string",
+            "description": "Provider name (e.g. pixabay, google_imagen)"
+          },
+          "license": {
+            "type": "string",
+            "description": "License type (e.g. Pixabay License, CC0)"
+          },
+          "original_url": {
+            "type": "string",
+            "description": "Source URL if downloaded from a stock service"
+          },
           "voice_performance": {
             "type": "object",
             "description": "Applied voice-performance contract for narration assets.",
             "properties": {
-              "source_section_id": { "type": "string" },
-              "delivery_cues_applied": { "type": "boolean" },
-              "provider_text_used": { "type": "boolean" },
+              "source_section_id": {
+                "type": "string"
+              },
+              "delivery_cues_applied": {
+                "type": "boolean"
+              },
+              "provider_text_used": {
+                "type": "boolean"
+              },
               "provider_settings": {
                 "type": "object",
                 "additionalProperties": true
               },
-              "sample_approved": { "type": "boolean" },
-              "sample_path": { "type": "string" },
-              "review_notes": { "type": "string" }
+              "sample_approved": {
+                "type": "boolean"
+              },
+              "sample_path": {
+                "type": "string"
+              },
+              "review_notes": {
+                "type": "string"
+              }
             },
             "additionalProperties": false
           },
           "kind": {
             "type": "string",
-            "enum": ["video", "image", "audio"],
+            "enum": [
+              "video",
+              "image",
+              "audio"
+            ],
             "description": "Media class as the acquiring tool reported it, kept alongside `type` because `type` also carries editorial role (narration, music, and sfx are all audio). The persian-footage pipeline gates on this: an asset with kind 'image' is rejected outright."
           },
           "beat_id": {
@@ -84,8 +174,14 @@
             "type": "string",
             "description": "Optional path relative to remotion-composer/public/, for pipelines that pre-stage their media. persian-footage does not: persian_compose copies each shot's source into public/persian/<run-id>/ at render time and deletes it afterwards, so it reads `path` and never this field. Recording it is harmless; relying on it is not."
           },
-          "width": { "type": "integer", "minimum": 1 },
-          "height": { "type": "integer", "minimum": 1 },
+          "width": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1
+          },
           "source_in_seconds": {
             "type": "number",
             "minimum": 0,
@@ -126,7 +222,11 @@
           },
           "staged_stock_risk": {
             "type": "string",
-            "enum": ["low", "medium", "high"],
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
             "description": "Risk that the candidate reads as generic or obviously staged stock. High-risk candidates are rejected by the Persian asset gate."
           },
           "human_presence": {
@@ -135,7 +235,12 @@
           },
           "fallback_level": {
             "type": "string",
-            "enum": ["exact_literal", "emotional_human", "adjacent_metaphor", "abstract"],
+            "enum": [
+              "exact_literal",
+              "emotional_human",
+              "adjacent_metaphor",
+              "abstract"
+            ],
             "description": "Footage fallback level reached for this event. Typography is terminal beat-level fallback and therefore is not a video-asset value."
           },
           "fallback_reason": {
@@ -145,25 +250,104 @@
           "frame_review": {
             "type": "object",
             "description": "Evidence that the selected crop/window was inspected at start, middle, and end rather than accepted from filename or provider metadata.",
-            "required": ["start", "middle", "end", "observed"],
+            "required": [
+              "start",
+              "middle",
+              "end",
+              "observed"
+            ],
             "properties": {
-              "start": { "type": "boolean" },
-              "middle": { "type": "boolean" },
-              "midpoint_before_1_5": { "type": "boolean" },
-              "at_3_seconds": { "type": "boolean" },
-              "end": { "type": "boolean" },
-              "observed": { "type": "string", "minLength": 1 }
+              "start": {
+                "type": "boolean"
+              },
+              "middle": {
+                "type": "boolean"
+              },
+              "midpoint_before_1_5": {
+                "type": "boolean"
+              },
+              "at_3_seconds": {
+                "type": "boolean"
+              },
+              "end": {
+                "type": "boolean"
+              },
+              "observed": {
+                "type": "string",
+                "minLength": 1
+              }
             },
             "additionalProperties": false
+          },
+          "source_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Stable provider-side source identifier used by the Persian asset candidate workspace. Distinct from local filename/path."
+          },
+          "intended_crop": {
+            "type": "object",
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "minLength": 1
+              },
+              "x": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "y": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "w": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1
+              },
+              "h": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1
+              }
+            },
+            "additionalProperties": true,
+            "description": "Crop identity reviewed for the selected source-time window. Optional outside Persian asset-workspace production."
+          },
+          "asset_candidate_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Durable Persian asset-workspace candidate id for this selected manifest row."
+          },
+          "asset_candidate_identity_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Digest binding provider/source id + source-time window + intended crop."
+          },
+          "asset_review_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Digest of immutable review evidence bound to the selected candidate identity."
           }
         },
         "additionalProperties": false
       }
     },
-    "total_cost_usd": { "type": "number", "minimum": 0 },
+    "total_cost_usd": {
+      "type": "number",
+      "minimum": 0
+    },
     "format": {
       "type": "string",
-      "enum": ["vertical", "landscape", "square"],
+      "enum": [
+        "vertical",
+        "landscape",
+        "square"
+      ],
       "description": "Frame orientation this manifest was acquired for, carried from the brief so the edit stage cannot silently mix orientations."
     },
     "word_timings": {
@@ -171,12 +355,28 @@
       "description": "Word-level narration timings from transcription, as the transcriber emitted them (snake_case). They are timing evidence only: approved script text is aligned against them for sidecar SRT, burned/hybrid captions, and narration-anchored moments. Distinct from edit_decisions.persian.audio.wordTimings (camelCase), which is the same clock restated at the compose boundary where persian_compose reads it — the manifest records what transcription produced, the edit decisions carry what compose consumes.",
       "items": {
         "type": "object",
-        "required": ["word", "start", "end"],
+        "required": [
+          "word",
+          "start",
+          "end"
+        ],
         "properties": {
-          "word": { "type": "string" },
-          "start": { "type": "number", "minimum": 0 },
-          "end": { "type": "number", "minimum": 0 },
-          "probability": { "type": "number", "minimum": 0, "maximum": 1 }
+          "word": {
+            "type": "string"
+          },
+          "start": {
+            "type": "number",
+            "minimum": 0
+          },
+          "end": {
+            "type": "number",
+            "minimum": 0
+          },
+          "probability": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
         },
         "additionalProperties": false
       }
@@ -184,29 +384,69 @@
     "music": {
       "type": "object",
       "description": "Acquired music bed, when one exists. Absent is legitimate: no music provider is guaranteed to be configured. Same record shape as edit_decisions.persian.musicTrack (lib.persian_music.MusicTrack / build_music_track) — the shape the music gate requires — so a bed the manifest records is a bed compose can stage and audit without restating.",
-      "required": ["path", "source", "license", "contentIdRisk"],
+      "required": [
+        "path",
+        "source",
+        "license",
+        "contentIdRisk"
+      ],
       "properties": {
-        "path": { "type": "string", "description": "Real location on disk; the field persian_compose reads and stages." },
-        "source": { "type": "string", "description": "Tool the file came from: pixabay_music, freesound_music, or user-provided." },
+        "path": {
+          "type": "string",
+          "description": "Real location on disk; the field persian_compose reads and stages."
+        },
+        "source": {
+          "type": "string",
+          "description": "Tool the file came from: pixabay_music, freesound_music, or user-provided."
+        },
         "license": {
           "type": "object",
           "description": "The licence record, so the claim is checkable by a human rather than trusted from a string.",
-          "required": ["name", "url", "downloadedAt"],
+          "required": [
+            "name",
+            "url",
+            "downloadedAt"
+          ],
           "properties": {
-            "name": { "type": "string", "description": "The licence name as published at the source, verbatim (e.g. Pixabay Content License)." },
-            "url": { "type": "string", "description": "The licence page the claim was read from." },
-            "downloadedAt": { "type": "string", "description": "ISO date the file was downloaded; licences change." }
+            "name": {
+              "type": "string",
+              "description": "The licence name as published at the source, verbatim (e.g. Pixabay Content License)."
+            },
+            "url": {
+              "type": "string",
+              "description": "The licence page the claim was read from."
+            },
+            "downloadedAt": {
+              "type": "string",
+              "description": "ISO date the file was downloaded; licences change."
+            }
           },
           "additionalProperties": false
         },
-        "attribution": { "type": "string", "description": "Attribution line, where the licence or the source asks for one." },
+        "attribution": {
+          "type": "string",
+          "description": "Attribution line, where the licence or the source asks for one."
+        },
         "contentIdRisk": {
           "type": "object",
           "description": "The honest Content-ID judgement, with its reason, so a later reader can disagree with evidence.",
-          "required": ["level"],
+          "required": [
+            "level"
+          ],
           "properties": {
-            "level": { "type": "string", "enum": ["low", "unknown", "high"], "description": "low must cite a recognised licence; high is refused; unknown passes only with a recorded acknowledgement." },
-            "reason": { "type": "string", "description": "The judgement's evidence." }
+            "level": {
+              "type": "string",
+              "enum": [
+                "low",
+                "unknown",
+                "high"
+              ],
+              "description": "low must cite a recognised licence; high is refused; unknown passes only with a recorded acknowledgement."
+            },
+            "reason": {
+              "type": "string",
+              "description": "The judgement's evidence."
+            }
           },
           "additionalProperties": false
         }
@@ -216,34 +456,68 @@
     "musicTrack": {
       "type": "object",
       "description": "Alias for the same music record under the name the edit stage and the asset-director use (edit_decisions.persian.musicTrack). Accepted here so a manifest written in the edit stage's vocabulary validates; must not appear alongside `music` describing a different file.",
-      "required": ["path", "source", "license", "contentIdRisk"],
+      "required": [
+        "path",
+        "source",
+        "license",
+        "contentIdRisk"
+      ],
       "properties": {
-        "path": { "type": "string" },
-        "source": { "type": "string" },
+        "path": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
         "license": {
           "type": "object",
-          "required": ["name", "url", "downloadedAt"],
+          "required": [
+            "name",
+            "url",
+            "downloadedAt"
+          ],
           "properties": {
-            "name": { "type": "string" },
-            "url": { "type": "string" },
-            "downloadedAt": { "type": "string" }
+            "name": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
+            "downloadedAt": {
+              "type": "string"
+            }
           },
           "additionalProperties": false
         },
-        "attribution": { "type": "string" },
+        "attribution": {
+          "type": "string"
+        },
         "contentIdRisk": {
           "type": "object",
-          "required": ["level"],
+          "required": [
+            "level"
+          ],
           "properties": {
-            "level": { "type": "string", "enum": ["low", "unknown", "high"] },
-            "reason": { "type": "string" }
+            "level": {
+              "type": "string",
+              "enum": [
+                "low",
+                "unknown",
+                "high"
+              ]
+            },
+            "reason": {
+              "type": "string"
+            }
           },
           "additionalProperties": false
         }
       },
       "additionalProperties": false
     },
-    "metadata": { "type": "object" }
+    "metadata": {
+      "type": "object"
+    }
   },
   "additionalProperties": false
 }

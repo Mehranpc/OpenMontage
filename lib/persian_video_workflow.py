@@ -38,6 +38,7 @@ from lib.persian_asset_workspace import (
     reject_asset_candidate,
     select_asset_candidate,
     stage_asset_candidate,
+    validate_asset_manifest_against_workspace,
 )
 from lib.persian_edit_workspace import (
     PersianEditWorkspaceError, artifact_sha256, compare_edit_candidates, convergence_status,
@@ -1091,6 +1092,16 @@ def _complete_phase_impl(
         if not checkpoint or checkpoint.get("status") != "completed":
             raise PersianVideoWorkflowError(
                 f"checkpoint_{stage}.json must be completed before {phase} can complete"
+            )
+        if phase == "acquire_assets":
+            artifacts = checkpoint.get("artifacts") if isinstance(checkpoint.get("artifacts"), Mapping) else {}
+            manifest = artifacts.get("asset_manifest") if isinstance(artifacts, Mapping) else None
+            if not isinstance(manifest, Mapping):
+                raise PersianVideoWorkflowError(
+                    "completed assets checkpoint requires an asset_manifest artifact"
+                )
+            phase_evidence["assetWorkspaceBinding"] = (
+                validate_asset_manifest_against_workspace(_project_root(state), manifest)
             )
 
     completed = list(state.get("completed_phases") or [])
