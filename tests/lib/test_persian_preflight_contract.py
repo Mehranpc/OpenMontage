@@ -203,3 +203,22 @@ def test_reels_preflight_refuses_structural_pass_with_weak_hook_evidence(
     assert audit["timing"]["timeToValueSeconds"] == 4.96
     assert audit["timing"]["timeToFirstProofSeconds"] == 7.74
     assert any("viewer value arrives" in problem for problem in audit["problems"])
+
+def test_brand_contract_failure_is_edit_artifact_not_runtime_recovery(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"fixture")
+    payload = _payload(str(source))
+
+    def brand_refusal(*args, **kwargs):
+        raise ValueError("non-canonical Persian watermark requires overrideAuthorization")
+
+    monkeypatch.setattr(preflight, "browser_preflight_edit_decisions", brand_refusal)
+    report = preflight.aggregate_preflight_edit_decisions(payload, base_dir=tmp_path)
+
+    assert report["ok"] is False
+    issue = report["blockingIssues"][0]
+    assert issue["code"] == "EDIT_ARTIFACT"
+    assert issue["recoveryClass"] == "EDIT_ARTIFACT"
+    assert report["recoveryBudgets"]["EDIT_ARTIFACT"] == 2

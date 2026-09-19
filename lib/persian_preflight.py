@@ -557,8 +557,13 @@ def aggregate_preflight_edit_decisions(
         )
     except (OSError, ValueError, TypeError, KeyError) as exc:
         message = str(exc)
-        code = _problem_code(message, "PREFLIGHT_RUNTIME")
-        recovery_class = recovery_class_for_code(code, "PREFLIGHT_RUNTIME")
+        fallback_code = (
+            "EDIT_ARTIFACT"
+            if "non-canonical Persian watermark requires overrideAuthorization" in message
+            else "PREFLIGHT_RUNTIME"
+        )
+        code = _problem_code(message, fallback_code)
+        recovery_class = recovery_class_for_code(code, fallback_code)
         return _report(
             ok=False, edit=edit,
             blocking=[{"code": code, "message": message, "recoveryClass": recovery_class}],
