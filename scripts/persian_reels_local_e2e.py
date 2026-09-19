@@ -494,7 +494,7 @@ def _extract_frames(candidate: Path, target: Path, times: list[float], prefix: s
 
 def _build_opening_review(
     opening: Path, frames: list[str], project: Path, hook_audit: dict[str, Any],
-    *, edit_artifact_sha256: str,
+    retention: dict[str, Any], motion_qa: dict[str, Any], *, edit_artifact_sha256: str,
 ) -> tuple[Path, dict[str, Any]]:
     opening_sha = _sha(opening)
     cold_input = build_cold_viewer_review_input(
@@ -553,6 +553,9 @@ def _build_opening_review(
     validate_rendered_hook_review(
         hook_review, candidate_sha256=opening_sha, require_pass=True
     )
+    quality_evidence = compose_quality_evidence(
+        retention, motion_qa, hook_review=hook_review
+    )
     review = {
         "version": "1.0",
         "status": "pass",
@@ -561,6 +564,9 @@ def _build_opening_review(
         "editArtifactSha256": edit_artifact_sha256,
         "hookQualityAudit": hook_audit,
         "hookQualityReview": hook_review,
+        "retentionAudit": retention,
+        "postRenderMotionQa": motion_qa,
+        "qualityEvidence": quality_evidence,
         "coldViewerReviewInput": {"path": str(cold_path), "sha256": cold_sha},
     }
     path = _write_json(project / "artifacts" / "opening_review.json", review)
@@ -962,7 +968,8 @@ def run_local(root: Path) -> dict[str, Any]:
             [0.25, 1.0, 2.4, 4.2], "opening"
         )
         opening_review_path, opening_review = _build_opening_review(
-            opening, opening_frames, project, hook_audit,
+            opening, opening_frames, project, hook_audit, retention,
+            dict(opening_result.data or {}).get("post_render_motion_qa") or {},
             edit_artifact_sha256=edit_artifact_sha256,
         )
     except Exception as exc:
@@ -975,6 +982,7 @@ def run_local(root: Path) -> dict[str, Any]:
         "opening_review_sha256": _sha(opening_review_path),
         "opening_candidate_sha256": opening_review["openingCandidateSha256"],
         "edit_artifact_sha256": edit_artifact_sha256,
+        "qualityEvidence": opening_review["qualityEvidence"],
     }, pipeline_dir=root)
 
     rendered = project / "renders" / "rendered.mp4"
@@ -1045,6 +1053,8 @@ def run_local(root: Path) -> dict[str, Any]:
         "candidate_sha256": _sha(candidate), "workflow_status": terminal["status"],
         "opening_review_path": str(opening_review_path),
         "opening_candidate_sha256": opening_review["openingCandidateSha256"],
+        "opening_quality_evidence": opening_review["qualityEvidence"],
+        "final_quality_evidence": terminal["evidence"]["final_review"]["qualityEvidence"],
         "mastering": mastering,
         "next_phase": terminal.get("next_phase"), "caption_mode": data["caption_mode"],
         "burned_caption_count": data["burned_caption_count"],
