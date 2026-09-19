@@ -266,14 +266,22 @@ def _persist_transition_causal_span(
     phase = str(envelope["phase"])
     phase_attempt = int(envelope["phaseAttempt"])
     transition_attempt = int(envelope.get("workflowTransitionAttempts") or 0) + 1
+    transition_span_id = f"transition:{job_id}:{transition_attempt}"
+    current = next(
+        (item for item in spans if item.get("span_id") == transition_span_id),
+        None,
+    )
     prior = [
         item
         for item in spans
         if item.get("kind") == "workflow_transition"
         and str(item.get("job_id") or "") == job_id
         and item.get("finished_at")
+        and item.get("span_id") != transition_span_id
     ]
-    if prior:
+    if current and current.get("started_at"):
+        start_value = current["started_at"]
+    elif prior:
         start_value = max(
             (str(item["finished_at"]) for item in prior),
             key=lambda value: _parse_time(value) or datetime.min.replace(tzinfo=timezone.utc),
@@ -294,12 +302,12 @@ def _persist_transition_causal_span(
             or _now()
         )
     start = _parse_time(start_value) or datetime.now(timezone.utc)
-    end = finished_at or datetime.now(timezone.utc)
-    if end < start:
+    end = None if outcome == "running" and finished_at is None else (finished_at or datetime.now(timezone.utc))
+    if end is not None and end < start:
         end = start
     record_causal_interval(
         state,
-        span_id=f"transition:{job_id}:{transition_attempt}",
+        span_id=transition_span_id,
         name=f"workflow transition {job_id} attempt {transition_attempt}",
         category="accounting_reconciliation",
         started_at=start,
@@ -604,6 +612,12 @@ def commit_phase_job(
             "Retry reconciliation/commit for the same durable job. "
             f"error={envelope.get('telemetryError')}"
         )
+
+    # Persist the transition span before any workflow state advancement. A telemetry
+    # write failure therefore cannot leave canonical workflow state ahead of its trace.
+    _persist_transition_causal_span(
+        project_id, envelope, pipeline_dir=pipeline_dir, outcome="running"
+    )
 
     if phase in list(state.get("completed_phases") or []):
         _persist_transition_causal_span(
