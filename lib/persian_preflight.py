@@ -23,7 +23,7 @@ from lib.persian_recovery_policy import (
     recovery_class_for_code, recovery_policy_for_issue,
 )
 
-PREFLIGHT_POLICY_VERSION = "2.0"
+PREFLIGHT_POLICY_VERSION = "2.1"
 _DIAGNOSTIC_PREFIX_RE = re.compile(r"^\[([A-Z0-9_]+)\]\s*")
 
 
