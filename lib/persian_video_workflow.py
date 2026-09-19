@@ -31,7 +31,8 @@ from lib.persian_editorial_hook import (
 )
 from lib.persian_durable_job import DurableJobError, reconcile_job, start_job
 from lib.persian_edit_workspace import (
-    PersianEditWorkspaceError, artifact_sha256, load_promotable_edit_draft, preflight_edit_draft, promote_edit_draft, stage_edit_draft,
+    PersianEditWorkspaceError, artifact_sha256, compare_edit_candidates, convergence_status,
+    load_promotable_edit_draft, preflight_edit_draft, promote_edit_draft, stage_edit_draft,
 )
 from lib.persian_rendered_review import (
     PersianRenderedReviewError,
@@ -2043,6 +2044,7 @@ def workflow_status(
         "send_backs": state.get("send_backs", 0),
         "recovery_attempts": state.get("recovery_attempts", {}),
         "recovery_stop": state.get("recovery_stop"),
+        "convergence": convergence_status(_project_root(state)),
         "asset_usage": state.get("asset_usage", {}),
         "alignment_policy": state.get("alignment_policy") or alignment_execution_policy(state),
         "causal_trace_id": (state.get("causal_telemetry") or {}).get("trace_id"),
@@ -2107,7 +2109,16 @@ def resume_workflow(
 
 
 def stage_workflow_edit_draft(
-    project_id: str, attempt_id: str, input_path: str | Path, *, pipeline_dir: Path | None = None
+    project_id: str,
+    attempt_id: str,
+    input_path: str | Path,
+    *,
+    parent_attempt_id: str | None = None,
+    diagnostic_code: str | None = None,
+    recovery_class: str | None = None,
+    strategy: str | None = None,
+    changed_fields: Sequence[str] | None = None,
+    pipeline_dir: Path | None = None,
 ) -> dict[str, Any]:
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     if state.get("next_phase") != "no_copy_preflight":
@@ -2120,8 +2131,50 @@ def stage_workflow_edit_draft(
     if not isinstance(decision, Mapping):
         raise PersianVideoWorkflowError("workflow is missing its hook-selection authority record")
     authority = validate_edit_hook_authority(decision, payload)
-    staged = stage_edit_draft(_project_root(state), attempt_id, payload)
-    return {**staged, "hookAuthority": authority}
+
+    recovery_metadata_present = any(
+        value for value in (diagnostic_code, recovery_class, strategy, list(changed_fields or []))
+    )
+    if parent_attempt_id and not (diagnostic_code or recovery_class):
+        raise PersianVideoWorkflowError(
+            "recovery child candidates require --diagnostic-code and/or --recovery-class"
+        )
+    if recovery_metadata_present and not parent_attempt_id:
+        raise PersianVideoWorkflowError(
+            "recovery metadata requires --parent so candidate ancestry remains explicit"
+        )
+
+    issue: dict[str, Any] | None = None
+    if diagnostic_code or recovery_class:
+        issue = {}
+        if diagnostic_code:
+            issue["code"] = str(diagnostic_code)
+        if recovery_class:
+            issue["recoveryClass"] = str(recovery_class)
+
+    max_candidates = 1 + int((state.get("budgets") or {}).get("max_revisions_per_stage", 0))
+    if max_candidates <= 1:
+        raise PersianVideoWorkflowError("workflow convergence budget is missing or invalid")
+    revision_cycle = int(state.get("user_revision_cycles") or 0)
+    staged = stage_edit_draft(
+        _project_root(state),
+        attempt_id,
+        payload,
+        parent_attempt_id=parent_attempt_id,
+        diagnostic_issue=issue,
+        strategy=strategy,
+        changed_fields=changed_fields,
+        max_candidates=max_candidates,
+        revision_cycle=revision_cycle,
+    )
+    return {
+        **staged,
+        "hookAuthority": authority,
+        "convergenceBudget": {
+            "maxCandidates": max_candidates,
+            "revisionCycle": revision_cycle,
+        },
+    }
 
 
 def preflight_workflow_edit_draft(
@@ -2176,6 +2229,21 @@ def promote_workflow_edit_draft(
             canonical.unlink()
         raise
     return {**result, "checkpointPath": str(checkpoint_path)}
+
+
+def compare_workflow_edit_candidates(
+    project_id: str,
+    left_attempt_id: str,
+    right_attempt_id: str,
+    *,
+    pipeline_dir: Path | None = None,
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    if state.get("next_phase") != "no_copy_preflight":
+        raise PersianVideoWorkflowError(
+            f"edit candidate comparison is only valid during no_copy_preflight; next phase is {state.get('next_phase')!r}"
+        )
+    return compare_edit_candidates(_project_root(state), left_attempt_id, right_attempt_id)
 
 
 def start_workflow_job(
@@ -2262,6 +2330,11 @@ def build_parser() -> argparse.ArgumentParser:
     edit_stage.add_argument("project_id")
     edit_stage.add_argument("attempt_id")
     edit_stage.add_argument("--json", required=True, metavar="PATH")
+    edit_stage.add_argument("--parent", dest="parent_attempt_id")
+    edit_stage.add_argument("--diagnostic-code")
+    edit_stage.add_argument("--recovery-class")
+    edit_stage.add_argument("--strategy")
+    edit_stage.add_argument("--changed-field", dest="changed_fields", action="append")
 
     edit_preflight = sub.add_parser("edit-preflight", help="preflight one staged edit draft")
     edit_preflight.add_argument("project_id")
@@ -2270,6 +2343,11 @@ def build_parser() -> argparse.ArgumentParser:
     edit_promote = sub.add_parser("edit-promote", help="promote a digest-bound passing edit draft")
     edit_promote.add_argument("project_id")
     edit_promote.add_argument("attempt_id")
+
+    edit_compare = sub.add_parser("edit-compare", help="compare two durable convergence candidates")
+    edit_compare.add_argument("project_id")
+    edit_compare.add_argument("left_attempt_id")
+    edit_compare.add_argument("right_attempt_id")
 
     job_start = sub.add_parser("job-start", help="start one detached idempotent job for the current phase")
     job_start.add_argument("project_id")
@@ -2367,11 +2445,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
         elif args.command == "edit-stage":
-            _print_json(stage_workflow_edit_draft(args.project_id, args.attempt_id, args.json))
+            _print_json(stage_workflow_edit_draft(
+                args.project_id,
+                args.attempt_id,
+                args.json,
+                parent_attempt_id=args.parent_attempt_id,
+                diagnostic_code=args.diagnostic_code,
+                recovery_class=args.recovery_class,
+                strategy=args.strategy,
+                changed_fields=args.changed_fields,
+            ))
         elif args.command == "edit-preflight":
             _print_json(preflight_workflow_edit_draft(args.project_id, args.attempt_id))
         elif args.command == "edit-promote":
             _print_json(promote_workflow_edit_draft(args.project_id, args.attempt_id))
+        elif args.command == "edit-compare":
+            _print_json(compare_workflow_edit_candidates(
+                args.project_id, args.left_attempt_id, args.right_attempt_id
+            ))
         elif args.command == "job-start":
             command = list(args.argv)
             command = command[1:] if command[:1] == ["--"] else command
