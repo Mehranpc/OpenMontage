@@ -30,6 +30,7 @@ def _edit(source: str = "clip.mp4") -> dict:
             "shots": [{
                 "id": "shot-1", "source": source,
                 "startSeconds": 0.0, "endSeconds": 12.0,
+                "attribution": "Video by Test on Pexels",
                 "avoidRegions": [],
             }],
             "moments": [{
@@ -37,7 +38,7 @@ def _edit(source: str = "clip.mp4") -> dict:
                 "startSeconds": 1.0, "endSeconds": 5.0,
                 "segments": [{"role": "hero", "text": "متن نمونه"}],
             }],
-            "typographicBeats": [], "captions": [], "audio": {},
+            "typographicBeats": [], "audio": {},
             "watermark": {"persianText": "طریقت تسلیم", "latinText": "Pathway_of_Surrender"},
         },
     }
