@@ -457,15 +457,17 @@ def aggregate_preflight_edit_decisions(
             retention = audit_persian_retention(persian)
         except (ValueError, TypeError, KeyError):
             retention = None
-        if retention is not None:
-            evidence["retentionAudit"] = retention
-            if retention.get("problems"):
-                layers.append("retention")
-                blocking.extend(
-                    {"code": "RETENTION_GATE", "message": problem, "recoveryClass": "EDIT_ARTIFACT"}
-                    for problem in retention["problems"]
-                )
-                actions.append("Revise the edit decisions; do not weaken the retention gate.")
+    # Cached evidence must pass through the exact same gate as freshly computed
+    # evidence. Reuse saves work; it never weakens correctness.
+    if retention is not None:
+        evidence["retentionAudit"] = retention
+        if retention.get("problems"):
+            layers.append("retention")
+            blocking.extend(
+                {"code": "RETENTION_GATE", "message": problem, "recoveryClass": "EDIT_ARTIFACT"}
+                for problem in retention["problems"]
+            )
+            actions.append("Revise the edit decisions; do not weaken the retention gate.")
 
     hook_quality: dict[str, Any] | None = None
     cached_hook = precomputed.get("hookQualityAudit")
