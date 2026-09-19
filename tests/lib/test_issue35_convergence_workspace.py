@@ -369,7 +369,7 @@ def test_full_report_cache_hit_does_not_fabricate_component_cache_hits(monkeypat
     project = tmp_path / "project"
     calls = 0
 
-    def fake_aggregate(edit, *, base_dir=None, precomputed_components=None):
+    def fake_aggregate(edit, *, base_dir=None, precomputed_components=None, scratch_dir=None):
         nonlocal calls
         calls += 1
         return {

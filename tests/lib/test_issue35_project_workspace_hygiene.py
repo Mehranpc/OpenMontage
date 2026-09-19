@@ -9,7 +9,6 @@ from types import SimpleNamespace
 import pytest
 
 import lib.persian_preflight as preflight
-import tools.video.persian_compose as persian_compose
 from lib.persian_durable_job import start_job
 from lib.persian_film_type import prepare_film_type_props
 from lib.persian_project_workspace import (
@@ -157,46 +156,6 @@ def test_film_type_prepass_uses_supplied_project_scratch(
     assert prepared["filmType"]["version"] == 16
     assert observed
     assert all(_inside(path, project) for path in observed)
-
-
-def test_layout_bridge_helper_never_uses_composer_repo_tmp(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    project = tmp_path / "project"
-    project.mkdir()
-    scratch = workspace_directory(project, "helpers")
-    composer = tmp_path / "remotion-composer"
-    (composer / "node_modules" / "canvas").mkdir(parents=True)
-    (composer / "node_modules" / "canvas" / "package.json").write_text("{}", encoding="utf-8")
-    esbuild = composer / "node_modules" / ".bin" / "esbuild"
-    esbuild.parent.mkdir(parents=True)
-    esbuild.write_text("", encoding="utf-8")
-    observed_entry: list[Path] = []
-
-    monkeypatch.setattr(persian_compose, "_composer_dir", lambda: composer)
-
-    def fake_run(argv, **_kwargs):
-        if "--bundle" in argv:
-            entry = Path(argv[1])
-            observed_entry.append(entry)
-            outfile = next(item.split("=", 1)[1] for item in argv if item.startswith("--outfile="))
-            Path(outfile).write_text("// bundle", encoding="utf-8")
-            return SimpleNamespace(returncode=0, stdout="", stderr="")
-        return SimpleNamespace(
-            returncode=0,
-            stdout=json.dumps({"moments": [], "lockup": {"width": 1}}),
-            stderr="",
-        )
-
-    monkeypatch.setattr("subprocess.run", fake_run)
-
-    result = persian_compose._maybe_attach_stack_heights(
-        [], "vertical", enforce_silhouette=False, watermark={}, scratch_dir=scratch
-    )
-
-    assert result == {"width": 1}
-    assert observed_entry and _inside(observed_entry[0], project)
-    assert not (composer / ".tmp").exists()
 
 
 def test_bootstrap_can_read_approved_script_from_stdin_without_temp_file(

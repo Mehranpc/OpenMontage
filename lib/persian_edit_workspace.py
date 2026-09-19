@@ -20,6 +20,7 @@ from lib.persian_preflight import (
     PREFLIGHT_POLICY_VERSION, aggregate_preflight_edit_decisions, extract_edit_decisions,
 )
 from lib.persian_recovery_policy import recovery_policy_for_issue
+from lib.persian_project_workspace import workspace_directory
 
 _ATTEMPT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 
@@ -897,6 +898,7 @@ def preflight_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
             payload,
             base_dir=REPO_ROOT,
             precomputed_components=precomputed,
+            scratch_dir=workspace_directory(project_dir, "probes"),
         )
         if computed.get("artifactSha256") != digest:
             raise PersianEditWorkspaceError(

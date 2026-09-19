@@ -533,7 +533,9 @@ def aggregate_preflight_edit_decisions(
         browser_evidence = (
             dict(cached_browser)
             if isinstance(cached_browser, dict)
-            else browser_preflight_edit_decisions(edit, base_dir=root)
+            else browser_preflight_edit_decisions(
+                edit, base_dir=root, scratch_dir=scratch_dir
+            )
         )
     except FilmTypePreflightError as exc:
         actions = [
