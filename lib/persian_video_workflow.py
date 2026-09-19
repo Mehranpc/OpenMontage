@@ -319,7 +319,7 @@ def _validate_alignment_completion(
         raise PersianVideoWorkflowError(
             "alignment completion model does not match provider decision"
         )
-    return {
+    normalized = {
         "alignment_mode": mode,
         "provider": selected_provider,
         "provider_tool": selected_tool,
@@ -330,6 +330,14 @@ def _validate_alignment_completion(
         "provider_fallback_reason": decision.get("fallbackReason"),
         "provider_decision": dict(decision),
     }
+    for key in (
+        "alignment_result_path", "alignment_result_sha256",
+        "provider_plan_path", "provider_plan_sha256",
+    ):
+        value = evidence.get(key)
+        if value is not None:
+            normalized[key] = value
+    return normalized
 
 
 def repair_trivial_zero_length_timings(
