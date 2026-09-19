@@ -377,8 +377,6 @@ def phase_time_accounting(
     causal = causal_time_accounting(
         state, now=current, since=since, include_open=include_open
     )
-    if causal is not None:
-        return causal
     editorial = 0.0
     external = 0.0
     telemetry = state.get("phase_telemetry")
@@ -415,6 +413,12 @@ def phase_time_accounting(
                 external += duration
             else:
                 editorial += duration
+    if causal is not None:
+        # Keep legacy phase-class aliases readable for older reports/consumers while
+        # causal spans remain authoritative for coverage and category timing.
+        causal["active_editorial_seconds"] = round(editorial, 3)
+        causal["external_durable_seconds"] = round(external, 3)
+        return causal
     accounting_lag = 0.0
     telemetry = state.get("phase_telemetry")
     if isinstance(telemetry, Mapping):
