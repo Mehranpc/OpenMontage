@@ -279,3 +279,143 @@ def test_front_door_exposes_asset_candidate_lifecycle_commands() -> None:
     ])
     assert selected.command == "asset-candidate-select"
     assert selected.replace_existing is True
+
+
+def _selected_candidate(project: Path, *, event: str = "event-1") -> tuple[dict, dict]:
+    discovery_id = workspace.record_discovery_pass(
+        project, 0, [_discovered(project, source_id="selected", name="selected.mp4", slot_id=event)]
+    )["candidateIds"][0]
+    candidate = workspace.stage_asset_candidate(
+        project,
+        discovery_id=discovery_id,
+        visual_event_id=event,
+        semantic_beat_id="beat-1",
+        narrative_role="resolution" if event == "ending-event" else "exposition",
+        source_in_seconds=1.0,
+        duration_seconds=4.0,
+        intended_crop={"mode": "cover", "x": 0.1, "y": 0.0, "w": 0.8, "h": 1.0},
+        candidate_rank=1,
+        query="person thinking at desk",
+        narration_span="این یک جمله نمونه است",
+    )
+    workspace.record_candidate_review(project, candidate["candidateId"], _review())
+    selected = workspace.select_asset_candidate(
+        project, event, candidate["candidateId"], rejected_alternatives={}
+    )
+    return candidate, selected
+
+
+def test_selection_returns_canonical_manifest_binding_fields(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    candidate, selected = _selected_candidate(project)
+    binding = selected["manifestBinding"]
+    assert binding == {
+        "asset_candidate_id": candidate["candidateId"],
+        "asset_candidate_identity_sha256": candidate["identitySha256"],
+        "asset_review_sha256": workspace.load_asset_candidate(project, candidate["candidateId"])["reviewSha256"],
+        "provider": "pexels",
+        "source_id": "selected",
+        "source_in_seconds": 1.0,
+        "duration_seconds": 4.0,
+        "intended_crop": {"mode": "cover", "x": 0.1, "y": 0.0, "w": 0.8, "h": 1.0},
+    }
+
+
+def test_asset_manifest_schema_accepts_workspace_binding_provenance() -> None:
+    from schemas.artifacts import validate_artifact
+
+    manifest = {
+        "version": "1.0",
+        "assets": [{
+            "id": "asset-1",
+            "type": "video",
+            "path": "projects/run/assets/clip.mp4",
+            "source_tool": "direct_clip_search",
+            "scene_id": "scene-1",
+            "visual_event_id": "event-1",
+            "provider": "pexels",
+            "source_id": "source-1",
+            "source_in_seconds": 1.0,
+            "duration_seconds": 4.0,
+            "intended_crop": {"mode": "cover", "x": 0.1, "y": 0.0, "w": 0.8, "h": 1.0},
+            "asset_candidate_id": "asset-abc",
+            "asset_candidate_identity_sha256": "a" * 64,
+            "asset_review_sha256": "b" * 64,
+        }],
+    }
+    validate_artifact("asset_manifest", manifest)
+
+
+def test_manifest_binding_rejects_missing_or_changed_selected_identity(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    candidate, selected = _selected_candidate(project)
+    binding = dict(selected["manifestBinding"])
+    base_asset = {
+        "id": "asset-1", "type": "video", "path": "unused.mp4",
+        "source_tool": "direct_clip_search", "scene_id": "scene-1",
+        "visual_event_id": "event-1", **binding,
+    }
+    valid = workspace.validate_asset_manifest_against_workspace(
+        project, {"version": "1.0", "assets": [base_asset]}
+    )
+    assert valid["enforced"] is True
+    assert valid["selectedCount"] == 1
+
+    missing = dict(base_asset)
+    missing.pop("asset_candidate_id")
+    with pytest.raises(PersianAssetWorkspaceError, match="asset_candidate_id"):
+        workspace.validate_asset_manifest_against_workspace(
+            project, {"version": "1.0", "assets": [missing]}
+        )
+
+    changed = dict(base_asset)
+    changed["source_in_seconds"] = 2.0
+    with pytest.raises(PersianAssetWorkspaceError, match="source_in_seconds"):
+        workspace.validate_asset_manifest_against_workspace(
+            project, {"version": "1.0", "assets": [changed]}
+        )
+
+    # Rejected/discovery history is not canonical selection state and therefore
+    # does not require a manifest row.
+    extra_discovery = workspace.record_discovery_pass(
+        project, 1, [_discovered(project, source_id="unused", name="unused.mp4")]
+    )["candidateIds"][0]
+    unused = _stage(project, extra_discovery, event="event-unused")
+    workspace.reject_asset_candidate(project, unused["candidateId"], category="semantic", reason="Not relevant")
+    assert workspace.validate_asset_manifest_against_workspace(
+        project, {"version": "1.0", "assets": [base_asset]}
+    )["selectedCount"] == 1
+
+
+def test_manifest_binding_is_backward_compatible_without_workspace_selections(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    result = workspace.validate_asset_manifest_against_workspace(
+        project, {"version": "1.0", "assets": []}
+    )
+    assert result == {"enforced": False, "selectedCount": 0, "validatedVisualEventIds": []}
+
+
+def test_acquire_assets_completion_consumes_workspace_manifest_binding(tmp_path: Path, monkeypatch) -> None:
+    from tests.lib.test_persian_video_workflow import BASE, _bootstrap_to_assets
+    from lib import persian_video_workflow as workflow
+
+    _bootstrap_to_assets(tmp_path)
+    workflow.record_phase_attempt("run", "acquire_assets", pipeline_dir=tmp_path, now=BASE)
+    checkpoint = {
+        "status": "completed",
+        "artifacts": {"asset_manifest": {"version": "1.0", "assets": []}},
+    }
+    monkeypatch.setattr(workflow, "read_checkpoint", lambda *args, **kwargs: checkpoint)
+    observed = {}
+
+    def fake_validate(project_dir, manifest):
+        observed["project_dir"] = project_dir
+        observed["manifest"] = manifest
+        return {"enforced": True, "selectedCount": 2, "validatedVisualEventIds": ["e1", "e2"]}
+
+    monkeypatch.setattr(workflow, "validate_asset_manifest_against_workspace", fake_validate)
+    state = workflow.complete_phase(
+        "run", "acquire_assets", pipeline_dir=tmp_path, now=BASE
+    )
+    assert observed["manifest"] == checkpoint["artifacts"]["asset_manifest"]
+    assert state["evidence"]["acquire_assets"]["assetWorkspaceBinding"]["selectedCount"] == 2
