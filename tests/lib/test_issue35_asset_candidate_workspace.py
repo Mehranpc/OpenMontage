@@ -316,7 +316,8 @@ def test_selection_returns_canonical_manifest_binding_fields(tmp_path: Path) -> 
         "provider": "pexels",
         "source_id": "selected",
         "source_in_seconds": 1.0,
-        "duration_seconds": 4.0,
+        "source_window_end_seconds": 5.0,
+        "duration_seconds": 12.0,
         "intended_crop": {"mode": "cover", "x": 0.1, "y": 0.0, "w": 0.8, "h": 1.0},
     }
 
@@ -336,7 +337,8 @@ def test_asset_manifest_schema_accepts_workspace_binding_provenance() -> None:
             "provider": "pexels",
             "source_id": "source-1",
             "source_in_seconds": 1.0,
-            "duration_seconds": 4.0,
+            "source_window_end_seconds": 5.0,
+            "duration_seconds": 12.0,
             "intended_crop": {"mode": "cover", "x": 0.1, "y": 0.0, "w": 0.8, "h": 1.0},
             "asset_candidate_id": "asset-abc",
             "asset_candidate_identity_sha256": "a" * 64,
@@ -369,8 +371,8 @@ def test_manifest_binding_rejects_missing_or_changed_selected_identity(tmp_path:
         )
 
     changed = dict(base_asset)
-    changed["source_in_seconds"] = 2.0
-    with pytest.raises(PersianAssetWorkspaceError, match="source_in_seconds"):
+    changed["source_window_end_seconds"] = 6.0
+    with pytest.raises(PersianAssetWorkspaceError, match="source_window_end_seconds"):
         workspace.validate_asset_manifest_against_workspace(
             project, {"version": "1.0", "assets": [changed]}
         )
