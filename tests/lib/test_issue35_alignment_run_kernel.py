@@ -90,7 +90,27 @@ def test_alignment_worker_persists_digest_bound_success_result(tmp_path, monkeyp
     script.write_text("سلام دنیا", encoding="utf-8")
     result_path = tmp_path / "alignment-result.json"
     semantic_path = tmp_path / "semantic.json"
-    registry = FakeRegistry([_tool("transcriber", "whisperx")])
+    timing_tool = _tool("transcriber", "whisperx")
+
+    def valid_timing_execute(inputs):
+        from tools.base_tool import ToolResult
+        if timing_tool.execute_calls is None:
+            timing_tool.execute_calls = []
+        timing_tool.execute_calls.append(dict(inputs))
+        return ToolResult(
+            success=True,
+            duration_seconds=0.25,
+            data={
+                "provider": "whisperx",
+                "word_timestamps": [
+                    {"word": "سلام", "start": 0.0, "end": 0.8},
+                    {"word": "دنیا", "start": 0.8, "end": 1.6},
+                ],
+            },
+        )
+
+    timing_tool.execute = valid_timing_execute
+    registry = FakeRegistry([timing_tool])
     plan = provider.build_alignment_provider_plan(_policy(), registry=registry)
     bundle = {
         "version": "1.0",
