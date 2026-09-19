@@ -417,8 +417,10 @@ def validate_scene_plan_budget(
         raise PersianVideoWorkflowError("max_semantic_candidates must be positive")
     if not 0 <= rejection_margin < 1:
         raise PersianVideoWorkflowError("rejection_margin must be in [0, 1)")
-    metadata = scene_plan.get("metadata") if isinstance(scene_plan, Mapping) else None
-    beats = metadata.get("beats") if isinstance(metadata, Mapping) else []
+    beats = scene_plan.get("beats") if isinstance(scene_plan, Mapping) else None
+    if not isinstance(beats, list):
+        metadata = scene_plan.get("metadata") if isinstance(scene_plan, Mapping) else None
+        beats = metadata.get("beats") if isinstance(metadata, Mapping) else []
     event_ids: list[str] = []
     for beat in beats or []:
         if not isinstance(beat, Mapping):
@@ -455,17 +457,41 @@ def validate_scene_plan_duration(
     if narration_duration_seconds <= 0 or fps <= 0:
         raise PersianVideoWorkflowError("authoritative narration duration and fps must be positive")
     scenes = scene_plan.get("scenes") if isinstance(scene_plan, Mapping) else None
-    if not isinstance(scenes, list) or not scenes:
-        raise PersianVideoWorkflowError("scene plan requires at least one scene for duration validation")
-    ends: list[float] = []
-    for scene in scenes:
-        if not isinstance(scene, Mapping):
-            raise PersianVideoWorkflowError("scene plan scenes must be objects")
-        try:
-            ends.append(float(scene["end_seconds"]))
-        except (KeyError, TypeError, ValueError) as exc:
-            raise PersianVideoWorkflowError("scene plan scene end_seconds must be numeric") from exc
-    plan_end = max(ends)
+    if isinstance(scenes, list) and scenes:
+        ends: list[float] = []
+        for scene in scenes:
+            if not isinstance(scene, Mapping):
+                raise PersianVideoWorkflowError("scene plan scenes must be objects")
+            try:
+                ends.append(float(scene["end_seconds"]))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PersianVideoWorkflowError("scene plan scene end_seconds must be numeric") from exc
+        plan_end = max(ends)
+    else:
+        beats = scene_plan.get("beats") if isinstance(scene_plan, Mapping) else None
+        if not isinstance(beats, list):
+            metadata = scene_plan.get("metadata") if isinstance(scene_plan, Mapping) else None
+            beats = metadata.get("beats") if isinstance(metadata, Mapping) else None
+        if not isinstance(beats, list) or not beats:
+            raise PersianVideoWorkflowError(
+                "scene plan requires scenes or semantic beats for duration validation"
+            )
+        durations: list[float] = []
+        for beat in beats:
+            if not isinstance(beat, Mapping):
+                raise PersianVideoWorkflowError("scene plan beats must be objects")
+            try:
+                duration = float(beat["duration_seconds"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PersianVideoWorkflowError(
+                    "scene plan beat duration_seconds must be numeric"
+                ) from exc
+            if duration <= 0:
+                raise PersianVideoWorkflowError(
+                    "scene plan beat duration_seconds must be positive"
+                )
+            durations.append(duration)
+        plan_end = sum(durations)
     delta = abs(plan_end - float(narration_duration_seconds))
     tolerance = 1.0 / float(fps)
     if delta > tolerance + 1e-9:
