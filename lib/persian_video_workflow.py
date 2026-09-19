@@ -58,6 +58,7 @@ from lib.persian_workflow_telemetry import (
     record_phase_attempt_span,
     reconcile_phase_telemetry,
 )
+from lib.persian_quality_evidence import compose_quality_evidence
 from lib.persian_recovery_policy import recovery_policy_for_issue
 from schemas.artifacts import validate_artifact
 from jsonschema.exceptions import ValidationError
@@ -1801,6 +1802,32 @@ def _project_file(state: Mapping[str, Any], reported: object, *, label: str) -> 
     return path
 
 
+
+def _final_review_quality_evidence(
+    report: Mapping[str, Any], *, hook_review: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    """Compose normalized final-review evidence while preserving source domains.
+
+    Legacy render reports may omit ``quality_evidence``. When a render report does
+    declare normalized evidence, it must still match the raw authored-retention and
+    rendered-motion sources exactly; final-review semantic observations are layered
+    on only after that render-time identity has been verified.
+    """
+    retention = report.get("retention_audit")
+    motion = report.get("post_render_motion_qa")
+    if not isinstance(retention, Mapping):
+        raise PersianVideoWorkflowError("final review requires render_report.retention_audit")
+    if not isinstance(motion, Mapping):
+        raise PersianVideoWorkflowError("final review requires render_report.post_render_motion_qa")
+    render_quality = compose_quality_evidence(retention, motion)
+    declared = report.get("quality_evidence")
+    if declared is not None:
+        if not isinstance(declared, Mapping) or dict(declared) != render_quality:
+            raise PersianVideoWorkflowError(
+                "render_report.quality_evidence must match normalized retention/motion source evidence"
+            )
+    return compose_quality_evidence(retention, motion, hook_review=hook_review)
+
 def _render_report_review_fields(report: Mapping[str, Any]) -> None:
     retention = report.get("retention_audit")
     if not isinstance(retention, Mapping):
@@ -2012,6 +2039,7 @@ def _validate_final_review_completion(
     if not isinstance(report, Mapping):
         raise PersianVideoWorkflowError("compose checkpoint is missing render_report")
     _render_report_review_fields(report)
+    quality_evidence = _final_review_quality_evidence(report, hook_review=hook_review)
     if hook_review_strength is not None and str(report.get("hook_strength") or "").strip() != hook_review_strength:
         raise PersianVideoWorkflowError(
             "render_report.hook_strength must match final_review hook-quality review strength"
@@ -2041,6 +2069,7 @@ def _validate_final_review_completion(
         "final_review_sha256": _hash_file(review_path),
         "candidate_path": candidate["candidate_path"],
         "candidate_sha256": candidate["candidate_sha256"],
+        "qualityEvidence": quality_evidence,
         **({
             "cold_viewer_input_path": cold_input["path"],
             "cold_viewer_input_sha256": cold_input["sha256"],

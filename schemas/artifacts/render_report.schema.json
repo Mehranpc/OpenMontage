@@ -273,6 +273,90 @@
           "items": {
             "type": "string"
           }
+        },
+        "observableEvidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "version",
+              "kind",
+              "provenance",
+              "scope",
+              "observation",
+              "canProve",
+              "cannotProve"
+            ],
+            "properties": {
+              "version": {
+                "type": "string",
+                "const": "1.0"
+              },
+              "kind": {
+                "type": "string",
+                "minLength": 1
+              },
+              "provenance": {
+                "type": "object",
+                "required": [
+                  "domain",
+                  "source"
+                ],
+                "properties": {
+                  "domain": {
+                    "type": "string",
+                    "enum": [
+                      "authored_timeline",
+                      "rendered_pixels",
+                      "semantic_review"
+                    ]
+                  },
+                  "source": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "scope": {
+                "type": "object",
+                "required": [
+                  "startSeconds"
+                ],
+                "properties": {
+                  "startSeconds": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "endSeconds": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false
+              },
+              "observation": {
+                "type": "string",
+                "minLength": 1
+              },
+              "canProve": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cannotProve": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false
+          }
         }
       },
       "required": [
@@ -407,6 +491,90 @@
         "elapsedSeconds": {
           "type": "number",
           "minimum": 0
+        },
+        "observableEvidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "version",
+              "kind",
+              "provenance",
+              "scope",
+              "observation",
+              "canProve",
+              "cannotProve"
+            ],
+            "properties": {
+              "version": {
+                "type": "string",
+                "const": "1.0"
+              },
+              "kind": {
+                "type": "string",
+                "minLength": 1
+              },
+              "provenance": {
+                "type": "object",
+                "required": [
+                  "domain",
+                  "source"
+                ],
+                "properties": {
+                  "domain": {
+                    "type": "string",
+                    "enum": [
+                      "authored_timeline",
+                      "rendered_pixels",
+                      "semantic_review"
+                    ]
+                  },
+                  "source": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "scope": {
+                "type": "object",
+                "required": [
+                  "startSeconds"
+                ],
+                "properties": {
+                  "startSeconds": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "endSeconds": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false
+              },
+              "observation": {
+                "type": "string",
+                "minLength": 1
+              },
+              "canProve": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cannotProve": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false
+          }
         }
       },
       "required": [
@@ -420,6 +588,180 @@
         "failRuns",
         "elapsedSeconds"
       ],
+      "additionalProperties": false
+    },
+    "quality_evidence": {
+      "type": "object",
+      "description": "Normalized authored/rendered observable evidence. Optional for legacy reports; when present final review verifies it against the raw retention and motion sources before adding semantic cold-view evidence.",
+      "required": [
+        "version",
+        "evidence",
+        "openingSummary",
+        "diagnostics"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "version",
+              "kind",
+              "provenance",
+              "scope",
+              "observation",
+              "canProve",
+              "cannotProve"
+            ],
+            "properties": {
+              "version": {
+                "type": "string",
+                "const": "1.0"
+              },
+              "kind": {
+                "type": "string",
+                "minLength": 1
+              },
+              "provenance": {
+                "type": "object",
+                "required": [
+                  "domain",
+                  "source"
+                ],
+                "properties": {
+                  "domain": {
+                    "type": "string",
+                    "enum": [
+                      "authored_timeline",
+                      "rendered_pixels",
+                      "semantic_review"
+                    ]
+                  },
+                  "source": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "scope": {
+                "type": "object",
+                "required": [
+                  "startSeconds"
+                ],
+                "properties": {
+                  "startSeconds": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "endSeconds": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false
+              },
+              "observation": {
+                "type": "string",
+                "minLength": 1
+              },
+              "canProve": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cannotProve": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "openingSummary": {
+          "type": "object",
+          "required": [
+            "windowSeconds",
+            "authoredPostStartShotOrRevealChange",
+            "renderedPixelMotionObserved",
+            "coldViewComprehension",
+            "relationship",
+            "statements"
+          ],
+          "properties": {
+            "windowSeconds": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "authoredPostStartShotOrRevealChange": {
+              "type": "boolean"
+            },
+            "renderedPixelMotionObserved": {
+              "type": "boolean"
+            },
+            "coldViewComprehension": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "relationship": {
+              "type": "string",
+              "enum": [
+                "different_provenance_not_contradictory",
+                "authored_change_not_observed_in_rendered_pixels",
+                "different_provenance_consistent",
+                "different_provenance_both_absent"
+              ]
+            },
+            "statements": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "code",
+              "severity",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "info",
+                  "warning",
+                  "blocking"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
       "additionalProperties": false
     }
   },

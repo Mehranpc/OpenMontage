@@ -32,6 +32,7 @@ from lib.persian_rendered_review import (
     validate_rendered_hook_review,
 )
 from lib.persian_retention import audit_persian_retention
+from lib.persian_quality_evidence import compose_quality_evidence
 from lib.persian_scenes import audit_scene_plan
 from lib.persian_srt_alignment import build_script_aligned_cues
 from lib.persian_video_workflow import (
@@ -792,6 +793,7 @@ def _render_report(data: dict[str, Any], candidate: Path, retention: dict[str, A
         "delivery_status": "final_candidate", "human_visual_approval": False,
         "persian_text_verified": False, "retention_audit": retention,
         "post_render_motion_qa": data["post_render_motion_qa"],
+        "quality_evidence": compose_quality_evidence(retention, data["post_render_motion_qa"]),
         "silent_watch_audit": {"main_point_understood": True,
             "hook_direction_understood": True, "conclusion_understood": True,
             "notes": ["Trial-only fixture assertion: approved-script hybrid captions exercise muted-view semantics; not production creative certification."]},
