@@ -2428,9 +2428,10 @@ def reconcile_approved_compose_checkpoint(
         approved_at = now
 
     if state.get("status") != "completed":
-        record_human_idle_and_reopen_run(
-            state, resumed_at=approved_at, reason="explicit final candidate approval"
-        )
+        if status == "awaiting_human":
+            record_human_idle_and_reopen_run(
+                state, resumed_at=approved_at, reason="explicit final candidate approval"
+            )
         trace = state.get("causal_telemetry")
         if isinstance(trace, Mapping) and trace.get("run_span_id"):
             finish_causal_span(

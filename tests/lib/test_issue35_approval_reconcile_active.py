@@ -28,6 +28,27 @@ def test_approved_checkpoint_reconciles_active_next_awaiting_human(tmp_path: Pat
         "causal_telemetry": telemetry.new_causal_trace("trace-active-approval", started_at=BASE),
         "performance_slo": {"endToEndSeconds": 2700},
     }
+    # Historical runs may carry a structurally closed run span from an earlier
+    # terminal candidate even though a later user-directed revision is active.
+    # Work performed after that timestamp proves the interval is not human idle.
+    telemetry.finish_causal_span(
+        state,
+        state["causal_telemetry"]["run_span_id"],
+        finished_at=BASE + timedelta(seconds=10),
+        outcome="awaiting_human",
+    )
+    telemetry.record_causal_interval(
+        state,
+        span_id="job:later-render",
+        name="later render",
+        category="browser_render_execution",
+        started_at=BASE + timedelta(seconds=12),
+        finished_at=BASE + timedelta(seconds=15),
+        parent_span_id=state["causal_telemetry"]["run_span_id"],
+        outcome="succeeded",
+        kind="durable_job",
+        count_toward_wall=True,
+    )
     checkpoint = {
         "version": "1.0",
         "project_id": "run",
@@ -66,3 +87,4 @@ def test_approved_checkpoint_reconciles_active_next_awaiting_human(tmp_path: Pat
     accounting = result["performance_summary"]
     assert accounting["workflow_wall_seconds"] == 20.0
     assert accounting["human_idle_seconds"] == 0.0
+    assert accounting["browser_render_seconds"] == 3.0
