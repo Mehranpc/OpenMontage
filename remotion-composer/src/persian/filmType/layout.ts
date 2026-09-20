@@ -193,7 +193,7 @@ export function breakFilmLines(text: string, width: number, size: number, weight
   // not fit at this rung, the ordinary ladder/recipe fallback must choose a
   // smaller layout; splitting the phrase is never an acceptable fit strategy.
   const lockedBoundaries = lockedBreakBoundaries(
-    text, words, phraseLocks, "Film Type segment",
+    text, words, phraseLocks, "Film Type segment", version === "2.16.0",
   );
   const memo = new Map<string, {cost: number; lines: string[]} | null>();
   const solve = (at: number, remaining: number): {cost: number; lines: string[]} | null => {
