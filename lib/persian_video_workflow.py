@@ -2365,9 +2365,17 @@ def reconcile_approved_compose_checkpoint(
     coexist indefinitely with workflow `status=awaiting_human`.
     """
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
-    if str(state.get("status") or "") not in {"awaiting_human", "completed"}:
+    status = str(state.get("status") or "")
+    completed_phases = list(state.get("completed_phases") or [])
+    active_at_final_gate = (
+        status == "active"
+        and state.get("next_phase") == "awaiting_human"
+        and "final_review" in completed_phases
+    )
+    if status not in {"awaiting_human", "completed"} and not active_at_final_gate:
         raise PersianVideoWorkflowError(
-            "approval reconciliation requires workflow status awaiting_human or completed"
+            "approval reconciliation requires workflow awaiting_human/completed or "
+            "active at the final awaiting_human gate after final_review"
         )
     projects_root = Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve()
     try:
@@ -2431,6 +2439,9 @@ def reconcile_approved_compose_checkpoint(
             )
         state["status"] = "completed"
         state["next_phase"] = None
+        if "awaiting_human" not in completed_phases:
+            completed_phases.append("awaiting_human")
+        state["completed_phases"] = completed_phases
         state["approval"] = {
             "source": "explicit_user_response",
             "approved_at": approved_at.isoformat(),
