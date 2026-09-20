@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from lib.persian_moments import build_moments
-from lib.persian_sync import TimedWord, audit_sync
+from lib.persian_sync import ANCHOR_HOLD_SECONDS, TimedWord, audit_sync
 
 
 def _words() -> list[TimedWord]:
@@ -72,3 +72,27 @@ def test_list_callout_allows_ordered_whole_word_shortening() -> None:
     audit = audit_sync(moments, _words())
 
     assert audit.problems == []
+
+
+def test_asr_yeh_hamza_variant_consumes_full_enumerated_anchor_span() -> None:
+    words = [
+        TimedWord("توجه", 9.72, 10.14),
+        TimedWord("دیداری", 10.14, 10.74),
+        TimedWord("درک", 10.74, 11.20),
+        TimedWord("فضائی،", 11.20, 11.82),
+        TimedWord("حافظه", 11.82, 12.44),
+    ]
+    moments = build_moments([
+        _moment(
+            anchor="توجه دیداری، درک فضایی، حافظه",
+            display="توجه، درک فضایی، حافظه",
+            start=9.47,
+        )
+    ])
+
+    audit = audit_sync(moments, words)
+    binding = audit.bindings[0]
+
+    assert binding.matched_words == ["توجه", "دیداری", "درک", "فضائی،", "حافظه"]
+    assert binding.derived_end is not None
+    assert binding.derived_end >= 12.44 + ANCHOR_HOLD_SECONDS
