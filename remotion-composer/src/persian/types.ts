@@ -45,6 +45,7 @@ import type { FilmTypeLayout, WatermarkDiagnostics } from "./filmType/layout";
 import type { CameraMove } from "./motion";
 import type { PersianFormat } from "./tokens";
 import { compareKey, splitWords } from "./text";
+import { validatePhraseLocks } from "./semanticPhraseLocks";
 
 /**
  * What a moment is, editorially.
@@ -115,6 +116,12 @@ export interface PersianSegment {
    * component's to know.
    */
   readonly accentWords?: readonly string[];
+  /**
+   * Multi-word semantic units that must remain intact on one rendered row.
+   * These are layout constraints only: they never rewrite or replace `text`.
+   * Obvious 3+-item comma lists also derive short multi-word locks at layout time.
+   */
+  readonly phraseLocks?: readonly string[];
   /**
    * Seconds after the moment's own start at which this segment arrives.
    *
@@ -509,6 +516,11 @@ export function assertMomentIsWellFormed(moment: PersianMoment): void {
           `segment reserves vertical space and paints nothing.`,
       );
     }
+    validatePhraseLocks(
+      segment.text,
+      segment.phraseLocks,
+      `${where}: segment ${index}`,
+    );
     const reveal = segment.revealAfterSeconds ?? 0;
     if (!Number.isFinite(reveal) || reveal < 0) {
       throw new Error(
