@@ -57,10 +57,12 @@ from lib.persian_rendered_review import (
     validate_cold_viewer_review_input,
 )
 from lib.persian_workflow_telemetry import (
+    backfill_phase_residual_spans,
     causal_time_accounting,
     finish_causal_span,
     finish_phase_attempt_span,
     new_causal_trace,
+    record_human_idle_and_reopen_run,
     record_phase_attempt_span,
     reconcile_phase_telemetry,
 )
@@ -665,6 +667,8 @@ def _finish_phase_telemetry(
     entries[-1] = entry
     telemetry[phase] = entries
     state["phase_telemetry"] = telemetry
+    if attempt_number > 0:
+        backfill_phase_residual_spans(state, phase, attempt_number)
 
 
 def _state_path(project_dir: Path) -> Path:
@@ -1471,6 +1475,12 @@ def record_recovery_attempt(
             "maxAttempts": max_attempts,
             "outcome": "needs_human_editorial_revision",
         }
+        trace = state.get("causal_telemetry")
+        if isinstance(trace, Mapping) and trace.get("run_span_id"):
+            finish_causal_span(
+                state, str(trace["run_span_id"]),
+                finished_at=stamp, outcome="needs_revision",
+            )
         reconcile_phase_telemetry(state, now=stamp)
         _write_state(_project_root(state), state)
         return state
@@ -1507,8 +1517,13 @@ def request_send_back(
     """Rewind a bounded production; explicit user feedback may open one fresh cycle."""
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     effective_now = now or datetime.now(timezone.utc)
+    prior_status = str(state.get("status") or "")
     if not user_directed_revision:
         assert_within_wall_time(state, now=effective_now)
+    elif prior_status in {"awaiting_human", "needs_revision"}:
+        record_human_idle_and_reopen_run(
+            state, resumed_at=effective_now, reason=reason.strip() or "explicit user revision"
+        )
     if state.get("status") == "awaiting_human" and not user_directed_revision:
         raise PersianVideoWorkflowError(
             "workflow already stopped at awaiting_human; use an explicit user-directed revision or the checkpoint approval protocol"
@@ -2336,6 +2351,111 @@ def _validate_awaiting_human_candidate(
     return result
 
 
+
+def reconcile_approved_compose_checkpoint(
+    project_id: str,
+    *,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Consume one checkpoint-validated explicit approval into workflow truth.
+
+    The checkpoint protocol remains the authority for approval provenance. This seam
+    only reconciles the front-door state so `checkpoint_compose=completed` can never
+    coexist indefinitely with workflow `status=awaiting_human`.
+    """
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    if str(state.get("status") or "") not in {"awaiting_human", "completed"}:
+        raise PersianVideoWorkflowError(
+            "approval reconciliation requires workflow status awaiting_human or completed"
+        )
+    projects_root = Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve()
+    try:
+        checkpoint = read_checkpoint(projects_root, project_id, "compose")
+    except (CheckpointValidationError, OSError, json.JSONDecodeError) as exc:
+        raise PersianVideoWorkflowError("approved compose checkpoint is invalid") from exc
+    if not isinstance(checkpoint, Mapping):
+        raise PersianVideoWorkflowError("approved compose checkpoint is required")
+    if (
+        checkpoint.get("project_id") != project_id
+        or checkpoint.get("pipeline_type") != "persian-footage"
+        or checkpoint.get("stage") != "compose"
+        or checkpoint.get("status") != "completed"
+        or checkpoint.get("human_approved") is not True
+    ):
+        raise PersianVideoWorkflowError(
+            "compose checkpoint must be completed with human_approved=true"
+        )
+    report = (checkpoint.get("artifacts") or {}).get("render_report")
+    if not isinstance(report, Mapping) or (
+        report.get("delivery_status") != "approved"
+        or report.get("human_visual_approval") is not True
+        or not isinstance(report.get("persian_text_verified"), bool)
+    ):
+        raise PersianVideoWorkflowError("approved render_report flags are invalid")
+    outputs = report.get("outputs")
+    if not isinstance(outputs, Sequence) or not outputs or not isinstance(outputs[0], Mapping):
+        raise PersianVideoWorkflowError("approved render_report.outputs[0] is required")
+    primary = outputs[0]
+    candidate = _candidate_path(_project_root(state), str(primary.get("path") or ""))
+    reported_digest = str(primary.get("sha256") or "").strip().lower()
+    actual_digest = _hash_file(candidate)
+    if actual_digest != reported_digest:
+        raise PersianVideoWorkflowError("approved candidate sha256 does not match exact MP4 bytes")
+    metadata = checkpoint.get("metadata")
+    approval_record = metadata.get("approval_record") if isinstance(metadata, Mapping) else None
+    if not isinstance(approval_record, Mapping) or (
+        approval_record.get("source") != "explicit_user_response"
+        or str(approval_record.get("candidate_path") or "").strip() != str(candidate)
+        or str(approval_record.get("candidate_sha256") or "").strip().lower() != actual_digest
+    ):
+        raise PersianVideoWorkflowError("approved compose checkpoint lacks exact explicit approval provenance")
+    approval_raw = str(
+        approval_record.get("approved_at")
+        or checkpoint.get("timestamp")
+        or ""
+    ).strip()
+    approved_at = _parse_timestamp(approval_raw) if approval_raw else (now or datetime.now(timezone.utc))
+    if now is not None and approved_at > now:
+        approved_at = now
+
+    if state.get("status") != "completed":
+        record_human_idle_and_reopen_run(
+            state, resumed_at=approved_at, reason="explicit final candidate approval"
+        )
+        trace = state.get("causal_telemetry")
+        if isinstance(trace, Mapping) and trace.get("run_span_id"):
+            finish_causal_span(
+                state, str(trace["run_span_id"]),
+                finished_at=approved_at, outcome="completed",
+            )
+        state["status"] = "completed"
+        state["next_phase"] = None
+        state["approval"] = {
+            "source": "explicit_user_response",
+            "approved_at": approved_at.isoformat(),
+            "candidate_path": str(candidate),
+            "candidate_sha256": actual_digest,
+            "persian_text_verified": bool(report.get("persian_text_verified")),
+        }
+        reconcile_phase_telemetry(state, now=approved_at)
+        accounting = phase_time_accounting(state, now=approved_at)
+        state["performance_summary"] = {
+            **accounting,
+            "endToEndSloSeconds": END_TO_END_SLO_SECONDS,
+            "endToEndSloExceeded": accounting["workflow_wall_seconds"] > END_TO_END_SLO_SECONDS,
+            "phaseSloExceeded": {
+                name: any(
+                    bool(item.get("slo_exceeded"))
+                    for item in entries if isinstance(item, Mapping)
+                )
+                for name, entries in (state.get("phase_telemetry") or {}).items()
+                if isinstance(entries, list)
+            },
+        }
+        _write_state(_project_root(state), state)
+    return state
+
 def workflow_status(
     project_id: str, *, pipeline_dir: Path | None = None
 ) -> dict[str, Any]:
@@ -2611,6 +2731,12 @@ def build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status", help="show bounded workflow state")
     status.add_argument("project_id")
 
+    approval_reconcile = sub.add_parser(
+        "reconcile-approval",
+        help="reconcile an explicit completed compose approval into workflow state",
+    )
+    approval_reconcile.add_argument("project_id")
+
     alignment_plan = sub.add_parser(
         "alignment-plan",
         help="probe capability/status and select the policy-valid timing/transcription provider",
@@ -2768,6 +2894,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             _print_json(workflow_status(state["project_id"]))
         elif args.command == "status":
             _print_json(workflow_status(args.project_id))
+        elif args.command == "reconcile-approval":
+            _print_json(reconcile_approved_compose_checkpoint(args.project_id))
         elif args.command == "alignment-plan":
             _print_json(alignment_provider_plan_for_project(args.project_id))
         elif args.command == "alignment-start":

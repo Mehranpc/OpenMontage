@@ -379,6 +379,167 @@ def causal_time_accounting(
     }
 
 
+
+_REVIEW_RESIDUAL_PHASES = frozenset(
+    {"review_subject_regions", "opening_review", "final_review"}
+)
+
+
+def _phase_residual_category(phase: str) -> str:
+    return (
+        "review_evidence_assembly"
+        if str(phase) in _REVIEW_RESIDUAL_PHASES
+        else "agent_editorial_work"
+    )
+
+
+def _complement_intervals(
+    start: datetime,
+    end: datetime,
+    covered: list[tuple[datetime, datetime]],
+) -> list[tuple[datetime, datetime]]:
+    clipped = [
+        (max(start, left), min(end, right))
+        for left, right in covered
+        if min(end, right) > max(start, left)
+    ]
+    if not clipped:
+        return [(start, end)] if end > start else []
+    clipped.sort(key=lambda item: item[0])
+    merged: list[list[datetime]] = []
+    for left, right in clipped:
+        if not merged or left > merged[-1][1]:
+            merged.append([left, right])
+        elif right > merged[-1][1]:
+            merged[-1][1] = right
+    gaps: list[tuple[datetime, datetime]] = []
+    cursor = start
+    for left, right in merged:
+        if left > cursor:
+            gaps.append((cursor, left))
+        cursor = max(cursor, right)
+    if cursor < end:
+        gaps.append((cursor, end))
+    return gaps
+
+
+def backfill_phase_residual_spans(
+    state: dict[str, Any], phase: str, attempt: int
+) -> list[dict[str, Any]]:
+    """Attribute only the uncovered wall intervals inside one finished phase attempt.
+
+    Phase spans stay structural. Durable/provider/render/reconciliation children keep
+    their own categories; this helper fills only the complement, so a whole render
+    phase is never relabelled as render time or editorial time.
+    """
+    trace = _causal_trace(state)
+    if trace is None:
+        return []
+    phase = str(phase)
+    attempt = int(attempt)
+    phase_id = causal_phase_span_id(phase, attempt)
+    spans = [dict(item) for item in list(trace.get("spans") or []) if isinstance(item, Mapping)]
+    existing = [
+        item for item in spans
+        if item.get("kind") == "phase_residual"
+        and str(item.get("phase") or "") == phase
+        and int(item.get("attempt") or 0) == attempt
+    ]
+    if existing:
+        return existing
+    container = next((item for item in spans if item.get("span_id") == phase_id), None)
+    if container is None:
+        return []
+    bounds = _span_times(container)
+    if bounds is None:
+        return []
+    phase_start, phase_end = bounds
+    covered: list[tuple[datetime, datetime]] = []
+    for item in spans:
+        if not item.get("count_toward_wall"):
+            continue
+        if str(item.get("phase") or "") != phase or int(item.get("attempt") or 0) != attempt:
+            continue
+        child_start = _parse(item.get("started_at"))
+        if child_start is None:
+            continue
+        child_end = _parse(item.get("finished_at")) or phase_end
+        if child_end > child_start:
+            covered.append((child_start, child_end))
+    gaps = _complement_intervals(phase_start, phase_end, covered)
+    category = _phase_residual_category(phase)
+    created: list[dict[str, Any]] = []
+    for index, (left, right) in enumerate(gaps, 1):
+        created.append(record_causal_interval(
+            state,
+            span_id=f"phase-work:{phase}:{attempt}:{index}",
+            name=f"{phase} residual work {index}",
+            category=category,
+            started_at=left,
+            finished_at=right,
+            parent_span_id=phase_id,
+            outcome="succeeded",
+            kind="phase_residual",
+            count_toward_wall=True,
+            fields={"phase": phase, "attempt": attempt},
+        ))
+    return created
+
+
+def record_human_idle_and_reopen_run(
+    state: dict[str, Any], *, resumed_at: datetime | str, reason: str
+) -> dict[str, Any] | None:
+    """Record an explicitly observable human wait, then reopen the structural run."""
+    trace = _causal_trace(state)
+    if trace is None:
+        return None
+    spans = [dict(item) for item in list(trace.get("spans") or []) if isinstance(item, Mapping)]
+    run_id = str(trace.get("run_span_id") or "")
+    run = next((item for item in spans if str(item.get("span_id")) == run_id), None)
+    if run is None or not run.get("finished_at"):
+        return None
+    idle_start = _parse(run.get("finished_at"))
+    resume = _required_time(resumed_at, "resumed_at")
+    if idle_start is None:
+        return None
+    if resume < idle_start:
+        raise ValueError("human idle resume cannot precede the terminal workflow time")
+    idle_span = None
+    if resume > idle_start:
+        ordinal = 1 + sum(
+            1 for item in spans if item.get("kind") == "human_idle"
+        )
+        idle_span = record_causal_interval(
+            state,
+            span_id=f"human-idle:{ordinal}",
+            name=f"human idle {ordinal}",
+            category="human_idle",
+            started_at=idle_start,
+            finished_at=resume,
+            parent_span_id=run_id,
+            outcome="succeeded",
+            kind="human_idle",
+            count_toward_wall=True,
+            fields={"reason": str(reason).strip() or "explicit human wait"},
+        )
+    record_causal_interval(
+        state,
+        span_id=run_id,
+        name=str(run.get("name") or "persian_production_run"),
+        category="workflow_wall",
+        started_at=str(run.get("started_at")),
+        finished_at=None,
+        parent_span_id=None,
+        outcome="running",
+        kind=str(run.get("kind") or "run"),
+        count_toward_wall=False,
+        fields={
+            key: value for key, value in run.items()
+            if key not in _RESERVED_SPAN_FIELDS
+        },
+    )
+    return idle_span
+
 def reconcile_phase_telemetry(
     state: dict[str, Any], *, now: datetime | None = None
 ) -> dict[str, Any]:
@@ -429,6 +590,7 @@ def reconcile_phase_telemetry(
                     finished_at=finished,
                     outcome="superseded",
                 )
+                backfill_phase_residual_spans(state, str(phase), attempt)
         updated[str(phase)] = entries
     state["phase_telemetry"] = updated
     return state
@@ -438,11 +600,13 @@ __all__ = [
     "CAUSAL_CATEGORIES",
     "TERMINAL_ATTEMPT_OUTCOMES",
     "causal_phase_span_id",
+    "backfill_phase_residual_spans",
     "causal_time_accounting",
     "finish_causal_span",
     "finish_phase_attempt_span",
     "new_causal_trace",
     "record_causal_interval",
+    "record_human_idle_and_reopen_run",
     "record_phase_attempt_span",
     "reconcile_phase_telemetry",
 ]

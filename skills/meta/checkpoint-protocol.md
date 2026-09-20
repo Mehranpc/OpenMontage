@@ -136,7 +136,11 @@ When `human_approval_default: true`:
 
 4. **On the user's response:**
    - **Approved** → re-write the checkpoint with `status="completed"`,
-     `human_approved=True`, then proceed to the next stage
+     `human_approved=True`, preserving the exact approved artifact identity. If the
+     pipeline has a canonical front-door workflow state, reconcile that completed
+     checkpoint into the workflow before proceeding; checkpoint completion alone must
+     not leave workflow state stuck at `awaiting_human`. For Persian production use
+     `python -m lib.persian_video_workflow reconcile-approval <project-id>`.
    - **Revision requested** → go back to the stage director skill with the
      human's feedback, produce revised artifacts, re-review, re-checkpoint
      (the superseded checkpoint is preserved automatically in `history/`)
