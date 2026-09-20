@@ -159,6 +159,11 @@ collision planning; subtitle wording never becomes editorial moment copy.
 
 Editorial hook/callout type is measured with the verified Kahroba runtime face; stable caption/source/watermark paths retain their registered fonts. The renderer still owns
 the versioned ladders and animation grammar; agents do not set raw CSS sizes.
+Semantic phrase locks are hard line-break constraints: the fitter may step down its
+curated size ladder or choose another legal reflow, but it may not split a protected
+multi-word concept across rows. Three-or-more-item comma lists automatically protect
+short multi-word items; other semantic compounds use the segment's explicit
+`phraseLocks` metadata.
 `lib/persian_film_verify.py` remains the Film Type frame verifier. Legacy accent,
 scrim-plateau, shared-anchor, and orange-ink recipes do not certify Film Type.
 

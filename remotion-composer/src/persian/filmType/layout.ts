@@ -7,6 +7,7 @@ import { assertCaptionsFit, captionBandRect } from "../captionLayout";
 import { planCoverageAwareBrand, planMovingBrand } from "./watermark24";
 import { estedadReady, ensureKahrobaReady, isEstedadLoaded, isKahrobaLoaded, ESTEDAD_FAMILY, KAHROBA_FAMILY } from "../fonts";
 import { breakClass, splitWords, visibleLength } from "../text";
+import { deriveListPhraseLocks, lockedBreakBoundaries } from "../semanticPhraseLocks";
 import { FORMAT_DIMENSIONS, MOMENT_READ_CPS, MOMENT_FIXATION_SECONDS, MOMENT_BLOCK_SECONDS, MOMENT_SOURCE_READ_WEIGHT, MOMENT_MIN_SECONDS, type PersianFormat } from "../tokens";
 import { assertMomentIsWellFormed, DEFAULT_WATERMARK, type PersianMoment, type PersianSemanticPosterRole,
   type PersianVideoProps, type PersianDesignSnapshot } from "../types";
@@ -183,11 +184,17 @@ export function measureRun(text: string, size: number, weight: number, family = 
 
 /** DP over whole shaped runs; reuse the Persian grammar rules, not the Legacy
  * word-span sizing. Forced newlines remain forced and cannot strand a clitic. */
-export function breakFilmLines(text: string, width: number, size: number, weight: number, maxLines: number, version: FilmProfile["profileVersion"] = "2.1.0", preserveExact = false, family = ESTEDAD_FAMILY): string[] | null {
+export function breakFilmLines(text: string, width: number, size: number, weight: number, maxLines: number, version: FilmProfile["profileVersion"] = "2.1.0", preserveExact = false, family = ESTEDAD_FAMILY, phraseLocks: readonly string[] = []): string[] | null {
   // Strict copy was already validated as single-ASCII-space-separated. Split it
   // directly so NFC/Arabic-letter folding in splitWords can never change paint.
   const words = preserveExact ? text.split(" ") : splitWords(text);
   if (!words.length) throw new Error("Film Type received an empty text run.");
+  // Semantic phrase locks are hard break constraints. If a protected phrase does
+  // not fit at this rung, the ordinary ladder/recipe fallback must choose a
+  // smaller layout; splitting the phrase is never an acceptable fit strategy.
+  const lockedBoundaries = lockedBreakBoundaries(
+    text, words, phraseLocks, "Film Type segment", version === "2.16.0",
+  );
   const memo = new Map<string, {cost: number; lines: string[]} | null>();
   const solve = (at: number, remaining: number): {cost: number; lines: string[]} | null => {
     while (words[at] === "\n") at++;
@@ -201,6 +208,7 @@ export function breakFilmLines(text: string, width: number, size: number, weight
       const measured = measureRun(line,size,weight,family).widthPx;
       if (measured > width) continue;
       const next = words[end + 1] === "\n" ? words[end + 2] : words[end + 1];
+      if (next && lockedBoundaries.has(end)) continue;
       let boundary = breakClass(words[end],next ?? null);
       const prefix = (word: string | undefined) => word === "قبل" || word === "بعد" || word === "پیش";
       // Versioned rules: 2.1 retains its original wrapping; 2.2 retains the
@@ -353,7 +361,11 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
         family: segment.role === "source" ? ESTEDAD_FAMILY : editorialFamily}];
       for (const [pieceIndex,piece] of pieces.entries()) {
         if (pieceIndex) y += l.quantityGapPx;
-        const lines = breakFilmLines(piece.text,column - 2 * l.inkPaddingPx,piece.size,piece.weight,piece.max,p.profileVersion,Boolean(moment.exactText),piece.family);
+        const lines = breakFilmLines(
+          piece.text, column - 2 * l.inkPaddingPx, piece.size, piece.weight,
+          piece.max, p.profileVersion, Boolean(moment.exactText), piece.family,
+          quantity ? [] : (segment.phraseLocks ?? []),
+        );
         if (!lines) {failed = true; break;}
         for (const [lineIndex,text] of lines.entries()) {
           if (lineIndex) y += l.lineGapPx;
@@ -557,11 +569,22 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
       const occupancyPenalty = recipe ? Math.abs(occupancy-recipe.config.occupancyTarget)*8
         + (occupancy < recipe.config.occupancyMin ? (recipe.config.occupancyMin-occupancy)*12 : 0) : 0;
       const posterHook = p.profileVersion === "2.16.0" && moment.kind === "hook";
+      const semanticListDisplay = p.profileVersion === "2.16.0" && !posterHook
+        && moment.segments.some(segment => segment.role === "hero"
+          && deriveListPhraseLocks(segment.text).length > 0);
+      // A compact semantic list is display typography, not a sentence to squeeze
+      // onto one line. Prefer a larger two/three-row composition when one fits;
+      // phrase locks still remain hard constraints, and ordinary prose keeps the
+      // historical scoring. This is a preference rather than a gate so subject
+      // safety / safe-area geometry can still choose the only legal candidate.
       const linePenalty = posterHook
         ? (lines === 3 || lines === 4 ? 0 : lines === 2 ? 1.5 : lines === 5 ? 4 : Math.abs(lines - 3.5) * 6)
-        : Math.max(0,lines-2)*8 + Math.max(0,lines-1)*.8;
+        : semanticListDisplay
+          ? (lines === 2 || lines === 3 ? 0 : lines === 1 ? 4 : Math.max(0, lines - 3) * 6)
+          : Math.max(0,lines-2)*8 + Math.max(0,lines-1)*.8;
+      const shrinkPenalty = shrink * (semanticListDisplay ? 8 : 3);
       const score = linePenalty
-        + imbalance*2 + shrink*3 + occupancyPenalty + h*2 + w*.25 + zones.indexOf(zone)*.04 + (diffuse && moment.kind === "hook" && zone.startsWith("lower") ? .2 : 0);
+        + imbalance*2 + shrinkPenalty + occupancyPenalty + h*2 + w*.25 + zones.indexOf(zone)*.04 + (diffuse && moment.kind === "hook" && zone.startsWith("lower") ? .2 : 0);
       candidates.push({layout,score});
     }
   }

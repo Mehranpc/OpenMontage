@@ -864,6 +864,17 @@
                       },
                       "description": "Inline accent words for the flat-hook treatment: the whole segment paints at one size in primary ink and only these words carry the accent. At most 3; each must occur in the segment's own text. Restricted to the opening moment."
                     },
+                    "phraseLocks": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 8,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 3
+                      },
+                      "description": "Multi-word semantic units that must remain intact on one rendered row. Each lock must name a contiguous phrase in this segment's own text; it constrains line breaking and never rewrites painted copy."
+                    },
                     "revealAfterSeconds": {
                       "type": "number",
                       "minimum": 0,
