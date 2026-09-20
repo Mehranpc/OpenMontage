@@ -85,12 +85,6 @@ def test_approved_compose_checkpoint_reconciles_workflow_to_completed(
     candidate.write_bytes(b"approved-bytes")
     digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
     trace = telemetry.new_causal_trace("trace-approval", started_at=BASE)
-    telemetry.finish_causal_span(
-        {"causal_telemetry": trace},
-        trace["run_span_id"],
-        finished_at=BASE + timedelta(seconds=10),
-        outcome="awaiting_human",
-    )
     state = {
         "project_id": "run",
         "projects_root": str(tmp_path),
@@ -103,6 +97,12 @@ def test_approved_compose_checkpoint_reconciles_workflow_to_completed(
         "causal_telemetry": trace,
         "performance_slo": {"endToEndSeconds": 2700},
     }
+    telemetry.finish_causal_span(
+        state,
+        trace["run_span_id"],
+        finished_at=BASE + timedelta(seconds=10),
+        outcome="awaiting_human",
+    )
     checkpoint = {
         "version": "1.0",
         "project_id": "run",
