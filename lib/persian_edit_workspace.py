@@ -69,11 +69,17 @@ def _cache_path(project_dir: Path, digest: str) -> Path:
     return project_dir.expanduser().resolve() / ".preflight" / "cache" / "edit" / f"{digest}.json"
 
 
-def _valid_cached_report(value: object, *, digest: str) -> bool:
+def _valid_cached_report(
+    value: object, *, digest: str, dependency_digests: Mapping[str, str] | None = None
+) -> bool:
     return (
         isinstance(value, dict)
         and value.get("artifactSha256") == digest
         and value.get("policyVersion") == PREFLIGHT_POLICY_VERSION
+        and (
+            dependency_digests is None
+            or value.get("dependencyDigests") == dict(dependency_digests)
+        )
         and isinstance(value.get("ok"), bool)
     )
 
@@ -181,12 +187,91 @@ def _hook_dependency_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+_COMPONENT_IMPLEMENTATION_PATHS: dict[str, tuple[str, ...]] = {
+    "retention": (
+        "lib/persian_retention.py",
+        "lib/persian_text.py",
+    ),
+    "hook": (
+        "lib/persian_hook_quality.py",
+        "lib/persian_text.py",
+    ),
+    # Browser evidence is the expensive executable-layout result. Bind it to the
+    # whole Persian compose/render implementation and its pinned runtime inputs,
+    # not only to edit JSON. A renderer/layout change must never reuse pixels or
+    # geometry audited by an older implementation.
+    "browser": (
+        "lib/persian_edit_workspace.py",
+        "lib/persian_preflight.py",
+        "lib/persian_edit_contract.py",
+        "lib/persian_film_type.py",
+        "lib/persian_captions.py",
+        "lib/persian_srt.py",
+        "lib/persian_text.py",
+        "tools/video/persian_compose_script_aligned.py",
+        "remotion-composer/scripts/prepare-persian-film-type.mjs",
+        "remotion-composer/src/persian",
+        "remotion-composer/package.json",
+        "remotion-composer/package-lock.json",
+        "styles/persian-footage",
+        "requirements.txt",
+    ),
+}
+
+
+def _implementation_tree_digest(relative_paths: Sequence[str]) -> str:
+    """Hash committed implementation bytes that can affect one preflight component."""
+    files: dict[str, Path] = {}
+    for raw in relative_paths:
+        relative = Path(raw)
+        target = (REPO_ROOT / relative).resolve()
+        if target.is_file():
+            files[target.relative_to(REPO_ROOT).as_posix()] = target
+            continue
+        if target.is_dir():
+            for child in target.rglob("*"):
+                if child.is_file():
+                    files[child.resolve().relative_to(REPO_ROOT).as_posix()] = child.resolve()
+            continue
+        raise PersianEditWorkspaceError(
+            f"preflight implementation dependency is missing: {relative.as_posix()}"
+        )
+
+    digest = hashlib.sha256()
+    for relative, path in sorted(files.items()):
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return digest.hexdigest()
+
+
+def _component_implementation_digests() -> dict[str, str]:
+    """Return deterministic source/runtime identities for selectively cached checks."""
+    return {
+        component: _implementation_tree_digest(paths)
+        for component, paths in _COMPONENT_IMPLEMENTATION_PATHS.items()
+    }
+
+
 def _dependency_digests(edit: Mapping[str, Any]) -> dict[str, str]:
     persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
+    implementation = _component_implementation_digests()
     payloads = {
-        "retention": {"version": "retention-v1", "deps": _retention_dependency_payload(edit)},
-        "hook": {"version": "hook-v1", "deps": _hook_dependency_payload(edit)},
-        "browser": {"version": "browser-v1", "deps": persian},
+        "retention": {
+            "version": "retention-v1",
+            "implementationSha256": implementation["retention"],
+            "deps": _retention_dependency_payload(edit),
+        },
+        "hook": {
+            "version": "hook-v1",
+            "implementationSha256": implementation["hook"],
+            "deps": _hook_dependency_payload(edit),
+        },
+        "browser": {
+            "version": "browser-v1",
+            "implementationSha256": implementation["browser"],
+            "deps": persian,
+        },
     }
     return {
         name: _stable_digest({"policyVersion": PREFLIGHT_POLICY_VERSION, **payload})
@@ -875,7 +960,9 @@ def preflight_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
             candidate = json.loads(cache_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             candidate = None
-        if _valid_cached_report(candidate, digest=digest):
+        if _valid_cached_report(
+            candidate, digest=digest, dependency_digests=dependency_digests
+        ):
             cached = dict(candidate)
 
     if cached is None:
