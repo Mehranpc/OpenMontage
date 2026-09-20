@@ -58,3 +58,17 @@ def test_list_callout_must_preserve_spoken_item_order() -> None:
     audit = audit_sync(moments, _words())
 
     assert any("spoken order" in problem for problem in audit.problems)
+
+
+def test_list_callout_allows_ordered_whole_word_shortening() -> None:
+    moments = build_moments([
+        _moment(
+            anchor="توجه دیداری، درک فضایی، حافظه",
+            display="توجه، درک فضایی، حافظه",
+            start=9.47,
+        )
+    ])
+
+    audit = audit_sync(moments, _words())
+
+    assert audit.problems == []
