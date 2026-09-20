@@ -41,6 +41,16 @@ def test_phrase_lock_must_be_a_contiguous_phrase_in_its_segment() -> None:
         build_moments([authored])
 
 
+def test_phrase_lock_cannot_cross_an_authored_line_break() -> None:
+    authored = _moment({
+        "role": "hero",
+        "text": "تمرین‌های روزانه سلامت\nروان را بهتر می‌کنند",
+        "phraseLocks": ["سلامت روان"],
+    })
+    with pytest.raises(ValueError, match="phraseLocks.*contiguous"):
+        build_moments([authored])
+
+
 def test_phrase_lock_must_contain_at_least_two_words() -> None:
     authored = _moment({
         "role": "hero",
