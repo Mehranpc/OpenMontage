@@ -48,6 +48,49 @@ def test_phase_residual_backfill_accounts_only_uncovered_review_time() -> None:
     assert result["unattributed_wall_seconds"] == 0.0
 
 
+def test_reconcile_superseded_attempt_backfills_residual_time() -> None:
+    state = {
+        "created_at": BASE.isoformat(),
+        "status": "active",
+        "phase_telemetry": {
+            "final_review": [
+                {
+                    "attempt": 1,
+                    "started_at": BASE.isoformat(),
+                    "finished_at": None,
+                    "outcome": "running",
+                },
+                {
+                    "attempt": 2,
+                    "started_at": (BASE + timedelta(seconds=10)).isoformat(),
+                    "finished_at": None,
+                    "outcome": "running",
+                },
+            ]
+        },
+        "causal_telemetry": telemetry.new_causal_trace("trace-stale", started_at=BASE),
+    }
+    telemetry.record_phase_attempt_span(state, "final_review", 1, started_at=BASE)
+    telemetry.record_phase_attempt_span(
+        state, "final_review", 2, started_at=BASE + timedelta(seconds=10)
+    )
+
+    telemetry.reconcile_phase_telemetry(state, now=BASE + timedelta(seconds=20))
+
+    spans = state["causal_telemetry"]["spans"]
+    residual = [
+        span for span in spans
+        if span.get("kind") == "phase_residual"
+        and span.get("phase") == "final_review"
+        and span.get("attempt") == 1
+    ]
+    assert len(residual) == 1
+    assert residual[0]["category"] == "review_evidence_assembly"
+    result = workflow.phase_time_accounting(state, now=BASE + timedelta(seconds=20))
+    assert result["review_phase_seconds"] == 10.0
+    assert result["unattributed_wall_seconds"] == 10.0
+
+
 def test_human_idle_is_explicit_and_reopens_finished_run_trace() -> None:
     state = {
         "created_at": BASE.isoformat(),
