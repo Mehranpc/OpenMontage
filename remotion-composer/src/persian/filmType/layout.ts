@@ -7,7 +7,7 @@ import { assertCaptionsFit, captionBandRect } from "../captionLayout";
 import { planCoverageAwareBrand, planMovingBrand } from "./watermark24";
 import { estedadReady, ensureKahrobaReady, isEstedadLoaded, isKahrobaLoaded, ESTEDAD_FAMILY, KAHROBA_FAMILY } from "../fonts";
 import { breakClass, splitWords, visibleLength } from "../text";
-import { lockedBreakBoundaries } from "../semanticPhraseLocks";
+import { deriveListPhraseLocks, lockedBreakBoundaries } from "../semanticPhraseLocks";
 import { FORMAT_DIMENSIONS, MOMENT_READ_CPS, MOMENT_FIXATION_SECONDS, MOMENT_BLOCK_SECONDS, MOMENT_SOURCE_READ_WEIGHT, MOMENT_MIN_SECONDS, type PersianFormat } from "../tokens";
 import { assertMomentIsWellFormed, DEFAULT_WATERMARK, type PersianMoment, type PersianSemanticPosterRole,
   type PersianVideoProps, type PersianDesignSnapshot } from "../types";
@@ -569,11 +569,21 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
       const occupancyPenalty = recipe ? Math.abs(occupancy-recipe.config.occupancyTarget)*8
         + (occupancy < recipe.config.occupancyMin ? (recipe.config.occupancyMin-occupancy)*12 : 0) : 0;
       const posterHook = p.profileVersion === "2.16.0" && moment.kind === "hook";
+      const semanticListDisplay = p.profileVersion === "2.16.0" && !posterHook
+        && moment.segments.some(segment => deriveListPhraseLocks(segment.text).length > 0);
+      // A compact semantic list is display typography, not a sentence to squeeze
+      // onto one line. Prefer a larger two/three-row composition when one fits;
+      // phrase locks still remain hard constraints, and ordinary prose keeps the
+      // historical scoring. This is a preference rather than a gate so subject
+      // safety / safe-area geometry can still choose the only legal candidate.
       const linePenalty = posterHook
         ? (lines === 3 || lines === 4 ? 0 : lines === 2 ? 1.5 : lines === 5 ? 4 : Math.abs(lines - 3.5) * 6)
-        : Math.max(0,lines-2)*8 + Math.max(0,lines-1)*.8;
+        : semanticListDisplay
+          ? (lines === 2 || lines === 3 ? 0 : lines === 1 ? 4 : Math.max(0, lines - 3) * 6)
+          : Math.max(0,lines-2)*8 + Math.max(0,lines-1)*.8;
+      const shrinkPenalty = shrink * (semanticListDisplay ? 8 : 3);
       const score = linePenalty
-        + imbalance*2 + shrink*3 + occupancyPenalty + h*2 + w*.25 + zones.indexOf(zone)*.04 + (diffuse && moment.kind === "hook" && zone.startsWith("lower") ? .2 : 0);
+        + imbalance*2 + shrinkPenalty + occupancyPenalty + h*2 + w*.25 + zones.indexOf(zone)*.04 + (diffuse && moment.kind === "hook" && zone.startsWith("lower") ? .2 : 0);
       candidates.push({layout,score});
     }
   }
