@@ -363,7 +363,39 @@ def _timeline_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _hook_scope_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
-    return _hook_dependency_payload(edit)
+    """Return semantic hook ownership for convergence mutation checks.
+
+    Hook preflight dependency identity intentionally includes temporal fields so
+    duration edits invalidate cached hook evidence. Mutation ownership is
+    narrower: timing belongs to the timeline scope, while this scope owns only
+    semantic hook copy/evidence and opening-shot semantics. Keeping those two
+    payloads distinct lets FILM_TYPE_LAYOUT adjust a hook hold through
+    typography.duration without falsely classifying it as a semantic hook edit.
+    """
+    persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
+    metadata = edit.get("metadata") if isinstance(edit.get("metadata"), Mapping) else {}
+    hook_moments: list[dict[str, Any]] = []
+    for raw in persian.get("moments") or []:
+        if isinstance(raw, Mapping) and raw.get("kind") == "hook":
+            hook_moments.append({
+                key: raw.get(key)
+                for key in ("id", "kind", "segments", "userAuthoredShortHook")
+                if key in raw
+            })
+    return {
+        "platformTarget": persian.get("platformTarget"),
+        "shots": _shot_subset(
+            persian.get("shots"),
+            {
+                "id", "narrativeRole", "changeType", "visualEventId",
+                "humanPresence", "openingSemanticMatch", "semanticRole",
+                "semanticDirection", "selectionReason",
+            },
+        ),
+        "hookMoments": hook_moments,
+        "hookQuality": metadata.get("hookQuality"),
+        "targetPlatform": metadata.get("targetPlatform") or metadata.get("target_platform"),
+    }
 
 
 def _unclassified_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
