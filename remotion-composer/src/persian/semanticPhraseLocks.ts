@@ -79,6 +79,10 @@ export function validatePhraseLocks(
  * list, a 2–4 word item is already an obvious semantic unit. Keep that item
  * intact even when the editor did not need to spell out a phraseLocks field.
  *
+ * This inference belongs to the active Film Type profile only. Historical pinned
+ * profiles must reproduce their old wrapping byte-for-byte unless new explicit
+ * phraseLocks metadata is authored for them.
+ *
  * Longer comma-delimited clauses are deliberately not inferred; use an explicit
  * phraseLocks entry when semantic grouping is not structurally obvious.
  */
@@ -98,9 +102,10 @@ export function effectivePhraseLocks(
   text: string,
   explicitPhraseLocks: unknown,
   where = "segment",
+  deriveListPhrases = true,
 ): string[] {
   const explicit = validatePhraseLocks(text, explicitPhraseLocks, where);
-  const derived = deriveListPhraseLocks(text);
+  const derived = deriveListPhrases ? deriveListPhraseLocks(text) : [];
   const result: string[] = [];
   const seen = new Set<string>();
   for (const phrase of [...explicit, ...derived]) {
@@ -119,8 +124,14 @@ export function lockedBreakBoundaries(
   words: readonly string[],
   explicitPhraseLocks: unknown,
   where = "segment",
+  deriveListPhrases = true,
 ): Set<number> {
-  const locks = effectivePhraseLocks(text, explicitPhraseLocks, where);
+  const locks = effectivePhraseLocks(
+    text,
+    explicitPhraseLocks,
+    where,
+    deriveListPhrases,
+  );
   const indexed = words
     .map((word, index) =>
       word === "\n" ? null : {index, key: compareKey(word)},
