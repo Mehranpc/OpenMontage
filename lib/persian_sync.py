@@ -111,9 +111,22 @@ class TimedWord:
         return words
 
 
+def _sync_compare_key(word: str) -> str:
+    """Comparison key for narration anchors with narrow ASR spelling folds.
+
+    Some Persian ASR providers emit the older yeh-with-hamza spelling in words
+    such as «فضائی» where approved copy uses «فضایی».  Treat only the «ئی»/«یی»
+    sequence as equivalent here so timing alignment can consume the full spoken
+    anchor without broadening the repository-wide lexical normalization contract.
+    """
+    return compare_key(word).replace("ئی", "یی")
+
+
 def _key_of(words: Sequence[str]) -> str:
     """A comparable key for a word run: normalized, punctuation-free, joined."""
-    return " ".join(compare_key(word) for word in words if compare_key(word))
+    return " ".join(
+        _sync_compare_key(word) for word in words if _sync_compare_key(word)
+    )
 
 
 def find_anchor_span(
@@ -154,6 +167,66 @@ def find_anchor_span(
     if best is None:
         return None
     return best[1], best[2]
+
+
+def _enumeration_parts(text: str) -> list[str]:
+    """Return explicit comma/semicolon list items, or an empty list for prose."""
+    normalized = str(text or "")
+    for separator in (",", "؛", ";"):
+        normalized = normalized.replace(separator, "،")
+    parts = [part.strip() for part in normalized.split("،") if part.strip()]
+    return parts if len(parts) >= 2 else []
+
+
+def _enumerated_display_anchor_problems(moment: PersianMoment) -> list[str]:
+    """Bind list-style editorial callouts to the spoken list they summarize.
+
+    A list callout that anchors to unrelated earlier prose can be perfectly timed
+    numerically while still appearing seconds before the words it displays.  The
+    same comparison also preserves spoken list order while allowing whole-word
+    shortening inside each item (for example ``توجه دیداری`` -> ``توجه``).
+    """
+    list_segments = [
+        parts
+        for segment in moment.segments
+        if segment.role == "hero"
+        for parts in [_enumeration_parts(segment.text)]
+        if parts
+    ]
+    if not list_segments:
+        return []
+    display_parts = list_segments[0]
+    anchor_parts = _enumeration_parts(moment.anchor_text)
+    if len(anchor_parts) != len(display_parts):
+        return [
+            f"{moment.id}: enumerated display must bind to an anchor containing "
+            f"the same spoken list; display has {len(display_parts)} item(s) but "
+            f"anchor «{moment.anchor_text}» has {len(anchor_parts)}."
+        ]
+
+    problems: list[str] = []
+    for index, (anchor_part, display_part) in enumerate(
+        zip(anchor_parts, display_parts, strict=True), start=1
+    ):
+        anchor_tokens = {
+            compare_key(word)
+            for word in split_words(anchor_part)
+            if compare_key(word)
+        }
+        display_tokens = [
+            compare_key(word)
+            for word in split_words(display_part)
+            if compare_key(word)
+        ]
+        foreign = [token for token in display_tokens if token not in anchor_tokens]
+        if foreign:
+            problems.append(
+                f"{moment.id}: enumerated display item {index} «{display_part}» "
+                f"does not preserve spoken order from anchor item «{anchor_part}». "
+                "List callouts may drop whole anchored words but may not reorder "
+                "or substitute concepts."
+            )
+    return problems
 
 
 def _common_prefix_length(a: str, b: str) -> int:
@@ -304,6 +377,7 @@ def audit_sync(
     bindings = anchor_moments(moments, words)
 
     for moment, binding in zip(moments, bindings):
+        problems.extend(_enumerated_display_anchor_problems(moment))
         if not binding.anchor_text:
             problems.append(
                 f"{moment.id}: no anchorText and no hero to derive one from. A "
