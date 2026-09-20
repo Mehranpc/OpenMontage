@@ -143,6 +143,37 @@ label. For example, `توجه دیداری، درک فضایی، حافظه` may
 not a whole token in the anchored concept `درک فضایی` and changes what the label means.
 `audit_moments` enforces this narrow list-integrity rule before render.
 
+### Semantic phrase locks: never split one concept across rows
+
+Line breaking must preserve **multi-word semantic units**. A phrase such as
+`درک فضایی`, `سلامت روان`, `کنترل توجه`, or `حافظه کاری` must never be painted
+with one word at the end of one row and the rest at the start of the next. That is
+a meaning error, not a cosmetic preference.
+
+For a segment with a semantic unit that is not structurally obvious, author
+`phraseLocks` on that segment:
+
+```json
+{
+  "role": "hero",
+  "text": "تمرین‌های روزانه سلامت روان را بهتر می‌کنند",
+  "phraseLocks": ["سلامت روان"]
+}
+```
+
+Every lock must be a contiguous phrase of at least two words from that segment's
+own text. Locks constrain layout only; they never rewrite painted copy. If a locked
+phrase does not fit at the current Film Type rung, the fitter must select a smaller
+rung/reflow or refuse the layout — it must **not** split the phrase to make the box
+fit. Do not use `phraseLocks` to hand-author arbitrary line endings; protect only
+meaning-bearing units.
+
+There is one deterministic inference so obvious list typography does not depend on
+an agent remembering metadata: in a list of three or more comma-separated items,
+each short (2–4 word) multi-word item is automatically treated as a phrase lock.
+Thus `توجه، درک فضایی، حافظه` protects `درک فضایی` even when no explicit lock is
+written. Non-list semantic compounds still require explicit `phraseLocks`.
+
 ```json
 {
   "id": "moment-2",
