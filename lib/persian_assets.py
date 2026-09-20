@@ -297,6 +297,68 @@ def assert_video_only(manifest: dict[str, Any]) -> None:
         )
 
 
+def _source_reuse_problems(assets: list[dict[str, Any]]) -> list[str]:
+    """Reject overlapping source reuse while permitting distinct reviewed windows.
+
+    Issue #35 makes provider/source identity plus source-time window the durable
+    reuse identity. Two events may therefore use the same long source when their
+    reviewed windows do not overlap. Legacy manifests without explicit window ends
+    stay conservative: repeated identity is still rejected because non-overlap
+    cannot be proven.
+    """
+    problems: list[str] = []
+    seen: dict[tuple[str, str], list[tuple[float | None, float | None, str]]] = {}
+
+    for index, entry in enumerate(assets):
+        label = str(
+            entry.get("visual_event_id")
+            or entry.get("beat_id")
+            or f"asset[{index}]"
+        )
+        provider_raw = str(entry.get("provider") or "").strip().lower()
+        provider = _PERSIAN_VIDEO_PROVIDER_ALIASES.get(provider_raw, provider_raw)
+        source_id = str(entry.get("source_id") or "").strip()
+        path = str(entry.get("path") or entry.get("public_path") or "").strip()
+        if source_id:
+            identity = (provider or "unknown", source_id)
+        elif path:
+            identity = ("path", path)
+        else:
+            continue
+
+        start: float | None
+        end: float | None
+        try:
+            start = float(entry["source_in_seconds"])
+        except (KeyError, TypeError, ValueError):
+            start = None
+        try:
+            end = float(entry["source_window_end_seconds"])
+        except (KeyError, TypeError, ValueError):
+            end = None
+        if start is None or end is None or end <= start:
+            start = end = None
+
+        prior_windows = seen.setdefault(identity, [])
+        for prior_start, prior_end, prior_label in prior_windows:
+            if None not in (start, end, prior_start, prior_end):
+                overlap = min(end, prior_end) - max(start, prior_start) > 1e-6
+                if not overlap:
+                    continue
+                problems.append(
+                    f"{label}: overlapping source-time window reuses the source already used by "
+                    f"{prior_label} — choose distinct non-overlapping windows"
+                )
+            else:
+                problems.append(
+                    f"{label}: reuses the source already used by {prior_label} without "
+                    "explicit non-overlapping source-time windows"
+                )
+        prior_windows.append((start, end, label))
+
+    return problems
+
+
 def audit_asset_manifest(
     manifest: dict[str, Any],
     scene_plan: Optional[dict[str, Any]] = None,
@@ -366,20 +428,9 @@ def audit_asset_manifest(
                 "FileNotFoundError, but only after the edit stage has been approved."
             )
 
-    # One clip per beat, and no clip serving two beats.
-    seen_paths: dict[str, str] = {}
-    for index, entry in enumerate(assets):
-        label = entry.get("beat_id") or f"asset[{index}]"
-        path = entry.get("path") or entry.get("public_path")
-        if not path:
-            continue
-        if path in seen_paths:
-            problems.append(
-                f"{label}: reuses the clip already used by {seen_paths[path]} "
-                "— visible repetition reads as running out of material"
-            )
-        else:
-            seen_paths[str(path)] = str(label)
+    # Source reuse is window-aware. Distinct non-overlapping windows from one long
+    # stock source are legal; overlapping or unverifiable reuse is not.
+    problems.extend(_source_reuse_problems(assets))
 
     if scene_plan is not None:
         requirements, typographic_ids, explicit_event_beats = _scene_asset_requirements(
