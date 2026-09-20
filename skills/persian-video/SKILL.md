@@ -151,3 +151,5 @@ Always follow these sources rather than restating their rules here:
 - `skills/meta/checkpoint-protocol.md` — checkpoint persistence and approval protocol.
 
 The front-door workflow terminates only after code verifies a real `compose` checkpoint with `status="awaiting_human"`, an unapproved `final_candidate`, a render path inside the current project, and a SHA-256 matching the exact MP4 bytes. At that point stop and wait for explicit user approval; do not continue to compose completion on your own.
+
+After the user explicitly approves that exact candidate, first rewrite the compose checkpoint through the checkpoint protocol with `status="completed"` and `human_approved=True`, preserving the exact path/SHA approval provenance. Then run `python -m lib.persian_video_workflow reconcile-approval <project-id>`. This reconciliation is mandatory: it digest-checks the approved bytes again, records explicit human-idle telemetry, freezes the terminal performance summary, and moves canonical workflow state from `awaiting_human` to `completed`. Never edit workflow JSON by hand.
