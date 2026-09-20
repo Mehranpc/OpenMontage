@@ -94,6 +94,7 @@ def test_approved_compose_checkpoint_reconciles_workflow_to_completed(
     state = {
         "project_id": "run",
         "projects_root": str(tmp_path),
+        "read_allowlist": {"project_root": str(project)},
         "created_at": BASE.isoformat(),
         "status": "awaiting_human",
         "next_phase": None,
