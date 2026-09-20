@@ -70,13 +70,16 @@ def _cache_path(project_dir: Path, digest: str) -> Path:
 
 
 def _valid_cached_report(
-    value: object, *, digest: str, dependency_digests: Mapping[str, str]
+    value: object, *, digest: str, dependency_digests: Mapping[str, str] | None = None
 ) -> bool:
     return (
         isinstance(value, dict)
         and value.get("artifactSha256") == digest
         and value.get("policyVersion") == PREFLIGHT_POLICY_VERSION
-        and value.get("dependencyDigests") == dict(dependency_digests)
+        and (
+            dependency_digests is None
+            or value.get("dependencyDigests") == dict(dependency_digests)
+        )
         and isinstance(value.get("ok"), bool)
     )
 
