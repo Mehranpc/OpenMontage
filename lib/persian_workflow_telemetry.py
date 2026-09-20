@@ -590,6 +590,7 @@ def reconcile_phase_telemetry(
                     finished_at=finished,
                     outcome="superseded",
                 )
+                backfill_phase_residual_spans(state, str(phase), attempt)
         updated[str(phase)] = entries
     state["phase_telemetry"] = updated
     return state
