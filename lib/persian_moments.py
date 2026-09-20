@@ -200,6 +200,10 @@ MAX_FLAT_HERO_CHARS = 60
 #: exists to prevent, restated in colour instead of size.
 MAX_ACCENT_WORDS = 3
 
+#: Semantic multi-word units the renderer must never split across rows.
+#: The cap prevents layout metadata from becoming a second copy channel.
+MAX_PHRASE_LOCKS = 8
+
 CURATED_EDITORIAL_RECIPES: frozenset[str] = frozenset({
     "editorial-hero-balanced", "editorial-hero-compact", "editorial-callout-balanced",
 })
@@ -259,6 +263,9 @@ class PersianSegment:
     #: Parsed from `accentWords` (a new segment-level key — unrelated to the
     #: retired moment-level `highlightWords`, which stays refused).
     accent_words: list[str] = field(default_factory=list)
+    #: Multi-word semantic units that must remain on one rendered row. These are
+    #: layout constraints, not painted copy; the segment text remains authoritative.
+    phrase_locks: list[str] = field(default_factory=list)
 
     @property
     def visible_chars(self) -> int:
@@ -431,6 +438,11 @@ class PersianMoment:
                         if segment.accent_words
                         else {}
                     ),
+                    **(
+                        {"phraseLocks": list(segment.phrase_locks)}
+                        if segment.phrase_locks
+                        else {}
+                    ),
                 }
                 for segment in self.segments
             ],
@@ -509,6 +521,66 @@ def _clean_accent_words(
     return words
 
 
+def _clean_phrase_locks(
+    value: Any, text: str, where: str, seg_index: int
+) -> list[str]:
+    """Validate semantic multi-word units that layout may not split.
+
+    Locks compare by canonical token form so punctuation and Arabic/Persian code
+    point variants do not defeat matching, but the painted segment text is never
+    rewritten. A lock must name a contiguous sequence of at least two words from
+    its own segment; malformed metadata is refused rather than silently ignored.
+    """
+    if value is None:
+        return []
+    if not isinstance(value, list) or not all(
+        isinstance(phrase, str) and phrase.strip() for phrase in value
+    ):
+        raise ValueError(
+            f"{where} segment {seg_index} has phraseLocks={value!r}; expected a "
+            "list of non-empty multi-word phrases."
+        )
+    if len(value) > MAX_PHRASE_LOCKS:
+        raise ValueError(
+            f"{where} segment {seg_index} lists {len(value)} phraseLocks; at most "
+            f"{MAX_PHRASE_LOCKS} are allowed."
+        )
+
+    text_words = [
+        compare_key(word) for word in split_words(text) if word != "\n"
+    ]
+    result: list[str] = []
+    seen: set[tuple[str, ...]] = set()
+    for raw_phrase in value:
+        if "\n" in raw_phrase or "\r" in raw_phrase:
+            raise ValueError(
+                f"{where} segment {seg_index} phraseLocks entries must be single-line phrases."
+            )
+        phrase = _clean(raw_phrase, persian_digits=False)
+        keys = tuple(
+            compare_key(word) for word in split_words(phrase) if word != "\n"
+        )
+        if len(keys) < 2:
+            raise ValueError(
+                f"{where} segment {seg_index} phraseLocks entry {phrase!r} must contain at least two words."
+            )
+        if keys in seen:
+            raise ValueError(
+                f"{where} segment {seg_index} phraseLocks contains the same semantic phrase more than once."
+            )
+        found = any(
+            tuple(text_words[start : start + len(keys)]) == keys
+            for start in range(0, len(text_words) - len(keys) + 1)
+        )
+        if not found:
+            raise ValueError(
+                f"{where} segment {seg_index} phraseLocks entry {phrase!r} is not a contiguous phrase in its own text {text!r}."
+            )
+        seen.add(keys)
+        result.append(phrase)
+    return result
+
+
 def _coerce_reveal(value: Any, *, index: int, where: str) -> float:
     if value is None:
         return 0.0
@@ -535,7 +607,7 @@ def build_moments(
 
     Args:
         authored: Moment dicts. Each needs `kind`, `segments` (a list of
-            `{role, text, revealAfterSeconds?}` in reading order), and timing as
+            `{role, text, revealAfterSeconds?, phraseLocks?}` in reading order), and timing as
             either `startSeconds`/`endSeconds` or `start`/`end`.
         persian_digits: Convert ASCII and Arabic-Indic digits to Persian-Indic. On by
             default: Western digits in a Persian frame look unfinished, and the
@@ -624,6 +696,9 @@ def build_moments(
             accent_words = _clean_accent_words(
                 raw_segment.get("accentWords"), text, where, seg_index,
             )
+            phrase_locks = _clean_phrase_locks(
+                raw_segment.get("phraseLocks"), text, where, seg_index,
+            )
             segments.append(
                 PersianSegment(
                     role=role,  # type: ignore[arg-type]
@@ -634,6 +709,7 @@ def build_moments(
                         where=where,
                     ),
                     accent_words=accent_words,
+                    phrase_locks=phrase_locks,
                 )
             )
 
