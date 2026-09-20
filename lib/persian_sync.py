@@ -111,9 +111,22 @@ class TimedWord:
         return words
 
 
+def _sync_compare_key(word: str) -> str:
+    """Comparison key for narration anchors with narrow ASR spelling folds.
+
+    Some Persian ASR providers emit the older yeh-with-hamza spelling in words
+    such as «فضائی» where approved copy uses «فضایی».  Treat only the «ئی»/«یی»
+    sequence as equivalent here so timing alignment can consume the full spoken
+    anchor without broadening the repository-wide lexical normalization contract.
+    """
+    return compare_key(word).replace("ئی", "یی")
+
+
 def _key_of(words: Sequence[str]) -> str:
     """A comparable key for a word run: normalized, punctuation-free, joined."""
-    return " ".join(compare_key(word) for word in words if compare_key(word))
+    return " ".join(
+        _sync_compare_key(word) for word in words if _sync_compare_key(word)
+    )
 
 
 def find_anchor_span(
