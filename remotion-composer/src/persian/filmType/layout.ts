@@ -570,7 +570,8 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
         + (occupancy < recipe.config.occupancyMin ? (recipe.config.occupancyMin-occupancy)*12 : 0) : 0;
       const posterHook = p.profileVersion === "2.16.0" && moment.kind === "hook";
       const semanticListDisplay = p.profileVersion === "2.16.0" && !posterHook
-        && moment.segments.some(segment => deriveListPhraseLocks(segment.text).length > 0);
+        && moment.segments.some(segment => segment.role === "hero"
+          && deriveListPhraseLocks(segment.text).length > 0);
       // A compact semantic list is display typography, not a sentence to squeeze
       // onto one line. Prefer a larger two/three-row composition when one fits;
       // phrase locks still remain hard constraints, and ordinary prose keeps the

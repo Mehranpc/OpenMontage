@@ -546,8 +546,8 @@ def _clean_phrase_locks(
             f"{MAX_PHRASE_LOCKS} are allowed."
         )
 
-    text_words = [
-        compare_key(word) for word in split_words(text) if word != "\n"
+    text_words: list[str | None] = [
+        None if word == "\n" else compare_key(word) for word in split_words(text)
     ]
     result: list[str] = []
     seen: set[tuple[str, ...]] = set()
@@ -569,7 +569,11 @@ def _clean_phrase_locks(
                 f"{where} segment {seg_index} phraseLocks contains the same semantic phrase more than once."
             )
         found = any(
-            tuple(text_words[start : start + len(keys)]) == keys
+            all(
+                text_words[start + offset] is not None
+                and text_words[start + offset] == key
+                for offset, key in enumerate(keys)
+            )
             for start in range(0, len(text_words) - len(keys) + 1)
         )
         if not found:
