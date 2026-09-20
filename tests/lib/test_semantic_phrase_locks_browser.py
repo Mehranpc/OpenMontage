@@ -70,10 +70,17 @@ class SemanticPhraseLockBrowserContract(unittest.TestCase):
             _props("توجه، درک فضایی، حافظه"),
             ROOT / "remotion-composer",
         )
+        layout = prepared["filmType"]["moments"]["m"]
         rows = _row_texts(prepared)
         self.assertTrue(any("درک فضایی" in row for row in rows), rows)
         self.assertFalse(any(row.rstrip("،").endswith("درک") for row in rows), rows)
         self.assertFalse(any(row.lstrip().startswith("فضایی") for row in rows), rows)
+        self.assertIn(len(rows), {2, 3}, rows)
+        self.assertGreaterEqual(
+            min(row["fontSizePx"] for row in layout["rows"]),
+            98,
+            "a semantic list must reflow at display size instead of shrinking into one small line",
+        )
 
     def test_explicit_phrase_lock_keeps_non_list_semantic_unit_intact(self) -> None:
         prepared = prepare_film_type_props(
