@@ -1,23 +1,43 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import unittest
 
-from lib.persian_design import resolve_design
+from lib.persian_design import SUPPORTED_FILM_TYPE_215_HASH, resolve_design
 from lib.persian_film_type import prepare_film_type_props
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def _props(text: str, *, phrase_locks: list[str] | None = None) -> dict:
+def _pinned_215_design() -> dict:
+    profile = json.loads(
+        (ROOT / "styles/persian-footage/film-type-2.15.0.json").read_text(encoding="utf-8")
+    )
+    return {
+        "version": 2,
+        "profile": "film-type",
+        "seed": "semantic-phrase-lock",
+        "profileVersion": "2.15.0",
+        "contentHash": SUPPORTED_FILM_TYPE_215_HASH,
+        "resolved": profile,
+    }
+
+
+def _props(
+    text: str,
+    *,
+    phrase_locks: list[str] | None = None,
+    design: dict | None = None,
+) -> dict:
     segment = {"role": "hero", "text": text}
     if phrase_locks is not None:
         segment["phraseLocks"] = phrase_locks
     return {
         "format": "vertical",
         "durationSeconds": 14.0,
-        "design": resolve_design({"version": 2, "profile": "film-type", "seed": "semantic-phrase-lock"}),
+        "design": design or resolve_design({"version": 2, "profile": "film-type", "seed": "semantic-phrase-lock"}),
         "watermark": {"persianText": "", "latinText": ""},
         "typographicBeats": [],
         "captionMode": "sidecar_only",
@@ -74,6 +94,19 @@ class SemanticPhraseLockBrowserContract(unittest.TestCase):
                 _props("سلامت روان مهم است", phrase_locks=["کنترل توجه"]),
                 ROOT / "remotion-composer",
             )
+
+    def test_pinned_215_does_not_infer_new_comma_list_phrase_locks(self) -> None:
+        prepared = prepare_film_type_props(
+            _props(
+                "توجه دیداری، درک فضایی پیچیده، حافظه کاری",
+                design=_pinned_215_design(),
+            ),
+            ROOT / "remotion-composer",
+        )
+        self.assertEqual(
+            _row_texts(prepared),
+            ["توجه دیداری، درک فضایی", "پیچیده، حافظه کاری"],
+        )
 
 
 if __name__ == "__main__":
