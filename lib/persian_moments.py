@@ -386,30 +386,26 @@ class PersianMoment:
             )
             return FIXATION_SECONDS + chars / READ_CPS + max(0, blocks - 1) * BLOCK_SECONDS
 
-        if len(steps) == 1:
-            return max(MIN_SECONDS, cost(steps[0]))
-
-        if self.presentation.get("sequenceMode") == "replace":
-            # Replacement steps are mutually exclusive: earlier copy disappears
-            # when the next alternative arrives, so reading charges do not stack
-            # on top of authored reveal gaps. Per-step window sufficiency is audited
-            # below against the actual reveal schedule.
-            return max(MIN_SECONDS, sum(cost(step) for step in steps))
-
-        # The first step holds until the second arrives; a middle step holds until
-        # the next; the last holds until exit. Total required time is the sum of
-        # each step's cost, plus the authored gaps between them.
-        total = sum(cost(step) for step in steps)
-        reveals = sorted(
+        reveal_times = sorted(
             {
                 segment.reveal_after_seconds
-                for step in steps
-                for segment in step
+                for segment in self.segments
                 if segment.role != "source"
             }
         )
-        total += sum(reveals[i + 1] - reveals[i] for i in range(len(reveals) - 1))
-        return max(MIN_SECONDS, total)
+        if not reveal_times:  # pragma: no cover - a hero always exists
+            reveal_times = [0.0]
+
+        # A reveal gap is already real screen time. Charging it again on top of
+        # every step's reading cost double-counts the same seconds and can make
+        # Python refuse an authored schedule that the browser can read. The scalar
+        # floor is therefore the latest completion time on the authored timeline.
+        # Intermediate step-window sufficiency is audited separately below.
+        completions = [
+            reveal_at + cost(step)
+            for reveal_at, step in zip(reveal_times, steps, strict=True)
+        ]
+        return max(MIN_SECONDS, *completions)
 
     def to_props(self) -> dict[str, Any]:
         """The JSON shape `PersianMoment` expects in the renderer.
@@ -1198,7 +1194,7 @@ def _audit_one(
                 "the «بیش از حد سریع رد میشن» complaint, measured."
             )
 
-    if sequence_mode == "replace" and len(moment.reveal_steps()) >= 2:
+    if len(moment.reveal_steps()) >= 2:
         content_steps = moment.reveal_steps()
         reveal_times = sorted({
             segment.reveal_after_seconds
@@ -1207,13 +1203,18 @@ def _audit_one(
         for index, (step, reveal_at) in enumerate(zip(content_steps, reveal_times, strict=True)):
             next_at = reveal_times[index + 1] if index + 1 < len(reveal_times) else moment.duration
             available = next_at - reveal_at
-            chars = sum(segment.visible_chars for segment in step if segment.role != "source")
+            chars = sum(
+                segment.visible_chars
+                * (SOURCE_READ_WEIGHT if segment.role == "source" else 1.0)
+                for segment in step
+            )
             blocks = sum(1 for segment in step if segment.role != "source")
             needed = FIXATION_SECONDS + chars / READ_CPS + max(0, blocks - 1) * BLOCK_SECONDS
             if available + TIMING_EPSILON_SECONDS < needed:
+                label = "replace sequence" if sequence_mode == "replace" else "reveal"
                 problems.append(
-                    f"{moment.id}: replace sequence step at +{reveal_at:.2f}s needs "
-                    f"{needed:.2f}s but has {available:.2f}s before the next alternative."
+                    f"{moment.id}: {label} step at +{reveal_at:.2f}s needs "
+                    f"{needed:.2f}s but has {available:.2f}s before the next reveal or exit."
                 )
 
     for segment in moment.segments:

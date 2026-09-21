@@ -294,6 +294,26 @@ def _dependency_digests(
     }
 
 
+def _semantic_segments(value: object) -> list[Any]:
+    """Return segment semantics without authored reveal timing.
+
+    `revealAfterSeconds` is a timeline instruction. Including it in the copy digest
+    made a timing-only repair look like a semantic rewrite and prevented bounded
+    Film Type recovery from repairing its own browser timing diagnostic.
+    """
+    result: list[Any] = []
+    for raw in value or [] if isinstance(value, list) else []:
+        if isinstance(raw, Mapping):
+            result.append({
+                str(key): item
+                for key, item in raw.items()
+                if str(key) != "revealAfterSeconds"
+            })
+        else:
+            result.append(raw)
+    return result
+
+
 def _copy_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
     persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
     moments = []
@@ -301,7 +321,7 @@ def _copy_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(raw, Mapping):
             moments.append({
                 "id": raw.get("id"),
-                "segments": raw.get("segments"),
+                "segments": _semantic_segments(raw.get("segments")),
             })
     captions = []
     for raw in persian.get("captions") or []:
@@ -310,7 +330,11 @@ def _copy_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
     beats = []
     for raw in persian.get("typographicBeats") or []:
         if isinstance(raw, Mapping):
-            beats.append({"id": raw.get("id"), "text": raw.get("text"), "segments": raw.get("segments")})
+            beats.append({
+                "id": raw.get("id"),
+                "text": raw.get("text"),
+                "segments": _semantic_segments(raw.get("segments")),
+            })
     return {"moments": moments, "captions": captions, "typographicBeats": beats}
 
 
@@ -368,11 +392,29 @@ def _scene_payload(edit: Mapping[str, Any]) -> list[dict[str, Any]]:
 def _timeline_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
     persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
     keys = {"id", "kind", "startSeconds", "endSeconds"}
+
+    def timed_moments(value: object) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = []
+        for raw in value or [] if isinstance(value, list) else []:
+            if not isinstance(raw, Mapping):
+                continue
+            item = {str(key): raw.get(key) for key in keys if key in raw}
+            item["segmentReveals"] = [
+                {
+                    "index": index,
+                    "revealAfterSeconds": segment.get("revealAfterSeconds", 0),
+                }
+                for index, segment in enumerate(raw.get("segments") or [])
+                if isinstance(segment, Mapping)
+            ]
+            result.append(item)
+        return result
+
     return {
         "durationSeconds": persian.get("durationSeconds"),
         "shots": _shot_subset(persian.get("shots"), {"id", "startSeconds", "endSeconds"}),
-        "moments": _moment_subset(persian.get("moments"), keys),
-        "typographicBeats": _moment_subset(persian.get("typographicBeats"), keys),
+        "moments": timed_moments(persian.get("moments")),
+        "typographicBeats": timed_moments(persian.get("typographicBeats")),
         "captions": _moment_subset(persian.get("captions"), {"id", "startSeconds", "endSeconds"}),
     }
 

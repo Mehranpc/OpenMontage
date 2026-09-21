@@ -1582,12 +1582,12 @@ class TestReadingModel:
         assert len(steps) == 2
         assert [segment.role for segment in steps[1]] == ["lead", "source"]
 
-    def test_a_build_sums_its_steps_and_the_authored_gaps(self) -> None:
-        """min_read_seconds for a build: each step's cost plus the reveals between.
+    def test_a_build_min_read_tracks_the_latest_authored_completion(self) -> None:
+        """Reveal gaps are screen time, not an extra reading-time surcharge.
 
-        A build that outruns its own timeline therefore reports *more* time than
-        the moment has — which the audit turns into a fault rather than a fast
-        frame.
+        `min_read_seconds` records the latest step completion on the authored
+        timeline. Intermediate windows are audited separately, matching the Film
+        Type browser prepass instead of charging the same reveal gap twice.
         """
         lead_1, hero_1 = "میانگین سنی شرکت‌کنندگان:", "۴۶ سال"
         lead_2, hero_2 = "با پیگیری", "۱۲ ساله"
@@ -1605,13 +1605,17 @@ class TestReadingModel:
                 )
             ]
         )[0]
-        chars = sum(visible_length(text) for text in (lead_1, hero_1, lead_2, hero_2))
-        expected = (
-            2 * FIXATION_SECONDS
-            + chars / READ_CPS
-            + 2 * BLOCK_SECONDS
-            + 2.5
+        first_cost = (
+            FIXATION_SECONDS
+            + sum(visible_length(text) for text in (lead_1, hero_1)) / READ_CPS
+            + BLOCK_SECONDS
         )
+        second_cost = (
+            FIXATION_SECONDS
+            + sum(visible_length(text) for text in (lead_2, hero_2)) / READ_CPS
+            + BLOCK_SECONDS
+        )
+        expected = max(first_cost, 2.5 + second_cost)
         assert moment.min_read_seconds == pytest.approx(max(MIN_SECONDS, expected))
 
 

@@ -17,7 +17,12 @@ def test_watermark_and_typography_recovery_cannot_mutate_editorial_assets() -> N
     watermark = recovery_policy_for_issue({"code": "WATERMARK_COVERAGE"})
     typography = recovery_policy_for_issue({"code": "FILM_TYPE_LAYOUT"})
     assert watermark["mutationSurface"] == ["watermark.schedule", "watermark.suppression"]
-    assert typography["mutationSurface"] == ["typography.recipe", "typography.line_plan", "typography.duration"]
+    assert typography["mutationSurface"] == [
+        "typography.recipe",
+        "typography.line_plan",
+        "typography.duration",
+        "timeline.reveal_schedule",
+    ]
     forbidden = ("asset", "footage", "scene", "subject")
     assert not any(word in strategy for strategy in watermark["strategies"] for word in forbidden)
     assert not any(word in strategy for strategy in typography["strategies"] for word in forbidden)
