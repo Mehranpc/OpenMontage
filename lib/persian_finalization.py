@@ -16,13 +16,14 @@ from typing import Any, Callable, Mapping
 
 from lib.persian_rendered_review import measure_rendered_audio_output
 
-MASTERING_POLICY_VERSION = "1.0"
+MASTERING_POLICY_VERSION = "1.1"
 MASTER_TARGET_LUFS = -16.0
 MASTER_MIN_LUFS = -20.0
 MASTER_MAX_LUFS = -9.0
 MASTER_TRUE_PEAK_DBFS = -1.5
+MASTER_ENCODER_HEADROOM_DB = 0.5
+MASTER_PROCESSING_TRUE_PEAK_DBFS = MASTER_TRUE_PEAK_DBFS - MASTER_ENCODER_HEADROOM_DB
 MASTER_LRA = 7.0
-MASTER_TOLERANCE_DB = 0.05
 
 
 class PersianFinalizationError(RuntimeError):
@@ -43,6 +44,8 @@ def mastering_policy() -> dict[str, Any]:
         "targetIntegratedLufs": MASTER_TARGET_LUFS,
         "acceptedIntegratedLufs": [MASTER_MIN_LUFS, MASTER_MAX_LUFS],
         "truePeakCeilingDbfs": MASTER_TRUE_PEAK_DBFS,
+        "encoderTruePeakHeadroomDb": MASTER_ENCODER_HEADROOM_DB,
+        "processingTruePeakDbfs": MASTER_PROCESSING_TRUE_PEAK_DBFS,
         "loudnessRangeLu": MASTER_LRA,
         "videoPolicy": "copy",
         "audioPolicy": "loudnorm-if-required",
@@ -60,7 +63,7 @@ def _measurement_passes(measurement: Mapping[str, Any]) -> bool:
     peak = _finite_number(measurement.get("truePeakDbfs"), "true peak")
     return (
         MASTER_MIN_LUFS <= loudness <= MASTER_MAX_LUFS
-        and peak <= MASTER_TRUE_PEAK_DBFS + MASTER_TOLERANCE_DB
+        and peak <= MASTER_TRUE_PEAK_DBFS
     )
 
 
@@ -75,7 +78,7 @@ def _run_ffmpeg_master(source: Path, output: Path, policy: Mapping[str, Any]) ->
             "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy",
             "-af", (
                 f"loudnorm=I={policy['targetIntegratedLufs']}:"
-                f"TP={policy['truePeakCeilingDbfs']}:LRA={policy['loudnessRangeLu']}"
+                f"TP={policy['processingTruePeakDbfs']}:LRA={policy['loudnessRangeLu']}"
             ),
             "-ar", "48000", "-c:a", "aac", "-b:a", "192k", str(output),
         ],
@@ -192,5 +195,6 @@ def master_final_candidate(
 
 __all__ = [
     "MASTERING_POLICY_VERSION", "MASTER_TARGET_LUFS", "MASTER_TRUE_PEAK_DBFS",
+    "MASTER_ENCODER_HEADROOM_DB", "MASTER_PROCESSING_TRUE_PEAK_DBFS",
     "PersianFinalizationError", "mastering_policy", "master_final_candidate", "sha256_file",
 ]

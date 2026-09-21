@@ -28,7 +28,7 @@ Preflight revisions may adjust recipe, line plan, placement, timing, or presenta
 
 ## Placement and watermark
 
-Reviewed subject regions remain evidence but do not hard-veto 2.16 editorial text placement; reasonable overlap is legal when the composition works. Platform safe area remains hard. Watermark planning stays the deterministic 2.15 text-only fixed-anchor system and receives no subject/face/body blockers.
+Reviewed subject regions are authoritative typography-placement evidence in 2.16: hooks and body callouts must move away from, or refuse, a measured placement that intersects a reviewed face/body/action region. Platform safe area remains hard. Watermark planning stays the deterministic 2.15 text-only fixed-anchor system and receives no subject/face/body blockers.
 
 ## Honest production timing
 

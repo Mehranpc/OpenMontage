@@ -264,6 +264,9 @@ def build_cues(
     groups = _rebalance_short_groups(
         groups, max_visible_chars=max_visible_chars, max_seconds=max_seconds
     )
+    groups = _repair_sentence_tail_orphans(
+        groups, max_visible_chars=max_visible_chars, max_seconds=max_seconds
+    )
 
     cues: list[PersianCue] = []
     for index, group in enumerate(groups):
@@ -549,6 +552,59 @@ def _rebalance_short_groups(
                     result[index + 1] = donor
                     break
 
+    return result
+
+
+def _repair_sentence_tail_orphans(
+    groups: list[list[TimedWord]],
+    *,
+    max_visible_chars: int = MAX_CUE_VISIBLE_CHARS,
+    max_seconds: float = MAX_CUE_SECONDS,
+    min_tail_words: int = 4,
+) -> list[list[TimedWord]]:
+    """Keep a short sentence-final predicate with the lexical head immediately before it.
+
+    A width boundary can leave a perfectly legal >1s tail such as «خیلی خوبی نبود.»
+    while the noun it predicates («استراتژی») remains stranded at the end of the
+    previous cue. Duration-only repair cannot see this because the tail is not a
+    flash. Move only the smallest suffix needed to make a four-word sentence tail,
+    and only when both resulting cues remain inside all existing hard limits.
+    """
+    if len(groups) <= 1:
+        return groups
+    result = [list(group) for group in groups]
+
+    def duration(group: list[TimedWord]) -> float:
+        return group[-1].end - group[0].start
+
+    def fits(group: list[TimedWord]) -> bool:
+        return bool(group) and (
+            visible_length(" ".join(word.text for word in group)) <= max_visible_chars
+            and duration(group) <= max_seconds
+            and duration(group) >= MIN_CUE_SECONDS
+        )
+
+    for index in range(1, len(result)):
+        tail = result[index]
+        previous = result[index - 1]
+        if (
+            len(tail) >= min_tail_words
+            or not _ends_with_hard_boundary(tail[-1])
+            or _ends_with_hard_boundary(previous[-1])
+            or len(previous) <= 1
+        ):
+            continue
+        needed = min_tail_words - len(tail)
+        if needed <= 0 or len(previous) <= needed:
+            continue
+        moved = previous[-needed:]
+        if any(_ends_with_hard_boundary(word) for word in moved):
+            continue
+        donor = previous[:-needed]
+        repaired = moved + tail
+        if fits(donor) and fits(repaired):
+            result[index - 1] = donor
+            result[index] = repaired
     return result
 
 

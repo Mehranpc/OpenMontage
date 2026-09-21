@@ -56,10 +56,12 @@ class RankedBrowserContracts(unittest.TestCase):
         self.assertLessEqual(len([r for r in rows if r['role']=='hero']),2)
         self.assertEqual(self.prepare(q)['filmType'],q['filmType'])
         rect=q['filmType']['moments']['m']['rect']
-        self.assertGreaterEqual(rect['x'],.08)
-        self.assertGreaterEqual(rect['y'],.14)
-        self.assertLessEqual(rect['x']+rect['w'],.84+1e-8)
-        self.assertLessEqual(rect['y']+rect['h']+18/1920,.65+1e-8)
+        safe=q['design']['resolved']['formats']['vertical']['safeArea']
+        left=safe.get('left',safe['side']);right=safe.get('right',safe['side'])
+        self.assertGreaterEqual(rect['x'],left)
+        self.assertGreaterEqual(rect['y'],safe['top'])
+        self.assertLessEqual(rect['x']+rect['w'],1-right+1e-8)
+        self.assertLessEqual(rect['y']+rect['h']+18/1920,1-safe['bottom']+1e-8)
         self.assertEqual(q['filmType']['moments']['m']['strength'],'strong')
     def test_incomplete_props_are_refused_not_silently_completed(self):
         p=self.props();p.pop('typographicBeats')
@@ -91,17 +93,16 @@ class RankedBrowserContracts(unittest.TestCase):
                 with self.subTest(format=fmt,text=text):
                     q=self.prepare(self.props(text,fmt))
                     self.assertTrue(q['filmType']['moments']['m']['rows'])
-    def test_default_216_requires_review_but_regions_do_not_veto_typography(self):
+    def test_default_216_requires_review_and_moves_typography_off_reviewed_subjects(self):
         p=self.props();p['shots'][0].pop('avoidRegions')
         with self.assertRaisesRegex(ValueError,'review'):self.prepare(p)
-        plain=self.prepare(self.props())['filmType']['moments']['m']['rect']
         region={'x':0.55,'y':0.45,'w':0.45,'h':0.55}
         p=self.props();p['shots'][0]['avoidRegions']=[region]
         q=self.prepare(p);layout=q['filmType']['moments']['m']
         self.assertEqual(q['shots'][0]['avoidRegions'],[region])
-        self.assertEqual(layout['subjectSafety'],'not-checked')
-        self.assertEqual(layout['rect'],plain)
-        self.assertTrue(any('2.16' in warning and 'subject-region enforcement' in warning for warning in q['filmType']['warnings']))
+        self.assertEqual(layout['subjectSafety'],'checked-against-supplied-regions')
+        self.assertFalse(self._overlaps(layout['rect'],region))
+        self.assertFalse(any('2.16' in warning and 'subject-region enforcement is OFF' in warning for warning in q['filmType']['warnings']))
     def test_212_allows_typography_only_moment_without_fake_shot_review(self):
         p=self.props(text='نیاز به توجه')
         p['durationSeconds']=20
@@ -114,14 +115,36 @@ class RankedBrowserContracts(unittest.TestCase):
         self.assertEqual(layout['subjectSafety'],'not-checked')
         self.assertTrue(layout['rows'])
 
-    def test_default_216_explicit_placement_ignores_reviewed_face_region(self):
+    def test_default_216_explicit_placement_refuses_reviewed_face_collision(self):
         p=self.props();p['moments'][0]['presentation']['placement']='upper-right'
-        region={'x':0.27,'y':0.28,'w':0.39,'h':0.21}
+        region={'x':0.20,'y':0.14,'w':0.80,'h':0.51}
         p['shots'][0]['avoidRegions']=[region]
-        q=self.prepare(p);layout=q['filmType']['moments']['m']
-        self.assertEqual(q['shots'][0]['avoidRegions'],[region])
-        self.assertEqual(layout['placement'],'upper-right')
-        self.assertEqual(layout['subjectSafety'],'not-checked')
+        with self.assertRaisesRegex(ValueError,'no curated adaptive editorial recipe fits|blocked by region'):
+            self.prepare(p)
+    def test_default_216_hook_respects_reviewed_subject_region(self):
+        p=self.props();p['durationSeconds']=20
+        p['moments']=[{'id':'hook','kind':'hook','purpose':'hook-pattern-interrupt',
+                       'startSeconds':0,'endSeconds':4.2,
+                       'presentation':{'placement':'auto','motion':'cut-in','treatment':'editorial','recipeId':'editorial-hero-balanced'},
+                       'segments':[{'role':'lead','text':'بعد از قرار اول،','semanticRole':'setup'},
+                                   {'role':'hero','text':'کی پیام بدی بهتره؟','semanticRole':'subject_hero'}]}]
+        region={'x':0.52,'y':0.14,'w':0.48,'h':0.28}
+        p['shots'][0]['avoidRegions']=[region]
+        q=self.prepare(p);layout=q['filmType']['moments']['hook']
+        self.assertEqual(layout['subjectSafety'],'checked-against-supplied-regions')
+        self.assertFalse(self._overlaps(layout['rect'],region))
+
+    def test_default_216_replace_sequence_stacks_alternatives_in_one_measured_slot(self):
+        p=self.props();p['moments']=[{'id':'timing-options','kind':'statement',
+                       'startSeconds':2,'endSeconds':7,
+                       'presentation':{'placement':'auto','motion':'cut-in','sequenceMode':'replace'},
+                       'segments':[{'role':'hero','text':'بلافاصله','revealAfterSeconds':0},
+                                   {'role':'hero','text':'صبح روز بعد','revealAfterSeconds':1.5},
+                                   {'role':'hero','text':'دو روز بعد','revealAfterSeconds':3.1}]}]
+        q=self.prepare(p);rows=q['filmType']['moments']['timing-options']['rows']
+        self.assertEqual([row['revealAfterSeconds'] for row in rows],[0,1.5,3.1])
+        tops={round(row['baselinePx']-row['abovePx'],3) for row in rows}
+        self.assertEqual(len(tops),1)
     def test_28_pin_still_refuses_missing_reviews_and_obstructed_frames(self):
         p=self.props(design=self.pinned_28());p['shots'][0].pop('avoidRegions')
         p['moments'][0]['presentation']['placement']='upper-right'

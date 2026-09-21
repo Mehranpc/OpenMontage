@@ -328,12 +328,13 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
   const t = p.typography, l = p.layout, dims = FORMAT_DIMENSIONS[fmt], recipe = editorialRecipe(moment,p);
   const posterRoles = p.profileVersion === "2.16.0" ? semanticPosterRoles(moment) : null;
   const posterStack = posterRoles !== null;
+  const replaceSequence = moment.presentation?.sequenceMode === "replace";
   const numeric = !moment.exactText && moment.kind === "figure" && moment.segments.some(s => s.role === "hero" && splitQuantity(s.text));
   const ladder = numeric ? t.figureLadderPx : moment.kind === "hook" ? t.titleLadderPx : t.statementLadderPx;
   const safe = p.formats[fmt].safeArea;
   const maxHeight = dims.height * (1 - safe.top - safe.bottom) * l.maxStackFraction;
   for (const main of selectedSize === undefined ? ladder : [selectedSize]) {
-    let y = l.inkPaddingPx, widest = 0, failed = false;
+    let y = l.inkPaddingPx, widest = 0, tallest = y, failed = false;
     const rows: FilmRow[] = [];
     let previousReveal = 0;
     for (let index = 0; index < moment.segments.length; index++) {
@@ -342,7 +343,8 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
       if (index) {
         const previous = moment.segments[index - 1];
         const semanticGap = posterStack && previous.role !== "source" && segment.role !== "source";
-        y += semanticGap
+        if (replaceSequence && reveal > previousReveal) y = l.inkPaddingPx;
+        else y += semanticGap
           ? posterStackGapPx(previous.semanticRole!, segment.semanticRole!, main)
           : reveal > previousReveal ? l.revealGroupGapPx : segment.role === "source" ? l.sourceGapPx : segment.role === "hero" && previous.role === "lead" ? l.contextGapPx : l.phraseGapPx;
       }
@@ -384,12 +386,13 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
             family: piece.family,direction: "rtl",...ink,belowPx: round(belowPx),baselinePx: round(y + ink.abovePx),
             revealAfterSeconds: reveal,accentWords: rowAccentWords});
           y += ink.abovePx + belowPx;
+          tallest = Math.max(tallest,y);
           widest = Math.max(widest,ink.widthPx);
         }
       }
       if (failed) break;
     }
-    if (!failed && y + l.inkPaddingPx <= maxHeight) return {id: moment.id,rows,widthPx: Math.ceil(widest + l.inkPaddingPx * 2),heightPx: Math.ceil(y + l.inkPaddingPx)};
+    if (!failed && tallest + l.inkPaddingPx <= maxHeight) return {id: moment.id,rows,widthPx: Math.ceil(widest + l.inkPaddingPx * 2),heightPx: Math.ceil(tallest + l.inkPaddingPx)};
   }
   return null;
 }
@@ -469,7 +472,7 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
   // inside the platform safe area. Subject/region review stays available for
   // older pinned profiles, but these versions never demand it and never use
   // regions to reject, dim or move approved text. No detection is introduced.
-  const enforceSubject = p.profileVersion !== "2.9.0" && p.profileVersion !== "2.10.0" && p.profileVersion !== "2.11.0" && !(p.profileVersion === "2.16.0" && moment.kind === "hook");
+  const enforceSubject = p.profileVersion !== "2.9.0" && p.profileVersion !== "2.10.0" && p.profileVersion !== "2.11.0";
   if ((authored === "auto" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")) || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0"))) && !reviewed && l.autoRequiresReviewedAvoidRegions) {
     throw new Error(`Moment ${moment.id}: Film Type auto placement needs reviewed, screen-space shot.avoidRegions (including camera motion for the entire dwell). Use [] only after reviewing a clear shot. Film Type 2.6 also requires review for explicit placement; supply regions for every overlapping shot.`);
   }
@@ -957,7 +960,10 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
   // Aggregated once per film, not once per moment: same content, no repetition.
   if(contrastReviewMoments.length) warnings.push(`contrast-review-required: bounded field is not a measured footage-contrast guarantee; review all shots and transitions. (moments: ${contrastReviewMoments.join(", ")})`);
   if(unreviewedMoments.length) warnings.push(`explicit placement without reviewed avoid regions; subject collision is not-checked. (moments: ${unreviewedMoments.join(", ")})`);
-  if((profile.profileVersion === "2.8.0" || profile.profileVersion === "2.9.0" || profile.profileVersion === "2.10.0" || (profile.profileVersion === "2.11.0" || profile.profileVersion === "2.12.0" || (profile.profileVersion === "2.13.0" || profile.profileVersion === "2.14.0" || (profile.profileVersion === "2.15.0" || profile.profileVersion === "2.16.0")))) && props.format === "vertical") warnings.push("Reels conservative safe area applied: top 14%, bottom 35%, left 8%, right 16%. Preview actual Instagram UI; expanded captions/comments are not guaranteed. Do not relax subject regions to fit.");
+  if((profile.profileVersion === "2.8.0" || profile.profileVersion === "2.9.0" || profile.profileVersion === "2.10.0" || (profile.profileVersion === "2.11.0" || profile.profileVersion === "2.12.0" || (profile.profileVersion === "2.13.0" || profile.profileVersion === "2.14.0" || (profile.profileVersion === "2.15.0" || profile.profileVersion === "2.16.0")))) && props.format === "vertical") {
+    const safe=profile.formats.vertical.safeArea,left=safe.left??safe.side,right=safe.right??safe.side;
+    warnings.push(`Reels conservative safe area applied: top ${Math.round(safe.top*100)}%, bottom ${Math.round(safe.bottom*100)}%, left ${Math.round(left*100)}%, right ${Math.round(right*100)}%. Preview actual Instagram UI; expanded captions/comments are not guaranteed. Do not relax subject regions to fit.`);
+  }
   if(profile.profileVersion === "2.9.0" || profile.profileVersion === "2.10.0" || profile.profileVersion === "2.11.0") warnings.push(`Film Type ${profile.profileVersion}: subject-region enforcement is OFF by default. Text and brand are kept inside the platform safe area only; overlap with people or objects in the footage is NOT evaluated and subjectSafety stays not-checked. Pin profileVersion 2.8.0 to restore reviewed-region enforcement.`);
   if(profile.profileVersion === "2.10.0" || profile.profileVersion === "2.11.0" || profile.profileVersion === "2.12.0" || (profile.profileVersion === "2.13.0" || profile.profileVersion === "2.14.0" || (profile.profileVersion === "2.15.0" || profile.profileVersion === "2.16.0"))) warnings.push("Film Type 2.10+: legibility comes from a small per-row field plus a two-layer glyph shadow. This is a readability aid, not a measured contrast guarantee; review bright footage yourself. Pin profileVersion 2.9.0 to restore the previous single-block field.");
   const lockup=measureLockup(props,profile);

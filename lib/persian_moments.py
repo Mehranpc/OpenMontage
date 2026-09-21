@@ -208,7 +208,7 @@ CURATED_EDITORIAL_RECIPES: frozenset[str] = frozenset({
     "editorial-hero-balanced", "editorial-hero-compact", "editorial-callout-balanced",
 })
 _PRESENTATION_KEYS: frozenset[str] = frozenset({
-    "treatment", "placement", "motion", "emphasis", "contrastMode", "contrastStrength", "recipeId",
+    "treatment", "placement", "motion", "emphasis", "contrastMode", "contrastStrength", "recipeId", "sequenceMode",
 })
 
 #: Silhouette band a hook's lines must read inside, as a fraction.
@@ -388,6 +388,13 @@ class PersianMoment:
 
         if len(steps) == 1:
             return max(MIN_SECONDS, cost(steps[0]))
+
+        if self.presentation.get("sequenceMode") == "replace":
+            # Replacement steps are mutually exclusive: earlier copy disappears
+            # when the next alternative arrives, so reading charges do not stack
+            # on top of authored reveal gaps. Per-step window sufficiency is audited
+            # below against the actual reveal schedule.
+            return max(MIN_SECONDS, sum(cost(step) for step in steps))
 
         # The first step holds until the second arrives; a middle step holds until
         # the next; the last holds until exit. Total required time is the sum of
@@ -990,6 +997,29 @@ def _audit_one(
     heroes = [segment for segment in moment.segments if segment.role == "hero"]
     sources = [segment for segment in moment.segments if segment.role == "source"]
 
+    sequence_mode = moment.presentation.get("sequenceMode") if moment.presentation else None
+    if sequence_mode is not None and sequence_mode != "replace":
+        problems.append(f"{moment.id}: unsupported sequenceMode {sequence_mode!r}.")
+    if sequence_mode == "replace":
+        if not adaptive_pixel_typography:
+            problems.append(
+                f"{moment.id}: replace sequence requires Film Type adaptive pixel typography; "
+                "non-Film-Type renderers do not implement replacement paint semantics."
+            )
+        content = [segment for segment in moment.segments if segment.role != "source"]
+        reveals = [segment.reveal_after_seconds for segment in content]
+        if len(content) < 2:
+            problems.append(f"{moment.id}: replace sequence requires at least two alternatives.")
+        if sources:
+            problems.append(f"{moment.id}: replace sequence does not accept a source row.")
+        if any(segment.role != "hero" for segment in content):
+            problems.append(f"{moment.id}: replace sequence alternatives must each be a hero segment.")
+        if reveals and (reveals[0] != 0 or any(later <= earlier for earlier, later in zip(reveals, reveals[1:]))):
+            problems.append(
+                f"{moment.id}: replace sequence revealAfterSeconds values must start at 0 "
+                "and be strictly increasing in authored order."
+            )
+
     if len(heroes) == 0:
         problems.append(
             f"{moment.id}: no 'hero' segment. Nothing emphasised is a caption, not a "
@@ -1165,6 +1195,24 @@ def _audit_one(
                 "charges the entrance the character count never saw — that dead time is "
                 "the «بیش از حد سریع رد میشن» complaint, measured."
             )
+
+    if sequence_mode == "replace" and len(moment.reveal_steps()) >= 2:
+        content_steps = moment.reveal_steps()
+        reveal_times = sorted({
+            segment.reveal_after_seconds
+            for segment in moment.segments if segment.role != "source"
+        })
+        for index, (step, reveal_at) in enumerate(zip(content_steps, reveal_times, strict=True)):
+            next_at = reveal_times[index + 1] if index + 1 < len(reveal_times) else moment.duration
+            available = next_at - reveal_at
+            chars = sum(segment.visible_chars for segment in step if segment.role != "source")
+            blocks = sum(1 for segment in step if segment.role != "source")
+            needed = FIXATION_SECONDS + chars / READ_CPS + max(0, blocks - 1) * BLOCK_SECONDS
+            if available + TIMING_EPSILON_SECONDS < needed:
+                problems.append(
+                    f"{moment.id}: replace sequence step at +{reveal_at:.2f}s needs "
+                    f"{needed:.2f}s but has {available:.2f}s before the next alternative."
+                )
 
     for segment in moment.segments:
         if segment.reveal_after_seconds >= moment.duration:
