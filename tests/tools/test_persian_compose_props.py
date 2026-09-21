@@ -529,8 +529,37 @@ class TestAudioProps:
             staging,
         )
         assert props["audio"]["speechIntervals"] == [
+            {"startSeconds": 0.4, "endSeconds": 1.8},
+        ]
+
+    @pytest.mark.parametrize("end,resume", [(5.22, 5.92), (13.36, 13.85), (23.50, 24.28)])
+    def test_issue77_short_pauses_remain_inside_ducked_interval(
+        self, clip: Path, staging: Path, end: float, resume: float
+    ) -> None:
+        props, _ = _build(_persian(clip, durationSeconds=30, audio={"wordTimings": [
+            {"word": "سلام", "start": 0.4, "end": 0.6},
+            {"word": "دنیا", "start": 0.7, "end": 0.9},
+            {"word": "قبل", "start": end - 0.3, "end": end},
+            {"word": "بعد", "start": resume, "end": resume + 0.3},
+        ]}), staging)
+        intervals = props["audio"]["speechIntervals"]
+        assert len(intervals) == 2
+        assert intervals[-1]["startSeconds"] <= end
+        assert intervals[-1]["endSeconds"] >= resume
+
+    def test_genuine_narration_pause_still_allows_music_to_breathe(
+        self, clip: Path, staging: Path
+    ) -> None:
+        props, _ = _build(
+            _persian(clip, audio={"wordTimings": [
+                {"word": "سلام", "start": 0.4, "end": 0.9},
+                {"word": "بعد", "start": 2.0, "end": 2.3},
+            ]}),
+            staging,
+        )
+        assert props["audio"]["speechIntervals"] == [
             {"startSeconds": 0.4, "endSeconds": 0.9},
-            {"startSeconds": 1.5, "endSeconds": 1.8},
+            {"startSeconds": 2.0, "endSeconds": 2.3},
         ]
 
 

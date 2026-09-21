@@ -247,11 +247,36 @@ def test_persian_moment_declares_replace_sequence_mode() -> None:
     assert not _errors("edit_decisions", _edit_decisions(persian))
 
 
+@pytest.mark.parametrize("complexity", ["simple", "busy"])
+def test_persian_shot_preserves_reviewed_visual_complexity(complexity: str) -> None:
+    persian = _minimal_persian_block()
+    persian["shots"][0]["visualComplexity"] = complexity
+    assert not _errors("edit_decisions", _edit_decisions(persian))
+
+
+def test_persian_shot_rejects_unknown_visual_complexity() -> None:
+    persian = _minimal_persian_block()
+    persian["shots"][0]["visualComplexity"] = "unreviewed"
+    assert _errors("edit_decisions", _edit_decisions(persian))
+
+
+def test_persian_moment_declares_accumulate_sequence_mode() -> None:
+    persian = _minimal_persian_block()
+    moment = persian["moments"][0]
+    moment["presentation"] = {"sequenceMode": "accumulate"}
+    moment["segments"] = [
+        {"role": "hero", "text": "بلافاصله", "revealAfterSeconds": 0.0},
+        {"role": "hero", "text": "صبح روز بعد", "revealAfterSeconds": 1.25},
+        {"role": "hero", "text": "دو روز بعد", "revealAfterSeconds": 2.75},
+    ]
+    assert not _errors("edit_decisions", _edit_decisions(persian))
+
+
 def test_persian_moment_rejects_unknown_sequence_mode() -> None:
     persian = _minimal_persian_block()
-    persian["moments"][0]["presentation"] = {"sequenceMode": "accumulate"}
+    persian["moments"][0]["presentation"] = {"sequenceMode": "crossfade"}
     problems = _errors("edit_decisions", _edit_decisions(persian))
-    assert any("accumulate" in problem for problem in problems), problems
+    assert any("crossfade" in problem for problem in problems), problems
 
 
 def test_persian_caption_mode_is_schema_declared() -> None:
@@ -653,6 +678,27 @@ def test_render_report_can_carry_retention_and_silent_watch_evidence() -> None:
     problems = _errors("render_report", report)
     assert not problems, problems
 
+
+
+def test_render_report_accepts_actual_midroll_retention_audit() -> None:
+    from lib.persian_retention import audit_persian_retention
+
+    audit = audit_persian_retention({
+        "durationSeconds": 12.0,
+        "shots": [],
+        "typographicBeats": [{"id": "dead-zone", "startSeconds": 3.0, "endSeconds": 7.9}],
+        "moments": [{"id": "type", "startSeconds": 3.0, "endSeconds": 7.9}],
+    })
+    report = {
+        "version": "1.0",
+        "outputs": [{"path": "a.mp4", "format": "mp4", "resolution": "1080x1920",
+                     "duration_seconds": 12.0}],
+        "retention_audit": audit,
+    }
+    assert audit["midrollTextOnlySeconds"] == 4.9
+    assert audit["midrollTextOnlyPlates"][0]["id"] == "dead-zone"
+    problems = _errors("render_report", report)
+    assert not problems, problems
 
 
 def test_render_report_declares_post_render_motion_qa() -> None:

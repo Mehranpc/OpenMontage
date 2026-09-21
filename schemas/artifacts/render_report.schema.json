@@ -261,6 +261,24 @@
           "type": "number",
           "minimum": 0
         },
+        "midrollTextOnlySeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "midrollTextOnlyPlates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "startSeconds", "endSeconds", "seconds"],
+            "properties": {
+              "id": {"type": "string"},
+              "startSeconds": {"type": "number", "minimum": 0},
+              "endSeconds": {"type": "number", "minimum": 0},
+              "seconds": {"type": "number", "minimum": 0}
+            },
+            "additionalProperties": false
+          }
+        },
         "endingTextOnlySeconds": {
           "type": "number",
           "minimum": 0

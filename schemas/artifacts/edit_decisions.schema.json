@@ -687,6 +687,11 @@
                 ],
                 "description": "Narrative job of this visual event. The retention gate requires a visible hook in the first 3 seconds and a resolution event in the final quarter for new visual-event edits."
               },
+              "visualComplexity": {
+                "type": "string",
+                "enum": ["simple", "busy"],
+                "description": "Reviewed background complexity for local editorial text contrast. Required by compose for Film Type 2.16 opening hook coverage."
+              },
               "humanPresence": {
                 "type": "boolean",
                 "description": "Whether a human is visibly present in the selected shot. Preserved from asset review so resolution QA can prefer a relatable human ending without pretending to infer it from pixels."
@@ -964,9 +969,10 @@
                   "sequenceMode": {
                     "type": "string",
                     "enum": [
-                      "replace"
+                      "replace",
+                      "accumulate"
                     ],
-                    "description": "Film Type only: mutually-exclusive alternatives. Each strictly later reveal replaces the prior hero instead of accumulating rows."
+                    "description": "Film Type sequence semantics. 'replace' is for mutually-exclusive alternatives; 'accumulate' keeps earlier revealed rows visible while later rows are added. Omitted mode retains the historical additive behavior."
                   }
                 },
                 "additionalProperties": false

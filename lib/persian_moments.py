@@ -998,8 +998,10 @@ def _audit_one(
     sources = [segment for segment in moment.segments if segment.role == "source"]
 
     sequence_mode = moment.presentation.get("sequenceMode") if moment.presentation else None
-    if sequence_mode is not None and sequence_mode != "replace":
+    if sequence_mode is not None and sequence_mode not in {"replace", "accumulate"}:
         problems.append(f"{moment.id}: unsupported sequenceMode {sequence_mode!r}.")
+    # Explicit accumulate uses the ordinary additive reveal-step contract, including
+    # lead/hero/tail rows arriving together. Only replace needs exclusive rows.
     if sequence_mode == "replace":
         if not adaptive_pixel_typography:
             problems.append(

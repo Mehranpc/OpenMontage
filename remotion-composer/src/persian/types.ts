@@ -157,8 +157,8 @@ export type PersianPresentation = {
   readonly emphasis?: PersianV2Emphasis;
   readonly contrastMode?: PersianV2ContrastMode;
   readonly recipeId?: PersianEditorialRecipe;
-  /** Mutually-exclusive alternatives: each reveal step replaces the previous one. */
-  readonly sequenceMode?: "replace";
+  /** Replace hides earlier alternatives; accumulate keeps earlier reveal steps visible. */
+  readonly sequenceMode?: "replace" | "accumulate";
   /** Film Type only; stable for the entire moment, not frame-adaptive. */
   readonly contrastStrength?: "soft" | "standard" | "strong";
 };
@@ -476,7 +476,7 @@ export function assertMomentIsWellFormed(moment: PersianMoment): void {
   }
 
   const sequenceMode = moment.presentation?.sequenceMode;
-  if (sequenceMode !== undefined && sequenceMode !== "replace") {
+  if (sequenceMode !== undefined && sequenceMode !== "replace" && sequenceMode !== "accumulate") {
     throw new Error(`${where}: unsupported sequenceMode ${JSON.stringify(sequenceMode)}.`);
   }
   if (sequenceMode === "replace") {

@@ -10,11 +10,13 @@ from __future__ import annotations
 from typing import Any
 
 from lib.persian_quality_evidence import authored_timeline_evidence
+from lib.persian_plates import derive_beat_windows
 
 OPENING_WINDOW_SECONDS = 3.0
 LONG_EVENT_WARNING_SECONDS = 8.0
 LONG_EVENT_HIGH_RISK_SECONDS = 10.0
 ENDING_TYPOGRAPHY_WARNING_SECONDS = 2.0
+MIDROLL_TEXT_ONLY_MAX_SECONDS = 3.0
 WINDOW_SECONDS = 15.0
 EDIT_CHANGE_TYPES = ("establish", "action", "reaction", "detail", "scale_change", "punch_in")
 NARRATIVE_ROLES = ("hook", "exposition", "conflict", "turn", "resolution")
@@ -49,6 +51,11 @@ def audit_persian_retention(persian: dict[str, Any]) -> dict[str, Any]:
     plates = sorted(list(persian.get("typographicBeats") or []), key=lambda b: float(b.get("startSeconds") or 0.0))
     problems: list[str] = []
     advisories: list[str] = []
+    try:
+        plates = derive_beat_windows(plates, moments)
+    except ValueError as exc:
+        # Keep diagnostics available for invalid authored plates, but never pass them.
+        problems.append(str(exc))
 
     shot_durations = [(str(s.get("id") or "shot"), max(0.0, _span(s)[1] - _span(s)[0])) for s in shots]
     average = sum(d for _, d in shot_durations) / len(shot_durations) if shot_durations else 0.0
@@ -108,6 +115,31 @@ def audit_persian_retention(persian: dict[str, Any]) -> dict[str, Any]:
         gaps.append({"startSeconds": round(cursor, 3), "endSeconds": round(duration, 3)})
     if gaps:
         problems.append(f"timeline has {len(gaps)} uncovered interval(s) that can render visually empty")
+
+    midroll_text_only = 0.0
+    midroll_plates: list[dict[str, Any]] = []
+    if plates and duration > 0:
+        for plate in plates:
+            start, end = _span(plate)
+            start = max(OPENING_WINDOW_SECONDS, start)
+            plate_duration = max(0.0, end - start)
+            is_midroll = plate_duration > 0 and end < duration - 0.05
+            if not is_midroll:
+                continue
+            midroll_text_only += plate_duration
+            record = {
+                "id": str(plate.get("id") or "typographic-beat"),
+                "startSeconds": round(start, 3),
+                "endSeconds": round(end, 3),
+                "seconds": round(plate_duration, 3),
+            }
+            midroll_plates.append(record)
+            if plate_duration > MIDROLL_TEXT_ONLY_MAX_SECONDS + 1e-6:
+                problems.append(
+                    f"{record['id']}: mid-roll text-only interval is {plate_duration:.2f}s; "
+                    f"static typographic plates above {MIDROLL_TEXT_ONLY_MAX_SECONDS:.1f}s "
+                    "are a retention dead-zone risk and require moving footage or a shorter plate"
+                )
 
     ending_text_only = 0.0
     if plates and duration > 0:
@@ -237,6 +269,8 @@ def audit_persian_retention(persian: dict[str, Any]) -> dict[str, Any]:
         "meaningfulChangesPer15Seconds": windows,
         "weakEmptyIntervals": gaps,
         "textOnlySeconds": round(sum(max(0.0, _span(b)[1] - _span(b)[0]) for b in plates), 3),
+        "midrollTextOnlySeconds": round(midroll_text_only, 3),
+        "midrollTextOnlyPlates": midroll_plates,
         "endingTextOnlySeconds": round(ending_text_only, 3),
         "cutGrammar": {
             "transitions": transitions,
@@ -254,6 +288,6 @@ def audit_persian_retention(persian: dict[str, Any]) -> dict[str, Any]:
 
 __all__ = [
     "OPENING_WINDOW_SECONDS", "LONG_EVENT_WARNING_SECONDS", "LONG_EVENT_HIGH_RISK_SECONDS",
-    "ENDING_TYPOGRAPHY_WARNING_SECONDS", "EDIT_CHANGE_TYPES", "NARRATIVE_ROLES",
+    "ENDING_TYPOGRAPHY_WARNING_SECONDS", "MIDROLL_TEXT_ONLY_MAX_SECONDS", "EDIT_CHANGE_TYPES", "NARRATIVE_ROLES",
     "audit_persian_retention",
 ]

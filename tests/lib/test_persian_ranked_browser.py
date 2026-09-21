@@ -176,6 +176,18 @@ class RankedBrowserContracts(unittest.TestCase):
         self.assertEqual([row['revealAfterSeconds'] for row in rows],[0,1.5,3.1])
         tops={round(row['baselinePx']-row['abovePx'],3) for row in rows}
         self.assertEqual(len(tops),1)
+    def test_default_216_accumulate_sequence_keeps_prior_rows_visible_in_stack(self):
+        p=self.props();p['moments']=[{'id':'timing-build','kind':'statement',
+                       'startSeconds':2,'endSeconds':12,
+                       'presentation':{'placement':'auto','motion':'cut-in','sequenceMode':'accumulate'},
+                       'segments':[{'role':'hero','text':'بلافاصله','revealAfterSeconds':0},
+                                   {'role':'hero','text':'صبح روز بعد','revealAfterSeconds':1.5},
+                                   {'role':'hero','text':'دو روز بعد','revealAfterSeconds':3.1}]}]
+        q=self.prepare(p);rows=q['filmType']['moments']['timing-build']['rows']
+        self.assertEqual([row['revealAfterSeconds'] for row in rows],[0,1.5,3.1])
+        tops={round(row['baselinePx']-row['abovePx'],3) for row in rows}
+        self.assertEqual(len(tops),3)
+
     def test_28_pin_still_refuses_missing_reviews_and_obstructed_frames(self):
         p=self.props(design=self.pinned_28());p['shots'][0].pop('avoidRegions')
         p['moments'][0]['presentation']['placement']='upper-right'

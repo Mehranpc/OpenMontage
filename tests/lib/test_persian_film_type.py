@@ -242,6 +242,23 @@ class FilmTypeContracts(unittest.TestCase):
     def test_empty_schedule_is_opt_in_only(self):
         self.assertEqual(PersianCompose._build_moments({'moments':[]},12,v2=True,measure_layout=False),[])
         with self.assertRaisesRegex(ValueError,'Legacy'):PersianCompose._build_moments({'moments':[]},12)
+    def test_film_type_216_requires_visual_complexity_for_editorial_text_shots(self):
+        clip=self.root/'clip-unreviewed.mp4';clip.write_bytes(b'fixture-not-decoded')
+        persian={'format':'vertical','durationSeconds':12,'design':self.raw,
+                 'moments':[{'id':'hook','kind':'hook','purpose':'hook-pattern-interrupt','startSeconds':0.2,'endSeconds':4.2,
+                             'segments':[{'role':'lead','text':'بعد از قرار اول'},
+                                         {'role':'hero','text':'کی پیام بدی بهتره؟'},
+                                         {'role':'tail','text':'یک سؤال ساده'}]}],
+                 'shots':[{'id':'s','source':str(clip),'startSeconds':0,'endSeconds':12,
+                           'sourceInSeconds':0,'camera':'none','attribution':'fixture',
+                           'avoidRegions':[], 'semanticBeatId':'beat-1','visualEventId':'event-1',
+                           'changeType':'establish','narrativeRole':'hook','humanPresence':True,
+                           'showsSubject':True,'semanticRole':'hook','semanticDirection':'phone-decision',
+                           'openingSemanticMatch':True,'selectionReason':'fixture'}]}
+        with patch('tools.video.persian_compose.prepare_film_type_props',side_effect=lambda p,c:p):
+            with self.assertRaisesRegex(ValueError,'visualComplexity'):
+                PersianCompose()._build_props(persian,self.root/'stage-unreviewed','unit-unreviewed')
+
     def test_film_producer_preserves_reviewed_visual_complexity(self):
         clip=self.root/'clip-busy.mp4';clip.write_bytes(b'fixture-not-decoded')
         persian={'format':'vertical','durationSeconds':12,'design':self.raw,'moments':[],
