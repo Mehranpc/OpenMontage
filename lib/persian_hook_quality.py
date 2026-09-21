@@ -28,14 +28,31 @@ TENSION_WARNING_SECONDS = 2.5
 TENSION_BLOCK_SECONDS = 4.0
 PROOF_WARNING_SECONDS = 4.0
 PROOF_BLOCK_SECONDS = 6.0
-TIMING_DISPOSITIONS = frozenset({"prompt", "late-authoritative-advisory", "late-blocked"})
+TIMING_DISPOSITION_PROMPT = "prompt"
+TIMING_DISPOSITION_LATE_AUTHORITATIVE_ADVISORY = "late-authoritative-advisory"
+TIMING_DISPOSITION_LATE_BLOCKED = "late-blocked"
+TIMING_DISPOSITIONS = frozenset(
+    {
+        TIMING_DISPOSITION_PROMPT,
+        TIMING_DISPOSITION_LATE_AUTHORITATIVE_ADVISORY,
+        TIMING_DISPOSITION_LATE_BLOCKED,
+    }
+)
 # Preflight may record that no concrete payoff time was measured yet. That is a
 # pre-verdict state rather than a presentable disposition, so it stays out of
 # TIMING_DISPOSITIONS, which is the vocabulary a rendered review may declare.
 TIMING_DISPOSITION_UNMEASURED = "unmeasured"
-TIMING_DISPOSITION_BLOCKED = "late-blocked"
 AUTHORITY_MODES = frozenset({"user_supplied", "automatic"})
 DEFAULT_AUTHORITY_REFERENCE = "workflow.hook_selection"
+# The provenance fields the resolver returns and the audit exposes. Kept as one
+# list so the two cannot drift apart.
+AUTHORITY_PROVENANCE_KEYS = (
+    "mode",
+    "authoritative",
+    "valid",
+    "reference",
+    "selectedHookSha256",
+)
 MAX_MEANINGFUL_CHANGES_FIRST_3S = 4
 TYPOGRAPHIC_HOOK_READ_CPS = 11.0
 TYPOGRAPHIC_HOOK_FIXATION_SECONDS = 0.45
@@ -76,8 +93,8 @@ def hook_timing_policy() -> dict[str, Any]:
         "version": HOOK_TIMING_POLICY_VERSION,
         "proofWarningSeconds": PROOF_WARNING_SECONDS,
         "proofBlockSeconds": PROOF_BLOCK_SECONDS,
-        "automaticDisposition": TIMING_DISPOSITION_BLOCKED,
-        "authoritativeDisposition": "late-authoritative-advisory",
+        "automaticDisposition": TIMING_DISPOSITION_LATE_BLOCKED,
+        "authoritativeDisposition": TIMING_DISPOSITION_LATE_AUTHORITATIVE_ADVISORY,
         "authoritySource": DEFAULT_AUTHORITY_REFERENCE,
     }
 
@@ -137,10 +154,7 @@ def resolve_hook_timing_authority(
 
 def _authority_evidence(authority: Mapping[str, Any]) -> dict[str, Any]:
     """Expose the provenance without leaking arbitrary caller-supplied fields."""
-    return {
-        key: authority.get(key)
-        for key in ("mode", "authoritative", "valid", "reference", "selectedHookSha256")
-    }
+    return {key: authority.get(key) for key in AUTHORITY_PROVENANCE_KEYS}
 
 
 def _target(edit: Mapping[str, Any], persian: Mapping[str, Any], metadata: Mapping[str, Any]) -> str:
@@ -634,17 +648,17 @@ def audit_persian_hook_quality(
         if proof > PROOF_BLOCK_SECONDS:
             message = f"first concrete proof/payoff arrives at {proof:.2f}s, after the {PROOF_BLOCK_SECONDS:.1f}s initial blocking ceiling"
             if user_authoritative:
-                timing_disposition = "late-authoritative-advisory"
+                timing_disposition = TIMING_DISPOSITION_LATE_AUTHORITATIVE_ADVISORY
                 timing_advisory_reason = (
                     f"{message}; explicit user-authoritative hook keeps the late payoff as an "
                     f"advisory under hook timing policy {HOOK_TIMING_POLICY_VERSION} pending rendered review"
                 )
                 advisories.append(timing_advisory_reason)
             else:
-                timing_disposition = TIMING_DISPOSITION_BLOCKED
+                timing_disposition = TIMING_DISPOSITION_LATE_BLOCKED
                 problems.append(message)
         else:
-            timing_disposition = "prompt"
+            timing_disposition = TIMING_DISPOSITION_PROMPT
             if proof > PROOF_WARNING_SECONDS:
                 advisories.append(f"first concrete proof/payoff arrives late at {proof:.2f}s")
 
@@ -713,7 +727,14 @@ __all__ = [
     "SEMANTIC_INTEGRITY_POLICY_VERSION",
     "SHORT_FORM_TARGETS",
     "CONCRETE_PROOF_KINDS",
+    "AUTHORITY_MODES",
+    "AUTHORITY_PROVENANCE_KEYS",
+    "DEFAULT_AUTHORITY_REFERENCE",
     "TIMING_DISPOSITIONS",
+    "TIMING_DISPOSITION_PROMPT",
+    "TIMING_DISPOSITION_LATE_AUTHORITATIVE_ADVISORY",
+    "TIMING_DISPOSITION_LATE_BLOCKED",
+    "TIMING_DISPOSITION_UNMEASURED",
     "resolve_hook_timing_authority",
     "hook_timing_policy",
     "audit_persian_hook_quality",

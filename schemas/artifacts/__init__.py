@@ -86,6 +86,37 @@ def build_artifact(name: str, values: Mapping[str, Any] | None = None, /, **fiel
     return payload
 
 
+def _require_preflight_backed_late_advisory(audit: Mapping[str, Any], review: Mapping[str, Any]) -> None:
+    """A late-payoff advisory must also rest on the persisted preflight authority.
+
+    This layer cannot read durable workflow state, so it refuses to accept a
+    late-payoff exception on the review's word alone. The preflight audit is the
+    evidence that the authored edit was checked against a canonical
+    user-authoritative hook, and the review's provenance must agree with it. The
+    workflow separately re-derives the authority before presentation.
+    """
+    if str(review.get("timingDisposition") or "") != "late-authoritative-advisory":
+        return
+
+    provenance = audit.get("authorityProvenance")
+    if not isinstance(provenance, Mapping):
+        raise jsonschema.ValidationError(
+            "a late authoritative advisory requires preflight authority provenance evidence"
+        )
+    if provenance.get("mode") != "user_supplied" or provenance.get("authoritative") is not True:
+        raise jsonschema.ValidationError(
+            "a late authoritative advisory requires canonically user-authoritative preflight provenance"
+        )
+
+    declared = review.get("authorityProvenance")
+    declared_sha = str(declared.get("selectedHookSha256") or "").strip().lower() if isinstance(declared, Mapping) else ""
+    preflight_sha = str(provenance.get("selectedHookSha256") or "").strip().lower()
+    if not preflight_sha or declared_sha != preflight_sha:
+        raise jsonschema.ValidationError(
+            "final review authority digest does not match the preflight hook authority"
+        )
+
+
 def _validate_final_review_hook_quality(data: dict[str, Any]) -> None:
     """Validate rendered-hook evidence while preserving failed-review evidence."""
     metadata = data.get("metadata")
@@ -126,6 +157,7 @@ def _validate_final_review_hook_quality(data: dict[str, Any]) -> None:
             )
         except PersianRenderedReviewError as exc:
             raise jsonschema.ValidationError(str(exc)) from exc
+        _require_preflight_backed_late_advisory(audit, review)
         return
 
     if str(review.get("version") or "") != "1.0":
@@ -229,7 +261,7 @@ def _validate_post_publish_performance(data: dict[str, Any]) -> None:
         previous_captured = captured
 
 
-def validate_artifact(name: str, data: dict[str, Any], /) -> None:
+def validate_artifact(name: str, data: dict[str, Any]) -> None:
     """Validate artifact data against its schema. Raises on failure."""
     schema = load_schema(name)
     jsonschema.validate(instance=data, schema=schema)

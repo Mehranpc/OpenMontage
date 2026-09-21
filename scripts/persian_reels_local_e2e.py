@@ -22,6 +22,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# The fixture opening demonstrates its concrete change this early on purpose.
+TRIAL_OPENING_PAYOFF_SECONDS = 2.4
+
 from lib.checkpoint import write_checkpoint
 from lib.persian_alignment_provider import (
     build_alignment_provider_plan,
@@ -524,7 +527,7 @@ def _build_opening_review(
     opening: Path, frames: list[str], project: Path, hook_audit: dict[str, Any],
     retention: dict[str, Any], motion_qa: dict[str, Any], *, edit_artifact_sha256: str,
 ) -> tuple[Path, dict[str, Any]]:
-    timing = _hook_timing_evidence(hook_audit, payoff_seconds=2.4)
+    timing = _hook_timing_evidence(hook_audit, payoff_seconds=TRIAL_OPENING_PAYOFF_SECONDS)
     opening_sha = _sha(opening)
     cold_input = build_cold_viewer_review_input(
         candidate_sha256=opening_sha,
@@ -554,7 +557,7 @@ def _build_opening_review(
         ],
         "mutedHookDirectionConfirmed": True,
         "visualVoiceAlignment": "acceptable",
-        "actualPayoffSeconds": 2.4,
+        "actualPayoffSeconds": TRIAL_OPENING_PAYOFF_SECONDS,
         "concretePayoffKind": "demonstration",
         "payoffEvidence": "The second visual event begins the concrete change at 2.4s.",
         "payoffBeginsPromptly": True,
@@ -688,7 +691,7 @@ def _build_final_review(
         project / "artifacts" / "cold_viewer_review_input.json", cold_input
     )
     cold_input_sha = _sha(cold_input_path)
-    timing = _hook_timing_evidence(hook_audit, payoff_seconds=2.4)
+    timing = _hook_timing_evidence(hook_audit, payoff_seconds=TRIAL_OPENING_PAYOFF_SECONDS)
 
     audio_review = {
         **rendered_audio,
@@ -717,7 +720,7 @@ def _build_final_review(
         ],
         "mutedHookDirectionConfirmed": True,
         "visualVoiceAlignment": "acceptable",
-        "actualPayoffSeconds": 2.4,
+        "actualPayoffSeconds": TRIAL_OPENING_PAYOFF_SECONDS,
         "concretePayoffKind": "demonstration",
         "payoffEvidence": "The second rendered event visibly changes direction at 2.4s.",
         "payoffBeginsPromptly": True,

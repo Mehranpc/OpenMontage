@@ -11,6 +11,7 @@ from copy import deepcopy
 from pathlib import Path
 
 import pytest
+from jsonschema import ValidationError
 
 import lib.persian_video_workflow as workflow
 from lib.persian_editorial_hook import build_initial_hook_selection
@@ -97,6 +98,21 @@ def _authoritative_provenance(selection: dict) -> dict:
     }
 
 
+def _authoritative_hook_audit(selection: dict) -> dict:
+    """Preflight evidence shaped as the real audit records canonical authority."""
+    return {
+        **_hook_audit(),
+        "semanticAuthority": "user-authoritative-awaiting-rendered-review",
+        "timingPolicy": hook_timing_policy(),
+        "timingDisposition": "late-authoritative-advisory",
+        "authorityProvenance": {
+            **_authoritative_provenance(selection),
+            "authoritative": True,
+            "valid": True,
+        },
+    }
+
+
 def _candidate(tmp_path: Path) -> Path:
     path = tmp_path / "candidate.mp4"
     path.write_bytes(b"candidate")
@@ -125,9 +141,15 @@ def _review_with_late_advisory(
     review["status"] = status
     review["recommended_action"] = "present_to_user" if status == "pass" else "revise_edit"
     if authority is None:
-        authority = _authoritative_provenance(_make_authoritative(tmp_path))
+        selection = _make_authoritative(tmp_path)
+        authority = _authoritative_provenance(selection)
+        audit = _authoritative_hook_audit(selection)
+    else:
+        audit = _authoritative_hook_audit(
+            {"sha256": str(authority.get("selectedHookSha256") or "")}
+        )
     review["metadata"] = {
-        "hookQualityAudit": _hook_audit(),
+        "hookQualityAudit": audit,
         "hookQualityReview": _hook_review(
             candidate,
             actualPayoffSeconds=LATE_PAYOFF_SECONDS,
@@ -417,13 +439,14 @@ def test_late_payoff_persists_as_honest_blocked_evidence_on_a_revise_review(tmp_
     assert persisted["metadata"]["hookQualityReview"]["timingDisposition"] == "late-blocked"
 
 
-def test_artifact_contract_and_workflow_agree_on_a_late_advisory_review(tmp_path):
-    """Every consumer sees the same artifact: shape in the contract, authority in the workflow."""
+def test_checkpoint_layer_still_rejects_an_unbacked_late_advisory(tmp_path):
+    """A review cannot lift the timing gate on its own word."""
     from schemas.artifacts import validate_artifact
 
     _, candidate, review_path, _ = _review_ready_project(tmp_path)
     review = json.loads(review_path.read_text(encoding="utf-8"))
     review["metadata"] = {
+        # Preflight recorded no canonical user authority, so the exception is unavailable.
         "hookQualityAudit": _hook_audit(),
         "hookQualityReview": _hook_review(
             candidate,
@@ -440,7 +463,32 @@ def test_artifact_contract_and_workflow_agree_on_a_late_advisory_review(tmp_path
     }
     _bind_cold_viewer_input(review, candidate, tmp_path / "run")
 
-    # The artifact layer has no durable state to read, so it validates evidence shape.
+    with pytest.raises(ValidationError):
+        validate_artifact("final_review", review)
+
+
+def test_artifact_contract_and_workflow_agree_on_a_backed_late_advisory(tmp_path):
+    """Every consumer sees the same artifact: shape in the contract, authority in the workflow."""
+    from schemas.artifacts import validate_artifact
+
+    _, candidate, review_path, _ = _review_ready_project(tmp_path)
+    selection = _make_authoritative(tmp_path)
+    authority = _authoritative_provenance(selection)
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["metadata"] = {
+        "hookQualityAudit": _authoritative_hook_audit(selection),
+        "hookQualityReview": _hook_review(
+            candidate,
+            actualPayoffSeconds=LATE_PAYOFF_SECONDS,
+            timingDisposition="late-authoritative-advisory",
+            payoffBeginsPromptly=False,
+            advisoryReason=ADVISORY_REASON,
+            authorityProvenance=authority,
+        ),
+    }
+    _bind_cold_viewer_input(review, candidate, tmp_path / "run")
+
+    # Preflight-backed evidence passes the shape contract without reading durable state.
     validate_artifact("final_review", review)
 
     # The durable-aware validator still refuses to authorize the same bytes on its own.

@@ -133,7 +133,7 @@ Hook-quality evidence must describe the approved production honestly. It is not 
 
 ## Final rendered review
 
-Preflight evidence is a prediction about the authored edit. It does not prove the real MP4 communicates the hook. For productions whose persisted preflight says Hook Quality is required, `final_review.metadata.hookQualityReview` must use the rendered-v2 contract:
+Preflight evidence is a prediction about the authored edit. It does not prove the real MP4 communicates the hook. For productions whose persisted preflight says Hook Quality is required, `final_review.metadata.hookQualityReview` must use the rendered-v2 contract. Two version numbers are in play and they are not the same thing: the authored `metadata.hookQuality.version` contract stays `2.0`, while the rendered review below carries its own `version`, which is `2.1` under the current payoff-timing policy:
 
 - `version: "2.1"` — the payoff-timing policy revision. Frozen `2.0` records stay readable as history and keep their original meaning: a passing review under `2.0` required a prompt payoff. Only `2.1` evidence may declare a late authoritative advisory;
 - `reviewSource: "rendered_mp4"`;

@@ -15,6 +15,8 @@ from lib.persian_hook_quality import (
     CONCRETE_PROOF_KINDS,
     HOOK_TIMING_POLICY_VERSION,
     PROOF_BLOCK_SECONDS,
+    TIMING_DISPOSITION_LATE_BLOCKED,
+    TIMING_DISPOSITION_PROMPT,
     TIMING_DISPOSITIONS,
 )
 from lib.persian_music import (
@@ -484,12 +486,12 @@ def _validate_rendered_payoff_timing(
     pays_promptly = review.get("payoffBeginsPromptly")
     if not isinstance(pays_promptly, bool):
         raise PersianRenderedReviewError("payoffBeginsPromptly must be boolean")
-    if pays_promptly is not (disposition == "prompt"):
+    if pays_promptly is not (disposition == TIMING_DISPOSITION_PROMPT):
         raise PersianRenderedReviewError(
             "payoffBeginsPromptly must remain truthful and match timingDisposition"
         )
 
-    if disposition == "prompt":
+    if disposition == TIMING_DISPOSITION_PROMPT:
         if payoff_seconds > PROOF_BLOCK_SECONDS:
             raise PersianRenderedReviewError(
                 f"prompt payoff disposition requires payoff by {PROOF_BLOCK_SECONDS:.1f}s"
@@ -500,7 +502,7 @@ def _validate_rendered_payoff_timing(
         raise PersianRenderedReviewError(
             f"a late timingDisposition requires payoff after the {PROOF_BLOCK_SECONDS:.1f}s blocking ceiling"
         )
-    if disposition == "late-blocked":
+    if disposition == TIMING_DISPOSITION_LATE_BLOCKED:
         if require_pass:
             raise PersianRenderedReviewError(
                 f"late payoff after the {PROOF_BLOCK_SECONDS:.1f}s blocking ceiling is not presentable "
@@ -508,6 +510,7 @@ def _validate_rendered_payoff_timing(
             )
         return
 
+    # Only the authoritative-advisory disposition reaches this point.
     if not str(review.get("advisoryReason") or "").strip():
         raise PersianRenderedReviewError(
             "late-authoritative-advisory disposition requires a stated advisoryReason"
@@ -529,6 +532,11 @@ def _validate_rendered_payoff_timing(
     if str(hook_timing.get("mode") or "").strip() != declared_mode:
         raise PersianRenderedReviewError(
             "rendered hook review authority provenance does not match the workflow hook selection"
+        )
+    authoritative_reference = str(hook_timing.get("reference") or "").strip()
+    if not authoritative_reference or str(provenance.get("reference") or "").strip() != authoritative_reference:
+        raise PersianRenderedReviewError(
+            "rendered hook review authority reference does not match the workflow hook selection"
         )
     authoritative_sha = str(hook_timing.get("selectedHookSha256") or "").strip().lower()
     if not authoritative_sha or declared_sha != authoritative_sha:
