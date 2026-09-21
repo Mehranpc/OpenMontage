@@ -1019,7 +1019,8 @@ class PersianCompose(BaseTool):
         # Narration anchoring. Word timings are the ground truth of when each phrase
         # is spoken; a moment set that disagrees with them by more than a viewer
         # forgives is a fault with exactly one honest remedy — re-derive, not nudge.
-        word_timings = (persian.get("audio") or {}).get("wordTimings")
+        audio = persian.get("audio") or {}
+        word_timings = audio.get("_syncWordTimings") or audio.get("wordTimings")
         if word_timings:
             timed = TimedWord.from_dicts(word_timings)
             sync = audit_sync(built, timed)
