@@ -78,8 +78,14 @@ class ScriptAlignedPersianCompose(PersianCompose):
                 )
                 runtime_persian["audio"] = runtime_audio
         if hook_handoff is not None:
+            # Runtime-only injection keeps the public edit schema stable while making
+            # the explicit handoff available before burned-caption geometry freezes.
             runtime_persian["_hookCaptionHandoff"] = hook_handoff
         if semantic_poster is not None:
+            # The canonical semantic plan lives in edit metadata. Rehydrate it only
+            # for runtime props so the public edit schema remains unchanged while
+            # Film Type 2.16 can consume authored meaning instead of guessing from
+            # lead/hero/tail position.
             runtime_persian["_semanticPosterStack"] = semantic_poster
         return runtime_persian
 
@@ -87,7 +93,12 @@ class ScriptAlignedPersianCompose(PersianCompose):
     def _rehydrate_semantic_poster_stack(
         moments: list[Any], plan: Any
     ) -> list[Any]:
-        """Attach canonical semantic roles to the one opening hook at runtime."""
+        """Attach canonical semantic roles to the one opening hook at runtime.
+
+        This adapter never invents semantics. The metadata plan must match the
+        normalized moment text and structural roles exactly; otherwise render is
+        refused before browser layout.
+        """
         if not isinstance(plan, dict) or plan.get("version") != "1.0":
             raise ValueError("SEMANTIC_POSTER_INVALID: semanticPosterStack version must be 1.0")
         phrases = plan.get("phrases")
@@ -173,7 +184,13 @@ class ScriptAlignedPersianCompose(PersianCompose):
 
     @staticmethod
     def _prepare_typographic_only_composition(persian: dict[str, Any]) -> dict[str, Any]:
-        """Derive a center-biased full-canvas layout for text-only opening hooks."""
+        """Derive a center-biased full-canvas layout for text-only opening hooks.
+
+        This is deliberately runtime-only. The authored artifact still records
+        ``placement=auto``; the renderer resolves that auto request differently when
+        the entire hook is backed by a typographic plate rather than footage. Explicit
+        authored placement remains authoritative.
+        """
         beats = [item for item in (persian.get("typographicBeats") or []) if isinstance(item, dict)]
         if not beats:
             return persian
@@ -214,6 +231,7 @@ class ScriptAlignedPersianCompose(PersianCompose):
         staging_dir: Path,
         run_id: str,
     ) -> tuple[dict[str, Any], list[str]]:
+        """Resolve typographic-only composition before browser Film Type layout."""
         runtime = self._prepare_typographic_only_composition(persian)
         return super()._build_props(runtime, staging_dir, run_id)
 
@@ -282,6 +300,14 @@ class ScriptAlignedPersianCompose(PersianCompose):
 
     @staticmethod
     def _apply_hook_caption_handoff(cues, persian: dict[str, Any]):
+        """Apply the explicit semantic contract between a typographic hook and captions.
+
+        ``semantic_replacement`` means the hook has replaced the opening semantic unit;
+        burned captions therefore resume only at the explicitly authored next complete
+        unit. ``exact_continuation`` means captions continue the spoken sentence, but a
+        cue may not straddle the end of the hook and expose only its hidden remainder.
+        The sidecar SRT remains complete in both modes.
+        """
         raw = persian.get("_hookCaptionHandoff")
         if raw is None:
             return list(cues)
