@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lib.persian_video_workflow import bootstrap_persian_video, record_hook_selection, stage_workflow_edit_draft
+from lib.persian_video_workflow import (
+    PersianVideoWorkflowError, bootstrap_persian_video, record_hook_selection,
+    record_user_hook_override, request_send_back, stage_workflow_edit_draft,
+)
 from tests.lib.test_persian_preflight_contract import _payload
 from tests.lib.test_persian_video_workflow import BASE, _advance_to
 
@@ -168,3 +171,106 @@ def test_edit_stage_requires_auto_selection_and_locks_its_winner(tmp_path: Path)
     staged = _stage_payload(tmp_path, SCRIPT, attempt="edit-v3")
     assert staged["hookAuthority"]["mode"] == "automatic"
     assert staged["hookAuthority"]["verified"] is True
+
+
+def _open_user_revision_at_preflight(tmp_path: Path) -> None:
+    _bootstrap_to_preflight(tmp_path, hook_text=None)
+    record_hook_selection(
+        "run", selected_text=SCRIPT, hook_family="common-mistake",
+        candidates=[{"text": "بازی فقط سرگرمیه؟"}, {"text": SCRIPT}], score=8.6,
+        content_match_score=2, evidence_checked=True, unsupported_claims_rejected=True,
+        rationale="Initial automatic winner.", pipeline_dir=tmp_path,
+    )
+    _advance_to(tmp_path, "render_opening_candidate")
+    request_send_back(
+        "run", "no_copy_preflight", reason="User explicitly shortened the rendered hook.",
+        user_directed_revision=True, pipeline_dir=tmp_path, now=BASE,
+    )
+
+
+def test_user_directed_revision_promotes_new_hook_to_authoritative_user_copy(tmp_path: Path) -> None:
+    _open_user_revision_at_preflight(tmp_path)
+    revised = "بازی فقط وقت تلف کردن نیست"
+
+    state = record_user_hook_override(
+        "run", selected_text=revised, reason="User explicitly requested the shorter hook.",
+        pipeline_dir=tmp_path, now=BASE,
+    )
+
+    decision = state["hook_selection"]
+    assert decision["mode"] == "user_supplied"
+    assert decision["text"] == revised
+    assert decision["authoritative"] is True
+    assert decision["may_be_replaced_automatically"] is False
+    assert decision["source"] == "user_directed_revision"
+    assert decision["revision_cycle"] == 1
+    assert decision["reason"] == "User explicitly requested the shorter hook."
+    assert state["hook_selection_history"][-1]["decision"]["mode"] == "automatic"
+    assert state["hook_selection_history"][-1]["reason"] == decision["reason"]
+
+    staged = _stage_payload(tmp_path, revised, attempt="edit-revised")
+    assert staged["hookAuthority"]["mode"] == "user_supplied"
+    assert staged["hookAuthority"]["verified"] is True
+
+
+def test_user_hook_override_requires_active_user_revision(tmp_path: Path) -> None:
+    import pytest
+
+    _bootstrap_to_preflight(tmp_path, hook_text=None)
+    record_hook_selection(
+        "run", selected_text=SCRIPT, hook_family="common-mistake",
+        candidates=[{"text": "بازی فقط سرگرمیه؟"}, {"text": SCRIPT}], score=8.6,
+        content_match_score=2, evidence_checked=True, unsupported_claims_rejected=True,
+        rationale="Initial automatic winner.", pipeline_dir=tmp_path,
+    )
+    with pytest.raises(PersianVideoWorkflowError, match="user-directed revision"):
+        record_user_hook_override(
+            "run", selected_text="هوک تازه", reason="User requested it.",
+            pipeline_dir=tmp_path, now=BASE,
+        )
+
+
+def test_automatic_selection_cannot_replace_user_override(tmp_path: Path) -> None:
+    import pytest
+    from lib.persian_editorial_hook import PersianEditorialHookError
+
+    _open_user_revision_at_preflight(tmp_path)
+    record_user_hook_override(
+        "run", selected_text="هوک کاربر", reason="Explicit user copy.",
+        pipeline_dir=tmp_path, now=BASE,
+    )
+    with pytest.raises(PersianEditorialHookError, match="authoritative"):
+        record_hook_selection(
+            "run", selected_text="بازنویسی خودکار", hook_family="question",
+            candidates=[{"text": "الف"}, {"text": "ب"}], score=9.0,
+            content_match_score=2, evidence_checked=True, unsupported_claims_rejected=True,
+            rationale="automatic replacement", pipeline_dir=tmp_path,
+        )
+
+
+
+def test_user_hook_override_does_not_replace_existing_user_authority(tmp_path: Path) -> None:
+    import pytest
+
+    _bootstrap_to_preflight(tmp_path, hook_text=HOOK)
+    _advance_to(tmp_path, "render_opening_candidate")
+    request_send_back(
+        "run", "no_copy_preflight", reason="User revision cycle without a hook change.",
+        user_directed_revision=True, pipeline_dir=tmp_path, now=BASE,
+    )
+    with pytest.raises(PersianVideoWorkflowError, match="existing user-supplied authority remains immutable"):
+        record_user_hook_override(
+            "run", selected_text="هوک متفاوت", reason="Attempted second authority mutation.",
+            pipeline_dir=tmp_path, now=BASE,
+        )
+
+def test_hook_override_cli_is_declared() -> None:
+    from lib import persian_video_workflow as workflow
+
+    args = workflow.build_parser().parse_args([
+        "hook-override", "run", "--text", "هوک تازه", "--reason", "بازخورد صریح کاربر",
+    ])
+    assert args.command == "hook-override"
+    assert args.project_id == "run"
+    assert args.text == "هوک تازه"
+    assert args.reason == "بازخورد صریح کاربر"
