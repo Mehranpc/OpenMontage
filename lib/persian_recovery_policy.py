@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-RECOVERY_POLICY_VERSION = "2.0"
+RECOVERY_POLICY_VERSION = "2.1"
 
 _CLASS_POLICIES: dict[str, dict[str, Any]] = {
     "HOOK_SEMANTIC": {
@@ -78,8 +78,14 @@ _CLASS_POLICIES: dict[str, dict[str, Any]] = {
             "select_curated_typography_recipe",
             "rebalance_measured_line_plan",
             "adjust_editorial_hold_within_policy",
+            "retime_reveal_schedule_within_readability_policy",
         ],
-        "mutationSurface": ["typography.recipe", "typography.line_plan", "typography.duration"],
+        "mutationSurface": [
+            "typography.recipe",
+            "typography.line_plan",
+            "typography.duration",
+            "timeline.reveal_schedule",
+        ],
         "preserve": [
             "approved_script", "narration", "assets", "audio_mix", "scenes",
             "subject_regions", "watermark",
