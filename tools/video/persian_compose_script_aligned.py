@@ -50,6 +50,10 @@ class ScriptAlignedPersianCompose(PersianCompose):
         "connector": "tail",
         "payoff": "tail",
     }
+    _SEMANTIC_REPLAY_LIGHT_TOKENS = frozenset({
+        "و", "یا", "که", "را", "رو", "به", "در", "از", "این", "اون",
+        "فقط", "نه", "با", "برای", "می",
+    })
 
     @staticmethod
     def _runtime_persian(edit_decisions: dict[str, Any]) -> dict[str, Any] | None:
@@ -74,14 +78,8 @@ class ScriptAlignedPersianCompose(PersianCompose):
                 )
                 runtime_persian["audio"] = runtime_audio
         if hook_handoff is not None:
-            # Runtime-only injection keeps the public edit schema stable while making
-            # the explicit handoff available before burned-caption geometry freezes.
             runtime_persian["_hookCaptionHandoff"] = hook_handoff
         if semantic_poster is not None:
-            # The canonical semantic plan lives in edit metadata. Rehydrate it only
-            # for runtime props so the public edit schema remains unchanged while
-            # Film Type 2.16 can consume authored meaning instead of guessing from
-            # lead/hero/tail position.
             runtime_persian["_semanticPosterStack"] = semantic_poster
         return runtime_persian
 
@@ -89,12 +87,7 @@ class ScriptAlignedPersianCompose(PersianCompose):
     def _rehydrate_semantic_poster_stack(
         moments: list[Any], plan: Any
     ) -> list[Any]:
-        """Attach canonical semantic roles to the one opening hook at runtime.
-
-        This adapter never invents semantics. The metadata plan must match the
-        normalized moment text and structural roles exactly; otherwise render is
-        refused before browser layout.
-        """
+        """Attach canonical semantic roles to the one opening hook at runtime."""
         if not isinstance(plan, dict) or plan.get("version") != "1.0":
             raise ValueError("SEMANTIC_POSTER_INVALID: semanticPosterStack version must be 1.0")
         phrases = plan.get("phrases")
@@ -180,13 +173,7 @@ class ScriptAlignedPersianCompose(PersianCompose):
 
     @staticmethod
     def _prepare_typographic_only_composition(persian: dict[str, Any]) -> dict[str, Any]:
-        """Derive a center-biased full-canvas layout for text-only opening hooks.
-
-        This is deliberately runtime-only. The authored artifact still records
-        ``placement=auto``; the renderer resolves that auto request differently when
-        the entire hook is backed by a typographic plate rather than footage. Explicit
-        authored placement remains authoritative.
-        """
+        """Derive a center-biased full-canvas layout for text-only opening hooks."""
         beats = [item for item in (persian.get("typographicBeats") or []) if isinstance(item, dict)]
         if not beats:
             return persian
@@ -227,7 +214,6 @@ class ScriptAlignedPersianCompose(PersianCompose):
         staging_dir: Path,
         run_id: str,
     ) -> tuple[dict[str, Any], list[str]]:
-        """Resolve typographic-only composition before browser Film Type layout."""
         runtime = self._prepare_typographic_only_composition(persian)
         return super()._build_props(runtime, staging_dir, run_id)
 
@@ -296,14 +282,6 @@ class ScriptAlignedPersianCompose(PersianCompose):
 
     @staticmethod
     def _apply_hook_caption_handoff(cues, persian: dict[str, Any]):
-        """Apply the explicit semantic contract between a typographic hook and captions.
-
-        ``semantic_replacement`` means the hook has replaced the opening semantic unit;
-        burned captions therefore resume only at the explicitly authored next complete
-        unit. ``exact_continuation`` means captions continue the spoken sentence, but a
-        cue may not straddle the end of the hook and expose only its hidden remainder.
-        The sidecar SRT remains complete in both modes.
-        """
         raw = persian.get("_hookCaptionHandoff")
         if raw is None:
             return list(cues)
@@ -354,33 +332,66 @@ class ScriptAlignedPersianCompose(PersianCompose):
         return tokens
 
     @staticmethod
-    def _suppress_semantically_shadowed_burned_cues(
-        cues, moments, *, min_anchor_coverage: float = 0.6, min_overlap_ratio: float = 0.5
-    ):
-        """Drop a burned cue when an overlapping moment replaces its spoken subject.
+    def _semantic_caption_tokens(text: Any) -> set[str]:
+        return ScriptAlignedPersianCompose._caption_tokens(text) - (
+            ScriptAlignedPersianCompose._SEMANTIC_REPLAY_LIGHT_TOKENS
+        )
 
-        Frame-level suppression prevents simultaneous painting. This cue-level gate
-        also removes the leading black-caption fragment before a semantic moment when
-        the moment owns at least half the cue window and most of its anchor words are
-        already in that cue. Unrelated overlapping narration remains intact. The
-        sidecar SRT is deliberately unaffected.
+    @staticmethod
+    def _rendered_moment_tokens(moment: dict[str, Any]) -> set[str]:
+        segments = moment.get("segments") or []
+        rendered = " ".join(
+            str(segment.get("text") or "")
+            for segment in segments
+            if isinstance(segment, dict)
+        )
+        return ScriptAlignedPersianCompose._semantic_caption_tokens(rendered)
+
+    @staticmethod
+    def _suppress_semantically_shadowed_burned_cues(
+        cues, moments, *, min_anchor_coverage: float = 0.6, min_overlap_ratio: float = 0.5,
+        min_rendered_shared_tokens: int = 2, min_rendered_overlap_coefficient: float = 0.5,
+    ):
+        """Drop burned cues whose handoff would replay an overlapping semantic moment.
+
+        The legacy anchor gate handles cues substantially owned by a moment's authored
+        subject window. A second gate compares against the text actually rendered in
+        the moment. That catches boundary cues which are hidden while the moment is
+        active but would otherwise repaint the same phrase immediately before/after
+        the moment. Unrelated overlapping narration remains intact. The sidecar SRT is
+        deliberately unaffected.
         """
         kept = []
         for cue in cues:
             cue_tokens = ScriptAlignedPersianCompose._caption_tokens(cue.text)
+            cue_semantic_tokens = ScriptAlignedPersianCompose._semantic_caption_tokens(cue.text)
             cue_duration = max(0.0, float(cue.end_seconds) - float(cue.start_seconds))
             shadowed = False
             if cue_duration > 0 and cue_tokens:
                 for moment in moments:
                     if not isinstance(moment, dict):
                         continue
-                    anchor = str(moment.get("anchorText") or "").strip()
-                    if not anchor:
-                        continue
                     m0 = float(moment.get("startSeconds", 0.0))
                     m1 = float(moment.get("endSeconds", 0.0))
                     overlap = min(float(cue.end_seconds), m1) - max(float(cue.start_seconds), m0)
                     if overlap <= 0:
+                        continue
+
+                    rendered_tokens = ScriptAlignedPersianCompose._rendered_moment_tokens(moment)
+                    if cue_semantic_tokens and rendered_tokens:
+                        shared = cue_semantic_tokens & rendered_tokens
+                        overlap_coefficient = len(shared) / min(
+                            len(cue_semantic_tokens), len(rendered_tokens)
+                        )
+                        if (
+                            len(shared) >= min_rendered_shared_tokens
+                            and overlap_coefficient + 1e-9 >= min_rendered_overlap_coefficient
+                        ):
+                            shadowed = True
+                            break
+
+                    anchor = str(moment.get("anchorText") or "").strip()
+                    if not anchor:
                         continue
                     anchor_tokens = ScriptAlignedPersianCompose._caption_tokens(anchor)
                     if not anchor_tokens:
