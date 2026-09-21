@@ -5,8 +5,9 @@ unified `StockSource` protocol. Pixabay has a large community-contributed
 video library (hundreds of thousands of clips) with a CC0-like licence
 that allows free commercial use without attribution.
 
-Uses the same ``PIXABAY_API_KEY`` as the Pixabay Music tool — if you've
-already set it for music search, this adapter is automatically available.
+Uses ``PIXABAY_API_KEY`` for Pixabay's documented image/video API. The
+Pixabay Music source is separate: Pixabay does not expose Music search
+through this public API key.
 
 Rate limit: 100 requests per 60 seconds (free tier). The adapter trusts
 the API to enforce this and does not self-throttle.

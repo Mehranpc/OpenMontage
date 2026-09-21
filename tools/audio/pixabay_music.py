@@ -1,11 +1,14 @@
-"""Music search and download from Pixabay Music (free, no API key).
+"""Music search and download from Pixabay Music.
 
-Scrapes Pixabay's music section to find and download royalty-free
-background music tracks. No API key required — uses web scraping.
+Pixabay's public developer API exposes images and videos, not Music search.  This
+source therefore supports two modes:
 
-Stability: EXPERIMENTAL — Pixabay's HTML structure may change without
-notice, which could break the scraper. Use freesound_music or music_gen
-as more stable alternatives.
+* best-effort web search against Pixabay Music's public pages; and
+* a stable direct-CDN mode for a browser-selected public Pixabay track.
+
+The direct mode deliberately accepts only Pixabay's public audio CDN plus a Pixabay
+Music source page, so callers can avoid Cloudflare-dependent scraping without turning
+this tool into a generic arbitrary-URL downloader.
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ from __future__ import annotations
 import json
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -34,7 +38,7 @@ from tools.base_tool import (
 
 class PixabayMusic(BaseTool):
     name = "pixabay_music"
-    version = "0.1.0"
+    version = "0.2.0"
     tier = ToolTier.SOURCE
     capability = "music_search"
     provider = "pixabay_music"
@@ -43,11 +47,12 @@ class PixabayMusic(BaseTool):
     determinism = Determinism.DETERMINISTIC
     runtime = ToolRuntime.API
 
-    dependencies = []  # no API key needed — web scraping
+    dependencies = []
     install_instructions = (
-        "No setup required. Pixabay Music is free and needs no API key.\n"
-        "Note: This tool scrapes the Pixabay website. If it breaks, the\n"
-        "site's HTML structure may have changed. Use freesound_music as fallback."
+        "No API key enables Pixabay Music search: Pixabay's public API documents "
+        "images and videos only. The tool can search the public Music page when it is "
+        "reachable, or accept a browser-selected public cdn.pixabay.com audio URL "
+        "with its Pixabay Music source-page metadata."
     )
 
     agent_skills = ["music"]
@@ -56,15 +61,16 @@ class PixabayMusic(BaseTool):
     supports = {
         "duration_filter": True,
         "free_commercial_use": True,
-        "no_api_key": True,
+        "direct_cdn": True,
+        "music_api_key": False,
     }
     best_for = [
-        "quick background music with zero setup (no API key)",
-        "royalty-free music for any commercial project",
-        "high-quality produced tracks (not raw samples)",
+        "royalty-free Pixabay background music",
+        "direct download of a browser-selected public Pixabay Music track",
+        "best-effort Pixabay Music web search when the public page is reachable",
     ]
     not_good_for = [
-        "reliable long-term automation (scraping may break)",
+        "reliable unattended Music search when Pixabay presents an anti-bot challenge",
         "precise metadata filtering",
         "offline use",
     ]
@@ -77,23 +83,47 @@ class PixabayMusic(BaseTool):
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Search query for music (e.g., 'upbeat corporate background')",
+                "description": "Search/provenance query (e.g. 'upbeat corporate background')",
             },
             "min_duration": {
                 "type": "number",
                 "default": 30,
                 "minimum": 1,
-                "description": "Minimum duration in seconds",
+                "description": "Minimum duration in seconds for web-search mode",
             },
             "max_duration": {
                 "type": "number",
                 "default": 120,
                 "maximum": 600,
-                "description": "Maximum duration in seconds",
+                "description": "Maximum duration in seconds for web-search mode",
             },
             "output_path": {
                 "type": "string",
                 "description": "File path to save the downloaded MP3",
+            },
+            "audio_url": {
+                "type": "string",
+                "description": (
+                    "Optional public Pixabay audio CDN URL. When supplied, direct_cdn "
+                    "mode skips Pixabay Music page search entirely."
+                ),
+            },
+            "track_title": {
+                "type": "string",
+                "description": "Track title for direct_cdn provenance",
+            },
+            "artist": {
+                "type": "string",
+                "description": "Pixabay contributor/artist for direct_cdn provenance",
+            },
+            "source_url": {
+                "type": "string",
+                "description": "Public pixabay.com/music/ source page for the direct track",
+            },
+            "duration_seconds": {
+                "type": "number",
+                "minimum": 1,
+                "description": "Published track duration for direct_cdn provenance",
             },
         },
     }
@@ -102,8 +132,16 @@ class PixabayMusic(BaseTool):
         cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=50, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["timeout"])
-    idempotency_key_fields = ["query", "min_duration", "max_duration"]
-    side_effects = ["writes audio file to output_path", "scrapes Pixabay website"]
+    idempotency_key_fields = [
+        "query",
+        "audio_url",
+        "min_duration",
+        "max_duration",
+    ]
+    side_effects = [
+        "writes audio file to output_path",
+        "scrapes Pixabay website only when audio_url is absent",
+    ]
     user_visible_verification = [
         "Listen to downloaded track for mood and quality",
     ]
@@ -130,50 +168,65 @@ class PixabayMusic(BaseTool):
         "Upgrade-Insecure-Requests": "1",
     }
 
+    _DIRECT_AUDIO_PATH_PREFIXES = ("/audio/", "/download/audio/")
+
     def get_status(self) -> ToolStatus:
-        # Always available — no API key required
+        # Direct-CDN mode remains available even when Pixabay's search page is blocked.
         return ToolStatus.AVAILABLE
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
-        return 0.0  # Pixabay Music is free
+        return 0.0
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         start = time.time()
 
         try:
-            # Step 1: Search Pixabay Music
-            tracks = self._search(inputs)
-            if not tracks:
-                return ToolResult(
-                    success=False,
-                    error=f"No music found on Pixabay for query: {inputs['query']}",
-                    data={"query": inputs["query"]},
-                    duration_seconds=round(time.time() - start, 2),
-                )
-
-            # Step 2: Filter by duration
-            min_dur = inputs.get("min_duration", 30)
-            max_dur = inputs.get("max_duration", 120)
-            filtered = [
-                t for t in tracks
-                if t.get("duration") is not None
-                and min_dur <= t["duration"] <= max_dur
-            ]
-
-            # Fall back to unfiltered if no matches within duration range
-            if not filtered:
+            if str(inputs.get("audio_url") or "").strip():
+                track = self._direct_track(inputs)
+                tracks = [track]
                 filtered = tracks
+                search_strategy = "direct_cdn"
+            else:
+                search_strategy = "web_search"
+                try:
+                    tracks = self._search(inputs)
+                except urllib.error.HTTPError as exc:
+                    if exc.code == 403:
+                        raise RuntimeError(
+                            "Pixabay Music web search was blocked by Cloudflare (HTTP 403). "
+                            "Pixabay has no public Music API fallback; PIXABAY_API_KEY is for "
+                            "the documented image/video API. Supply a browser-selected direct "
+                            "Pixabay CDN audio_url from cdn.pixabay.com/audio/ together with "
+                            "track_title, artist, source_url, and duration_seconds."
+                        ) from exc
+                    raise
 
-            # Step 3: Pick the first matching track
-            track = filtered[0]
+                if not tracks:
+                    return ToolResult(
+                        success=False,
+                        error=f"No music found on Pixabay for query: {inputs['query']}",
+                        data={"query": inputs["query"]},
+                        duration_seconds=round(time.time() - start, 2),
+                    )
 
-            # Step 4: Download the audio
+                min_dur = inputs.get("min_duration", 30)
+                max_dur = inputs.get("max_duration", 120)
+                filtered = [
+                    candidate
+                    for candidate in tracks
+                    if candidate.get("duration") is not None
+                    and min_dur <= candidate["duration"] <= max_dur
+                ]
+                if not filtered:
+                    filtered = tracks
+                track = filtered[0]
+
             output_path = self._download(track, inputs)
 
-        except Exception as e:
+        except Exception as exc:
             return ToolResult(
                 success=False,
-                error=f"Pixabay music search failed: {e}",
+                error=f"Pixabay music search failed: {exc}",
                 duration_seconds=round(time.time() - start, 2),
             )
 
@@ -188,6 +241,8 @@ class PixabayMusic(BaseTool):
                 "output": str(output_path),
                 "format": "mp3",
                 "license": "Pixabay Content License (free, no attribution required)",
+                "source_url": track.get("source_url"),
+                "search_strategy": search_strategy,
                 "results_found": len(tracks),
                 "results_after_filter": len(filtered),
             },
@@ -195,6 +250,57 @@ class PixabayMusic(BaseTool):
             cost_usd=0.0,
             duration_seconds=round(time.time() - start, 2),
         )
+
+    def _direct_track(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        audio_url = str(inputs.get("audio_url") or "").strip()
+        self._validate_audio_url(audio_url)
+
+        source_url = str(inputs.get("source_url") or "").strip()
+        parsed_source = urllib.parse.urlparse(source_url)
+        if (
+            parsed_source.scheme != "https"
+            or parsed_source.hostname not in {"pixabay.com", "www.pixabay.com"}
+            or not parsed_source.path.startswith("/music/")
+        ):
+            raise ValueError(
+                "direct Pixabay music requires source_url on https://pixabay.com/music/"
+            )
+
+        title = str(inputs.get("track_title") or "").strip()
+        artist = str(inputs.get("artist") or "").strip()
+        if not title or not artist:
+            raise ValueError("direct Pixabay music requires track_title and artist")
+        try:
+            duration = float(inputs["duration_seconds"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "direct Pixabay music requires numeric duration_seconds"
+            ) from exc
+        if duration <= 0:
+            raise ValueError("direct Pixabay music duration_seconds must be positive")
+
+        return {
+            "title": title,
+            "artist": artist,
+            "audio_url": audio_url,
+            "duration": duration,
+            "source_url": source_url,
+        }
+
+    def _validate_audio_url(self, audio_url: str) -> None:
+        parsed = urllib.parse.urlparse(str(audio_url or "").strip())
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != "cdn.pixabay.com"
+            or not any(
+                parsed.path.startswith(prefix)
+                for prefix in self._DIRECT_AUDIO_PATH_PREFIXES
+            )
+        ):
+            raise ValueError(
+                "Pixabay music audio_url must use HTTPS on cdn.pixabay.com/audio/ "
+                "(the legacy /download/audio/ CDN path is also accepted)"
+            )
 
     def _build_opener(self) -> urllib.request.OpenerDirector:
         """Build a URL opener with cookie support for session persistence."""
@@ -206,24 +312,13 @@ class PixabayMusic(BaseTool):
         )
 
     def _search(self, inputs: dict[str, Any]) -> list[dict]:
-        """Search Pixabay Music via the bootstrap JSON API.
-
-        Pixabay's music page loads track data from a bootstrap JSON endpoint
-        whose URL is embedded in the HTML. We:
-        1. Fetch the search page HTML (which sets session cookies).
-        2. Extract the __BOOTSTRAP_URL__ from an inline script tag.
-        3. Fetch the bootstrap JSON (same session) to get structured track data
-           including direct CDN MP3 URLs, durations, and metadata.
-        4. Fall back to HTML-scraping if bootstrap extraction fails.
-        """
+        """Search Pixabay Music via the bootstrap JSON used by its public page."""
         query = inputs["query"]
         slug = re.sub(r"\s+", "-", query.strip().lower())
         slug = urllib.parse.quote(slug, safe="-")
         search_url = f"https://pixabay.com/music/search/{slug}/"
 
         opener = self._build_opener()
-
-        # Step 1: Fetch search page HTML (sets cookies)
         request = urllib.request.Request(search_url)
         request.add_header("User-Agent", self._USER_AGENT)
         for key, val in self._BROWSER_HEADERS.items():
@@ -232,12 +327,9 @@ class PixabayMusic(BaseTool):
         with opener.open(request, timeout=30) as response:
             html = response.read().decode("utf-8", errors="replace")
 
-        # Step 2: Extract bootstrap URL and fetch track data
         tracks = self._parse_bootstrap(html, search_url, opener)
         if tracks:
             return tracks
-
-        # Step 3: Fallback — scrape HTML directly (legacy strategies)
         return self._parse_tracks_html(html)
 
     def _parse_bootstrap(
@@ -246,7 +338,7 @@ class PixabayMusic(BaseTool):
         referer: str,
         opener: urllib.request.OpenerDirector,
     ) -> list[dict]:
-        """Extract tracks from Pixabay's bootstrap JSON endpoint."""
+        """Extract tracks from Pixabay's page bootstrap JSON endpoint."""
         match = re.search(
             r'window\.__BOOTSTRAP_URL__\s*=\s*["\']([^"\']+)["\']',
             html,
@@ -255,11 +347,10 @@ class PixabayMusic(BaseTool):
             return []
 
         bootstrap_path = match.group(1)
-        if not bootstrap_path or bootstrap_path == "":
+        if not bootstrap_path:
             return []
 
         bootstrap_url = f"https://pixabay.com{bootstrap_path}"
-
         req = urllib.request.Request(bootstrap_url)
         req.add_header("User-Agent", self._USER_AGENT)
         req.add_header("Accept", "application/json, text/plain, */*")
@@ -276,63 +367,56 @@ class PixabayMusic(BaseTool):
 
         results = data.get("page", {}).get("results", [])
         tracks: list[dict] = []
-
         for item in results:
             sources = item.get("sources", {})
             audio_url = sources.get("src")
             if not audio_url:
                 continue
-
             user = item.get("user", {}) or {}
-            tracks.append({
-                "title": item.get("name") or sources.get("filename", "Unknown"),
-                "audio_url": audio_url,
-                "duration": item.get("duration"),
-                "artist": user.get("username", "Unknown"),
-                "rating": item.get("rating"),
-                "download_count": item.get("downloadCount"),
-                "pixabay_id": item.get("id"),
-            })
+            tracks.append(
+                {
+                    "title": item.get("name")
+                    or sources.get("filename", "Unknown"),
+                    "audio_url": audio_url,
+                    "duration": item.get("duration"),
+                    "artist": user.get("username", "Unknown"),
+                    "rating": item.get("rating"),
+                    "download_count": item.get("downloadCount"),
+                    "pixabay_id": item.get("id"),
+                    "source_url": item.get("pageURL") or item.get("pageUrl"),
+                }
+            )
 
         return tracks
 
     def _parse_tracks_html(self, html: str) -> list[dict]:
-        """Fallback: extract track info from HTML when bootstrap fails.
-
-        Tries brute-force scan for CDN MP3 URLs in the page source.
-        """
+        """Fallback: extract public Pixabay audio CDN URLs from page HTML."""
         tracks: list[dict] = []
-
         mp3_urls = re.findall(
-            r'(https?://cdn\.pixabay\.com/audio/[^\s"\'<>]+\.mp3[^\s"\'<>]*)',
+            r'(https?://cdn\.pixabay\.com/(?:download/)?audio/[^\s"\'<>]+\.mp3[^\s"\'<>]*)',
             html,
         )
         seen: set[str] = set()
         for url in mp3_urls:
             if url not in seen:
                 seen.add(url)
-                tracks.append({
-                    "title": "Unknown",
-                    "audio_url": url,
-                    "duration": None,
-                    "artist": "Unknown",
-                })
-
+                tracks.append(
+                    {
+                        "title": "Unknown",
+                        "audio_url": url,
+                        "duration": None,
+                        "artist": "Unknown",
+                    }
+                )
         return tracks
 
     def _download(self, track: dict, inputs: dict[str, Any]) -> Path:
         """Download an MP3 track to the output path."""
-        audio_url = track.get("audio_url")
+        audio_url = str(track.get("audio_url") or "").strip()
         if not audio_url:
             raise RuntimeError("No audio URL found for the selected track.")
+        self._validate_audio_url(audio_url)
 
-        # Ensure URL is absolute
-        if audio_url.startswith("//"):
-            audio_url = "https:" + audio_url
-        elif audio_url.startswith("/"):
-            audio_url = "https://pixabay.com" + audio_url
-
-        # Build output path
         track_title = track.get("title", "pixabay_music")
         safe_title = "".join(
             c if c.isalnum() or c in "._- " else "_" for c in track_title
@@ -348,7 +432,6 @@ class PixabayMusic(BaseTool):
                 "Referer": "https://pixabay.com/music/",
             },
         )
-
         with urllib.request.urlopen(request, timeout=60) as response:
             output_path.write_bytes(response.read())
 
