@@ -156,7 +156,7 @@ def test_semantic_replacement_caption_handoff_skips_remainder_of_replaced_senten
 
 def _hook_review(**overrides) -> dict:
     review = {
-        "version": "2.0",
+        "version": "2.1",
         "reviewSource": "rendered_mp4",
         "reviewerRole": "independent_reviewer",
         "reviewedCandidateSha256": "a" * 64,
@@ -180,6 +180,13 @@ def _hook_review(**overrides) -> dict:
         "actualPayoffSeconds": 5.5,
         "payoffEvidence": "result begins in rendered captions",
         "payoffBeginsPromptly": True,
+        "timingPolicyVersion": "2.1",
+        "timingDisposition": "prompt",
+        "authorityProvenance": {
+            "mode": "automatic",
+            "reference": "workflow.hook_selection",
+            "selectedHookSha256": "c" * 64,
+        },
         "coldViewer": {
             "evidenceSource": "rendered_opening_only",
             "contextIsolated": True,

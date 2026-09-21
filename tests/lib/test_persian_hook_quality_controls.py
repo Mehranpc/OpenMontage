@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from lib.persian_preflight import NoCopyPersianCompose, aggregate_preflight_edit_decisions
+from lib.persian_editorial_hook import build_initial_hook_selection
 from tests.lib.test_persian_preflight_contract import _payload
 
 
@@ -90,8 +91,8 @@ def test_user_authoritative_question_hook_downgrades_only_late_proof_to_advisory
         },
     )
     authority = {
-        "mode": "user_supplied", "authoritative": True,
-        "sha256": "a" * 64, "source": "user_directed_revision",
+        **build_initial_hook_selection("هوک تأییدشده توسط کاربر"),
+        "source": "user_directed_revision",
     }
     report = _run(monkeypatch, tmp_path, hook, hook_authority=authority)
     assert report["ok"] is True, report
@@ -109,7 +110,7 @@ def test_user_authority_does_not_waive_other_hook_quality_failures(monkeypatch, 
         },
         flags={"metaIntroDelay": False, "vagueGap": True, "fullConclusionRevealed": False},
     )
-    authority = {"mode": "user_supplied", "authoritative": True, "sha256": "b" * 64}
+    authority = build_initial_hook_selection("هوک تأییدشده توسط کاربر")
     report = _run(monkeypatch, tmp_path, hook, hook_authority=authority)
     assert report["ok"] is False
     assert any("too vague" in issue["message"] for issue in report["blockingIssues"])

@@ -23,7 +23,7 @@ def test_hook_quality_skill_documents_v2_semantics() -> None:
 
 def test_final_review_skill_requires_independent_sha_bound_v2_evidence() -> None:
     text = FINAL_REVIEW_DOC.read_text(encoding="utf-8")
-    assert 'version: "2.0"' in text
+    assert 'version: "2.1"' in text
     for field in (
         "reviewSource",
         "reviewerRole",
@@ -43,3 +43,17 @@ def test_final_review_skill_requires_independent_sha_bound_v2_evidence() -> None
     ):
         assert field in text
     assert 'version: "1.0"' not in text
+
+
+def test_hook_docs_describe_the_same_versioned_timing_policy_as_the_code() -> None:
+    from lib.persian_hook_quality import HOOK_TIMING_POLICY_VERSION
+
+    for doc in (HOOK_DOC, FINAL_REVIEW_DOC):
+        text = doc.read_text(encoding="utf-8")
+        for field in ("timingPolicyVersion", "timingDisposition", "authorityProvenance"):
+            assert field in text, f"{doc.name} must document {field}"
+        assert "late-authoritative-advisory" in text
+        assert "late-blocked" in text
+        assert "hook_selection" in text
+
+    assert HOOK_TIMING_POLICY_VERSION in HOOK_DOC.read_text(encoding="utf-8")

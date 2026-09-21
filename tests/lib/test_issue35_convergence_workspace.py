@@ -8,6 +8,7 @@ import pytest
 from lib import persian_edit_workspace as workspace
 from lib import persian_preflight as preflight
 from lib.persian_edit_workspace import PersianEditWorkspaceError
+from lib.persian_hook_quality import HOOK_TIMING_POLICY_VERSION
 
 
 def _edit(*, recipe: str = "recipe-a", watermark: str = "طریقت", note: str = "") -> dict:
@@ -167,7 +168,12 @@ def test_layout_candidate_reuses_unrelated_retention_and_hook_checks(monkeypatch
 
     def fake_hook(edit):
         calls["hook"] += 1
-        return {"problems": [], "advisories": [], "marker": calls["hook"]}
+        return {
+            "problems": [],
+            "advisories": [],
+            "marker": calls["hook"],
+            "timingPolicy": {"version": HOOK_TIMING_POLICY_VERSION},
+        }
 
     def fake_browser(edit, *, base_dir=None, scratch_dir=None):
         calls["browser"] += 1

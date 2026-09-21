@@ -28,7 +28,7 @@ def _semantic_pass_with_visual(**visual_overrides) -> dict:
     }
     visual.update(visual_overrides)
     return {
-        "version": "2.0",
+        "version": "2.1",
         "reviewSource": "rendered_mp4",
         "reviewerRole": "independent_reviewer",
         "reviewedCandidateSha256": DIGEST,
@@ -49,6 +49,13 @@ def _semantic_pass_with_visual(**visual_overrides) -> dict:
         "concretePayoffKind": "result",
         "payoffEvidence": "A concrete result starts before the semantic deadline.",
         "payoffBeginsPromptly": True,
+        "timingPolicyVersion": "2.1",
+        "timingDisposition": "prompt",
+        "authorityProvenance": {
+            "mode": "automatic",
+            "reference": "workflow.hook_selection",
+            "selectedHookSha256": "c" * 64,
+        },
         "visualTypography": visual,
     }
 

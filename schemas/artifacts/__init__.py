@@ -111,11 +111,15 @@ def _validate_final_review_hook_quality(data: dict[str, Any]) -> None:
     if audit_version == "2.0":
         from lib.persian_rendered_review import (
             PersianRenderedReviewError,
-            validate_rendered_hook_review,
+            validate_rendered_hook_review_shape,
         )
 
         try:
-            validate_rendered_hook_review(
+            # This layer sees only artifact bytes. It checks evidence shape and
+            # internal truthfulness; the Persian workflow separately enforces that
+            # a late-payoff exception is granted by the durable hook-selection
+            # record before presentation.
+            validate_rendered_hook_review_shape(
                 review,
                 candidate_sha256=str(review.get("reviewedCandidateSha256") or ""),
                 require_pass=data.get("status") == "pass",
@@ -225,7 +229,7 @@ def _validate_post_publish_performance(data: dict[str, Any]) -> None:
         previous_captured = captured
 
 
-def validate_artifact(name: str, data: dict[str, Any]) -> None:
+def validate_artifact(name: str, data: dict[str, Any], /) -> None:
     """Validate artifact data against its schema. Raises on failure."""
     schema = load_schema(name)
     jsonschema.validate(instance=data, schema=schema)

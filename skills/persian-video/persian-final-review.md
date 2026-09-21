@@ -18,7 +18,7 @@ For `burned_captions`/`hybrid`, inspect real caption frames: one/two lines, safe
 
 For every current production whose persisted preflight evidence says Hook Quality is required, the review of the **actual rendered MP4** must persist `final_review.metadata.hookQualityReview` with:
 
-- `version: "2.0"`;
+- `version: "2.1"` — the payoff-timing policy revision. Frozen `2.0` records stay readable as history and keep their original meaning: a passing review under `2.0` required a prompt payoff. Only `2.1` evidence may declare a late authoritative advisory;
 - `reviewSource: "rendered_mp4"`;
 - `reviewerRole: "independent_reviewer"` — the authoring/editing role must not certify its own hook;
 - `reviewedCandidateSha256` matching the exact MP4 bytes;
@@ -31,7 +31,13 @@ For every current production whose persisted preflight evidence says Hook Qualit
 - `concretePayoffKind` as `answer`, `result`, `example`, `demonstration`, `evidence`, or `mechanism`;
 - `actualPayoffSeconds` measured from when the concrete answer/result/example/evidence actually reaches the viewer;
 - non-empty `payoffEvidence` describing that concrete rendered event;
-- `payoffBeginsPromptly`.
+- `payoffBeginsPromptly`, kept truthful — it is `true` only while the concrete payoff really begins by the blocking ceiling;
+- `timingPolicyVersion: "2.1"` — the payoff-timing policy the review applied, shared with preflight;
+- `timingDisposition`: `prompt` when the payoff clears the ceiling, `late-blocked` when it does not, or `late-authoritative-advisory` for a canonically user-authoritative hook whose late payoff preflight already recorded as an advisory;
+- `authorityProvenance` with the `mode` (`user_supplied` / `automatic`), the durable provenance `reference` (`workflow.hook_selection`), and `selectedHookSha256` copied from that record;
+- `advisoryReason` when `timingDisposition` is `late-authoritative-advisory`, stating why the late payoff is editorial-acceptable for this piece.
+
+A late payoff never becomes a prompt one. `payoffBeginsPromptly: true` combined with a late `actualPayoffSeconds`, or a `prompt` disposition at a late time, is rejected as untruthful. A `late-authoritative-advisory` disposition is accepted only when the workflow's durable `hook_selection` record independently grants that authority and the declared provenance matches it; a review document cannot establish authority for itself.
 
 The cold-viewer review input must contain only the rendered opening evidence and neutral review instructions. Build it with `lib.persian_rendered_review.build_cold_viewer_review_input`, persist it inside the current project as a JSON artifact, and record `metadata.coldViewerReviewInput.path` plus its exact `sha256`. The reviewer result must repeat that digest as `coldViewer.reviewInputSha256`. Final-review validation re-reads the artifact, re-hashes it, rebuilds the canonical allowlisted payload, and rejects hidden authoring context before presentation. Do not expose approved script, hook metadata, scene-plan labels, author rationale, topic labels, or other hidden production context to that reviewer. `contextIsolated: true` is valid only when this persisted input artifact passes the allowlist validator.
 
