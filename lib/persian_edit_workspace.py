@@ -771,7 +771,10 @@ def stage_edit_draft(
     edit = extract_edit_decisions(dict(payload))
     edit = materialize_loudness_aware_mix(edit, base_dir=REPO_ROOT)
     digest = artifact_sha256(edit)
-    dependency_digests = _dependency_digests(edit, hook_authority=hook_authority)
+    dependency_digests = (
+        _dependency_digests(edit, hook_authority=hook_authority)
+        if hook_authority is not None else _dependency_digests(edit)
+    )
 
     if not isinstance(max_candidates, int) or isinstance(max_candidates, bool) or max_candidates <= 0:
         raise PersianEditWorkspaceError("max_candidates must be a positive integer")
@@ -969,7 +972,10 @@ def preflight_edit_draft(
         raise PersianEditWorkspaceError(f"edit draft does not exist: {draft}")
     payload = json.loads(draft.read_text(encoding="utf-8"))
     digest = artifact_sha256(payload)
-    dependency_digests = _dependency_digests(payload, hook_authority=hook_authority)
+    dependency_digests = (
+        _dependency_digests(payload, hook_authority=hook_authority)
+        if hook_authority is not None else _dependency_digests(payload)
+    )
     candidate_path = _candidate_path(project_dir, attempt_id)
     if candidate_path.is_file():
         manifest = load_convergence_candidate(project_dir, attempt_id)
@@ -1007,13 +1013,14 @@ def preflight_edit_draft(
             if value is not None:
                 precomputed[report_key] = value
 
-        computed = aggregate_preflight_edit_decisions(
-            payload,
-            base_dir=REPO_ROOT,
-            precomputed_components=precomputed,
-            scratch_dir=workspace_directory(project_dir, "probes"),
-            hook_authority=hook_authority,
-        )
+        aggregate_kwargs = {
+            "base_dir": REPO_ROOT,
+            "precomputed_components": precomputed,
+            "scratch_dir": workspace_directory(project_dir, "probes"),
+        }
+        if hook_authority is not None:
+            aggregate_kwargs["hook_authority"] = hook_authority
+        computed = aggregate_preflight_edit_decisions(payload, **aggregate_kwargs)
         if computed.get("artifactSha256") != digest:
             raise PersianEditWorkspaceError(
                 "preflight report digest does not match the staged edit bytes"
@@ -1098,7 +1105,10 @@ def load_promotable_edit_draft(
             raise PersianEditWorkspaceError(
                 "refusing promotion: candidate manifest preflight digest differs from staged draft"
             )
-    expected_dependencies = _dependency_digests(edit, hook_authority=hook_authority)
+    expected_dependencies = (
+        _dependency_digests(edit, hook_authority=hook_authority)
+        if hook_authority is not None else _dependency_digests(edit)
+    )
     reported_dependencies = report.get("dependencyDigests")
     if hook_authority is not None and reported_dependencies != expected_dependencies:
         raise PersianEditWorkspaceError(

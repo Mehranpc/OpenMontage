@@ -170,8 +170,14 @@ def test_full_front_door_reaches_awaiting_human_with_opening_gate_and_mastering(
         assert_phase_running("align_script_timing")
         return _fake_alignment(*args, **kwargs)
 
-    def fake_aggregate(payload: dict, *, base_dir=None, precomputed_components=None, scratch_dir=None) -> dict:
-        del precomputed_components
+    def fake_aggregate(
+        payload: dict, *, base_dir=None, precomputed_components=None,
+        scratch_dir=None, hook_authority=None,
+    ) -> dict:
+        del precomputed_components, scratch_dir
+        assert hook_authority == e2e.load_workflow_state(
+            e2e.PROJECT_ID, pipeline_dir=tmp_path
+        )["hook_selection"]
         assert_phase_running("no_copy_preflight")
         return _fake_aggregate(payload, base_dir=base_dir)
 

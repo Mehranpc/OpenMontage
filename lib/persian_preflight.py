@@ -487,7 +487,10 @@ def aggregate_preflight_edit_decisions(
         hook_quality = dict(cached_hook)
     else:
         try:
-            hook_quality = audit_persian_hook_quality(edit, hook_authority=hook_authority)
+            hook_quality = (
+                audit_persian_hook_quality(edit, hook_authority=hook_authority)
+                if hook_authority is not None else audit_persian_hook_quality(edit)
+            )
         except (ValueError, TypeError, KeyError):
             hook_quality = None
     if hook_quality is not None:
