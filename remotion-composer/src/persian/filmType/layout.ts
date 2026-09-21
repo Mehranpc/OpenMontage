@@ -52,6 +52,7 @@ export type FilmRow = {
 export type FilmMomentLayout = {
   id: string; rows: FilmRow[]; widthPx: number; heightPx: number; rect: Rect;
   placement: string; subjectSafety: "checked-against-supplied-regions" | "not-checked";
+  softSubjectOverlaps?: readonly {shotId?: string; regionIndex?: number}[];
   contrastMode: "dark" | "light"; strength: Strength; fieldFeatherPx?: number; fieldPeakAlpha?: number;
   recipeId?: "editorial-hero-balanced" | "editorial-hero-compact" | "editorial-callout-balanced";
   occupancyRatio?: number; lineBalanceRatio?: number;
@@ -63,6 +64,7 @@ export type FilmTypeLayout = {
 };
 type TimedRect = Rect & {
   startSeconds: number; endSeconds: number;
+  priority?: "hard" | "soft";
   ownerType?: "subject" | "moment" | "caption";
   ownerId?: string; shotId?: string; regionIndex?: number;
 };
@@ -415,9 +417,11 @@ export function timedAvoidRegions(props: PersianVideoProps): TimedRect[] {
     if (shot.avoidRegions !== undefined && !Array.isArray(shot.avoidRegions)) throw new Error(`Shot ${shot.id}: avoidRegions must be an array.`);
     for (const [regionIndex,region] of (shot.avoidRegions ?? []).entries()) {
       if (![region.x,region.y,region.w,region.h].every(Number.isFinite) || region.x < 0 || region.y < 0 || region.w <= 0 || region.h <= 0 || region.x + region.w > 1 || region.y + region.h > 1) throw new Error(`Shot ${shot.id}: invalid normalized avoid region.`);
+      const priority = region.priority ?? "hard";
+      if (priority !== "hard" && priority !== "soft") throw new Error(`Shot ${shot.id}: avoid region priority must be hard or soft.`);
       const start = region.startSeconds ?? shot.startSeconds, end = region.endSeconds ?? shot.endSeconds;
       if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || start < shot.startSeconds || end > shot.endSeconds) throw new Error(`Shot ${shot.id}: avoid region times must be absolute timeline seconds within this shot.`);
-      result.push({...region,startSeconds:start,endSeconds:end,ownerType:"subject",ownerId:shot.id,shotId:shot.id,regionIndex});
+      result.push({...region,priority,startSeconds:start,endSeconds:end,ownerType:"subject",ownerId:shot.id,shotId:shot.id,regionIndex});
     }
   }
   return result;
@@ -487,6 +491,9 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
   const validZones = new Set(["upper-left","upper-center","upper-right","mid-left","mid-right","lower-left","lower-right","center"]);
   if (zones.some(z => !validZones.has(z))) throw new Error(`Moment ${moment.id}: unsupported Film Type placement.`);
   const relevant = avoid.filter(r => r.startSeconds < moment.endSeconds && r.endSeconds > moment.startSeconds);
+  const priorityAware = p.profileVersion === "2.16.0";
+  const hardRelevant = priorityAware ? relevant.filter(r => r.priority !== "soft") : relevant;
+  const softRelevant = priorityAware ? relevant.filter(r => r.priority === "soft") : [];
   const ranked = (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")))));
   const diffuse = (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0"))));
   const blocked: string[] = [];
@@ -512,8 +519,9 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
       const moving = {...rect,h:rect.h + l.motionClearancePx/dims.height};
       const collision = expand(moving,l.collisionMarginPx/dims.width,l.collisionMarginPx/dims.height);
       if (!inSafe(moving,cfg.safeArea,padX,padY)) { if(blocked.length<3) blocked.push(`${zone}: outside safe area`); continue; }
-      const obstacle = relevant.find(r => intersects(collision,r));
-      if(obstacle && enforceSubject) { const detail=`${zone}: ink blocked by region ${avoid.indexOf(obstacle)} at ${obstacle.startSeconds}-${obstacle.endSeconds}s`; if(blocked.length<3&&!blocked.includes(detail)) blocked.push(detail); continue; }
+      const obstacle = hardRelevant.find(r => intersects(collision,r));
+      if(obstacle && enforceSubject) { const detail=`${zone}: ink blocked by hard region ${avoid.indexOf(obstacle)} at ${obstacle.startSeconds}-${obstacle.endSeconds}s`; if(blocked.length<3&&!blocked.includes(detail)) blocked.push(detail); continue; }
+      const softOverlaps = softRelevant.filter(r => intersects(collision,r));
       const strength = moment.presentation?.contrastStrength ?? p.contrast.defaultStrength;
       if (!Object.prototype.hasOwnProperty.call(p.contrast.strengths,strength)) throw new Error(`Moment ${moment.id}: unsupported contrastStrength.`);
       const contrastMode = moment.presentation?.contrastMode ?? "dark";
@@ -528,12 +536,13 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
           const ex = ((fitted.widthPx/2+field.paddingPx)*corner-fitted.widthPx/2+feather)/dims.width;
           const ey = ((fitted.heightPx/2+field.paddingPx)*corner-fitted.heightPx/2+feather)/dims.height;
           const envelope = expand(moving,ex,ey);
-          return !relevant.some(region => intersects(envelope,region));
+          return !hardRelevant.some(region => intersects(envelope,region));
         });
         if(clearFeather === undefined) continue;
         fieldFeatherPx = clearFeather;
       }
       const layout: FilmMomentLayout = {...fitted,rect,placement:zone,subjectSafety:(overlapping.length > 0 && reviewed && enforceSubject) ? "checked-against-supplied-regions" : "not-checked",contrastMode,strength};
+      if (softOverlaps.length) layout.softSubjectOverlaps = softOverlaps.map(region => ({shotId:region.shotId,regionIndex:region.regionIndex}));
       if (!ranked) return layout;
       if(diffuse) {
         const cfg=p.contrast.diffuseField!, radii=diffuseRadii(fitted.widthPx,fitted.heightPx,cfg);
@@ -586,8 +595,10 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
           ? (lines === 2 || lines === 3 ? 0 : lines === 1 ? 4 : Math.max(0, lines - 3) * 6)
           : Math.max(0,lines-2)*8 + Math.max(0,lines-1)*.8;
       const shrinkPenalty = shrink * (semanticListDisplay ? 8 : 3);
+      const softOverlapPenalty = softOverlaps.length * 100;
       const score = linePenalty
-        + imbalance*2 + shrinkPenalty + occupancyPenalty + h*2 + w*.25 + zones.indexOf(zone)*.04 + (diffuse && moment.kind === "hook" && zone.startsWith("lower") ? .2 : 0);
+        + imbalance*2 + shrinkPenalty + occupancyPenalty + h*2 + w*.25 + zones.indexOf(zone)*.04
+        + softOverlapPenalty + (diffuse && moment.kind === "hook" && zone.startsWith("lower") ? .2 : 0);
       candidates.push({layout,score});
     }
   }
@@ -955,6 +966,10 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
       contrastReviewMoments.push(moment.id);
     }
     if((profile.profileVersion === "2.7.0" || profile.profileVersion === "2.8.0" || profile.profileVersion === "2.9.0" || profile.profileVersion === "2.10.0" || (profile.profileVersion === "2.11.0" || profile.profileVersion === "2.12.0" || (profile.profileVersion === "2.13.0" || profile.profileVersion === "2.14.0" || (profile.profileVersion === "2.15.0" || profile.profileVersion === "2.16.0")))) && moment.kind === "hook" && layouts[moment.id].placement.startsWith("lower")) warnings.push(`${moment.id}: hook-in-lower-third; review shot framing. Explicit placement remains binding.`);
+    if(layouts[moment.id].softSubjectOverlaps?.length) {
+      const refs=layouts[moment.id].softSubjectOverlaps!.map(item=>`${item.shotId ?? "shot"}#${item.regionIndex ?? "?"}`).join(", ");
+      warnings.push(`${moment.id}: soft-subject-overlap: measured typography overlaps reviewed soft body occupancy (${refs}); all hard subject regions remain clear.`);
+    }
     if(layouts[moment.id].subjectSafety==="not-checked") unreviewedMoments.push(moment.id);
   }
   // Aggregated once per film, not once per moment: same content, no repetition.

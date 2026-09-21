@@ -86,6 +86,18 @@ def test_region_time_must_stay_inside_owning_shot() -> None:
     assert "region.after_shot" in codes
 
 
+def test_region_priority_schema_accepts_hard_soft_and_rejects_unknown() -> None:
+    for priority in ("hard", "soft"):
+        edit = _edit()
+        edit["persian"]["shots"][0]["avoidRegions"][0]["priority"] = priority
+        validate_persian_edit_contract(edit)
+
+    edit = _edit()
+    edit["persian"]["shots"][0]["avoidRegions"][0]["priority"] = "medium"
+    with pytest.raises(PersianEditContractError):
+        validate_persian_edit_contract(edit)
+
+
 def test_duplicate_music_ownership_is_refused_before_compose() -> None:
     edit = _edit()
     edit["persian"]["audio"]["music"] = "bed.mp3"

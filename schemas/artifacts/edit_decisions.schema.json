@@ -785,6 +785,14 @@
                     "endSeconds": {
                       "type": "number",
                       "exclusiveMinimum": 0
+                    },
+                    "priority": {
+                      "type": "string",
+                      "enum": [
+                        "hard",
+                        "soft"
+                      ],
+                      "description": "Subject-safety priority. Omitted legacy regions remain hard. 'hard' protects faces/essential action; 'soft' is avoid-preferred body occupancy that Film Type 2.16 may overlap only when no hard-safe collision occurs."
                     }
                   },
                   "additionalProperties": false
