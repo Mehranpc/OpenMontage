@@ -489,7 +489,7 @@ def backfill_phase_residual_spans(
 def record_human_idle_and_reopen_run(
     state: dict[str, Any], *, resumed_at: datetime | str, reason: str
 ) -> dict[str, Any] | None:
-    """Record an explicitly observable human wait, then reopen the structural run."""
+    """Record observable human wait gaps, then reopen the structural run."""
     trace = _causal_trace(state)
     if trace is None:
         return None
@@ -506,22 +506,35 @@ def record_human_idle_and_reopen_run(
         raise ValueError("human idle resume cannot precede the terminal workflow time")
     idle_span = None
     if resume > idle_start:
+        covered: list[tuple[datetime, datetime]] = []
+        for item in spans:
+            if not item.get("count_toward_wall"):
+                continue
+            started = _parse(item.get("started_at"))
+            if started is None:
+                continue
+            finished = _parse(item.get("finished_at")) or resume
+            if finished > started:
+                covered.append((started, finished))
+        gaps = _complement_intervals(idle_start, resume, covered)
         ordinal = 1 + sum(
             1 for item in spans if item.get("kind") == "human_idle"
         )
-        idle_span = record_causal_interval(
-            state,
-            span_id=f"human-idle:{ordinal}",
-            name=f"human idle {ordinal}",
-            category="human_idle",
-            started_at=idle_start,
-            finished_at=resume,
-            parent_span_id=run_id,
-            outcome="succeeded",
-            kind="human_idle",
-            count_toward_wall=True,
-            fields={"reason": str(reason).strip() or "explicit human wait"},
-        )
+        for offset, (gap_start, gap_end) in enumerate(gaps):
+            current_ordinal = ordinal + offset
+            idle_span = record_causal_interval(
+                state,
+                span_id=f"human-idle:{current_ordinal}",
+                name=f"human idle {current_ordinal}",
+                category="human_idle",
+                started_at=gap_start,
+                finished_at=gap_end,
+                parent_span_id=run_id,
+                outcome="succeeded",
+                kind="human_idle",
+                count_toward_wall=True,
+                fields={"reason": str(reason).strip() or "explicit human wait"},
+            )
     record_causal_interval(
         state,
         span_id=run_id,
@@ -539,6 +552,7 @@ def record_human_idle_and_reopen_run(
         },
     )
     return idle_span
+
 
 def reconcile_phase_telemetry(
     state: dict[str, Any], *, now: datetime | None = None
