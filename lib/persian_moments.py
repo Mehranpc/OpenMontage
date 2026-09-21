@@ -1001,6 +1001,11 @@ def _audit_one(
     if sequence_mode is not None and sequence_mode != "replace":
         problems.append(f"{moment.id}: unsupported sequenceMode {sequence_mode!r}.")
     if sequence_mode == "replace":
+        if not adaptive_pixel_typography:
+            problems.append(
+                f"{moment.id}: replace sequence requires Film Type adaptive pixel typography; "
+                "non-Film-Type renderers do not implement replacement paint semantics."
+            )
         content = [segment for segment in moment.segments if segment.role != "source"]
         reveals = [segment.reveal_after_seconds for segment in content]
         if len(content) < 2:

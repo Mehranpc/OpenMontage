@@ -236,6 +236,24 @@ def test_persian_platform_target_accepts_instagram_reels() -> None:
     assert not _errors("edit_decisions", _edit_decisions(persian))
 
 
+def test_persian_moment_declares_replace_sequence_mode() -> None:
+    persian = _minimal_persian_block()
+    moment = persian["moments"][0]
+    moment["presentation"] = {"sequenceMode": "replace"}
+    moment["segments"] = [
+        {"role": "hero", "text": "بلافاصله", "revealAfterSeconds": 0.0},
+        {"role": "hero", "text": "صبح روز بعد", "revealAfterSeconds": 1.25},
+    ]
+    assert not _errors("edit_decisions", _edit_decisions(persian))
+
+
+def test_persian_moment_rejects_unknown_sequence_mode() -> None:
+    persian = _minimal_persian_block()
+    persian["moments"][0]["presentation"] = {"sequenceMode": "accumulate"}
+    problems = _errors("edit_decisions", _edit_decisions(persian))
+    assert any("accumulate" in problem for problem in problems), problems
+
+
 def test_persian_caption_mode_is_schema_declared() -> None:
     for mode in ("sidecar_only", "burned_captions", "hybrid"):
         persian = _minimal_persian_block()

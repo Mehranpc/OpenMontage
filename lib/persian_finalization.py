@@ -24,7 +24,6 @@ MASTER_TRUE_PEAK_DBFS = -1.5
 MASTER_ENCODER_HEADROOM_DB = 0.5
 MASTER_PROCESSING_TRUE_PEAK_DBFS = MASTER_TRUE_PEAK_DBFS - MASTER_ENCODER_HEADROOM_DB
 MASTER_LRA = 7.0
-MASTER_TOLERANCE_DB = 0.05
 
 
 class PersianFinalizationError(RuntimeError):
@@ -64,7 +63,7 @@ def _measurement_passes(measurement: Mapping[str, Any]) -> bool:
     peak = _finite_number(measurement.get("truePeakDbfs"), "true peak")
     return (
         MASTER_MIN_LUFS <= loudness <= MASTER_MAX_LUFS
-        and peak <= MASTER_TRUE_PEAK_DBFS + MASTER_TOLERANCE_DB
+        and peak <= MASTER_TRUE_PEAK_DBFS
     )
 
 

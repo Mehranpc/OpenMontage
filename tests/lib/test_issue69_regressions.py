@@ -4,7 +4,7 @@ import subprocess
 
 import pytest
 
-from lib.persian_finalization import _run_ffmpeg_master, mastering_policy
+from lib.persian_finalization import _measurement_passes, _run_ffmpeg_master, mastering_policy
 from lib.persian_moments import audit_moments, build_moments
 from lib.persian_srt import build_cues
 
@@ -58,6 +58,26 @@ def test_replace_sequence_rejects_non_increasing_reveal_order() -> None:
     assert any("replace sequence" in problem and "increasing" in problem for problem in audit.problems)
 
 
+def test_replace_sequence_is_rejected_outside_film_type_adaptive_typography() -> None:
+    moments = build_moments([{
+        "id": "timing-options",
+        "kind": "statement",
+        "startSeconds": 0.0,
+        "endSeconds": 4.63,
+        "presentation": {"sequenceMode": "replace"},
+        "segments": [
+            {"role": "hero", "text": "بلافاصله", "revealAfterSeconds": 0.0},
+            {"role": "hero", "text": "صبح روز بعد", "revealAfterSeconds": 1.25},
+            {"role": "hero", "text": "دو روز بعد", "revealAfterSeconds": 2.75},
+        ],
+    }])
+    audit = audit_moments(moments, duration_seconds=10.0)
+    assert any(
+        "replace sequence requires Film Type adaptive pixel typography" in problem
+        for problem in audit.problems
+    ), audit.problems
+
+
 def test_caption_rebalances_sentence_tail_to_keep_predicate_with_its_head() -> None:
     words = [
         {"word": "«دیر", "start": 51.14, "end": 51.54},
@@ -100,3 +120,8 @@ def test_mastering_uses_encoder_headroom_below_delivery_true_peak(monkeypatch, t
     assert policy["truePeakCeilingDbfs"] == -1.5
     assert policy["processingTruePeakDbfs"] <= -1.9
     assert f"TP={policy['processingTruePeakDbfs']}" in loudnorm
+
+
+def test_mastering_true_peak_ceiling_is_hard() -> None:
+    assert _measurement_passes({"outputIntegratedLufs": -16.0, "truePeakDbfs": -1.5})
+    assert not _measurement_passes({"outputIntegratedLufs": -16.0, "truePeakDbfs": -1.49})

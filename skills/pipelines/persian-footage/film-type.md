@@ -127,15 +127,27 @@ and visual-typography review against that opening, and only then permits the
 full candidate render. Review remains SHA-bound and context-isolated; authoring
 metadata is never evidence for what a cold viewer sees.
 
+
+### Mutually-exclusive alternatives
+
+When narration names alternatives that should be read one at a time rather than as one
+stack, Film Type may use `presentation.sequenceMode: "replace"`. Every visible item is
+a `hero`, the first reveal is `0`, later `revealAfterSeconds` values are strictly
+increasing, and each new step replaces the prior one. Do not use this mode outside Film
+Type; the production audit rejects it rather than letting another renderer accumulate
+the rows.
+
 ## Subject review and placement
 
-The edit still records reviewed `avoidRegions` so the production has explicit visual
-evidence, but 2.16 does **not** use subject/face/body geometry as a hard typography
-placement veto. The typography is placed right/center for the strongest composition;
-reasonable overlap with a person is legal when the result still reads well. Film Type
-has no face/person detector. Platform safe area remains hard.
+The edit records reviewed `avoidRegions` as authoritative screen-space evidence for
+typography placement. On 2.16, hooks and body callouts must move away from, or refuse,
+a placement that intersects a reviewed face/body/action region for the moment dwell.
+The fitter still chooses only curated right/center compositions; it does not run a
+face/person detector, so the reviewed regions supplied by production are the contract.
+Platform safe area remains hard.
 
-Subject geometry must not leak into watermark planning.
+Subject geometry must not leak into watermark planning. Watermark planning remains the
+separate text/caption-clearance system inherited from 2.15.
 
 ## Watermark — fixed anchors, text geometry only
 

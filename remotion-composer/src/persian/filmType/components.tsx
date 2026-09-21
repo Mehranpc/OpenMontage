@@ -96,13 +96,14 @@ const CompactFilmField: React.FC<{rect:Rect;format:PersianFormat;design:PersianD
 /** 2.9 bounds the field by the frame, so the shadow never grows wider or taller
  * than the video. 2.10 goes further: one small soft field per measured row, so a
  * short line no longer drags a block-sized wash across the footage. */
-const DiffuseField: React.FC<{layout:FilmMomentLayout;format:PersianFormat;design:PersianDesignSnapshot;opacity:number;travel:number;anchor:number;align:"left"|"right"|"center";peakMultiplier?:number}>=({layout,format,design,opacity,travel,anchor,align,peakMultiplier=1})=>{
+const DiffuseField: React.FC<{layout:FilmMomentLayout;rows?:readonly FilmRow[];format:PersianFormat;design:PersianDesignSnapshot;opacity:number;travel:number;anchor:number;align:"left"|"right"|"center";peakMultiplier?:number}>=({layout,rows,format,design,opacity,travel,anchor,align,peakMultiplier=1})=>{
  const id=useId(),p=filmProfile(design),d=FORMAT_DIMENSIONS[format],cfg=p.contrast.diffuseField!;
  const dark=layout.contrastMode==="dark",peak=Math.min(.72,(layout.fieldPeakAlpha??p.contrast.strengths[layout.strength])*peakMultiplier);
  const bounded=p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0"))) ? {width:d.width,height:d.height} : undefined;
  const left=layout.rect.x*d.width, top=layout.rect.y*d.height;
+ const fieldRows=rows ?? layout.rows;
  const fields=cfg.perRow
-  ? layout.rows.map(row=>{
+  ? fieldRows.map(row=>{
      const pad=cfg.rowPaddingPx??0, inkHeight=row.abovePx+row.belowPx;
      const {rx,ry}=diffuseRadii(row.widthPx+2*pad,inkHeight+2*pad,cfg,bounded);
      const rowRight=align==="center"?anchor+row.widthPx/2:align==="left"?anchor+row.widthPx:anchor;
@@ -183,6 +184,9 @@ export const PersianFilmTypeMoment: React.FC<{
   const activeSequenceReveal = eligibleSequenceReveals.length
     ? eligibleSequenceReveals[eligibleSequenceReveals.length - 1]
     : undefined;
+  const visibleRows = replaceSequence
+    ? layout.rows.filter(row => row.revealAfterSeconds === activeSequenceReveal)
+    : layout.rows;
   const modern=p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")))))),lifeAt=modern?gentleLife:filmLife;
   const diffuse=p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")));
   const fieldEnter=modern?(moment.presentation?.motion === "cut-in"?p.motion.cutInSeconds:p.motion.enterSeconds):p.motion.scrimEnterSeconds;
@@ -197,7 +201,7 @@ export const PersianFilmTypeMoment: React.FC<{
   return <AbsoluteFill data-film-type-moment={moment.id} data-film-type-placement={layout.placement} style={{pointerEvents:"none"}}>
     {busyBackground ? <FilmContrastField rect={layout.rect} format={format} color={p.contrast.darkField}
       alpha={0.42} plateau={0.56} paddingPx={92} opacity={fieldLife.opacity} kind="text"/> : null}
-    {diffuse ? <DiffuseField layout={layout} format={format} design={design} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)} anchor={anchor} align={align} peakMultiplier={fieldPeakMultiplier}/> : modern ? <CompactFilmField featherPx={layout.fieldFeatherPx} rect={layout.rect} format={format} design={design} color={dark?p.contrast.darkField:p.contrast.lightField}
+    {diffuse ? <DiffuseField layout={layout} rows={visibleRows} format={format} design={design} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)} anchor={anchor} align={align} peakMultiplier={fieldPeakMultiplier}/> : modern ? <CompactFilmField featherPx={layout.fieldFeatherPx} rect={layout.rect} format={format} design={design} color={dark?p.contrast.darkField:p.contrast.lightField}
       alpha={p.contrast.strengths[layout.strength]} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)}/> : <FilmContrastField rect={layout.rect} format={format} color={dark?p.contrast.darkField:p.contrast.lightField}
       alpha={p.contrast.strengths[layout.strength]} plateau={p.contrast.plateauStop}
       paddingPx={p.contrast.plateauPaddingPx + p.motion.travelPx} opacity={fieldLife.opacity} kind="text"/>}
@@ -210,8 +214,10 @@ export const PersianFilmTypeMoment: React.FC<{
         // A quantity and its unit share the same authored segment and entrance.
         // Later authored reveal times are never pulled forward or silently lost.
         const delay = filmRowDelay(row,p);
-        const life = lifeAt(seconds,span,delay,cut?p.motion.cutInSeconds:p.motion.enterSeconds,p.motion.exitSeconds);
-        const y = cut && !modern ? 0 : p.motion.travelPx * (1-life.arrive);
+        const life = replaceSequence
+          ? {arrive:1,leave:clamp01((span-seconds)/Math.max(.001,p.motion.exitSeconds)),opacity:clamp01((span-seconds)/Math.max(.001,p.motion.exitSeconds))}
+          : lifeAt(seconds,span,delay,cut?p.motion.cutInSeconds:p.motion.enterSeconds,p.motion.exitSeconds);
+        const y = replaceSequence || (cut && !modern) ? 0 : p.motion.travelPx * (1-life.arrive);
         const accented216 = p.profileVersion === "2.16.0" && row.accentWords.length > 0;
         const punch = accented216 ? .985 + .015 * life.arrive : 1;
         const transform = `translate(0 ${y}) translate(${anchor} 0) scale(${punch}) translate(${-anchor} 0)`;

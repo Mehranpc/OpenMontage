@@ -952,6 +952,13 @@
                       "editorial-callout-balanced"
                     ],
                     "description": "Curated Film Type editorial recipe. Arbitrary CSS/style objects are not accepted."
+                  },
+                  "sequenceMode": {
+                    "type": "string",
+                    "enum": [
+                      "replace"
+                    ],
+                    "description": "Film Type only: mutually-exclusive alternatives. Each strictly later reveal replaces the prior hero instead of accumulating rows."
                   }
                 },
                 "additionalProperties": false
