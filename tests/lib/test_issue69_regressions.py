@@ -42,6 +42,40 @@ def test_mutually_exclusive_alternatives_support_replace_sequence() -> None:
     assert audit.problems == []
 
 
+def test_accumulate_sequence_is_explicit_additive_contract() -> None:
+    moments = build_moments([{
+        "id": "timing-build",
+        "kind": "statement",
+        "startSeconds": 0.0,
+        "endSeconds": 6.0,
+        "presentation": {"sequenceMode": "accumulate"},
+        "segments": [
+            {"role": "hero", "text": "اول", "revealAfterSeconds": 0.0},
+            {"role": "hero", "text": "دوم", "revealAfterSeconds": 1.2},
+            {"role": "hero", "text": "سوم", "revealAfterSeconds": 2.4},
+        ],
+    }])
+    audit = audit_moments(moments, duration_seconds=12.0, adaptive_pixel_typography=True)
+    assert audit.problems == []
+    assert moments[0].to_props()["presentation"]["sequenceMode"] == "accumulate"
+
+
+def test_accumulate_preserves_grouped_additive_reveal_steps() -> None:
+    raw = {
+        "id": "grouped-build", "kind": "statement", "startSeconds": 0.0, "endSeconds": 6.0,
+        "segments": [
+            {"role": "lead", "text": "زمان", "revealAfterSeconds": 0.0},
+            {"role": "hero", "text": "اول", "revealAfterSeconds": 0.0},
+            {"role": "hero", "text": "دوم", "revealAfterSeconds": 2.0},
+        ],
+    }
+    implicit = audit_moments(build_moments([raw]), duration_seconds=12.0, adaptive_pixel_typography=True)
+    explicit = audit_moments(build_moments([{**raw, "presentation": {"sequenceMode": "accumulate"}}]),
+                             duration_seconds=12.0, adaptive_pixel_typography=True)
+    assert implicit.problems == []
+    assert explicit.problems == implicit.problems
+
+
 def test_replace_sequence_rejects_non_increasing_reveal_order() -> None:
     moments = build_moments([{
         "id": "bad-options",

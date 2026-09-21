@@ -54,6 +54,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Optional
 
+from lib.persian_plates import derive_beat_windows
 from lib.persian_brand import resolve_watermark
 from lib.persian_design import derive_lockup_size, prepare_v2, resolve_watermark_plan
 from lib.persian_film_type import prepare_film_type_props
@@ -122,6 +123,11 @@ _LEGACY_OPTOUT_PROFILE = "legacy"
 
 def _composer_dir() -> Path:
     return Path(__file__).resolve().parent.parent.parent / "remotion-composer"
+
+
+# Brief narration pauses are not editorial music breaks. Holding the duck through
+# sub-second gaps prevents severe gain pumping between adjacent spoken phrases.
+SHORT_SPEECH_GAP_HOLD_SECONDS = 0.9
 
 
 class PersianCompose(BaseTool):
@@ -680,6 +686,26 @@ class PersianCompose(BaseTool):
                     + "\n  - ".join(opening_problems)
                 )
 
+        if film_type and design_snapshot.get("profileVersion") == "2.16.0":
+            hook_spans = [
+                (float(moment.get("startSeconds") or 0.0), float(moment.get("endSeconds") or 0.0), str(moment.get("id") or "hook"))
+                for moment in (persian.get("moments") or [])
+                if str(moment.get("kind") or "") == "hook"
+            ]
+            for shot in shots:
+                shot_start = float(shot.get("startSeconds") or 0.0)
+                shot_end = float(shot.get("endSeconds") or 0.0)
+                overlaps_hook = any(
+                    max(shot_start, hook_start) < min(shot_end, hook_end) - 1e-6
+                    for hook_start, hook_end, _hook_id in hook_spans
+                )
+                if overlaps_hook and not shot.get("visualComplexity"):
+                    raise ValueError(
+                        f"Film Type 2.16 opening hook shot {shot.get('id')!r} requires "
+                        "visualComplexity='simple' or 'busy' from visual review so hook "
+                        "contrast treatment cannot silently default to the weak path."
+                    )
+
         audio_props: dict[str, Any] = {}
         audio = persian.get("audio") or {}
         for key in ("narration", "music"):
@@ -705,7 +731,7 @@ class PersianCompose(BaseTool):
             start, end = float(word["start"]), float(word["end"])
             if end <= start:
                 continue
-            if intervals and start - intervals[-1][1] <= 0.38:
+            if intervals and start - intervals[-1][1] <= SHORT_SPEECH_GAP_HOLD_SECONDS:
                 intervals[-1][1] = max(intervals[-1][1], end)
             else:
                 intervals.append([start, end])
@@ -1033,76 +1059,7 @@ class PersianCompose(BaseTool):
 
         return [moment.to_props() for moment in built]
 
-    @staticmethod
-    def _derive_beat_windows(
-        authored: list[dict[str, Any]], moments: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
-        """Derive each beat's plate windows from the typography inside it.
-
-        A beat carries only id/startSeconds/endSeconds — no moment reference —
-        so association is by time overlap: a beat owns exactly the moments its
-        authored window overlaps. Owned moments that touch or overlap merge
-        into one contiguous run; a gap between owned moments splits the beat
-        into one window per run, so no plate ever covers a stretch with no
-        typography on it. Moments keep their times (the sync gate owns them);
-        the plate moves. Entrance/exit offsets are not subtracted: text is
-        arriving or leaving during them, and a plate cut to an animation
-        curve would flash footage mid-transition.
-
-        A beat overlapping no moment is refused: an empty plate is near-black
-        by design. Time freed when a plate shrinks holds neither footage nor
-        beat; the pre-render coverage gate in `execute` refuses the run until
-        the edit stage restores footage there.
-        """
-        derived: list[dict[str, Any]] = []
-        for index, beat in enumerate(authored):
-            beat_id = str(beat.get("id") or f"beat-{index + 1}")
-            start = float(beat["startSeconds"])
-            end = float(beat["endSeconds"])
-            owned = sorted(
-                (
-                    moment
-                    for moment in moments
-                    if float(moment["startSeconds"]) < end
-                    and float(moment["endSeconds"]) > start
-                ),
-                key=lambda moment: float(moment["startSeconds"]),
-            )
-            if not owned:
-                raise ValueError(
-                    f"typographic beat {beat_id} ({start:.1f}-{end:.1f}s) "
-                    "overlaps no typographic moment. A plate with no typography "
-                    "is an empty near-black screen, so the render is refused "
-                    "rather than painting it. Either attach a moment to this "
-                    "stretch or restore a footage shot under it."
-                )
-            runs: list[list[dict[str, Any]]] = [[owned[0]]]
-            for moment in owned[1:]:
-                if float(moment["startSeconds"]) <= float(
-                    runs[-1][-1]["endSeconds"]
-                ):
-                    runs[-1].append(moment)
-                else:
-                    runs.append([moment])
-            for run_index, run in enumerate(runs):
-                # Split windows keep the authored id only when nothing split:
-                # the composition keys each beat Sequence by id, and two
-                # entries sharing one would collide there.
-                run_id = (
-                    beat_id if len(runs) == 1 else f"{beat_id}-{run_index + 1}"
-                )
-                derived.append(
-                    {
-                        "id": run_id,
-                        "startSeconds": min(
-                            float(moment["startSeconds"]) for moment in run
-                        ),
-                        "endSeconds": max(
-                            float(moment["endSeconds"]) for moment in run
-                        ),
-                    }
-                )
-        return derived
+    _derive_beat_windows = staticmethod(derive_beat_windows)
 
     @staticmethod
     def _write_subtitles(

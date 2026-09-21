@@ -238,4 +238,14 @@ before the version can become unpinned default.
 
 During the existing visual review of every shot that overlaps an editorial moment, record `visualComplexity` as `simple` or `busy`. Use `busy` for dense signage/screens, crowds, high-frequency texture, or similarly noisy fields behind the text; use `simple` for broad low-detail fields. The renderer keeps the ordinary local shadow/field on `simple` shots and strengthens only the local glyph shadow plus diffuse dark field on `busy` shots. This is a readability treatment, never a full-frame grade.
 
+Compose requires this classification for every shot overlapping the opening hook on 2.16; missing review cannot silently select the weaker contrast treatment.
+
 For the opening Hook, semantic yellow is reserved for the phrase that identifies the **subject/topic the viewer must recognise in mute playback** (for example `بازی‌های ویدیویی`). Do not default the yellow phrase to the generic misconception/payoff (`وقت تلف کردنه`) merely because it is at the end of the sentence. Opening hooks do not paint decorative burst rays by default; keep the typography clean unless a later explicitly approved recipe adds a different accent.
+
+### Sequence semantics
+
+For staggered Film Type rows, use `sequenceMode: "accumulate"` when each later phrase must join the phrases already visible. Use `sequenceMode: "replace"` only for mutually-exclusive alternatives where the prior phrase must disappear. Omitting `sequenceMode` preserves the historical additive behavior, but new authored sequences should state the intent explicitly when ambiguity is possible.
+
+### Mid-roll plate retention
+
+Retention audits use the same effective typography-bound plate windows as the renderer. A short authored beat can expand to its overlapping moment's full duration. More than three seconds of mid-roll static plate blocks preflight; restore moving footage or shorten the plate's associated typography. A passing timeline audit still needs rendered motion and readability review.

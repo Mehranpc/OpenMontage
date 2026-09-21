@@ -61,14 +61,45 @@ def test_typographic_plate_can_cover_a_footage_gap():
     audit = audit_persian_retention(_base(
         shots=[_shot("s1", 0, 2), _shot("s2", 4, 12)],
         typographicBeats=[{"id": "t1", "startSeconds": 2, "endSeconds": 4}],
+        moments=[{"id": "type", "startSeconds": 2, "endSeconds": 4}],
     ))
     assert audit["weakEmptyIntervals"] == []
+
+
+def test_long_midroll_text_only_plate_is_blocking():
+    audit = audit_persian_retention(_base(
+        typographicBeats=[{"id": "dead-zone", "startSeconds": 3.0, "endSeconds": 7.9}],
+        moments=[{"id": "type", "startSeconds": 3.0, "endSeconds": 7.9}],
+    ))
+    assert audit["midrollTextOnlySeconds"] == 4.9
+    assert any("mid-roll text-only" in problem for problem in audit["problems"]), audit
+
+
+def test_short_authored_plate_is_audited_at_its_expanded_render_window():
+    audit = audit_persian_retention(_base(
+        durationSeconds=40,
+        shots=[_shot("s", 0, 40)],
+        moments=[{"id": "result", "startSeconds": 25.22, "endSeconds": 30.12}],
+        typographicBeats=[{"id": "plate", "startSeconds": 27.5, "endSeconds": 30.12}],
+    ))
+    assert audit["midrollTextOnlySeconds"] == 4.9
+    assert any("mid-roll text-only" in problem for problem in audit["problems"])
+
+
+def test_midroll_plate_cannot_escape_by_starting_in_opening_window():
+    audit = audit_persian_retention(_base(
+        moments=[{"id": "type", "startSeconds": 2.9, "endSeconds": 7.0}],
+        typographicBeats=[{"id": "plate", "startSeconds": 2.9, "endSeconds": 7.0}],
+    ))
+    assert audit["midrollTextOnlySeconds"] == 4.0
+    assert any("mid-roll text-only" in problem for problem in audit["problems"])
 
 
 def test_long_text_only_ending_is_advisory():
     audit = audit_persian_retention(_base(
         shots=[_shot("s1", 0, 9)],
         typographicBeats=[{"id": "end", "startSeconds": 9, "endSeconds": 12}],
+        moments=[{"id": "type", "startSeconds": 9, "endSeconds": 12}],
     ))
     assert audit["endingTextOnlySeconds"] == 3.0
     assert any("text-only" in a for a in audit["advisories"])
