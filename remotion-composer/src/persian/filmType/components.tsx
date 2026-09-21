@@ -173,6 +173,16 @@ export const PersianFilmTypeMoment: React.FC<{
   const busyBackground = p.profileVersion === "2.16.0" && activeShot?.visualComplexity === "busy";
   const fieldPeakMultiplier = busyBackground ? 1.55 : 1;
   const firstReveal = Math.min(...layout.rows.map(row => row.revealAfterSeconds));
+  const replaceSequence = moment.presentation?.sequenceMode === "replace";
+  const sequenceReveals = replaceSequence
+    ? [...new Set(layout.rows.map(row => row.revealAfterSeconds))].sort((a,b) => a-b)
+    : [];
+  const eligibleSequenceReveals = replaceSequence
+    ? sequenceReveals.filter(at => at <= seconds + 1e-9)
+    : [];
+  const activeSequenceReveal = eligibleSequenceReveals.length
+    ? eligibleSequenceReveals[eligibleSequenceReveals.length - 1]
+    : undefined;
   const modern=p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")))))),lifeAt=modern?gentleLife:filmLife;
   const diffuse=p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")));
   const fieldEnter=modern?(moment.presentation?.motion === "cut-in"?p.motion.cutInSeconds:p.motion.enterSeconds):p.motion.scrimEnterSeconds;
@@ -196,6 +206,7 @@ export const PersianFilmTypeMoment: React.FC<{
       data-film-background-complexity={busyBackground ? "busy" : "simple"}
       style={{position:"absolute",left:layout.rect.x*dims.width,top:layout.rect.y*dims.height,overflow:"visible",zIndex:2,filter:glyphShadowFilter(p,busyBackground)}}>
       {layout.rows.map((row,index) => {
+        if (replaceSequence && row.revealAfterSeconds !== activeSequenceReveal) return null;
         // A quantity and its unit share the same authored segment and entrance.
         // Later authored reveal times are never pulled forward or silently lost.
         const delay = filmRowDelay(row,p);

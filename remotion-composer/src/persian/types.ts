@@ -157,6 +157,8 @@ export type PersianPresentation = {
   readonly emphasis?: PersianV2Emphasis;
   readonly contrastMode?: PersianV2ContrastMode;
   readonly recipeId?: PersianEditorialRecipe;
+  /** Mutually-exclusive alternatives: each reveal step replaces the previous one. */
+  readonly sequenceMode?: "replace";
   /** Film Type only; stable for the entire moment, not frame-adaptive. */
   readonly contrastStrength?: "soft" | "standard" | "strong";
 };
@@ -466,6 +468,27 @@ export function assertMomentIsWellFormed(moment: PersianMoment): void {
           `that step emphasises nothing; two means the emphasis competes with itself ` +
           `and reads as neither.`,
       );
+    }
+  }
+
+  const sequenceMode = moment.presentation?.sequenceMode;
+  if (sequenceMode !== undefined && sequenceMode !== "replace") {
+    throw new Error(`${where}: unsupported sequenceMode ${JSON.stringify(sequenceMode)}.`);
+  }
+  if (sequenceMode === "replace") {
+    const content = moment.segments.filter((segment) => segment.role !== "source");
+    const reveals = content.map((segment) => segment.revealAfterSeconds ?? 0);
+    if (content.length < 2) {
+      throw new Error(`${where}: replace sequence requires at least two alternatives.`);
+    }
+    if (moment.segments.some((segment) => segment.role === "source")) {
+      throw new Error(`${where}: replace sequence does not accept a source row; alternatives must be self-contained.`);
+    }
+    if (content.some((segment) => segment.role !== "hero")) {
+      throw new Error(`${where}: replace sequence alternatives must each be a hero segment.`);
+    }
+    if (reveals[0] !== 0 || reveals.some((value, index) => index > 0 && value <= reveals[index - 1])) {
+      throw new Error(`${where}: replace sequence revealAfterSeconds values must start at 0 and be strictly increasing in authored order.`);
     }
   }
 
