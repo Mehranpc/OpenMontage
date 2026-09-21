@@ -124,3 +124,22 @@ def test_subject_region_evidence_validator_requires_every_expected_shot() -> Non
         validate_subject_region_review_evidence(
             _review_evidence(), expected_shot_ids=["shot-1", "shot-2"]
         )
+
+
+def test_subject_region_priority_round_trips_and_rejects_unknown_values() -> None:
+    evidence = _review_evidence()
+    evidence["shot_regions"][0]["avoidRegions"][0]["priority"] = "soft"
+    normalized = validate_subject_region_review_evidence(evidence, expected_shot_ids=["shot-1"])
+    assert normalized["shot_regions"][0]["avoidRegions"][0]["priority"] == "soft"
+
+    evidence["shot_regions"][0]["avoidRegions"][0]["priority"] = "medium"
+    with pytest.raises(SubjectRegionReviewError, match="priority"):
+        validate_subject_region_review_evidence(evidence, expected_shot_ids=["shot-1"])
+
+
+def test_legacy_subject_region_priority_remains_implicit_hard() -> None:
+    normalized = validate_subject_region_review_evidence(
+        _review_evidence(), expected_shot_ids=["shot-1"]
+    )
+    region = normalized["shot_regions"][0]["avoidRegions"][0]
+    assert "priority" not in region

@@ -140,11 +140,15 @@ the rows.
 ## Subject review and placement
 
 The edit records reviewed `avoidRegions` as authoritative screen-space evidence for
-typography placement. On 2.16, hooks and body callouts must move away from, or refuse,
-a placement that intersects a reviewed face/body/action region for the moment dwell.
-The fitter still chooses only curated right/center compositions; it does not run a
-face/person detector, so the reviewed regions supplied by production are the contract.
-Platform safe area remains hard.
+typography placement. On 2.16 each region may declare `priority: hard|soft`. Omitted
+priority remains `hard` for backwards compatibility. `hard` is for faces and essential
+action/product geometry and is always a refusal on collision. `soft` is for general body
+occupancy: auto placement strongly prefers a soft-clear measured candidate, but when every
+hard-safe candidate overlaps soft occupancy the fitter may use the best measured one and
+emits a `soft-subject-overlap` review warning. Explicit placement still cannot cross hard
+regions. The fitter still chooses only curated right/center compositions; it does not run
+a face/person detector, so reviewed priority and geometry supplied by production are the
+contract. Platform safe area remains hard.
 
 Subject geometry must not leak into watermark planning. Watermark planning remains the
 separate text/caption-clearance system inherited from 2.15.

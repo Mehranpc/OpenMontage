@@ -241,8 +241,12 @@ export interface PersianShot {
   /** In-point within the source clip, seconds. */
   readonly sourceInSeconds: number;
   readonly camera: CameraMove;
-  /** Reviewed screen-space envelopes, including crop/camera motion. Times are absolute timeline seconds. */
-  readonly avoidRegions?: readonly { x: number; y: number; w: number; h: number; startSeconds?: number; endSeconds?: number }[];
+  /**
+   * Reviewed screen-space envelopes, including crop/camera motion. Times are absolute timeline seconds.
+   * Omitted priority is legacy-compatible hard safety. Film Type 2.16 may overlap only explicit soft
+   * body occupancy; hard face/essential-action geometry remains a refusal.
+   */
+  readonly avoidRegions?: readonly { x: number; y: number; w: number; h: number; priority?: "hard" | "soft"; startSeconds?: number; endSeconds?: number }[];
   /**
    * Attribution string for the credits beat. Required by both Pexels' and
    * Pixabay's licence terms, so it is not optional in the type — a shot that

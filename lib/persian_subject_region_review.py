@@ -23,7 +23,7 @@ def _number(value: object, *, label: str) -> float:
     return result
 
 
-def _normalize_region(raw: object, *, shot_id: str, index: int) -> dict[str, float]:
+def _normalize_region(raw: object, *, shot_id: str, index: int) -> dict[str, Any]:
     if not isinstance(raw, Mapping):
         raise SubjectRegionReviewError(
             f"shot_regions[{shot_id}].avoidRegions[{index}] must be an object"
@@ -37,7 +37,14 @@ def _normalize_region(raw: object, *, shot_id: str, index: int) -> dict[str, flo
         raise SubjectRegionReviewError(
             f"{prefix} must be a positive normalized screen-space rectangle inside 0..1"
         )
-    region: dict[str, float] = {"x": x, "y": y, "w": w, "h": h}
+    region: dict[str, Any] = {"x": x, "y": y, "w": w, "h": h}
+    priority = raw.get("priority")
+    if priority is not None:
+        if priority not in {"hard", "soft"}:
+            raise SubjectRegionReviewError(
+                f"{prefix}.priority must be 'hard' or 'soft' when provided"
+            )
+        region["priority"] = priority
     has_start = "startSeconds" in raw
     has_end = "endSeconds" in raw
     if has_start != has_end:

@@ -134,6 +134,37 @@ class RankedBrowserContracts(unittest.TestCase):
         self.assertEqual(layout['subjectSafety'],'checked-against-supplied-regions')
         self.assertFalse(self._overlaps(layout['rect'],region))
 
+    def test_default_216_soft_region_allows_measured_overlap_when_no_hard_collision(self):
+        p=self.props()
+        region={'x':0.04,'y':0.10,'w':0.92,'h':0.82,'priority':'soft'}
+        p['shots'][0]['avoidRegions']=[region]
+        q=self.prepare(p);layout=q['filmType']['moments']['m']
+        self.assertEqual(layout['subjectSafety'],'checked-against-supplied-regions')
+        self.assertTrue(self._overlaps(layout['rect'],region))
+        self.assertTrue(any('soft-subject-overlap' in warning for warning in q['filmType']['warnings']))
+
+    def test_default_216_auto_prefers_soft_clear_candidate_when_available(self):
+        p=self.props(text='نیاز به توجه')
+        soft={'x':0.48,'y':0.34,'w':0.52,'h':0.35,'priority':'soft'}
+        p['shots'][0]['avoidRegions']=[soft]
+        q=self.prepare(p);layout=q['filmType']['moments']['m']
+        self.assertFalse(self._overlaps(layout['rect'],soft))
+
+    def test_default_216_mixed_timed_regions_never_overlap_hard_region(self):
+        p=self.props(text='نیاز به توجه')
+        hard={'x':0.48,'y':0.10,'w':0.52,'h':0.28,'priority':'hard','startSeconds':0,'endSeconds':20}
+        soft={'x':0.00,'y':0.35,'w':1.00,'h':0.55,'priority':'soft','startSeconds':0,'endSeconds':20}
+        p['shots'][0]['avoidRegions']=[hard,soft]
+        q=self.prepare(p);layout=q['filmType']['moments']['m']
+        self.assertFalse(self._overlaps(layout['rect'],hard))
+
+    def test_default_216_explicit_soft_region_does_not_refuse_layout(self):
+        p=self.props(text='نیاز به توجه')
+        p['moments'][0]['presentation']['placement']='lower-right'
+        p['shots'][0]['avoidRegions']=[{'x':0.35,'y':0.35,'w':0.65,'h':0.60,'priority':'soft'}]
+        q=self.prepare(p)
+        self.assertEqual(q['filmType']['moments']['m']['placement'],'lower-right')
+
     def test_default_216_replace_sequence_stacks_alternatives_in_one_measured_slot(self):
         p=self.props();p['moments']=[{'id':'timing-options','kind':'statement',
                        'startSeconds':2,'endSeconds':7,
