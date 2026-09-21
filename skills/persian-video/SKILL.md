@@ -132,6 +132,14 @@ If a review requires going backward, use `send-back`; never edit `next_phase` by
 
 If explicit new user feedback identifies defects in a rendered candidate after that automatic ceiling is exhausted, use `python -m lib.persian_video_workflow send-back <project-id> <target-phase> --reason "..." --user-directed-revision` to open one fresh bounded revision cycle. The workflow records the old counters, archives invalid downstream checkpoints, and starts a fresh wall-time window; never reset counters or workflow JSON by hand.
 
+If that explicit user feedback also changes a hook that was previously selected automatically, bind the new human-authored wording before staging the revised edit:
+
+```bash
+python -m lib.persian_video_workflow hook-override <project-id> --text "هوک تأییدشدهٔ جدید" --reason "Explicit user revision after rendered review"
+```
+
+`hook-override` is valid only in the active `no_copy_preflight` user-directed revision opened by `send-back`. It archives the superseded automatic decision and makes the new copy `user_supplied` and authoritative; do not simulate this by calling automatic selection again or editing workflow JSON.
+
 Before reading any path not already opened by the current tool call, enforce project isolation:
 
 ```bash

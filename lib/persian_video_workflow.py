@@ -904,6 +904,75 @@ def record_hook_selection(
     return state
 
 
+def record_user_hook_override(
+    project_id: str,
+    *,
+    selected_text: str,
+    reason: str,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Bind explicit user hook feedback as authoritative copy in a revision cycle.
+
+    This is intentionally narrower than automatic hook selection. It is available
+    only after an explicit user-directed rewind to ``no_copy_preflight`` and only
+    for a hook that was previously selected automatically. The superseded decision
+    is retained verbatim in durable history before the new user authority is stored.
+    """
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    text = str(selected_text or "").strip()
+    why = str(reason or "").strip()
+    if not text:
+        raise PersianVideoWorkflowError("user hook override requires non-empty selected text")
+    if not why:
+        raise PersianVideoWorkflowError("user hook override requires a non-empty reason")
+    if state.get("status") != "active" or state.get("next_phase") != "no_copy_preflight":
+        raise PersianVideoWorkflowError(
+            "user hook override requires an active user-directed revision at no_copy_preflight"
+        )
+    cycle = int(state.get("user_revision_cycles") or 0)
+    history = list(state.get("send_back_history") or [])
+    latest = history[-1] if history else None
+    if (
+        cycle <= 0
+        or not isinstance(latest, Mapping)
+        or latest.get("user_directed_revision") is not True
+        or latest.get("target_phase") != "no_copy_preflight"
+    ):
+        raise PersianVideoWorkflowError(
+            "user hook override requires an explicit user-directed revision rewind"
+        )
+
+    previous = state.get("hook_selection")
+    if not isinstance(previous, Mapping):
+        raise PersianVideoWorkflowError("workflow is missing its hook-selection authority record")
+    if str(previous.get("mode") or "") != "automatic":
+        raise PersianVideoWorkflowError(
+            "user hook override only converts a previously automatic hook selection; "
+            "existing user-supplied authority remains immutable"
+        )
+
+    stamp = now or datetime.now(timezone.utc)
+    decision = build_initial_hook_selection(text)
+    decision.update({
+        "source": "user_directed_revision",
+        "revision_cycle": cycle,
+        "reason": why,
+        "overrides_sha256": str(previous.get("sha256") or ""),
+    })
+    prior_history = list(state.get("hook_selection_history") or [])
+    prior_history.append({
+        "revision_cycle": cycle,
+        "superseded_at": stamp.isoformat(),
+        "reason": why,
+        "decision": dict(previous),
+    })
+    state["hook_selection_history"] = prior_history
+    state["hook_selection"] = decision
+    _write_state(_project_root(state), state)
+    return state
+
+
 def assert_read_allowed(state: Mapping[str, Any], requested_path: str | Path) -> Path:
     """Reject reads from sibling projects and anything outside the explicit allowlist."""
     requested = Path(requested_path).expanduser().resolve()
@@ -2801,6 +2870,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="start a fresh bounded revision cycle after explicit new user feedback",
     )
 
+    hook_override = sub.add_parser(
+        "hook-override",
+        help="bind explicit user hook feedback as authoritative copy in a revision cycle",
+    )
+    hook_override.add_argument("project_id")
+    hook_override.add_argument("--text", required=True)
+    hook_override.add_argument("--reason", required=True)
+
     guard = sub.add_parser("guard-read", help="check one path against the read allowlist")
     guard.add_argument("project_id")
     guard.add_argument("path")
@@ -2946,6 +3023,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     user_directed_revision=args.user_directed_revision,
                 )
             )
+        elif args.command == "hook-override":
+            _print_json(record_user_hook_override(
+                args.project_id, selected_text=args.text, reason=args.reason,
+            ))
         elif args.command == "guard-read":
             state = load_workflow_state(args.project_id)
             _print_json({"allowed_path": str(assert_read_allowed(state, args.path))})
