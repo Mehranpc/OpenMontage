@@ -50,6 +50,10 @@ class ScriptAlignedPersianCompose(PersianCompose):
         "connector": "tail",
         "payoff": "tail",
     }
+    _SEMANTIC_REPLAY_LIGHT_TOKENS = frozenset({
+        "و", "یا", "که", "را", "رو", "به", "در", "از", "این", "اون",
+        "فقط", "نه", "با", "برای", "می",
+    })
 
     @staticmethod
     def _runtime_persian(edit_decisions: dict[str, Any]) -> dict[str, Any] | None:
@@ -354,33 +358,66 @@ class ScriptAlignedPersianCompose(PersianCompose):
         return tokens
 
     @staticmethod
-    def _suppress_semantically_shadowed_burned_cues(
-        cues, moments, *, min_anchor_coverage: float = 0.6, min_overlap_ratio: float = 0.5
-    ):
-        """Drop a burned cue when an overlapping moment replaces its spoken subject.
+    def _semantic_caption_tokens(text: Any) -> set[str]:
+        return ScriptAlignedPersianCompose._caption_tokens(text) - (
+            ScriptAlignedPersianCompose._SEMANTIC_REPLAY_LIGHT_TOKENS
+        )
 
-        Frame-level suppression prevents simultaneous painting. This cue-level gate
-        also removes the leading black-caption fragment before a semantic moment when
-        the moment owns at least half the cue window and most of its anchor words are
-        already in that cue. Unrelated overlapping narration remains intact. The
-        sidecar SRT is deliberately unaffected.
+    @staticmethod
+    def _rendered_moment_tokens(moment: dict[str, Any]) -> set[str]:
+        segments = moment.get("segments") or []
+        rendered = " ".join(
+            str(segment.get("text") or "")
+            for segment in segments
+            if isinstance(segment, dict)
+        )
+        return ScriptAlignedPersianCompose._semantic_caption_tokens(rendered)
+
+    @staticmethod
+    def _suppress_semantically_shadowed_burned_cues(
+        cues, moments, *, min_anchor_coverage: float = 0.6, min_overlap_ratio: float = 0.5,
+        min_rendered_shared_tokens: int = 2, min_rendered_overlap_coefficient: float = 0.5,
+    ):
+        """Drop burned cues whose handoff would replay an overlapping semantic moment.
+
+        The legacy anchor gate handles cues substantially owned by a moment's authored
+        subject window. A second gate compares against the text actually rendered in
+        the moment. That catches boundary cues which are hidden while the moment is
+        active but would otherwise repaint the same phrase immediately before/after
+        the moment. Unrelated overlapping narration remains intact. The sidecar SRT is
+        deliberately unaffected.
         """
         kept = []
         for cue in cues:
             cue_tokens = ScriptAlignedPersianCompose._caption_tokens(cue.text)
+            cue_semantic_tokens = ScriptAlignedPersianCompose._semantic_caption_tokens(cue.text)
             cue_duration = max(0.0, float(cue.end_seconds) - float(cue.start_seconds))
             shadowed = False
             if cue_duration > 0 and cue_tokens:
                 for moment in moments:
                     if not isinstance(moment, dict):
                         continue
-                    anchor = str(moment.get("anchorText") or "").strip()
-                    if not anchor:
-                        continue
                     m0 = float(moment.get("startSeconds", 0.0))
                     m1 = float(moment.get("endSeconds", 0.0))
                     overlap = min(float(cue.end_seconds), m1) - max(float(cue.start_seconds), m0)
                     if overlap <= 0:
+                        continue
+
+                    rendered_tokens = ScriptAlignedPersianCompose._rendered_moment_tokens(moment)
+                    if cue_semantic_tokens and rendered_tokens:
+                        shared = cue_semantic_tokens & rendered_tokens
+                        overlap_coefficient = len(shared) / min(
+                            len(cue_semantic_tokens), len(rendered_tokens)
+                        )
+                        if (
+                            len(shared) >= min_rendered_shared_tokens
+                            and overlap_coefficient + 1e-9 >= min_rendered_overlap_coefficient
+                        ):
+                            shadowed = True
+                            break
+
+                    anchor = str(moment.get("anchorText") or "").strip()
+                    if not anchor:
                         continue
                     anchor_tokens = ScriptAlignedPersianCompose._caption_tokens(anchor)
                     if not anchor_tokens:
