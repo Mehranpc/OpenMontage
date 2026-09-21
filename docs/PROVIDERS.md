@@ -1095,6 +1095,12 @@ Gen-3 Alpha Turbo and Gen-4 Aleph were removed from the Runway API on
 - Photo and video search + download
 - Standard API limited to 1280px images (full resolution requires editorial API)
 
+#### Pixabay Music
+
+`PIXABAY_API_KEY` does **not** unlock Pixabay Music search. OpenMontage treats Music as a separate browser-assisted workflow: use `ego-browser` to select/download a real public Pixabay Music track, then pass the browser-observed CDN URL and visible track metadata through `pixabay_music` in `direct_cdn` mode for validation and provenance.
+
+See [`docs/PIXABAY_MUSIC.md`](PIXABAY_MUSIC.md) for the canonical production flow and Cloudflare recovery policy.
+
 ---
 
 ## Local Providers (Free, No API Key)

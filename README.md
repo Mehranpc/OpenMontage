@@ -251,6 +251,8 @@ UNSPLASH_ACCESS_KEY=your-key   # Free stock images
 
 # Music:
 SUNO_API_KEY=your-key          # Full songs, instrumentals, any genre
+# Pixabay Music has no public Music API key; use browser-assisted discovery + direct CDN validation.
+# See docs/PIXABAY_MUSIC.md
 
 # Voice & images:
 ELEVENLABS_API_KEY=your-key    # Premium TTS, AI music, sound effects

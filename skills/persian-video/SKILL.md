@@ -80,6 +80,8 @@ python -m lib.persian_video_workflow asset-candidate-select <project-id> <visual
 
 `asset-candidate-select` returns `manifestBinding` and `manifestEvidence`; use those exact fields in the canonical `asset_manifest` row. Once asset workspace state exists, `complete --phase acquire_assets` enforces that every workspace-bound visual event has exactly one selected row with matching identity and review evidence. `status.asset_workspace` is the durable source for candidate/reuse/rejection/weak-resolution state. `asset_manifest` remains the canonical selected artifact; the workspace is durable discovery/review history.
 
+For Pixabay Music, do not treat `PIXABAY_API_KEY` as a Music-search credential. If legacy `pixabay_music` web search is blocked by Cloudflare, use the installed `ego-browser` skill for normal browser discovery and the real `Free download` event, save the MP3 inside the current project, then pass the browser-observed CDN URL plus real title/artist/source-page/duration metadata through `pixabay_music` `direct_cdn` mode. This is provider recovery, not permission to invent provenance, bypass anti-bot checks, or switch providers silently. See `docs/PIXABAY_MUSIC.md`.
+
 For `no_copy_preflight`, never write `artifacts/edit_decisions.json` directly. Use the durable convergence workspace through the production front door. The first candidate needs only the immutable stage/preflight flow:
 
 ```bash
