@@ -73,6 +73,10 @@ class ScriptAlignedPersianCompose(PersianCompose):
             audio = runtime_persian.get("audio")
             if isinstance(audio, dict) and audio.get("wordTimings"):
                 runtime_audio = dict(audio)
+                # Keep the measured ASR words as timing provenance for moment sync.
+                # Script alignment may clean the visible/caption wording, but it must
+                # not rewrite the evidence that authored anchorText was derived from.
+                runtime_audio["_syncWordTimings"] = list(audio["wordTimings"])
                 runtime_audio["wordTimings"] = build_script_aligned_word_timings(
                     approved_script, audio["wordTimings"]
                 )
