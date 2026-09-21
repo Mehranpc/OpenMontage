@@ -1142,11 +1142,20 @@ def _cutless_persian_edit(tag: str) -> dict:
 
 
 def _persist_passing_edit_attempt(project: Path, attempt_id: str, edit: dict) -> dict:
-    staged = workflow.stage_edit_draft(project, attempt_id, edit)
+    from lib.persian_edit_workspace import _dependency_digests
+
+    state = workflow.load_workflow_state("run", pipeline_dir=project.parent)
+    authority = state["hook_selection"]
+    staged = workflow.stage_edit_draft(
+        project, attempt_id, edit, hook_authority=authority
+    )
     report = project / ".preflight" / "edit" / attempt_id / "preflight_report.json"
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(json.dumps({
-        "ok": True, "artifactSha256": staged["artifactSha256"], "attemptId": attempt_id,
+        "ok": True,
+        "artifactSha256": staged["artifactSha256"],
+        "attemptId": attempt_id,
+        "dependencyDigests": _dependency_digests(edit, hook_authority=authority),
     }), encoding="utf-8")
     return staged
 

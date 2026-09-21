@@ -2694,6 +2694,7 @@ def stage_workflow_edit_draft(
         changed_fields=changed_fields,
         max_candidates=max_candidates,
         revision_cycle=revision_cycle,
+        hook_authority=decision,
     )
     return {
         **staged,
@@ -2713,7 +2714,12 @@ def preflight_workflow_edit_draft(
         raise PersianVideoWorkflowError(
             f"edit preflight is only valid during no_copy_preflight; next phase is {state.get('next_phase')!r}"
         )
-    return preflight_edit_draft(_project_root(state), attempt_id)
+    decision = state.get("hook_selection")
+    if not isinstance(decision, Mapping):
+        raise PersianVideoWorkflowError("workflow is missing its hook-selection authority record")
+    return preflight_edit_draft(
+        _project_root(state), attempt_id, hook_authority=decision
+    )
 
 
 def promote_workflow_edit_draft(
@@ -2726,7 +2732,12 @@ def promote_workflow_edit_draft(
         )
 
     project_root = _project_root(state)
-    edit, _, digest = load_promotable_edit_draft(project_root, attempt_id)
+    decision = state.get("hook_selection")
+    if not isinstance(decision, Mapping):
+        raise PersianVideoWorkflowError("workflow is missing its hook-selection authority record")
+    edit, _, digest = load_promotable_edit_draft(
+        project_root, attempt_id, hook_authority=decision
+    )
     try:
         validate_artifact("edit_decisions", edit)
     except Exception as exc:
@@ -2739,7 +2750,9 @@ def promote_workflow_edit_draft(
     previous_bytes = canonical.read_bytes() if previous_exists else None
     projects_root = Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve()
     try:
-        result = promote_edit_draft(project_root, attempt_id)
+        result = promote_edit_draft(
+            project_root, attempt_id, hook_authority=decision
+        )
         checkpoint_path = write_checkpoint(
             projects_root, project_id, "edit", "completed", {"edit_decisions": edit},
             pipeline_type="persian-footage", human_approval_required=False, human_approved=False,

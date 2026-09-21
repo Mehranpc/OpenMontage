@@ -3,7 +3,8 @@ import json
 from pathlib import Path
 import pytest
 from lib.persian_edit_workspace import (
-    PersianEditWorkspaceError, artifact_sha256, promote_edit_draft, stage_edit_draft,
+    PersianEditWorkspaceError, _dependency_digests, artifact_sha256, load_promotable_edit_draft,
+    preflight_edit_draft, promote_edit_draft, stage_edit_draft,
 )
 
 
@@ -47,3 +48,41 @@ def test_attempt_id_is_immutable_for_different_bytes(tmp_path: Path) -> None:
     project = tmp_path / "project"; stage_edit_draft(project, "a1", _edit("one"))
     with pytest.raises(PersianEditWorkspaceError, match="different edit bytes"):
         stage_edit_draft(project, "a1", _edit("two"))
+
+
+def test_hook_dependency_digest_is_authority_aware() -> None:
+    edit = _edit()
+    automatic = {"mode": "automatic", "authoritative": False, "sha256": "a" * 64}
+    user = {"mode": "user_supplied", "authoritative": True, "sha256": "b" * 64}
+    auto_deps = _dependency_digests(edit, hook_authority=automatic)
+    user_deps = _dependency_digests(edit, hook_authority=user)
+    assert auto_deps["hook"] != user_deps["hook"]
+    assert auto_deps["retention"] == user_deps["retention"]
+    assert auto_deps["browser"] == user_deps["browser"]
+
+
+def test_promotion_refuses_when_hook_authority_context_changed(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    edit = _edit("new")
+    first = {"mode": "user_supplied", "authoritative": True, "sha256": "a" * 64}
+    changed = {"mode": "user_supplied", "authoritative": True, "sha256": "b" * 64}
+    stage_edit_draft(project, "a1", edit, hook_authority=first)
+    report = project / ".preflight" / "edit" / "a1" / "preflight_report.json"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(json.dumps({
+        "ok": True,
+        "artifactSha256": artifact_sha256(edit),
+        "dependencyDigests": _dependency_digests(edit, hook_authority=first),
+    }), encoding="utf-8")
+    with pytest.raises(PersianEditWorkspaceError, match="dependency context changed"):
+        load_promotable_edit_draft(project, "a1", hook_authority=changed)
+
+
+def test_preflight_refuses_when_hook_authority_changed_after_staging(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    edit = _edit("new")
+    first = {"mode": "user_supplied", "authoritative": True, "sha256": "a" * 64}
+    changed = {"mode": "user_supplied", "authoritative": True, "sha256": "b" * 64}
+    stage_edit_draft(project, "a2", edit, hook_authority=first)
+    with pytest.raises(PersianEditWorkspaceError, match="staged dependency context changed"):
+        preflight_edit_draft(project, "a2", hook_authority=changed)
