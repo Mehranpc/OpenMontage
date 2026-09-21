@@ -424,6 +424,7 @@ def aggregate_preflight_edit_decisions(
     payload: dict[str, Any], *, base_dir: Path | None = None,
     precomputed_components: dict[str, Any] | None = None,
     scratch_dir: Path | None = None,
+    hook_authority: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Aggregate independent cheap blockers, then run at most one browser-heavy pass."""
     root = (base_dir or REPO_ROOT).resolve()
@@ -486,7 +487,10 @@ def aggregate_preflight_edit_decisions(
         hook_quality = dict(cached_hook)
     else:
         try:
-            hook_quality = audit_persian_hook_quality(edit)
+            hook_quality = (
+                audit_persian_hook_quality(edit, hook_authority=hook_authority)
+                if hook_authority is not None else audit_persian_hook_quality(edit)
+            )
         except (ValueError, TypeError, KeyError):
             hook_quality = None
     if hook_quality is not None:

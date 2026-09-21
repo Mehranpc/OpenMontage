@@ -438,13 +438,20 @@ def _policy() -> dict[str, Any]:
     }
 
 
-def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
+def audit_persian_hook_quality(
+    edit: Mapping[str, Any], *, hook_authority: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
     """Audit Hook Quality v2 planning evidence before browser/render work."""
     persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
     metadata = edit.get("metadata") if isinstance(edit.get("metadata"), Mapping) else {}
     duration = float(persian.get("durationSeconds") or 0.0)
     target = _target(edit, persian, metadata)
     required = target in SHORT_FORM_TARGETS
+    user_authoritative = bool(
+        isinstance(hook_authority, Mapping)
+        and hook_authority.get("mode") == "user_supplied"
+        and hook_authority.get("authoritative") is True
+    )
     raw_hook = metadata.get("hookQuality")
     hook = raw_hook if isinstance(raw_hook, Mapping) else None
     problems: list[str] = []
@@ -478,7 +485,10 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
             },
             "judgements": {},
             "flags": {},
-            "semanticAuthority": "authored-claim-awaiting-rendered-review",
+            "semanticAuthority": (
+                "user-authoritative-awaiting-rendered-review"
+                if user_authoritative else "authored-claim-awaiting-rendered-review"
+            ),
             "policy": _policy(),
         }
 
@@ -519,7 +529,13 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
             advisories.append(f"semantic tension arrives late at {tension:.2f}s")
     if proof is not None:
         if proof > PROOF_BLOCK_SECONDS:
-            problems.append(f"first concrete proof/payoff arrives at {proof:.2f}s, after the {PROOF_BLOCK_SECONDS:.1f}s initial blocking ceiling")
+            message = f"first concrete proof/payoff arrives at {proof:.2f}s, after the {PROOF_BLOCK_SECONDS:.1f}s initial blocking ceiling"
+            if user_authoritative:
+                advisories.append(
+                    f"{message}; explicit user-authoritative hook keeps the late payoff as an advisory pending rendered review"
+                )
+            else:
+                problems.append(message)
         elif proof > PROOF_WARNING_SECONDS:
             advisories.append(f"first concrete proof/payoff arrives late at {proof:.2f}s")
 
@@ -570,7 +586,10 @@ def audit_persian_hook_quality(edit: Mapping[str, Any]) -> dict[str, Any]:
         "typographicDuration": typographic_duration,
         "judgements": judgements,
         "flags": flags,
-        "semanticAuthority": "authored-claim-awaiting-rendered-review",
+        "semanticAuthority": (
+            "user-authoritative-awaiting-rendered-review"
+            if user_authoritative else "authored-claim-awaiting-rendered-review"
+        ),
         "policy": _policy(),
     }
 

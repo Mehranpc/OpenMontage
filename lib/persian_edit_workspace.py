@@ -253,7 +253,21 @@ def _component_implementation_digests() -> dict[str, str]:
     }
 
 
-def _dependency_digests(edit: Mapping[str, Any]) -> dict[str, str]:
+def _hook_authority_dependency_payload(
+    hook_authority: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(hook_authority, Mapping):
+        return None
+    return {
+        key: hook_authority.get(key)
+        for key in ("mode", "authoritative", "sha256", "source", "revision_cycle")
+        if hook_authority.get(key) is not None
+    }
+
+
+def _dependency_digests(
+    edit: Mapping[str, Any], *, hook_authority: Mapping[str, Any] | None = None
+) -> dict[str, str]:
     persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
     implementation = _component_implementation_digests()
     payloads = {
@@ -263,9 +277,10 @@ def _dependency_digests(edit: Mapping[str, Any]) -> dict[str, str]:
             "deps": _retention_dependency_payload(edit),
         },
         "hook": {
-            "version": "hook-v1",
+            "version": "hook-v2",
             "implementationSha256": implementation["hook"],
             "deps": _hook_dependency_payload(edit),
+            "authority": _hook_authority_dependency_payload(hook_authority),
         },
         "browser": {
             "version": "browser-v1",
@@ -750,12 +765,16 @@ def stage_edit_draft(
     changed_fields: Sequence[str] | None = None,
     max_candidates: int = 4,
     revision_cycle: int = 0,
+    hook_authority: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     draft, report, canonical = _paths(project_dir, attempt_id)
     edit = extract_edit_decisions(dict(payload))
     edit = materialize_loudness_aware_mix(edit, base_dir=REPO_ROOT)
     digest = artifact_sha256(edit)
-    dependency_digests = _dependency_digests(edit)
+    dependency_digests = (
+        _dependency_digests(edit, hook_authority=hook_authority)
+        if hook_authority is not None else _dependency_digests(edit)
+    )
 
     if not isinstance(max_candidates, int) or isinstance(max_candidates, bool) or max_candidates <= 0:
         raise PersianEditWorkspaceError("max_candidates must be a positive integer")
@@ -945,13 +964,26 @@ def stage_edit_draft(
         **continuity,
     }
 
-def preflight_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
+def preflight_edit_draft(
+    project_dir: Path, attempt_id: str, *, hook_authority: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
     draft, report_path, _ = _paths(project_dir, attempt_id)
     if not draft.is_file():
         raise PersianEditWorkspaceError(f"edit draft does not exist: {draft}")
     payload = json.loads(draft.read_text(encoding="utf-8"))
     digest = artifact_sha256(payload)
-    dependency_digests = _dependency_digests(payload)
+    dependency_digests = (
+        _dependency_digests(payload, hook_authority=hook_authority)
+        if hook_authority is not None else _dependency_digests(payload)
+    )
+    candidate_path = _candidate_path(project_dir, attempt_id)
+    if candidate_path.is_file():
+        manifest = load_convergence_candidate(project_dir, attempt_id)
+        staged_dependencies = manifest.get("dependencyDigests")
+        if staged_dependencies and staged_dependencies != dependency_digests:
+            raise PersianEditWorkspaceError(
+                "refusing preflight: staged dependency context changed after candidate creation"
+            )
     cache_path = _cache_path(project_dir, digest)
 
     cached: dict[str, Any] | None = None
@@ -981,12 +1013,14 @@ def preflight_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
             if value is not None:
                 precomputed[report_key] = value
 
-        computed = aggregate_preflight_edit_decisions(
-            payload,
-            base_dir=REPO_ROOT,
-            precomputed_components=precomputed,
-            scratch_dir=workspace_directory(project_dir, "probes"),
-        )
+        aggregate_kwargs = {
+            "base_dir": REPO_ROOT,
+            "precomputed_components": precomputed,
+            "scratch_dir": workspace_directory(project_dir, "probes"),
+        }
+        if hook_authority is not None:
+            aggregate_kwargs["hook_authority"] = hook_authority
+        computed = aggregate_preflight_edit_decisions(payload, **aggregate_kwargs)
         if computed.get("artifactSha256") != digest:
             raise PersianEditWorkspaceError(
                 "preflight report digest does not match the staged edit bytes"
@@ -1045,7 +1079,7 @@ def preflight_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
     return report
 
 def load_promotable_edit_draft(
-    project_dir: Path, attempt_id: str
+    project_dir: Path, attempt_id: str, *, hook_authority: Mapping[str, Any] | None = None
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     """Load the exact passing draft/report pair without mutating canonical state."""
     draft, report_path, _ = _paths(project_dir, attempt_id)
@@ -1071,6 +1105,15 @@ def load_promotable_edit_draft(
             raise PersianEditWorkspaceError(
                 "refusing promotion: candidate manifest preflight digest differs from staged draft"
             )
+    expected_dependencies = (
+        _dependency_digests(edit, hook_authority=hook_authority)
+        if hook_authority is not None else _dependency_digests(edit)
+    )
+    reported_dependencies = report.get("dependencyDigests")
+    if hook_authority is not None and reported_dependencies != expected_dependencies:
+        raise PersianEditWorkspaceError(
+            "refusing promotion: preflight dependency context changed after review"
+        )
     if report.get("ok") is not True:
         raise PersianEditWorkspaceError("refusing promotion: preflight report did not pass")
     if report.get("artifactSha256") != digest:
@@ -1080,9 +1123,13 @@ def load_promotable_edit_draft(
     return edit, report, digest
 
 
-def promote_edit_draft(project_dir: Path, attempt_id: str) -> dict[str, Any]:
+def promote_edit_draft(
+    project_dir: Path, attempt_id: str, *, hook_authority: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
     draft, _, canonical = _paths(project_dir, attempt_id)
-    edit, _, digest = load_promotable_edit_draft(project_dir, attempt_id)
+    edit, _, digest = load_promotable_edit_draft(
+        project_dir, attempt_id, hook_authority=hook_authority
+    )
 
     canonical.parent.mkdir(parents=True, exist_ok=True)
     if canonical.exists():

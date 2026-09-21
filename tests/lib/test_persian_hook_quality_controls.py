@@ -52,7 +52,7 @@ def _hook(**overrides) -> dict:
     return value
 
 
-def _run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, hook: dict) -> dict:
+def _run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, hook: dict, *, hook_authority: dict | None = None) -> dict:
     source = tmp_path / "clip.mp4"
     source.write_bytes(b"fixture")
     payload = _payload(str(source))
@@ -62,7 +62,7 @@ def _run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, hook: dict) -> dict:
         return deepcopy(persian), ["Video by Test on Pexels"]
 
     monkeypatch.setattr(NoCopyPersianCompose, "_build_props", fake_build)
-    return aggregate_preflight_edit_decisions(payload, base_dir=tmp_path)
+    return aggregate_preflight_edit_decisions(payload, base_dir=tmp_path, hook_authority=hook_authority)
 
 
 def test_specific_contradiction_with_prompt_proof_is_acceptable_preflight(monkeypatch, tmp_path):
@@ -74,6 +74,45 @@ def test_specific_contradiction_with_prompt_proof_is_acceptable_preflight(monkey
     assert audit["problems"] == []
     assert audit["timing"]["timeToFirstProofSeconds"] == 1.45
 
+
+
+def test_user_authoritative_question_hook_downgrades_only_late_proof_to_advisory(monkeypatch, tmp_path):
+    hook = _hook(
+        semanticTension={
+            "kind": "question",
+            "atSeconds": 0.55,
+            "evidence": "The viewer can name the exact missing answer.",
+        },
+        firstProof={
+            "kind": "result",
+            "atSeconds": 6.5,
+            "evidence": "The concrete result arrives later in the approved narration.",
+        },
+    )
+    authority = {
+        "mode": "user_supplied", "authoritative": True,
+        "sha256": "a" * 64, "source": "user_directed_revision",
+    }
+    report = _run(monkeypatch, tmp_path, hook, hook_authority=authority)
+    assert report["ok"] is True, report
+    audit = report["evidence"]["hookQualityAudit"]
+    assert audit["problems"] == []
+    assert any("user-authoritative" in item and "6.50s" in item for item in audit["advisories"])
+    assert audit["semanticAuthority"] == "user-authoritative-awaiting-rendered-review"
+
+
+def test_user_authority_does_not_waive_other_hook_quality_failures(monkeypatch, tmp_path):
+    hook = _hook(
+        firstProof={
+            "kind": "result", "atSeconds": 6.5,
+            "evidence": "The concrete result arrives later in the approved narration.",
+        },
+        flags={"metaIntroDelay": False, "vagueGap": True, "fullConclusionRevealed": False},
+    )
+    authority = {"mode": "user_supplied", "authoritative": True, "sha256": "b" * 64}
+    report = _run(monkeypatch, tmp_path, hook, hook_authority=authority)
+    assert report["ok"] is False
+    assert any("too vague" in issue["message"] for issue in report["blockingIssues"])
 
 def test_semantically_strong_but_visually_static_hook_is_acceptable(monkeypatch, tmp_path):
     hook = _hook(perceptualChanges=[])

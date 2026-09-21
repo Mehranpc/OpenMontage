@@ -99,7 +99,7 @@ The current thresholds are an **initial conservative calibration policy**, not u
 
 - viewer value: advisory after 2.0s, blocker after 3.0s;
 - semantic tension: advisory after 2.5s, blocker after 4.0s;
-- first concrete proof/payoff: advisory after 4.0s, blocker after 6.0s;
+- first concrete proof/payoff: advisory after 4.0s, blocker after 6.0s for automatic/non-authoritative hook selection. When the workflow carries an explicit `mode=user_supplied`, `authoritative=true` hook (including a canonical user-directed override), a late first proof remains truthfully recorded but this timing ceiling becomes an advisory only. This exception applies only to late-proof timing; every other existing Hook Quality validity/alignment/semantic gate remains unchanged, and rendered review plus exact human approval remain final authority.
 - more than four meaningful changes inside the first 3s: over-editing advisory;
 - no meaningful post-start visual change inside the first 3s: under-stimulation advisory, not an automatic semantic failure.
 
@@ -113,7 +113,7 @@ A specific gap is better than generic mystery. `باورت نمی‌شه چی ش
 
 ## Authority boundary
 
-Hook-quality evidence must describe the approved production honestly. It is not permission to silently rewrite authoritative narration. The existing opening moment may use only the paraphrase freedom already granted by `edit-director.md`; it may not invent a claim the body never earns. If authoritative speech itself makes value/tension/payoff arrive too late, use the workflow's editorial revision path rather than trimming meaning invisibly.
+Hook-quality evidence must describe the approved production honestly. It is not permission to silently rewrite authoritative narration. The existing opening moment may use only the paraphrase freedom already granted by `edit-director.md`; it may not invent a claim the body never earns. Automatic hooks keep the normal timing gates and use the workflow's editorial revision path when authoritative speech delays value/tension/payoff. For an explicit user-authoritative hook, do not reinsert a removed payoff merely to satisfy the automatic first-proof ceiling: record the true later `firstProof`, pass workflow hook authority into preflight, and treat only that late-proof threshold as advisory pending rendered review.
 
 ## Recovery classes
 
