@@ -57,12 +57,16 @@ Read `next_phase` from `status`; do not infer progress from conversation memory,
 - `plan_scenes_moments` through `render_final_candidate` → `narration-to-persian-video.md`
 - `final_review` / `awaiting_human` → `persian-final-review.md`
 
-For short/non-durable work, record the phase attempt and complete only that same phase after its contract is satisfied:
+For short/non-durable agent or review work, measure only the interval that is actually being worked. `work-start` opens the current phase attempt if needed; `work-finish` closes the countable causal span. Close it before durable execution, user wait, or phase completion. The phase container itself remains non-counting, so gaps are never relabeled as work:
 
 ```bash
-python -m lib.persian_video_workflow attempt <project-id>
+python -m lib.persian_video_workflow work-start <project-id> --category <agent_editorial_work|review_evidence_assembly> --name "<truthful activity>"
+# perform only that measured work interval
+python -m lib.persian_video_workflow work-finish <project-id> <span-id>
 python -m lib.persian_video_workflow complete <project-id> --evidence-json /abs/evidence.json
 ```
+
+Do not start an explicit work span retrospectively and do not leave one open while waiting. `complete` refuses an open explicit work span. The lower-level `attempt` command remains available for phases whose measurable work is entirely represented by durable jobs.
 
 For `acquire_assets`, use the bounded acquisition + durable candidate workspace instead of maintaining a separate selection ledger in chat or generated helper scripts. The normal lifecycle is:
 
