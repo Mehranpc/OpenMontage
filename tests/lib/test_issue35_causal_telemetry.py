@@ -504,3 +504,138 @@ def test_fresh_trace_reports_zero_percent_coverage_instead_of_legacy_fallback(tm
     assert accounting["causal_coverage_percent"] == 0.0
     assert accounting["unattributed_wall_seconds"] == 20.0
     assert accounting["telemetry_span_count"] == 0
+
+
+
+def test_one_shot_run_reconciles_and_commits_without_manual_status_round_trip(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path)
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    evidence = {
+        "authoritative_script_sha256": state["input"]["approved_script"]["sha256"],
+        "narration_sha256": state["input"]["narration"]["sha256"],
+    }
+
+    committed = kernel.run_phase_job(
+        "run",
+        job_id="one-shot",
+        phase="prepare_inputs",
+        argv=["python", "-c", _semantic_child()],
+        idempotence_key="one-shot-v1",
+        telemetry_category="machine_local_execution",
+        evidence=evidence,
+        pipeline_dir=projects_root,
+        poll_interval_seconds=0.01,
+        timeout_seconds=5.0,
+    )
+
+    assert committed["next_phase"] == "align_script_timing"
+    envelope = kernel.load_execution_envelope("run", "one-shot", pipeline_dir=projects_root)
+    assert envelope["executionOutcome"] == "succeeded"
+    assert envelope["telemetryOutcome"] == "succeeded"
+    assert envelope["workflowTransitionOutcome"] == "succeeded"
+    spans = workflow.load_workflow_state("run", pipeline_dir=projects_root)["causal_telemetry"]["spans"]
+    assert sum(span.get("span_id") == "job:one-shot" for span in spans) == 1
+    assert any(str(span.get("span_id") or "").startswith("reconcile:one-shot") for span in spans)
+    assert sum(span.get("kind") == "workflow_transition" and span.get("job_id") == "one-shot" for span in spans) == 1
+
+
+def test_one_shot_run_timeout_preserves_durable_job_for_later_reconciliation(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path)
+    child = (
+        "import json, os, time; from pathlib import Path; time.sleep(0.25); "
+        "Path(os.environ['OPENMONTAGE_DURABLE_RESULT_PATH']).write_text(json.dumps({'success': True}))"
+    )
+
+    with pytest.raises(kernel.PersianRunKernelError, match="still running"):
+        kernel.run_phase_job(
+            "run",
+            job_id="slow-one-shot",
+            phase="prepare_inputs",
+            argv=["python", "-c", child],
+            idempotence_key="slow-one-shot-v1",
+            telemetry_category="machine_local_execution",
+            pipeline_dir=projects_root,
+            poll_interval_seconds=0.01,
+            timeout_seconds=0.02,
+        )
+
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    assert state["next_phase"] == "prepare_inputs"
+    envelope = kernel.load_execution_envelope("run", "slow-one-shot", pipeline_dir=projects_root)
+    assert envelope["workflowTransitionOutcome"] == "pending"
+
+    reconciled = _wait(projects_root, "slow-one-shot")
+    assert reconciled["executionOutcome"] == "succeeded"
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    committed = kernel.commit_phase_job(
+        "run",
+        "slow-one-shot",
+        evidence={
+            "authoritative_script_sha256": state["input"]["approved_script"]["sha256"],
+            "narration_sha256": state["input"]["narration"]["sha256"],
+        },
+        pipeline_dir=projects_root,
+    )
+    assert committed["next_phase"] == "align_script_timing"
+
+
+def test_one_shot_run_is_idempotent_after_successful_commit(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path)
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    evidence = {
+        "authoritative_script_sha256": state["input"]["approved_script"]["sha256"],
+        "narration_sha256": state["input"]["narration"]["sha256"],
+    }
+    kwargs = dict(
+        job_id="idempotent-one-shot",
+        phase="prepare_inputs",
+        argv=["python", "-c", _semantic_child()],
+        idempotence_key="idempotent-one-shot-v1",
+        telemetry_category="machine_local_execution",
+        evidence=evidence,
+        pipeline_dir=projects_root,
+        poll_interval_seconds=0.01,
+        timeout_seconds=5.0,
+    )
+
+    first = kernel.run_phase_job("run", **kwargs)
+    state_path = projects_root / "run" / ".jobs" / "idempotent-one-shot" / "state.json"
+    durable_before = json.loads(state_path.read_text(encoding="utf-8"))
+    second = kernel.run_phase_job("run", **kwargs)
+    durable_after = json.loads(state_path.read_text(encoding="utf-8"))
+
+    assert first["next_phase"] == second["next_phase"] == "align_script_timing"
+    assert durable_before["createdAt"] == durable_after["createdAt"]
+    spans = workflow.load_workflow_state("run", pipeline_dir=projects_root)["causal_telemetry"]["spans"]
+    assert sum(span.get("span_id") == "job:idempotent-one-shot" for span in spans) == 1
+
+
+
+def test_run_kernel_start_cli_accepts_documented_option_order() -> None:
+    args = kernel.build_parser().parse_args([
+        "start", "project", "job",
+        "--phase", "render_final_candidate",
+        "--idempotence-key", "render-v1",
+        "--telemetry-category", "browser_render_execution",
+        "--", "python", "render.py",
+    ])
+    assert args.command == "start"
+    assert args.phase == "render_final_candidate"
+    assert args.argv[-2:] == ["python", "render.py"]
+
+
+def test_run_kernel_cli_exposes_bounded_one_shot_run() -> None:
+    args = kernel.build_parser().parse_args([
+        "run", "project", "job",
+        "--phase", "render_final_candidate",
+        "--idempotence-key", "render-v1",
+        "--telemetry-category", "browser_render_execution",
+        "--poll-interval-seconds", "0.25",
+        "--timeout-seconds", "900",
+        "--evidence-json", "/tmp/evidence.json",
+        "--", "python", "render.py",
+    ])
+    assert args.command == "run"
+    assert args.poll_interval_seconds == 0.25
+    assert args.timeout_seconds == 900.0
+    assert args.argv[-2:] == ["python", "render.py"]

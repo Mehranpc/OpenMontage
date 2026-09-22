@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
+import time
 from typing import Any, Mapping, Sequence
 
 from lib.json_safe import to_json_safe
@@ -755,6 +756,67 @@ def commit_phase_job(
     return committed
 
 
+def run_phase_job(
+    project_id: str,
+    *,
+    job_id: str,
+    phase: str,
+    argv: Sequence[str],
+    idempotence_key: str,
+    telemetry_category: str = "machine_local_execution",
+    evidence: Mapping[str, Any] | None = None,
+    pipeline_dir: Path | None = None,
+    poll_interval_seconds: float = 0.5,
+    timeout_seconds: float = 1800.0,
+) -> dict[str, Any]:
+    """Run one durable phase to terminal state and commit it without caller polling.
+
+    The durable job remains the source of execution truth. A timeout does not kill
+    or replace the job; callers may later reconcile/commit the same identity.
+    """
+    poll_interval = float(poll_interval_seconds)
+    timeout = float(timeout_seconds)
+    if poll_interval <= 0:
+        raise PersianRunKernelError("poll_interval_seconds must be positive")
+    if timeout <= 0:
+        raise PersianRunKernelError("timeout_seconds must be positive")
+
+    result = start_phase_job(
+        project_id,
+        job_id=job_id,
+        phase=phase,
+        argv=argv,
+        idempotence_key=idempotence_key,
+        telemetry_category=telemetry_category,
+        pipeline_dir=pipeline_dir,
+    )
+    deadline = time.monotonic() + timeout
+    while str(result.get("executionOutcome") or "pending") not in {
+        "succeeded", "failed", "interrupted"
+    }:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise PersianRunKernelError(
+                f"durable job {job_id!r} is still running after {timeout:.3f}s; "
+                "the job was preserved. Retry status/commit with the same identity."
+            )
+        time.sleep(min(poll_interval, remaining))
+        result = reconcile_phase_job(project_id, job_id, pipeline_dir=pipeline_dir)
+
+    outcome = str(result.get("executionOutcome") or "pending")
+    if outcome != "succeeded":
+        raise PersianRunKernelError(
+            f"durable job {job_id!r} finished with execution outcome {outcome!r}; "
+            "workflow commit was not attempted"
+        )
+    return commit_phase_job(
+        project_id,
+        job_id,
+        evidence=evidence,
+        pipeline_dir=pipeline_dir,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="persian-run-kernel")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -769,7 +831,24 @@ def build_parser() -> argparse.ArgumentParser:
         default="machine_local_execution",
         choices=sorted(CAUSAL_CATEGORIES - {"workflow_wall"}),
     )
-    start.add_argument("argv", nargs=argparse.REMAINDER)
+    start.add_argument("argv", nargs="+")
+
+    run = sub.add_parser(
+        "run", help="start, wait for, reconcile, and commit one current-phase durable execution"
+    )
+    run.add_argument("project_id")
+    run.add_argument("job_id")
+    run.add_argument("--phase", required=True)
+    run.add_argument("--idempotence-key", required=True)
+    run.add_argument(
+        "--telemetry-category",
+        default="machine_local_execution",
+        choices=sorted(CAUSAL_CATEGORIES - {"workflow_wall"}),
+    )
+    run.add_argument("--evidence-json")
+    run.add_argument("--poll-interval-seconds", type=float, default=0.5)
+    run.add_argument("--timeout-seconds", type=float, default=1800.0)
+    run.add_argument("argv", nargs="+")
 
     status = sub.add_parser("status", help="reconcile one execution envelope")
     status.add_argument("project_id")
@@ -809,6 +888,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 argv=command,
                 idempotence_key=args.idempotence_key,
                 telemetry_category=args.telemetry_category,
+            )
+        elif args.command == "run":
+            command = list(args.argv)
+            command = command[1:] if command[:1] == ["--"] else command
+            result = run_phase_job(
+                args.project_id,
+                job_id=args.job_id,
+                phase=args.phase,
+                argv=command,
+                idempotence_key=args.idempotence_key,
+                telemetry_category=args.telemetry_category,
+                evidence=_read_evidence(args.evidence_json),
+                poll_interval_seconds=args.poll_interval_seconds,
+                timeout_seconds=args.timeout_seconds,
             )
         elif args.command == "status":
             result = reconcile_phase_job(args.project_id, args.job_id)

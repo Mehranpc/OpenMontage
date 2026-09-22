@@ -112,7 +112,13 @@ printf '{"attempt_id":"<candidate-id>"}' > /tmp/preflight-evidence.json
 python -m lib.persian_video_workflow complete <project-id> --phase no_copy_preflight --evidence-json /tmp/preflight-evidence.json
 ```
 
-Long-running current-phase commands use the production run kernel. It owns the phase-attempt binding, durable job identity, process outcome, semantic result, reporting outcome, and workflow commit. Use `--` before the child command:
+Long-running current-phase commands use the production run kernel. It owns the phase-attempt binding, durable job identity, process outcome, semantic result, reporting outcome, and workflow commit. For normal single-process production work, prefer the bounded one-shot `run` command so reconciliation happens locally as soon as the durable child finishes instead of waiting on an agent round-trip. Use `--` before the child command:
+
+```bash
+python -m lib.persian_run_kernel run <project-id> <job-id> --phase <next-phase> --idempotence-key <key> --telemetry-category <category> --evidence-json /abs/evidence.json --timeout-seconds <bounded-seconds> -- <command> [args...]
+```
+
+`run` is exactly the existing durable `start → reconcile → commit` lifecycle under one bounded local wait. If the caller/session must remain asynchronous, or a prior one-shot wait timed out, use the same durable identity with the lower-level recovery controls:
 
 ```bash
 python -m lib.persian_run_kernel start <project-id> <job-id> --phase <next-phase> --idempotence-key <key> --telemetry-category <category> -- <command> [args...]
