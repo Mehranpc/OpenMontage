@@ -51,11 +51,13 @@ from lib.persian_edit_workspace import (
     load_promotable_edit_draft, preflight_edit_draft, promote_edit_draft, stage_edit_draft,
 )
 from lib.persian_rendered_review import (
+    HOOK_RENDER_REVIEW_VERSIONS,
     PersianRenderedReviewError,
     validate_rendered_audio_review,
     validate_rendered_hook_review,
     validate_cold_viewer_review_input,
 )
+from lib.persian_hook_quality import resolve_hook_timing_authority
 from lib.persian_workflow_telemetry import (
     backfill_phase_residual_spans,
     causal_time_accounting,
@@ -2222,12 +2224,20 @@ def _validate_final_review_completion(
                 "final_review hookQualityAudit does not match preflight hookQualityAudit"
             )
 
-    if isinstance(hook_review, Mapping) and str(hook_review.get("version") or "") == "2.0":
+    # The durable workflow hook selection is the only thing that can grant a
+    # late-payoff exception, so it is resolved here and enforced by the durable-aware
+    # validator. The artifact-contract layer only checks evidence shape.
+    hook_timing = resolve_hook_timing_authority(state.get("hook_selection"))
+    if (
+        isinstance(hook_review, Mapping)
+        and str(hook_review.get("version") or "") in HOOK_RENDER_REVIEW_VERSIONS
+    ):
         try:
             validate_rendered_hook_review(
                 hook_review,
                 candidate_sha256=candidate["candidate_sha256"],
                 require_pass=review.get("status") == "pass",
+                hook_timing=hook_timing,
             )
         except PersianRenderedReviewError as exc:
             raise PersianVideoWorkflowError(
@@ -2321,7 +2331,10 @@ def _validate_final_review_completion(
         raise PersianVideoWorkflowError("render_report.final_review_ref does not point at the reviewed artifact")
 
     cold_input: dict[str, str] | None = None
-    if isinstance(hook_review, Mapping) and str(hook_review.get("version") or "") == "2.0":
+    if (
+        isinstance(hook_review, Mapping)
+        and str(hook_review.get("version") or "") in HOOK_RENDER_REVIEW_VERSIONS
+    ):
         if not isinstance(metadata, Mapping):
             raise PersianVideoWorkflowError("Hook Quality v2 final review requires metadata")
         cold_input = _validate_cold_viewer_input_artifact(

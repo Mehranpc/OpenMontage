@@ -10,14 +10,29 @@ import shutil
 import subprocess
 from typing import Any, Mapping
 
-from lib.persian_hook_quality import CONCRETE_PROOF_KINDS, PROOF_BLOCK_SECONDS
+from lib.persian_hook_quality import (
+    AUTHORITY_MODES,
+    CONCRETE_PROOF_KINDS,
+    HOOK_TIMING_POLICY_VERSION,
+    PROOF_BLOCK_SECONDS,
+    TIMING_DISPOSITION_LATE_BLOCKED,
+    TIMING_DISPOSITION_PROMPT,
+    TIMING_DISPOSITIONS,
+)
 from lib.persian_music import (
     MAX_MUSIC_SEPARATION_LU,
     MIN_MUSIC_SEPARATION_LU,
     effective_music_loudness,
 )
 
-HOOK_RENDER_REVIEW_VERSION = "2.0"
+HOOK_RENDER_REVIEW_VERSION = "2.1"
+# 2.0 remains readable: it predates the versioned payoff-timing policy and keeps its
+# original meaning (a passing review needed a prompt payoff). Only 2.1 evidence may
+# declare a late authoritative advisory.
+LEGACY_HOOK_RENDER_REVIEW_VERSION = "2.0"
+HOOK_RENDER_REVIEW_VERSIONS = frozenset(
+    {LEGACY_HOOK_RENDER_REVIEW_VERSION, HOOK_RENDER_REVIEW_VERSION}
+)
 COLD_VIEWER_POLICY_VERSION = "1.0"
 RENDERED_AUDIO_POLICY_VERSION = "1.0"
 VISUAL_TYPOGRAPHY_POLICY_VERSION = "2.0"
@@ -305,11 +320,53 @@ def _validate_visual_typography(review: Mapping[str, Any], *, require_pass: bool
 
 
 def validate_rendered_hook_review(
+    review: Mapping[str, Any], *, candidate_sha256: str, require_pass: bool,
+    hook_timing: Mapping[str, Any] | None = None,
+) -> None:
+    """Authorize independent review of what a cold viewer actually receives.
+
+    ``hook_timing`` carries the authority resolved from the durable workflow
+    hook-selection record. It is required before a late payoff can be accepted as
+    an advisory; without it, or when it does not grant authority, the automatic
+    blocking ceiling applies.
+    """
+    _validate_rendered_hook_review(
+        review,
+        candidate_sha256=candidate_sha256,
+        require_pass=require_pass,
+        hook_timing=hook_timing,
+        verify_hook_authority=True,
+    )
+
+
+def validate_rendered_hook_review_shape(
     review: Mapping[str, Any], *, candidate_sha256: str, require_pass: bool
 ) -> None:
-    """Validate independent review of what a cold viewer actually receives."""
-    if str(review.get("version") or "") != HOOK_RENDER_REVIEW_VERSION:
-        raise PersianRenderedReviewError("rendered hook review version must be 2.0")
+    """Validate rendered-hook evidence shape where durable authority is unavailable.
+
+    This is the artifact-contract layer's entry point: it sees only the review
+    bytes, so it can confirm the evidence is internally truthful but it cannot and
+    does not grant a late-payoff exception. Only
+    ``validate_rendered_hook_review`` authorizes presentation.
+    """
+    _validate_rendered_hook_review(
+        review,
+        candidate_sha256=candidate_sha256,
+        require_pass=require_pass,
+        hook_timing=None,
+        verify_hook_authority=False,
+    )
+
+
+def _validate_rendered_hook_review(
+    review: Mapping[str, Any], *, candidate_sha256: str, require_pass: bool,
+    hook_timing: Mapping[str, Any] | None, verify_hook_authority: bool,
+) -> None:
+    version = str(review.get("version") or "")
+    if version not in HOOK_RENDER_REVIEW_VERSIONS:
+        raise PersianRenderedReviewError(
+            "rendered hook review version must be 2.0 (history) or 2.1 (current)"
+        )
     if str(review.get("reviewSource") or "") != "rendered_mp4":
         raise PersianRenderedReviewError("rendered hook review must inspect the rendered MP4")
     if str(review.get("reviewerRole") or "") != "independent_reviewer":
@@ -354,6 +411,18 @@ def validate_rendered_hook_review(
     if not str(review.get("payoffEvidence") or "").strip():
         raise PersianRenderedReviewError("rendered hook review requires concrete payoff evidence")
 
+    if version == LEGACY_HOOK_RENDER_REVIEW_VERSION:
+        _validate_legacy_rendered_payoff_timing(
+            review, payoff_seconds=payoff_seconds, require_pass=require_pass
+        )
+    else:
+        _validate_rendered_payoff_timing(
+            review,
+            payoff_seconds=payoff_seconds,
+            require_pass=require_pass,
+            hook_timing=hook_timing,
+            verify_hook_authority=verify_hook_authority,
+        )
     _validate_visual_typography(review, require_pass=require_pass)
 
     if require_pass:
@@ -365,10 +434,128 @@ def validate_rendered_hook_review(
             )
         if visual_alignment not in {"acceptable", "strong"}:
             raise PersianRenderedReviewError("passing rendered hook review requires visual/voice alignment")
-        if review.get("payoffBeginsPromptly") is not True or payoff_seconds > PROOF_BLOCK_SECONDS:
+
+
+def _validate_rendered_payoff_timing(
+    review: Mapping[str, Any], *, payoff_seconds: float, require_pass: bool,
+    hook_timing: Mapping[str, Any] | None, verify_hook_authority: bool,
+) -> None:
+    """Apply the versioned payoff-timing policy to a rendered hook review.
+
+    A late payoff never becomes a prompt one: ``payoffBeginsPromptly`` must stay
+    truthful. The authoritative late case is accepted only when the durable
+    workflow authority grants it, the declared provenance matches that authority,
+    and the reviewer recorded why the late payoff is acceptable.
+    """
+    policy_version = str(review.get("timingPolicyVersion") or "")
+    if policy_version != HOOK_TIMING_POLICY_VERSION:
+        raise PersianRenderedReviewError(
+            f"rendered hook review timingPolicyVersion must be {HOOK_TIMING_POLICY_VERSION}"
+        )
+
+    disposition = str(review.get("timingDisposition") or "").strip()
+    if disposition not in TIMING_DISPOSITIONS:
+        raise PersianRenderedReviewError(
+            "rendered hook review timingDisposition must be prompt, "
+            "late-authoritative-advisory, or late-blocked"
+        )
+
+    provenance = review.get("authorityProvenance")
+    if not isinstance(provenance, Mapping):
+        raise PersianRenderedReviewError(
+            "rendered hook review requires authorityProvenance from the workflow hook selection"
+        )
+    declared_mode = str(provenance.get("mode") or "").strip()
+    if declared_mode not in AUTHORITY_MODES:
+        raise PersianRenderedReviewError(
+            "rendered hook review authorityProvenance.mode must be user_supplied or automatic"
+        )
+    if not str(provenance.get("reference") or "").strip():
+        raise PersianRenderedReviewError(
+            "rendered hook review authorityProvenance requires a provenance reference"
+        )
+    declared_sha_raw = provenance.get("selectedHookSha256")
+    declared_sha = str(declared_sha_raw or "").strip().lower()
+    if declared_sha_raw not in (None, "") and (
+        len(declared_sha) != 64 or any(ch not in "0123456789abcdef" for ch in declared_sha)
+    ):
+        raise PersianRenderedReviewError(
+            "rendered hook review authorityProvenance.selectedHookSha256 must be a lowercase sha256 digest"
+        )
+
+    pays_promptly = review.get("payoffBeginsPromptly")
+    if not isinstance(pays_promptly, bool):
+        raise PersianRenderedReviewError("payoffBeginsPromptly must be boolean")
+    if pays_promptly is not (disposition == TIMING_DISPOSITION_PROMPT):
+        raise PersianRenderedReviewError(
+            "payoffBeginsPromptly must remain truthful and match timingDisposition"
+        )
+
+    if disposition == TIMING_DISPOSITION_PROMPT:
+        if payoff_seconds > PROOF_BLOCK_SECONDS:
             raise PersianRenderedReviewError(
-                f"passing rendered hook review requires prompt payoff by {PROOF_BLOCK_SECONDS:.1f}s"
+                f"prompt payoff disposition requires payoff by {PROOF_BLOCK_SECONDS:.1f}s"
             )
+        return
+
+    if payoff_seconds <= PROOF_BLOCK_SECONDS:
+        raise PersianRenderedReviewError(
+            f"a late timingDisposition requires payoff after the {PROOF_BLOCK_SECONDS:.1f}s blocking ceiling"
+        )
+    if disposition == TIMING_DISPOSITION_LATE_BLOCKED:
+        if require_pass:
+            raise PersianRenderedReviewError(
+                f"late payoff after the {PROOF_BLOCK_SECONDS:.1f}s blocking ceiling is not presentable "
+                "without canonical user-authoritative hook evidence"
+            )
+        return
+
+    # Only the authoritative-advisory disposition reaches this point.
+    if not str(review.get("advisoryReason") or "").strip():
+        raise PersianRenderedReviewError(
+            "late-authoritative-advisory disposition requires a stated advisoryReason"
+        )
+    if declared_mode != "user_supplied":
+        raise PersianRenderedReviewError(
+            "late-authoritative-advisory disposition requires user-supplied hook authority"
+        )
+    if not require_pass or not verify_hook_authority:
+        return
+    if not isinstance(hook_timing, Mapping):
+        raise PersianRenderedReviewError(
+            "late-authoritative-advisory disposition requires durable workflow hook authority"
+        )
+    if hook_timing.get("authoritative") is not True:
+        raise PersianRenderedReviewError(
+            "durable workflow hook authority does not grant a late-payoff exception"
+        )
+    if str(hook_timing.get("mode") or "").strip() != declared_mode:
+        raise PersianRenderedReviewError(
+            "rendered hook review authority provenance does not match the workflow hook selection"
+        )
+    authoritative_reference = str(hook_timing.get("reference") or "").strip()
+    if not authoritative_reference or str(provenance.get("reference") or "").strip() != authoritative_reference:
+        raise PersianRenderedReviewError(
+            "rendered hook review authority reference does not match the workflow hook selection"
+        )
+    authoritative_sha = str(hook_timing.get("selectedHookSha256") or "").strip().lower()
+    if not authoritative_sha or declared_sha != authoritative_sha:
+        raise PersianRenderedReviewError(
+            "rendered hook review authority digest does not match the workflow hook selection"
+        )
+
+
+def _validate_legacy_rendered_payoff_timing(
+    review: Mapping[str, Any], *, payoff_seconds: float, require_pass: bool
+) -> None:
+    """Preserve the frozen 2.0 rule: a passing review needed a prompt payoff."""
+    pays_promptly = review.get("payoffBeginsPromptly")
+    if not isinstance(pays_promptly, bool):
+        raise PersianRenderedReviewError("payoffBeginsPromptly must be boolean")
+    if require_pass and (pays_promptly is not True or payoff_seconds > PROOF_BLOCK_SECONDS):
+        raise PersianRenderedReviewError(
+            f"passing rendered hook review requires prompt payoff by {PROOF_BLOCK_SECONDS:.1f}s"
+        )
 
 
 def validate_rendered_audio_review(
@@ -484,6 +671,8 @@ def measure_rendered_audio_output(path: Path, *, timeout: int = 180) -> dict[str
 
 __all__ = [
     "HOOK_RENDER_REVIEW_VERSION",
+    "LEGACY_HOOK_RENDER_REVIEW_VERSION",
+    "HOOK_RENDER_REVIEW_VERSIONS",
     "COLD_VIEWER_POLICY_VERSION",
     "RENDERED_AUDIO_POLICY_VERSION",
     "VISUAL_TYPOGRAPHY_POLICY_VERSION",
@@ -495,6 +684,7 @@ __all__ = [
     "build_cold_viewer_review_input",
     "validate_cold_viewer_review_input",
     "validate_rendered_hook_review",
+    "validate_rendered_hook_review_shape",
     "validate_rendered_audio_review",
     "measure_rendered_audio_output",
 ]

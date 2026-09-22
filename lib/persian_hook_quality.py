@@ -6,6 +6,7 @@ is still the final semantic authority.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -13,6 +14,11 @@ from typing import Any
 from lib.persian_text import visible_length
 
 HOOK_QUALITY_VERSION = "2.0"
+# The authored hook metadata version (HOOK_QUALITY_VERSION) and the applied timing
+# policy are deliberately separate. Bumping the timing policy must not make older
+# authored edits or persisted reports unreadable; it changes which late payoff is
+# eligible for an exception.
+HOOK_TIMING_POLICY_VERSION = "2.1"
 SEMANTIC_INTEGRITY_POLICY_VERSION = "1.0"
 SHORT_FORM_TARGETS = frozenset({"instagram-reels", "tiktok", "youtube-shorts"})
 OPENING_WINDOW_SECONDS = 3.0
@@ -22,6 +28,31 @@ TENSION_WARNING_SECONDS = 2.5
 TENSION_BLOCK_SECONDS = 4.0
 PROOF_WARNING_SECONDS = 4.0
 PROOF_BLOCK_SECONDS = 6.0
+TIMING_DISPOSITION_PROMPT = "prompt"
+TIMING_DISPOSITION_LATE_AUTHORITATIVE_ADVISORY = "late-authoritative-advisory"
+TIMING_DISPOSITION_LATE_BLOCKED = "late-blocked"
+TIMING_DISPOSITIONS = frozenset(
+    {
+        TIMING_DISPOSITION_PROMPT,
+        TIMING_DISPOSITION_LATE_AUTHORITATIVE_ADVISORY,
+        TIMING_DISPOSITION_LATE_BLOCKED,
+    }
+)
+# Preflight may record that no concrete payoff time was measured yet. That is a
+# pre-verdict state rather than a presentable disposition, so it stays out of
+# TIMING_DISPOSITIONS, which is the vocabulary a rendered review may declare.
+TIMING_DISPOSITION_UNMEASURED = "unmeasured"
+AUTHORITY_MODES = frozenset({"user_supplied", "automatic"})
+DEFAULT_AUTHORITY_REFERENCE = "workflow.hook_selection"
+# The provenance fields the resolver returns and the audit exposes. Kept as one
+# list so the two cannot drift apart.
+AUTHORITY_PROVENANCE_KEYS = (
+    "mode",
+    "authoritative",
+    "valid",
+    "reference",
+    "selectedHookSha256",
+)
 MAX_MEANINGFUL_CHANGES_FIRST_3S = 4
 TYPOGRAPHIC_HOOK_READ_CPS = 11.0
 TYPOGRAPHIC_HOOK_FIXATION_SECONDS = 0.45
@@ -47,6 +78,83 @@ PERCEPTUAL_CHANGE_KINDS = frozenset(
 )
 _CONCEPT_LABELS = ("viewerValue", "semanticTension", "firstProof")
 _PUNCT_RE = re.compile(r"[\s\u200c\-–—_:؛،,.!?؟!«»\"'()\[\]{}]+")
+
+
+def hook_timing_policy() -> dict[str, Any]:
+    """Return the single versioned payoff-timing policy preflight and rendered review share.
+
+    Automatic hooks keep the hard blocking ceiling. A canonically recorded
+    user-authoritative hook may carry a late concrete payoff as an explicit
+    advisory at both preflight and rendered review. This exception concerns
+    late-payoff timing only; it never converts a late answer into a prompt one and
+    never replaces a concrete payoff with setup or authority language.
+    """
+    return {
+        "version": HOOK_TIMING_POLICY_VERSION,
+        "proofWarningSeconds": PROOF_WARNING_SECONDS,
+        "proofBlockSeconds": PROOF_BLOCK_SECONDS,
+        "automaticDisposition": TIMING_DISPOSITION_LATE_BLOCKED,
+        "authoritativeDisposition": TIMING_DISPOSITION_LATE_AUTHORITATIVE_ADVISORY,
+        "authoritySource": DEFAULT_AUTHORITY_REFERENCE,
+    }
+
+
+def resolve_hook_timing_authority(
+    record: object, *, reference: str = DEFAULT_AUTHORITY_REFERENCE
+) -> dict[str, Any]:
+    """Resolve canonical hook authority from a durable workflow hook-selection record.
+
+    Authority is granted only by a record that is internally consistent: a
+    ``user_supplied`` mode, an explicit ``authoritative`` marker, the selected hook
+    text, and a digest that matches that text. Anything missing, contradictory, or
+    self-declared fails closed to the automatic policy. Neither a review document
+    nor an edit boolean can establish this provenance by itself.
+    """
+    if not isinstance(record, Mapping):
+        return {
+            "mode": "automatic",
+            "authoritative": False,
+            "valid": False,
+            # No durable record was read, so there is no provenance to cite.
+            "reference": None,
+            "selectedHookSha256": None,
+            "problems": ["hook timing authority requires a durable hook-selection record"],
+        }
+
+    mode = str(record.get("mode") or "")
+    text = str(record.get("text") or "").strip()
+    declared_sha = str(record.get("sha256") or "").strip().lower()
+    problems: list[str] = []
+
+    if mode not in AUTHORITY_MODES:
+        problems.append("hook authority mode must be user_supplied or automatic")
+        mode = "automatic"
+
+    if mode == "user_supplied":
+        if record.get("authoritative") is not True:
+            problems.append("user-supplied hook authority requires authoritative=true")
+        if not text:
+            problems.append("user-supplied hook authority requires the selected hook text")
+        else:
+            expected_sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            if declared_sha != expected_sha:
+                problems.append(
+                    "user-supplied hook authority digest does not match its selected text"
+                )
+
+    return {
+        "mode": mode,
+        "authoritative": mode == "user_supplied" and not problems,
+        "valid": not problems,
+        "reference": reference,
+        "selectedHookSha256": declared_sha or None,
+        "problems": problems,
+    }
+
+
+def _authority_evidence(authority: Mapping[str, Any]) -> dict[str, Any]:
+    """Expose the provenance without leaking arbitrary caller-supplied fields."""
+    return {key: authority.get(key) for key in AUTHORITY_PROVENANCE_KEYS}
 
 
 def _target(edit: Mapping[str, Any], persian: Mapping[str, Any], metadata: Mapping[str, Any]) -> str:
@@ -447,15 +555,18 @@ def audit_persian_hook_quality(
     duration = float(persian.get("durationSeconds") or 0.0)
     target = _target(edit, persian, metadata)
     required = target in SHORT_FORM_TARGETS
-    user_authoritative = bool(
-        isinstance(hook_authority, Mapping)
-        and hook_authority.get("mode") == "user_supplied"
-        and hook_authority.get("authoritative") is True
-    )
+    authority = resolve_hook_timing_authority(hook_authority)
+    user_authoritative = bool(authority["authoritative"])
     raw_hook = metadata.get("hookQuality")
     hook = raw_hook if isinstance(raw_hook, Mapping) else None
     problems: list[str] = []
     advisories: list[str] = []
+
+    if isinstance(hook_authority, Mapping) and not authority["valid"]:
+        advisories.append(
+            "hook timing authority provenance was rejected and the automatic payoff policy applies: "
+            + "; ".join(authority["problems"])
+        )
 
     if raw_hook is not None and hook is None:
         problems.append("metadata.hookQuality must be an object")
@@ -489,6 +600,10 @@ def audit_persian_hook_quality(
                 "user-authoritative-awaiting-rendered-review"
                 if user_authoritative else "authored-claim-awaiting-rendered-review"
             ),
+            "authorityProvenance": _authority_evidence(authority),
+            "timingPolicy": hook_timing_policy(),
+            "timingDisposition": TIMING_DISPOSITION_UNMEASURED,
+            "timingAdvisoryReason": None,
             "policy": _policy(),
         }
 
@@ -527,17 +642,25 @@ def audit_persian_hook_quality(
             problems.append(f"semantic tension arrives at {tension:.2f}s, after the {TENSION_BLOCK_SECONDS:.1f}s initial blocking ceiling")
         elif tension > TENSION_WARNING_SECONDS:
             advisories.append(f"semantic tension arrives late at {tension:.2f}s")
+    timing_disposition = TIMING_DISPOSITION_UNMEASURED
+    timing_advisory_reason: str | None = None
     if proof is not None:
         if proof > PROOF_BLOCK_SECONDS:
             message = f"first concrete proof/payoff arrives at {proof:.2f}s, after the {PROOF_BLOCK_SECONDS:.1f}s initial blocking ceiling"
             if user_authoritative:
-                advisories.append(
-                    f"{message}; explicit user-authoritative hook keeps the late payoff as an advisory pending rendered review"
+                timing_disposition = TIMING_DISPOSITION_LATE_AUTHORITATIVE_ADVISORY
+                timing_advisory_reason = (
+                    f"{message}; explicit user-authoritative hook keeps the late payoff as an "
+                    f"advisory under hook timing policy {HOOK_TIMING_POLICY_VERSION} pending rendered review"
                 )
+                advisories.append(timing_advisory_reason)
             else:
+                timing_disposition = TIMING_DISPOSITION_LATE_BLOCKED
                 problems.append(message)
-        elif proof > PROOF_WARNING_SECONDS:
-            advisories.append(f"first concrete proof/payoff arrives late at {proof:.2f}s")
+        else:
+            timing_disposition = TIMING_DISPOSITION_PROMPT
+            if proof > PROOF_WARNING_SECONDS:
+                advisories.append(f"first concrete proof/payoff arrives late at {proof:.2f}s")
 
     judgements = _judgements(hook.get("judgements"), problems)
     for field in ("audienceRelevance", "hookBodyAlignment", "visualVoiceAlignment"):
@@ -590,14 +713,29 @@ def audit_persian_hook_quality(
             "user-authoritative-awaiting-rendered-review"
             if user_authoritative else "authored-claim-awaiting-rendered-review"
         ),
+        "authorityProvenance": _authority_evidence(authority),
+        "timingPolicy": hook_timing_policy(),
+        "timingDisposition": timing_disposition,
+        "timingAdvisoryReason": timing_advisory_reason,
         "policy": _policy(),
     }
 
 
 __all__ = [
     "HOOK_QUALITY_VERSION",
+    "HOOK_TIMING_POLICY_VERSION",
     "SEMANTIC_INTEGRITY_POLICY_VERSION",
     "SHORT_FORM_TARGETS",
     "CONCRETE_PROOF_KINDS",
+    "AUTHORITY_MODES",
+    "AUTHORITY_PROVENANCE_KEYS",
+    "DEFAULT_AUTHORITY_REFERENCE",
+    "TIMING_DISPOSITIONS",
+    "TIMING_DISPOSITION_PROMPT",
+    "TIMING_DISPOSITION_LATE_AUTHORITATIVE_ADVISORY",
+    "TIMING_DISPOSITION_LATE_BLOCKED",
+    "TIMING_DISPOSITION_UNMEASURED",
+    "resolve_hook_timing_authority",
+    "hook_timing_policy",
     "audit_persian_hook_quality",
 ]

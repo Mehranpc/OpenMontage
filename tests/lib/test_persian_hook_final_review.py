@@ -35,7 +35,7 @@ def _cold_viewer(*, understood: bool = True) -> dict:
 
 def _hook_review(candidate, **overrides) -> dict:
     value = {
-        "version": "2.0",
+        "version": "2.1",
         "reviewSource": "rendered_mp4",
         "reviewerRole": "independent_reviewer",
         "reviewedCandidateSha256": hashlib.sha256(candidate.read_bytes()).hexdigest(),
@@ -63,6 +63,13 @@ def _hook_review(candidate, **overrides) -> dict:
         "concretePayoffKind": "result",
         "payoffEvidence": "The concrete result reaches the viewer at 4.8 seconds.",
         "payoffBeginsPromptly": True,
+        "timingPolicyVersion": "2.1",
+        "timingDisposition": "prompt",
+        "authorityProvenance": {
+            "mode": "automatic",
+            "reference": "workflow.hook_selection",
+            "selectedHookSha256": "c" * 64,
+        },
     }
     value.update(overrides)
     return value
@@ -111,6 +118,8 @@ def test_evidence_backed_hook_review_requires_rendered_alignment_and_prompt_payo
             candidate,
             visualVoiceAlignment="weak",
             payoffBeginsPromptly=False,
+            timingDisposition="late-blocked",
+            actualPayoffSeconds=25.22,
         ),
     }
     review_path.write_text(json.dumps(review), encoding="utf-8")
@@ -231,6 +240,8 @@ def test_weak_rendered_hook_can_be_persisted_as_revision_evidence(tmp_path):
             coldViewer=_cold_viewer(understood=False),
             visualVoiceAlignment="weak",
             payoffBeginsPromptly=False,
+            timingDisposition="late-blocked",
+            actualPayoffSeconds=25.22,
         ),
     }
     review_path.write_text(json.dumps(review), encoding="utf-8")

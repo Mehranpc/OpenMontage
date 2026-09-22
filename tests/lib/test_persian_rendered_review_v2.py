@@ -19,7 +19,7 @@ DIGEST = "a" * 64
 
 def _hook_review(**overrides) -> dict:
     value = {
-        "version": "2.0",
+        "version": "2.1",
         "reviewSource": "rendered_mp4",
         "reviewerRole": "independent_reviewer",
         "reviewedCandidateSha256": DIGEST,
@@ -54,6 +54,13 @@ def _hook_review(**overrides) -> dict:
         "concretePayoffKind": "result",
         "payoffEvidence": "The actual finding is stated at 4.8s; this is not an authority/setup phrase.",
         "payoffBeginsPromptly": True,
+        "timingPolicyVersion": "2.1",
+        "timingDisposition": "prompt",
+        "authorityProvenance": {
+            "mode": "automatic",
+            "reference": "workflow.hook_selection",
+            "selectedHookSha256": "c" * 64,
+        },
     }
     value.update(overrides)
     return value

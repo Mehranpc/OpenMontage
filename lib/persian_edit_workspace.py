@@ -16,6 +16,7 @@ from typing import Any, Mapping, Sequence
 
 from lib.paths import REPO_ROOT
 from lib.persian_audio_policy import materialize_loudness_aware_mix
+from lib.persian_hook_quality import HOOK_TIMING_POLICY_VERSION
 from lib.persian_preflight import (
     PREFLIGHT_POLICY_VERSION, aggregate_preflight_edit_decisions, extract_edit_decisions,
 )
@@ -278,6 +279,10 @@ def _dependency_digests(
         },
         "hook": {
             "version": "hook-v2",
+            # Hook-quality evidence is timing-policy dependent. Carrying the policy
+            # identity in the dependency digest means a policy revision invalidates
+            # cached hook evidence instead of silently reusing a stale verdict.
+            "timingPolicyVersion": HOOK_TIMING_POLICY_VERSION,
             "implementationSha256": implementation["hook"],
             "deps": _hook_dependency_payload(edit),
             "authority": _hook_authority_dependency_payload(hook_authority),

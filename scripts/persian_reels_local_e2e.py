@@ -16,11 +16,14 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+# The fixture opening demonstrates its concrete change this early on purpose.
+TRIAL_OPENING_PAYOFF_SECONDS = 2.4
 
 from lib.checkpoint import write_checkpoint
 from lib.persian_alignment_provider import (
@@ -30,6 +33,11 @@ from lib.persian_alignment_provider import (
 from lib.persian_assets import assert_video_only, audit_asset_manifest
 from lib.persian_editorial_hook import validate_edit_hook_authority
 from lib.persian_finalization import master_final_candidate
+from lib.persian_hook_quality import (
+    DEFAULT_AUTHORITY_REFERENCE,
+    HOOK_TIMING_POLICY_VERSION,
+    hook_timing_policy,
+)
 from lib.persian_rendered_review import (
     build_cold_viewer_review_input,
     measure_rendered_audio_output,
@@ -490,10 +498,36 @@ def _extract_frames(candidate: Path, target: Path, times: list[float], prefix: s
     return paths
 
 
+def _hook_timing_evidence(
+    hook_audit: dict[str, Any], *, payoff_seconds: float
+) -> dict[str, Any]:
+    """Carry the trial's own persisted timing policy into a fixture hook review.
+
+    This harness runs an automatic hook selection (validated above with
+    ``validate_edit_hook_authority``), so when the audit could not cite a durable
+    provenance it records exactly that automatic path rather than inventing
+    user-supplied authority.
+    """
+    policy = hook_audit.get("timingPolicy") or hook_timing_policy()
+    observed = hook_audit.get("authorityProvenance")
+    provenance = observed if isinstance(observed, Mapping) and observed.get("reference") else {
+        "mode": "automatic",
+        "reference": DEFAULT_AUTHORITY_REFERENCE,
+        "selectedHookSha256": None,
+    }
+    block_seconds = float(policy.get("proofBlockSeconds") or 0.0)
+    return {
+        "timingPolicyVersion": str(policy.get("version") or HOOK_TIMING_POLICY_VERSION),
+        "timingDisposition": "prompt" if payoff_seconds <= block_seconds else "late-blocked",
+        "authorityProvenance": dict(provenance),
+    }
+
+
 def _build_opening_review(
     opening: Path, frames: list[str], project: Path, hook_audit: dict[str, Any],
     retention: dict[str, Any], motion_qa: dict[str, Any], *, edit_artifact_sha256: str,
 ) -> tuple[Path, dict[str, Any]]:
+    timing = _hook_timing_evidence(hook_audit, payoff_seconds=TRIAL_OPENING_PAYOFF_SECONDS)
     opening_sha = _sha(opening)
     cold_input = build_cold_viewer_review_input(
         candidate_sha256=opening_sha,
@@ -508,7 +542,7 @@ def _build_opening_review(
     )
     cold_sha = _sha(cold_path)
     hook_review = {
-        "version": "2.0",
+        "version": "2.1",
         "reviewSource": "rendered_mp4",
         "reviewerRole": "independent_reviewer",
         "reviewedCandidateSha256": opening_sha,
@@ -523,10 +557,11 @@ def _build_opening_review(
         ],
         "mutedHookDirectionConfirmed": True,
         "visualVoiceAlignment": "acceptable",
-        "actualPayoffSeconds": 2.4,
+        "actualPayoffSeconds": TRIAL_OPENING_PAYOFF_SECONDS,
         "concretePayoffKind": "demonstration",
         "payoffEvidence": "The second visual event begins the concrete change at 2.4s.",
         "payoffBeginsPromptly": True,
+        **timing,
         "coldViewer": {
             "evidenceSource": "rendered_opening_only",
             "contextIsolated": True,
@@ -656,6 +691,7 @@ def _build_final_review(
         project / "artifacts" / "cold_viewer_review_input.json", cold_input
     )
     cold_input_sha = _sha(cold_input_path)
+    timing = _hook_timing_evidence(hook_audit, payoff_seconds=TRIAL_OPENING_PAYOFF_SECONDS)
 
     audio_review = {
         **rendered_audio,
@@ -669,7 +705,7 @@ def _build_final_review(
         "issues": [],
     }
     hook_review = {
-        "version": "2.0",
+        "version": "2.1",
         "reviewSource": "rendered_mp4",
         "reviewerRole": "independent_reviewer",
         "reviewedCandidateSha256": _sha(candidate),
@@ -684,10 +720,11 @@ def _build_final_review(
         ],
         "mutedHookDirectionConfirmed": True,
         "visualVoiceAlignment": "acceptable",
-        "actualPayoffSeconds": 2.4,
+        "actualPayoffSeconds": TRIAL_OPENING_PAYOFF_SECONDS,
         "concretePayoffKind": "demonstration",
         "payoffEvidence": "The second rendered event visibly changes direction at 2.4s.",
         "payoffBeginsPromptly": True,
+        **timing,
         "coldViewer": {
             "evidenceSource": "rendered_opening_only",
             "contextIsolated": True,

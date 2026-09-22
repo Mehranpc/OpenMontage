@@ -103,6 +103,12 @@ The current thresholds are an **initial conservative calibration policy**, not u
 - more than four meaningful changes inside the first 3s: over-editing advisory;
 - no meaningful post-start visual change inside the first 3s: under-stimulation advisory, not an automatic semantic failure.
 
+This is **hook timing policy `2.1`** (`lib.persian_hook_quality.hook_timing_policy`). Preflight and rendered final review read the same policy, so a decision that passes preflight cannot be reversed later for a timing fact already known at preflight. Bumping the policy version never rewrites history: cached hook-quality evidence stamped with a different policy version is recomputed rather than reused, and older persisted reports stay valid as history.
+
+Preflight evidence records its own `timingPolicy`, `authorityProvenance`, and `timingDisposition` (`unmeasured`, `prompt`, `late-authoritative-advisory`, or `late-blocked`) so the authored verdict is auditable before any render.
+
+Authority is not self-declared. It must come from the durable workflow `hook_selection` record (`mode=user_supplied`, `authoritative=true`, the selected text, and a digest matching that text). A review document, an edit boolean, a missing record, or a record whose digest does not match its own text fails closed to the automatic policy.
+
 Thresholds may change later only through an explicit versioned decision using enough page-specific post-publish evidence. Post-publish analytics never mutate these values automatically.
 
 ## Semantic rules
@@ -127,9 +133,9 @@ Hook-quality evidence must describe the approved production honestly. It is not 
 
 ## Final rendered review
 
-Preflight evidence is a prediction about the authored edit. It does not prove the real MP4 communicates the hook. For productions whose persisted preflight says Hook Quality is required, `final_review.metadata.hookQualityReview` must use the rendered-v2 contract:
+Preflight evidence is a prediction about the authored edit. It does not prove the real MP4 communicates the hook. For productions whose persisted preflight says Hook Quality is required, `final_review.metadata.hookQualityReview` must use the rendered-v2 contract. Two version numbers are in play and they are not the same thing: the authored `metadata.hookQuality.version` contract stays `2.0`, while the rendered review below carries its own `version`, which is `2.1` under the current payoff-timing policy:
 
-- `version: "2.0"`;
+- `version: "2.1"` — the payoff-timing policy revision. Frozen `2.0` records stay readable as history and keep their original meaning: a passing review under `2.0` required a prompt payoff. Only `2.1` evidence may declare a late authoritative advisory;
 - `reviewSource: "rendered_mp4"`;
 - `reviewerRole: "independent_reviewer"` — do not let the authoring/editing role certify its own hook;
 - `reviewedCandidateSha256` matching the exact MP4 bytes;
@@ -140,9 +146,11 @@ Preflight evidence is a prediction about the authored edit. It does not prove th
 - `concretePayoffKind` using the same concrete proof kinds above;
 - `actualPayoffSeconds` measured from what the viewer actually receives;
 - non-empty `payoffEvidence`;
-- `payoffBeginsPromptly`.
+- `payoffBeginsPromptly`, kept truthful;
+- `timingPolicyVersion` (`2.1`), `timingDisposition` (`prompt`, `late-blocked`, or `late-authoritative-advisory`), and `authorityProvenance` (`mode`, `reference`, `selectedHookSha256`) copied from the durable workflow hook selection;
+- `advisoryReason` whenever `timingDisposition` is `late-authoritative-advisory`.
 
-A weak rendered hook, failed muted direction, weak visual/voice alignment, non-concrete payoff, digest mismatch, or delayed payoff may be persisted honestly as failed/revise evidence, but it blocks presentation. Only acceptable/strong rendered evidence may advance to presentation.
+A weak rendered hook, failed muted direction, weak visual/voice alignment, non-concrete payoff, or digest mismatch may be persisted honestly as failed/revise evidence, but it blocks presentation. A delayed payoff also blocks presentation unless the workflow's durable hook selection is user-authoritative and the review records it as a matched `late-authoritative-advisory`; record the true later time and leave `payoffBeginsPromptly` `false`. Only acceptable/strong rendered evidence may advance to presentation.
 
 ## Post-publish calibration
 

@@ -9,7 +9,7 @@ DIGEST = "a" * 64
 
 def _review(visual: dict) -> dict:
     return {
-        "version": "2.0",
+        "version": "2.1",
         "reviewSource": "rendered_mp4",
         "reviewerRole": "independent_reviewer",
         "reviewedCandidateSha256": DIGEST,
@@ -31,6 +31,13 @@ def _review(visual: dict) -> dict:
         "concretePayoffKind": "result",
         "payoffEvidence": "The first evidence-backed result begins by 4.2 seconds.",
         "payoffBeginsPromptly": True,
+        "timingPolicyVersion": "2.1",
+        "timingDisposition": "prompt",
+        "authorityProvenance": {
+            "mode": "automatic",
+            "reference": "workflow.hook_selection",
+            "selectedHookSha256": "c" * 64,
+        },
     }
 
 
