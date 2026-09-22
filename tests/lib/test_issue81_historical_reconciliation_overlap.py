@@ -68,6 +68,12 @@ def test_historical_reconciliation_does_not_overlap_later_measured_work(tmp_path
     )
     durable_path.write_text(json.dumps(durable, indent=2) + "\n", encoding="utf-8")
 
+    result_path = job_dir / "result.json"
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    result["heartbeatAt"] = historical_finish.isoformat()
+    result["finishedAt"] = historical_finish.isoformat()
+    result_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+
     envelope_path = job_dir / "execution-envelope.json"
     envelope = json.loads(envelope_path.read_text(encoding="utf-8"))
     envelope["startedAt"] = historical_start.isoformat()
