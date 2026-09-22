@@ -9,6 +9,7 @@ from lib import persian_edit_workspace as workspace
 from lib import persian_preflight as preflight
 from lib.persian_edit_workspace import PersianEditWorkspaceError
 from lib.persian_hook_quality import HOOK_TIMING_POLICY_VERSION
+from lib.persian_recovery_policy import recovery_policy_for_issue
 
 
 def _edit(*, recipe: str = "recipe-a", watermark: str = "طریقت", note: str = "") -> dict:
@@ -176,6 +177,40 @@ def test_asset_selection_recovery_atomically_rebinds_provenance_and_reviewed_reg
             max_candidates=10,
             revision_cycle=0,
         )
+
+
+def test_asset_selection_recovery_accepts_reviewed_non_overlapping_source_window(tmp_path: Path) -> None:
+    policy = recovery_policy_for_issue({"code": "ASSET_SELECTION_RETRY", "recoveryClass": "ASSET_SELECTION"})
+    assert "reuse_reviewed_non_overlapping_source_window" in policy["strategies"]
+
+    project = tmp_path / "project"
+    base = _edit()
+    shot = base["persian"]["shots"][0]
+    shot.pop("src", None)
+    shot["source"] = "/tmp/source.mp4"
+    shot["attribution"] = "Video by A on Pexels"
+    shot["sourceInSeconds"] = 0.0
+    shot["sourceWindowEndSeconds"] = 3.0
+    shot["avoidRegions"] = [{"x": 0.1, "y": 0.2, "w": 0.4, "h": 0.3, "priority": "hard"}]
+    workspace.stage_edit_draft(project, "base", base, max_candidates=10)
+
+    child = deepcopy(base)
+    child_shot = child["persian"]["shots"][0]
+    child_shot["sourceInSeconds"] = 3.0
+    child_shot["sourceWindowEndSeconds"] = 6.0
+    child_shot["avoidRegions"] = [{"x": 0.25, "y": 0.2, "w": 0.35, "h": 0.3, "priority": "hard"}]
+    staged = workspace.stage_edit_draft(
+        project,
+        "window-reuse",
+        child,
+        parent_attempt_id="base",
+        diagnostic_issue={"code": "ASSET_SELECTION_RETRY", "recoveryClass": "ASSET_SELECTION"},
+        strategy="reuse_reviewed_non_overlapping_source_window",
+        changed_fields=["assets.selection", "subject_regions.review"],
+        max_candidates=10,
+        revision_cycle=0,
+    )
+    assert staged["changedScopes"] == ["assets", "subject_regions"]
 
 
 def test_recovery_mutation_surface_rejects_unrelated_edit_changes(tmp_path: Path) -> None:
