@@ -140,7 +140,17 @@ Before `awaiting_human`, the front door reconciles durable execution envelopes t
 
 A child process exit code of zero is **not** semantic success. Tool/helper commands run through this kernel must persist their normalized JSON result to the path supplied in `OPENMONTAGE_DURABLE_RESULT_PATH`; a result with `success=false` blocks workflow advancement even when the process exits normally. If expensive execution succeeded but workflow commit/reporting later fails, retry `commit` for the same job rather than rerunning the expensive stage.
 
-For `render_opening_candidate`, `render_final_candidate`, and `master_final_candidate`, direct `persian_video_workflow complete` is refused. Execute the operation through the run kernel and commit that same job. The child semantic result must include `{"success":true,"data":{"output_path":"/absolute/project/output.mp4","output_sha256":"<exact 64-character digest>"}}`. On commit, the workflow re-hashes the project-local output and compares it with the job result and phase evidence (`opening_candidate_sha256`, `output_sha256`, or `candidateSha256`, respectively). The full render phase evidence must now include `output_sha256`. Preserve the durable job identity when retrying a failed commit; never re-render successful bytes to repair reporting. The synthetic local E2E harness has an explicitly labelled inline fixture adapter so its monkeypatched tools remain testable; it is not the production execution route.
+For `render_opening_candidate`, `render_final_candidate`, and `master_final_candidate`, direct `persian_video_workflow complete` is refused. Execute the operation through the run kernel and commit that same job. The child semantic result must include `{"success":true,"data":{"output_path":"/absolute/project/output.mp4","output_sha256":"<exact 64-character digest>"}}`. On commit, the workflow re-hashes the project-local output and compares it with the job result and phase evidence (`opening_candidate_sha256`, `output_sha256`, or `candidateSha256`, respectively). The full render phase evidence must now include `output_sha256`. Preserve the durable job identity when retrying a failed commit; never re-render successful bytes to repair reporting. The canonical child command is `python -m lib.persian_media_job <project-id> --phase <render_opening_candidate|render_final_candidate|master_final_candidate>`. Run it through one-shot execution; for example:
+
+```bash
+python -m lib.persian_run_kernel run <project-id> <job-id> \
+  --phase render_final_candidate \
+  --idempotence-key <job-id> \
+  --telemetry-category browser_render_execution \
+  -- python -m lib.persian_media_job <project-id> --phase render_final_candidate
+```
+
+Use `render_opening_candidate` for the opening and `machine_local_execution` for mastering. The child writes exact output identity and phase evidence to the kernel semantic-result path, so `--evidence-json` is unnecessary for these three phases. Keep the same job id when reconciling a successful run after reporting/commit failure. The synthetic local E2E harness has an explicitly labelled inline fixture adapter so its monkeypatched tools remain testable; it is not the production execution route.
 
 The lower-level `persian_video_workflow job-start/job-status` commands remain compatibility/debug primitives. Normal production should use the run-kernel commands above so execution truth and workflow advancement stay bound to one durable envelope.
 
