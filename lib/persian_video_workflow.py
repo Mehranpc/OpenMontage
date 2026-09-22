@@ -60,10 +60,12 @@ from lib.persian_rendered_review import (
 from lib.persian_hook_quality import resolve_hook_timing_authority
 from lib.persian_workflow_telemetry import (
     backfill_phase_residual_spans,
+    causal_phase_span_id,
     causal_time_accounting,
     finish_causal_span,
     finish_phase_attempt_span,
     new_causal_trace,
+    record_causal_interval,
     record_human_idle_and_reopen_run,
     record_phase_attempt_span,
     reconcile_phase_telemetry,
@@ -1055,6 +1057,145 @@ def assert_within_wall_time(
     if limit <= 0:
         raise PersianVideoWorkflowError("workflow max_wall_time_minutes must be positive")
 
+_EXPLICIT_WORK_CATEGORIES = frozenset({
+    "agent_editorial_work",
+    "review_evidence_assembly",
+})
+
+
+def _running_phase_attempt(state: Mapping[str, Any], phase: str) -> int | None:
+    telemetry = state.get("phase_telemetry")
+    entries = telemetry.get(phase) if isinstance(telemetry, Mapping) else None
+    if not isinstance(entries, list) or not entries or not isinstance(entries[-1], Mapping):
+        return None
+    latest = entries[-1]
+    if latest.get("finished_at") or latest.get("outcome") != "running":
+        return None
+    try:
+        return int(latest.get("attempt") or 0) or None
+    except (TypeError, ValueError):
+        return None
+
+
+def _open_countable_work_spans(state: Mapping[str, Any]) -> list[dict[str, Any]]:
+    trace = state.get("causal_telemetry")
+    spans = trace.get("spans") if isinstance(trace, Mapping) else None
+    if not isinstance(spans, list):
+        return []
+    return [
+        dict(span) for span in spans
+        if isinstance(span, Mapping)
+        and bool(span.get("count_toward_wall"))
+        and not span.get("finished_at")
+        and span.get("kind") not in {"run", "phase_attempt"}
+    ]
+
+
+def start_explicit_work_span(
+    project_id: str,
+    *,
+    category: str,
+    name: str,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Prospectively measure one real agent/review work interval.
+
+    This never backfills phase residuals. The caller must finish the span before
+    durable execution, human wait, or phase completion.
+    """
+    category = str(category).strip()
+    if category not in _EXPLICIT_WORK_CATEGORIES:
+        raise PersianVideoWorkflowError(
+            f"explicit work category must be one of {sorted(_EXPLICIT_WORK_CATEGORIES)}"
+        )
+    label = str(name).strip()
+    if not label:
+        raise PersianVideoWorkflowError("explicit work span name must be non-empty")
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    phase = str(state.get("next_phase") or "")
+    if state.get("status") != "active" or phase not in PHASES:
+        raise PersianVideoWorkflowError("explicit work requires one active workflow phase")
+    open_work = _open_countable_work_spans(state)
+    if open_work:
+        raise PersianVideoWorkflowError(
+            "explicit work span is already open; finish existing measured work before starting another"
+        )
+    effective_now = now or datetime.now(timezone.utc)
+    attempt = _running_phase_attempt(state, phase)
+    if attempt is None:
+        state = record_phase_attempt(
+            project_id, phase, pipeline_dir=pipeline_dir, now=effective_now
+        )
+        attempt = int((state.get("attempts") or {}).get(phase) or 0)
+    if attempt <= 0:
+        raise PersianVideoWorkflowError("explicit work requires a durable phase attempt")
+    trace = state.get("causal_telemetry")
+    spans = list(trace.get("spans") or []) if isinstance(trace, Mapping) else []
+    sequence = 1 + sum(
+        1 for span in spans
+        if isinstance(span, Mapping)
+        and span.get("kind") == "explicit_work"
+        and span.get("phase") == phase
+        and int(span.get("attempt") or 0) == attempt
+    )
+    span_id = f"work:{phase}:{attempt}:{sequence}"
+    span = record_causal_interval(
+        state,
+        span_id=span_id,
+        name=label,
+        category=category,
+        started_at=effective_now,
+        parent_span_id=causal_phase_span_id(phase, attempt),
+        outcome="running",
+        kind="explicit_work",
+        count_toward_wall=True,
+        fields={"phase": phase, "attempt": attempt, "sequence": sequence},
+    )
+    _write_state(_project_root(state), state)
+    return span
+
+
+def finish_explicit_work_span(
+    project_id: str,
+    span_id: str,
+    *,
+    outcome: str = "succeeded",
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Finish one prospectively opened explicit work interval, idempotently."""
+    if outcome not in {"succeeded", "failed", "interrupted"}:
+        raise PersianVideoWorkflowError("explicit work outcome must be succeeded, failed, or interrupted")
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    trace = state.get("causal_telemetry")
+    spans = list(trace.get("spans") or []) if isinstance(trace, Mapping) else []
+    existing = next(
+        (dict(span) for span in spans if isinstance(span, Mapping) and span.get("span_id") == span_id),
+        None,
+    )
+    if existing is None or existing.get("kind") != "explicit_work":
+        raise PersianVideoWorkflowError(f"explicit work span not found: {span_id}")
+    if existing.get("finished_at"):
+        return existing
+    finished = finish_causal_span(
+        state, span_id, finished_at=(now or datetime.now(timezone.utc)), outcome=outcome
+    )
+    _write_state(_project_root(state), state)
+    return finished
+
+
+def _assert_no_open_explicit_work(state: Mapping[str, Any], phase: str) -> None:
+    open_spans = [
+        span for span in _open_countable_work_spans(state)
+        if span.get("kind") == "explicit_work" and span.get("phase") == phase
+    ]
+    if open_spans:
+        raise PersianVideoWorkflowError(
+            "finish explicit work span before completing the current phase"
+        )
+
+
 def record_phase_attempt(
     project_id: str,
     phase: str,
@@ -1389,6 +1530,8 @@ def complete_phase(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Complete one phase and persist success/failure timing without inventing progress."""
+    current = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    _assert_no_open_explicit_work(current, phase)
     try:
         return _complete_phase_impl(
             project_id, phase, evidence=evidence, pipeline_dir=pipeline_dir, now=now
@@ -2880,6 +3023,22 @@ def build_parser() -> argparse.ArgumentParser:
     attempt.add_argument("project_id")
     attempt.add_argument("--phase")
 
+    work_start = sub.add_parser(
+        "work-start", help="prospectively start one measured agent/review work interval"
+    )
+    work_start.add_argument("project_id")
+    work_start.add_argument("--category", choices=sorted(_EXPLICIT_WORK_CATEGORIES), required=True)
+    work_start.add_argument("--name", required=True)
+
+    work_finish = sub.add_parser(
+        "work-finish", help="finish one prospectively measured agent/review work interval"
+    )
+    work_finish.add_argument("project_id")
+    work_finish.add_argument("span_id")
+    work_finish.add_argument(
+        "--outcome", choices=["succeeded", "failed", "interrupted"], default="succeeded"
+    )
+
     complete = sub.add_parser("complete", help="complete exactly one phase")
     complete.add_argument("project_id")
     complete.add_argument("--phase")
@@ -3040,6 +3199,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             if not phase:
                 raise PersianVideoWorkflowError("workflow has no next phase")
             _print_json(record_phase_attempt(args.project_id, str(phase)))
+        elif args.command == "work-start":
+            _print_json(start_explicit_work_span(
+                args.project_id, category=args.category, name=args.name
+            ))
+        elif args.command == "work-finish":
+            _print_json(finish_explicit_work_span(
+                args.project_id, args.span_id, outcome=args.outcome
+            ))
         elif args.command == "complete":
             state = load_workflow_state(args.project_id)
             phase = args.phase or state.get("next_phase")

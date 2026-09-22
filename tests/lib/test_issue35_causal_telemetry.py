@@ -639,3 +639,116 @@ def test_run_kernel_cli_exposes_bounded_one_shot_run() -> None:
     assert args.poll_interval_seconds == 0.25
     assert args.timeout_seconds == 900.0
     assert args.argv[-2:] == ["python", "render.py"]
+
+
+
+def test_explicit_work_span_counts_only_prospectively_measured_agent_work(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path)
+    started = workflow.start_explicit_work_span(
+        "run",
+        category="agent_editorial_work",
+        name="prepare approved inputs",
+        pipeline_dir=projects_root,
+        now=BASE + timedelta(seconds=5),
+    )
+    assert started["kind"] == "explicit_work"
+    assert started["count_toward_wall"] is True
+    assert started["finished_at"] is None
+
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    assert state["attempts"]["prepare_inputs"] == 1
+    phase = next(
+        span for span in state["causal_telemetry"]["spans"]
+        if span.get("kind") == "phase_attempt" and span.get("phase") == "prepare_inputs"
+    )
+    assert started["parent_span_id"] == phase["span_id"]
+
+    workflow.finish_explicit_work_span(
+        "run",
+        started["span_id"],
+        pipeline_dir=projects_root,
+        now=BASE + timedelta(seconds=25),
+    )
+    measured = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    accounting = workflow.phase_time_accounting(measured, now=BASE + timedelta(seconds=30))
+    assert accounting["editorial_wall_seconds"] == 20.0
+    assert accounting["causal_covered_seconds"] == 20.0
+    assert accounting["unattributed_wall_seconds"] == 10.0
+    assert accounting["causal_coverage_percent"] == pytest.approx(66.667, abs=0.001)
+
+
+def test_explicit_work_span_rejects_overlap_instead_of_double_counting(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path)
+    workflow.start_explicit_work_span(
+        "run",
+        category="review_evidence_assembly",
+        name="assemble review evidence",
+        pipeline_dir=projects_root,
+        now=BASE + timedelta(seconds=5),
+    )
+    with pytest.raises(workflow.PersianVideoWorkflowError, match="explicit work span is already open"):
+        workflow.start_explicit_work_span(
+            "run",
+            category="agent_editorial_work",
+            name="overlapping editorial work",
+            pipeline_dir=projects_root,
+            now=BASE + timedelta(seconds=6),
+        )
+
+
+def test_phase_completion_refuses_an_open_explicit_work_span_without_relabeling_it(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path)
+    span = workflow.start_explicit_work_span(
+        "run",
+        category="agent_editorial_work",
+        name="prepare approved inputs",
+        pipeline_dir=projects_root,
+        now=BASE + timedelta(seconds=5),
+    )
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    evidence = {
+        "authoritative_script_sha256": state["input"]["approved_script"]["sha256"],
+        "narration_sha256": state["input"]["narration"]["sha256"],
+    }
+    with pytest.raises(workflow.PersianVideoWorkflowError, match="finish explicit work span"):
+        workflow.complete_phase(
+            "run",
+            "prepare_inputs",
+            evidence=evidence,
+            pipeline_dir=projects_root,
+            now=BASE + timedelta(seconds=10),
+        )
+    blocked = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    phase = next(
+        item for item in blocked["causal_telemetry"]["spans"]
+        if item.get("kind") == "phase_attempt" and item.get("phase") == "prepare_inputs"
+    )
+    assert phase["finished_at"] is None
+    assert blocked["next_phase"] == "prepare_inputs"
+
+    workflow.finish_explicit_work_span(
+        "run", span["span_id"], pipeline_dir=projects_root,
+        now=BASE + timedelta(seconds=11),
+    )
+    completed = workflow.complete_phase(
+        "run", "prepare_inputs", evidence=evidence, pipeline_dir=projects_root,
+        now=BASE + timedelta(seconds=12),
+    )
+    assert completed["next_phase"] == "align_script_timing"
+
+
+def test_explicit_work_cli_exposes_prospective_start_and_finish() -> None:
+    start = workflow.build_parser().parse_args([
+        "work-start", "project", "--category", "review_evidence_assembly",
+        "--name", "final review assembly",
+    ])
+    assert start.command == "work-start"
+    assert start.category == "review_evidence_assembly"
+    assert start.name == "final review assembly"
+
+    finish = workflow.build_parser().parse_args([
+        "work-finish", "project", "work:final_review:1:1", "--outcome", "succeeded",
+    ])
+    assert finish.command == "work-finish"
+    assert finish.span_id == "work:final_review:1:1"
+    assert finish.outcome == "succeeded"
