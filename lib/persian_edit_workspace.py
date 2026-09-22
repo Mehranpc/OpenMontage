@@ -1012,7 +1012,9 @@ def stage_edit_draft(
     }
 
 def preflight_edit_draft(
-    project_dir: Path, attempt_id: str, *, hook_authority: Mapping[str, Any] | None = None
+    project_dir: Path, attempt_id: str, *,
+    hook_authority: Mapping[str, Any] | None = None,
+    recertify_promoted: bool = False,
 ) -> dict[str, Any]:
     draft, report_path, _ = _paths(project_dir, attempt_id)
     if not draft.is_file():
@@ -1024,13 +1026,85 @@ def preflight_edit_draft(
         if hook_authority is not None else _dependency_digests(payload)
     )
     candidate_path = _candidate_path(project_dir, attempt_id)
+    recertified = False
     if candidate_path.is_file():
         manifest = load_convergence_candidate(project_dir, attempt_id)
         staged_dependencies = manifest.get("dependencyDigests")
         if staged_dependencies and staged_dependencies != dependency_digests:
-            raise PersianEditWorkspaceError(
-                "refusing preflight: staged dependency context changed after candidate creation"
+            if not recertify_promoted:
+                raise PersianEditWorkspaceError(
+                    "refusing preflight: staged dependency context changed after candidate creation"
+                )
+            if manifest.get("disposition") != "promoted":
+                raise PersianEditWorkspaceError(
+                    "promoted candidate recertification requires the candidate to already be promoted"
+                )
+            canonical = project_dir.expanduser().resolve() / "artifacts" / "edit_decisions.json"
+            if not canonical.is_file():
+                raise PersianEditWorkspaceError(
+                    "promoted candidate recertification requires the canonical edit artifact"
+                )
+            canonical_payload = json.loads(canonical.read_text(encoding="utf-8"))
+            canonical_digest = artifact_sha256(canonical_payload)
+            manifest_digest = str(manifest.get("artifactSha256") or "")
+            if canonical_digest != digest or manifest_digest != digest:
+                raise PersianEditWorkspaceError(
+                    "promoted candidate recertification requires the same canonical edit digest"
+                )
+
+            old_report_sha = str(manifest.get("preflightReportSha256") or "")
+            old_report = None
+            if report_path.is_file():
+                report_bytes = report_path.read_bytes()
+                actual_old_report_sha = hashlib.sha256(report_bytes).hexdigest()
+                if old_report_sha and actual_old_report_sha != old_report_sha:
+                    raise PersianEditWorkspaceError(
+                        "refusing recertification: prior preflight report changed after certification"
+                    )
+                old_report_sha = actual_old_report_sha
+                old_report = json.loads(report_bytes.decode("utf-8"))
+
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+            history_path = (
+                project_dir.expanduser().resolve()
+                / ".history"
+                / "preflight_recertifications"
+                / _attempt(attempt_id)
+                / f"{stamp}.json"
             )
+            history_record = {
+                "version": "1.0",
+                "candidateId": attempt_id,
+                "archivedAt": datetime.now(timezone.utc).isoformat(),
+                "reason": "policy_or_implementation_dependency_change",
+                "artifactSha256": digest,
+                "dependencyDigests": dict(staged_dependencies or {}),
+                "preflightReportSha256": old_report_sha or None,
+                "candidateManifest": manifest,
+                "preflightReport": old_report,
+            }
+            _atomic_json(history_path, history_record)
+            history = list(manifest.get("certificationHistory") or [])
+            history.append({
+                "path": str(history_path),
+                "at": history_record["archivedAt"],
+                "reason": history_record["reason"],
+                "dependencyDigests": dict(staged_dependencies or {}),
+                "preflightReportSha256": old_report_sha or None,
+            })
+            _update_candidate(
+                project_dir,
+                attempt_id,
+                dependencyDigests=dependency_digests,
+                certificationHistory=history,
+                disposition="staged",
+                recertificationReason=history_record["reason"],
+            )
+            recertified = True
+    elif recertify_promoted:
+        raise PersianEditWorkspaceError(
+            "promoted candidate recertification requires an existing promoted candidate"
+        )
     cache_path = _cache_path(project_dir, digest)
 
     cached: dict[str, Any] | None = None
@@ -1108,6 +1182,8 @@ def preflight_edit_draft(
 
     report["attemptId"] = attempt_id
     report["draftPath"] = str(draft)
+    if recertified:
+        report["recertifiedPromotedCandidate"] = True
     _atomic_json(report_path, report)
     report_sha = hashlib.sha256(report_path.read_bytes()).hexdigest()
     _update_candidate(
