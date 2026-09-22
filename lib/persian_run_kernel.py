@@ -7,12 +7,13 @@ result, persisted evidence/checkpoint state, and workflow transition outcome.
 from __future__ import annotations
 
 import argparse
+from contextvars import ContextVar
 from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
 import time
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from lib.json_safe import to_json_safe
 from lib.persian_durable_job import durable_command_sha256
@@ -22,6 +23,49 @@ from lib.persian_workflow_telemetry import (
     record_causal_interval,
 )
 from lib import persian_video_workflow as workflow
+
+MEDIA_EXECUTION_PHASES = frozenset({
+    "render_opening_candidate", "render_final_candidate", "master_final_candidate",
+})
+_COMMIT_JOB: ContextVar[str | None] = ContextVar("persian_commit_job", default=None)
+
+
+def require_measured_phase_commit(state: Mapping[str, Any], phase: str,
+                                  evidence: Mapping[str, Any]) -> None:
+    """Bind each media phase to successful execution and exact output bytes."""
+    if phase not in MEDIA_EXECUTION_PHASES:
+        return
+    job_id = _COMMIT_JOB.get()
+    if job_id is None:
+        raise workflow.PersianVideoWorkflowError(
+            f"{phase} must complete through the run kernel; use run/status/commit "
+            "with the same durable job identity, not direct complete"
+        )
+    envelope = _read_json(_envelope_path(state, job_id))
+    if (envelope.get("phase") != phase
+            or envelope.get("phaseAttempt") != (state.get("attempts") or {}).get(phase)
+            or int(envelope.get("revisionCycle", 0)) != int(state.get("user_revision_cycles") or 0)):
+        raise workflow.PersianVideoWorkflowError("media execution belongs to another phase attempt or revision cycle")
+    if envelope.get("executionOutcome") != "succeeded" or envelope.get("telemetryOutcome") != "succeeded":
+        raise workflow.PersianVideoWorkflowError("media execution and causal reporting must succeed before commit")
+    result = envelope.get("semanticResult")
+    data = result.get("data") if isinstance(result, Mapping) else None
+    if not isinstance(data, Mapping):
+        raise workflow.PersianVideoWorkflowError("media execution requires a semantic result with output identity")
+    reported_path = data.get("output_path")
+    reported_sha = str(data.get("output_sha256") or "").lower()
+    if not reported_path or not re.fullmatch(r"[0-9a-f]{64}", reported_sha):
+        raise workflow.PersianVideoWorkflowError("media execution result lacks output path and sha256")
+    output = workflow._project_file(state, reported_path, label="measured media output")
+    if workflow._hash_file(output) != reported_sha:
+        raise workflow.PersianVideoWorkflowError("measured media output sha256 changed after execution")
+    evidence_path = evidence.get("candidatePath") if phase == "master_final_candidate" else evidence.get("output_path")
+    if not evidence_path or workflow._project_file(state, evidence_path, label="phase media output") != output:
+        raise workflow.PersianVideoWorkflowError("phase media output does not match measured execution")
+    evidence_sha = evidence.get("candidateSha256") if phase == "master_final_candidate" else evidence.get("opening_candidate_sha256" if phase == "render_opening_candidate" else "output_sha256")
+    if str(evidence_sha or "").lower() != reported_sha:
+        raise workflow.PersianVideoWorkflowError("phase media sha256 does not match measured execution")
+
 
 _ENVELOPE_VERSION = "1.0"
 _JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
@@ -507,6 +551,7 @@ def start_phase_job(
         "projectId": project_id,
         "phase": phase,
         "phaseAttempt": int(phase_attempt),
+        "revisionCycle": int(state.get("user_revision_cycles") or 0),
         "jobId": actual_job_id,
         "traceId": trace_id,
         "causalSpanId": f"job:{actual_job_id}",
@@ -627,6 +672,13 @@ def reconcile_terminal_jobs(
     """
     state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     for path in sorted((_project_root(state) / ".jobs").glob("*/execution-envelope.json")):
+        existing = _read_json(path)
+        if existing.get("executionMode") == "inline_fixture":
+            if (existing.get("executionOutcome") != "succeeded"
+                    or existing.get("telemetryOutcome") != "succeeded"
+                    or existing.get("workflowTransitionOutcome") != "succeeded"):
+                raise PersianRunKernelError(f"inline fixture job {path.parent.name!r} is incomplete")
+            continue
         job = reconcile_phase_job(project_id, path.parent.name, pipeline_dir=pipeline_dir)
         envelope = job["executionEnvelope"]
         if envelope.get("executionOutcome") not in {"succeeded", "failed", "interrupted"}:
@@ -733,6 +785,16 @@ def commit_phase_job(
         return state
 
     phase_evidence = dict(evidence or {})
+    if phase in MEDIA_EXECUTION_PHASES and evidence is None:
+        semantic = envelope.get("semanticResult")
+        data = semantic.get("data") if isinstance(semantic, Mapping) else None
+        derived = data.get("phase_evidence") if isinstance(data, Mapping) else None
+        if not isinstance(derived, Mapping):
+            raise PersianRunKernelError(
+                "media job result requires phase_evidence when commit evidence is omitted"
+            )
+        phase_evidence = dict(derived)
+    token = _COMMIT_JOB.set(job_id)
     try:
         committed = workflow.complete_phase(
             project_id,
@@ -747,6 +809,8 @@ def commit_phase_job(
         _record_commit_failure(envelope, phase_evidence, exc)
         _atomic_json(Path(str(envelope["path"])), envelope)
         raise
+    finally:
+        _COMMIT_JOB.reset(token)
 
     _persist_transition_causal_span(
         project_id, envelope, pipeline_dir=pipeline_dir, outcome="succeeded"
@@ -755,6 +819,97 @@ def commit_phase_job(
     _atomic_json(Path(str(envelope["path"])), envelope)
     return committed
 
+
+def run_inline_fixture_media_phase(
+    project_id: str,
+    *,
+    phase: str,
+    job_id: str,
+    operation: Callable[[], Mapping[str, Any]],
+    output_path: Path,
+    evidence_from_data: Callable[[Mapping[str, Any]], Mapping[str, Any]],
+    pipeline_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Measure the synthetic local fixture harness's in-process media operations.
+
+    Production calls use the durable `run` command. This adapter is solely for the
+    repository's monkeypatchable local E2E fixture. It persists execution truth
+    before committing, so a failed phase commit never repeats successful media.
+    """
+    from hashlib import sha256
+
+    if phase not in MEDIA_EXECUTION_PHASES:
+        raise PersianRunKernelError("inline fixture execution is limited to media phases")
+    state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    if state.get("next_phase") != phase:
+        raise PersianRunKernelError(f"cannot execute {phase!r}; next phase is {state.get('next_phase')!r}")
+    path = _envelope_path(state, job_id)
+    if path.exists():
+        envelope = _read_json(path)
+        if envelope.get("phase") != phase or envelope.get("executionMode") != "inline_fixture":
+            raise PersianRunKernelError("fixture job identity is already bound elsewhere")
+        if envelope.get("executionOutcome") != "succeeded":
+            raise PersianRunKernelError("prior fixture execution did not succeed")
+        result = envelope["semanticResult"]
+        operation_data = result["operationData"]
+    else:
+        state = workflow.record_phase_attempt(project_id, phase, pipeline_dir=pipeline_dir)
+        attempt = (state.get("attempts") or {})[phase]
+        started = datetime.now(timezone.utc)
+        envelope = {
+            "version": _ENVELOPE_VERSION, "path": str(path), "projectId": project_id,
+            "phase": phase, "phaseAttempt": attempt,
+            "revisionCycle": int(state.get("user_revision_cycles") or 0),
+            "jobId": job_id, "executionMode": "inline_fixture", "startedAt": started.isoformat(),
+            "executionOutcome": "running", "telemetryOutcome": "pending",
+            "workflowTransitionOutcome": "pending", "workflowTransitionAttempts": 0,
+        }
+        _atomic_json(path, envelope)
+        try:
+            raw = dict(operation())
+            if raw.get("success") is not True:
+                raise PersianRunKernelError(str(raw.get("error") or "fixture media operation failed"))
+            operation_data = dict(raw.get("data") or {})
+            actual_path = workflow._project_file(state, output_path, label="fixture media output")
+            digest = sha256(actual_path.read_bytes()).hexdigest()
+        except Exception as exc:
+            envelope["executionOutcome"] = "failed"
+            envelope["semanticResult"] = {"success": False, "error": str(exc)}
+            _atomic_json(path, envelope)
+            workflow.record_phase_failure(project_id, phase, reason=str(exc), pipeline_dir=pipeline_dir)
+            raise
+        finished = datetime.now(timezone.utc)
+        if finished < started:
+            finished = started
+        envelope["executionOutcome"] = "succeeded"
+        envelope["semanticResult"] = {
+            "success": True,
+            "data": {"output_path": str(actual_path), "output_sha256": digest},
+            "operationData": operation_data,
+        }
+        _atomic_json(path, envelope)
+        state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+        record_causal_interval(
+            state, span_id=f"job:{job_id}", name=f"fixture execution {phase}",
+            category="browser_render_execution" if phase != "master_final_candidate" else "machine_local_execution",
+            started_at=started, finished_at=finished,
+            parent_span_id=causal_phase_span_id(phase, attempt),
+            outcome="succeeded", kind="durable_job", count_toward_wall=True,
+            fields={"job_id": job_id, "phase": phase, "attempt": attempt},
+        )
+        workflow._write_state(_project_root(state), state)
+        envelope["telemetryOutcome"] = "succeeded"
+        _atomic_json(path, envelope)
+    evidence = dict(evidence_from_data(operation_data))
+    token = _COMMIT_JOB.set(job_id)
+    try:
+        committed = workflow.complete_phase(project_id, phase, evidence=evidence,
+                                            pipeline_dir=pipeline_dir)
+    finally:
+        _COMMIT_JOB.reset(token)
+    _record_commit_success(envelope, committed)
+    _atomic_json(path, envelope)
+    return operation_data
 
 def run_phase_job(
     project_id: str,
