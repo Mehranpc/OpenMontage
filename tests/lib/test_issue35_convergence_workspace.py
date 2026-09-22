@@ -127,6 +127,57 @@ def test_layout_recovery_classifies_nested_presentation_recipe_as_typography(tmp
     assert manifest["changedScopes"] == ["typography"]
 
 
+def test_asset_selection_recovery_atomically_rebinds_provenance_and_reviewed_regions(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    base = _edit()
+    shot = base["persian"]["shots"][0]
+    shot.pop("src", None)
+    shot["source"] = "/tmp/source-a.mp4"
+    shot["attribution"] = "Video by A on Pexels"
+    shot["avoidRegions"] = [
+        {"x": 0.2, "y": 0.3, "w": 0.5, "h": 0.4, "priority": "hard"}
+    ]
+    workspace.stage_edit_draft(project, "base", base, max_candidates=10)
+
+    child = deepcopy(base)
+    child_shot = child["persian"]["shots"][0]
+    child_shot["source"] = "/tmp/source-b.mp4"
+    child_shot["attribution"] = "Video by B on Pexels"
+    child_shot["avoidRegions"] = [
+        {"x": 0.3, "y": 0.25, "w": 0.4, "h": 0.3, "priority": "hard"},
+        {"x": 0.15, "y": 0.25, "w": 0.7, "h": 0.6, "priority": "soft"},
+    ]
+    issue = {"code": "ASSET_SELECTION_RETRY", "recoveryClass": "ASSET_SELECTION"}
+    staged = workspace.stage_edit_draft(
+        project,
+        "asset-rebind",
+        child,
+        parent_attempt_id="base",
+        diagnostic_issue=issue,
+        strategy="use_authored_alternate_query",
+        changed_fields=["assets.selection", "subject_regions.review"],
+        max_candidates=10,
+        revision_cycle=0,
+    )
+
+    assert staged["changedScopes"] == ["assets", "subject_regions"]
+
+    forbidden = deepcopy(child)
+    forbidden["persian"]["moments"][0]["segments"][0]["text"] = "کپی تغییر کرده"
+    with pytest.raises(PersianEditWorkspaceError, match="mutation surface"):
+        workspace.stage_edit_draft(
+            project,
+            "asset-rebind-copy-change",
+            forbidden,
+            parent_attempt_id="base",
+            diagnostic_issue=issue,
+            strategy="use_authored_alternate_query",
+            changed_fields=["assets.selection", "subject_regions.review"],
+            max_candidates=10,
+            revision_cycle=0,
+        )
+
+
 def test_recovery_mutation_surface_rejects_unrelated_edit_changes(tmp_path: Path) -> None:
     project = tmp_path / "project"
     workspace.stage_edit_draft(project, "base", _edit(), max_candidates=10)
