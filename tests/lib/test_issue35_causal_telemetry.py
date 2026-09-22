@@ -737,6 +737,46 @@ def test_phase_completion_refuses_an_open_explicit_work_span_without_relabeling_
     assert completed["next_phase"] == "align_script_timing"
 
 
+
+def test_send_back_interrupts_open_explicit_work_span_in_superseded_phase(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path)
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    target_index = workflow.PHASES.index("no_copy_preflight")
+    state["completed_phases"] = list(workflow.PHASES[:target_index])
+    state["next_phase"] = "no_copy_preflight"
+    workflow._write_state(projects_root / "run", state)
+
+    started = workflow.start_explicit_work_span(
+        "run",
+        category="agent_editorial_work",
+        name="author preflight candidate",
+        pipeline_dir=projects_root,
+        now=BASE + timedelta(seconds=5),
+    )
+    rewound = workflow.request_send_back(
+        "run",
+        "review_subject_regions",
+        reason="subject-region evidence needs revision",
+        pipeline_dir=projects_root,
+        now=BASE + timedelta(seconds=15),
+    )
+
+    spans = rewound["causal_telemetry"]["spans"]
+    finished = next(span for span in spans if span.get("span_id") == started["span_id"])
+    assert finished["finished_at"] == (BASE + timedelta(seconds=15)).isoformat()
+    assert finished["outcome"] == "interrupted"
+    assert not [
+        span for span in spans
+        if span.get("count_toward_wall") and not span.get("finished_at")
+        and span.get("kind") not in {"run", "phase_attempt"}
+    ]
+    phase = next(
+        span for span in spans
+        if span.get("kind") == "phase_attempt" and span.get("phase") == "no_copy_preflight"
+    )
+    assert phase["outcome"] == "superseded"
+    assert rewound["next_phase"] == "review_subject_regions"
+
 def test_explicit_work_cli_exposes_prospective_start_and_finish() -> None:
     start = workflow.build_parser().parse_args([
         "work-start", "project", "--category", "review_evidence_assembly",

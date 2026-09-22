@@ -1185,6 +1185,18 @@ def finish_explicit_work_span(
     return finished
 
 
+def _interrupt_open_explicit_work_for_phase(
+    state: dict[str, Any], phase: str, *, now: datetime
+) -> None:
+    """Close measured agent/review work when a send-back abandons its phase."""
+    for span in _open_countable_work_spans(state):
+        if span.get("kind") != "explicit_work" or span.get("phase") != phase:
+            continue
+        finish_causal_span(
+            state, str(span["span_id"]), finished_at=now, outcome="interrupted"
+        )
+
+
 def _assert_no_open_explicit_work(state: Mapping[str, Any], phase: str) -> None:
     open_spans = [
         span for span in _open_countable_work_spans(state)
@@ -1766,6 +1778,7 @@ def request_send_back(
     # Rewinding abandons the currently open attempt by definition. Close it as
     # superseded before changing the phase pointer so telemetry has no zombie work.
     if isinstance(current, str):
+        _interrupt_open_explicit_work_for_phase(state, current, now=effective_now)
         _finish_phase_telemetry(state, current, outcome="superseded", now=effective_now)
     current_index = len(PHASES) if current is None else _phase_index(str(current))
     target_index = _phase_index(target_phase)
