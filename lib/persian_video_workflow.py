@@ -2797,6 +2797,60 @@ def resume_workflow(
     return state
 
 
+def _terminalize_from_convergence_stop(
+    state: dict[str, Any], convergence: Mapping[str, Any], *, revision_cycle: int
+) -> bool:
+    unresolved = convergence.get("unresolved")
+    if convergence.get("status") != "needs_revision" or not isinstance(unresolved, Mapping):
+        return False
+    if int(unresolved.get("revisionCycle") or 0) != int(revision_cycle):
+        return False
+    if str(unresolved.get("outcome") or "") != "needs_human_editorial_revision":
+        return False
+
+    stamp = datetime.now(timezone.utc)
+    raw_at = str(unresolved.get("at") or "").strip()
+    if raw_at:
+        try:
+            parsed = datetime.fromisoformat(raw_at.replace("Z", "+00:00"))
+            stamp = parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+
+    diagnostics = unresolved.get("unresolvedDiagnostics")
+    first_diagnostic = (
+        diagnostics[0]
+        if isinstance(diagnostics, list)
+        and diagnostics
+        and isinstance(diagnostics[0], Mapping)
+        else {}
+    )
+    stop = {
+        "at": raw_at or stamp.isoformat(),
+        "diagnosticCode": str(first_diagnostic.get("code") or ""),
+        "recoveryClass": unresolved.get("recoveryClass"),
+        "attemptsUsed": int(unresolved.get("attemptsUsed") or 0),
+        "maxAttempts": unresolved.get("maxAttempts"),
+        "outcome": "needs_human_editorial_revision",
+        "reason": str(unresolved.get("reason") or "convergence_budget_exhausted"),
+        "globalCandidatesUsed": int(unresolved.get("globalCandidatesUsed") or 0),
+        "globalMaxCandidates": int(unresolved.get("globalMaxCandidates") or 0),
+        "revisionCycle": int(revision_cycle),
+        "source": "convergence_workspace",
+    }
+    state["status"] = "needs_revision"
+    state["next_phase"] = None
+    state["recovery_stop"] = stop
+    trace = state.get("causal_telemetry")
+    if isinstance(trace, Mapping) and trace.get("run_span_id"):
+        finish_causal_span(
+            state, str(trace["run_span_id"]), finished_at=stamp, outcome="needs_revision"
+        )
+    reconcile_phase_telemetry(state, now=stamp)
+    _write_state(_project_root(state), state)
+    return True
+
+
 def stage_workflow_edit_draft(
     project_id: str,
     attempt_id: str,
@@ -2848,24 +2902,35 @@ def stage_workflow_edit_draft(
     current_convergence = convergence_status(
         _project_root(state), revision_cycle=revision_cycle
     )
+    if _terminalize_from_convergence_stop(
+        state, current_convergence, revision_cycle=revision_cycle
+    ):
+        raise PersianVideoWorkflowError(
+            "convergence workspace requires human editorial revision before more candidates can be staged"
+        )
     current_ids = set(str(item) for item in current_convergence.get("candidateIds") or [])
     if parent_attempt_id is None and current_ids and attempt_id not in current_ids:
         raise PersianVideoWorkflowError(
             "base convergence candidate already exists for this revision cycle; "
             "stage recovery as an explicit child with --parent and recovery metadata"
         )
-    staged = stage_edit_draft(
-        _project_root(state),
-        attempt_id,
-        payload,
-        parent_attempt_id=parent_attempt_id,
-        diagnostic_issue=issue,
-        strategy=strategy,
-        changed_fields=changed_fields,
-        max_candidates=max_candidates,
-        revision_cycle=revision_cycle,
-        hook_authority=decision,
-    )
+    try:
+        staged = stage_edit_draft(
+            _project_root(state),
+            attempt_id,
+            payload,
+            parent_attempt_id=parent_attempt_id,
+            diagnostic_issue=issue,
+            strategy=strategy,
+            changed_fields=changed_fields,
+            max_candidates=max_candidates,
+            revision_cycle=revision_cycle,
+            hook_authority=decision,
+        )
+    except PersianEditWorkspaceError:
+        stopped = convergence_status(_project_root(state), revision_cycle=revision_cycle)
+        _terminalize_from_convergence_stop(state, stopped, revision_cycle=revision_cycle)
+        raise
     return {
         **staged,
         "hookAuthority": authority,
