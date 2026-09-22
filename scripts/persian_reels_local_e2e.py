@@ -33,6 +33,7 @@ from lib.persian_alignment_provider import (
 from lib.persian_assets import assert_video_only, audit_asset_manifest
 from lib.persian_editorial_hook import validate_edit_hook_authority
 from lib.persian_finalization import master_final_candidate
+from lib.persian_run_kernel import run_inline_fixture_media_phase
 from lib.persian_hook_quality import (
     DEFAULT_AUTHORITY_REFERENCE,
     HOOK_TIMING_POLICY_VERSION,
@@ -982,23 +983,21 @@ def run_local(root: Path) -> dict[str, Any]:
         )
 
     opening = project / "renders" / "opening-candidate.mp4"
-    record_phase_attempt(PROJECT_ID, "render_opening_candidate", pipeline_dir=root)
-    try:
-        opening_result = ScriptAlignedPersianCompose().execute({
+
+    def render_opening() -> dict:
+        result = ScriptAlignedPersianCompose().execute({
             "edit_decisions": canonical_edit, "output_path": str(opening), "crf": 20,
             "concurrency": 2, "timeout_ms": 120000, "frames": "0-149"})
-        if not opening_result.success:
-            raise RuntimeError(opening_result.error or "Persian opening compose failed")
-    except Exception as exc:
-        record_phase_failure(
-            PROJECT_ID, "render_opening_candidate", reason=str(exc), pipeline_dir=root
-        )
-        raise
-    complete_phase(PROJECT_ID, "render_opening_candidate", evidence={
-        "output_path": str(opening),
-        "opening_candidate_sha256": _sha(opening),
-        "edit_artifact_sha256": edit_artifact_sha256,
-    }, pipeline_dir=root)
+        return {"success": result.success, "data": dict(result.data or {}), "error": result.error}
+
+    opening_data = run_inline_fixture_media_phase(
+        PROJECT_ID, phase="render_opening_candidate", job_id="fixture-opening-render",
+        operation=render_opening, output_path=opening,
+        evidence_from_data=lambda _data: {
+            "output_path": str(opening), "opening_candidate_sha256": _sha(opening),
+            "edit_artifact_sha256": edit_artifact_sha256,
+        }, pipeline_dir=root,
+    )
 
     record_phase_attempt(PROJECT_ID, "opening_review", pipeline_dir=root)
     try:
@@ -1008,7 +1007,7 @@ def run_local(root: Path) -> dict[str, Any]:
         )
         opening_review_path, opening_review = _build_opening_review(
             opening, opening_frames, project, hook_audit, retention,
-            dict(opening_result.data or {}).get("post_render_motion_qa") or {},
+            opening_data.get("post_render_motion_qa") or {},
             edit_artifact_sha256=edit_artifact_sha256,
         )
     except Exception as exc:
@@ -1024,38 +1023,32 @@ def run_local(root: Path) -> dict[str, Any]:
     }, pipeline_dir=root)
 
     rendered = project / "renders" / "rendered.mp4"
-    record_phase_attempt(PROJECT_ID, "render_final_candidate", pipeline_dir=root)
-    try:
+
+    def render_full() -> dict:
         result = ScriptAlignedPersianCompose().execute({
             "edit_decisions": canonical_edit, "output_path": str(rendered), "crf": 20,
             "concurrency": 2, "timeout_ms": 120000})
-        if not result.success:
-            raise RuntimeError(result.error or "Persian compose failed")
-        data = dict(result.data or {})
-    except Exception as exc:
-        record_phase_failure(
-            PROJECT_ID, "render_final_candidate", reason=str(exc), pipeline_dir=root
-        )
-        raise
-    complete_phase(PROJECT_ID, "render_final_candidate", evidence={
-        "output_path": str(rendered),
-        "edit_artifact_sha256": edit_artifact_sha256,
-        "motion_qa_passed": data["post_render_motion_qa"]["passed"],
-    }, pipeline_dir=root)
+        return {"success": result.success, "data": dict(result.data or {}), "error": result.error}
 
-    record_phase_attempt(PROJECT_ID, "master_final_candidate", pipeline_dir=root)
-    try:
-        mastering = master_final_candidate(rendered, project / "renders" / "candidate.mp4")
-        candidate = Path(mastering["candidatePath"])
-    except Exception as exc:
-        record_phase_failure(
-            PROJECT_ID, "master_final_candidate", reason=str(exc), pipeline_dir=root
-        )
-        raise
-    complete_phase(PROJECT_ID, "master_final_candidate", evidence={
-        **mastering,
-        "edit_artifact_sha256": edit_artifact_sha256,
-    }, pipeline_dir=root)
+    data = run_inline_fixture_media_phase(
+        PROJECT_ID, phase="render_final_candidate", job_id="fixture-full-render",
+        operation=render_full, output_path=rendered,
+        evidence_from_data=lambda data: {
+            "output_path": str(rendered), "output_sha256": _sha(rendered),
+            "edit_artifact_sha256": edit_artifact_sha256,
+            "motion_qa_passed": data["post_render_motion_qa"]["passed"],
+        }, pipeline_dir=root,
+    )
+
+    mastering = run_inline_fixture_media_phase(
+        PROJECT_ID, phase="master_final_candidate", job_id="fixture-master",
+        operation=lambda: {"success": True, "data": master_final_candidate(
+            rendered, project / "renders" / "candidate.mp4")},
+        output_path=project / "renders" / "candidate.mp4",
+        evidence_from_data=lambda data: {**data, "edit_artifact_sha256": edit_artifact_sha256},
+        pipeline_dir=root,
+    )
+    candidate = Path(mastering["candidatePath"])
 
     record_phase_attempt(PROJECT_ID, "final_review", pipeline_dir=root)
     try:

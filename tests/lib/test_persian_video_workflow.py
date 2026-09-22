@@ -69,7 +69,9 @@ def _advance_to(tmp_path: Path, target: str, *, project_id: str = "run") -> dict
         phase = state.get("next_phase")
         assert phase is not None
         state = record_phase_attempt(project_id, phase, pipeline_dir=tmp_path, now=BASE)
-        if phase in workflow._PHASE_CHECKPOINT:
+        if phase in workflow._PHASE_CHECKPOINT or phase in {
+            "render_opening_candidate", "render_final_candidate", "master_final_candidate",
+        }:
             # This helper builds fixtures for tests unrelated to checkpoint
             # persistence. Dedicated lifecycle tests exercise the real atomic
             # checkpoint contract, so bypass checkpoint-backed phases here rather

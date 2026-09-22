@@ -1546,7 +1546,7 @@ def complete_phase(
     _assert_no_open_explicit_work(current, phase)
     from lib.persian_run_kernel import require_measured_phase_commit
 
-    require_measured_phase_commit(current, phase)
+    require_measured_phase_commit(current, phase, evidence or {})
     try:
         return _complete_phase_impl(
             project_id, phase, evidence=evidence, pipeline_dir=pipeline_dir, now=now
