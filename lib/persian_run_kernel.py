@@ -50,6 +50,49 @@ def _parse_time(value: object) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def _countable_span_bounds(span: Mapping[str, Any]) -> tuple[datetime, datetime] | None:
+    if not bool(span.get("count_toward_wall")) or span.get("kind") == "phase_residual":
+        return None
+    started = _parse_time(span.get("started_at"))
+    finished = _parse_time(span.get("finished_at"))
+    if started is None or finished is None or finished <= started:
+        return None
+    return started, finished
+
+
+def _uncovered_reconciliation_intervals(
+    start: datetime, end: datetime, spans: Sequence[Mapping[str, Any]]
+) -> list[tuple[datetime, datetime]]:
+    """Return lag intervals not already explained by measured causal work."""
+    covered: list[tuple[datetime, datetime]] = []
+    for span in spans:
+        bounds = _countable_span_bounds(span)
+        if bounds is None:
+            continue
+        left = max(start, bounds[0])
+        right = min(end, bounds[1])
+        if right > left:
+            covered.append((left, right))
+    if not covered:
+        return [(start, end)] if end > start else []
+    covered.sort(key=lambda item: item[0])
+    merged: list[list[datetime]] = []
+    for left, right in covered:
+        if not merged or left > merged[-1][1]:
+            merged.append([left, right])
+        elif right > merged[-1][1]:
+            merged[-1][1] = right
+    gaps: list[tuple[datetime, datetime]] = []
+    cursor = start
+    for left, right in merged:
+        if left > cursor:
+            gaps.append((cursor, left))
+        cursor = max(cursor, right)
+    if cursor < end:
+        gaps.append((cursor, end))
+    return gaps
+
+
 def _validate_job_id(job_id: str) -> str:
     if not _JOB_ID_RE.fullmatch(job_id):
         raise PersianRunKernelError(
@@ -191,29 +234,47 @@ def _persist_job_causal_span(
         fields={"job_id": job_id, "phase": phase, "attempt": attempt},
     )
     if finished:
-        reconcile_span_id = f"reconcile:{job_id}"
+        reconcile_span_prefix = f"reconcile:{job_id}"
         trace = state.get("causal_telemetry") or {}
         spans = list(trace.get("spans") or []) if isinstance(trace, Mapping) else []
         already_recorded = any(
-            isinstance(item, Mapping) and item.get("span_id") == reconcile_span_id
+            isinstance(item, Mapping)
+            and (
+                str(item.get("span_id") or "") == reconcile_span_prefix
+                or str(item.get("span_id") or "").startswith(reconcile_span_prefix + ":")
+            )
             for item in spans
         )
         finished_time = _parse_time(finished)
         observed = reconciled_at or datetime.now(timezone.utc)
         if not already_recorded and finished_time is not None and observed > finished_time:
-            record_causal_interval(
-                state,
-                span_id=reconcile_span_id,
-                name=f"reconcile durable job {job_id}",
-                category="accounting_reconciliation",
-                started_at=finished_time,
-                finished_at=observed,
-                parent_span_id=causal_phase_span_id(phase, attempt),
-                outcome="succeeded",
-                kind="reconciliation",
-                count_toward_wall=True,
-                fields={"job_id": job_id, "phase": phase, "attempt": attempt},
-            )
+            gaps = _uncovered_reconciliation_intervals(finished_time, observed, spans)
+            for index, (gap_start, gap_end) in enumerate(gaps, 1):
+                span_id = (
+                    reconcile_span_prefix
+                    if index == 1
+                    else f"{reconcile_span_prefix}:{index}"
+                )
+                record_causal_interval(
+                    state,
+                    span_id=span_id,
+                    name=f"reconcile durable job {job_id}",
+                    category="accounting_reconciliation",
+                    started_at=gap_start,
+                    finished_at=gap_end,
+                    parent_span_id=causal_phase_span_id(phase, attempt),
+                    outcome="succeeded",
+                    kind="reconciliation",
+                    count_toward_wall=True,
+                    fields={
+                        "job_id": job_id,
+                        "phase": phase,
+                        "attempt": attempt,
+                        "lag_segment_index": index,
+                        "lag_segment_count": len(gaps),
+                        "observed_at": observed.isoformat(),
+                    },
+                )
     workflow._write_state(_project_root(state), state)
 
 
@@ -287,9 +348,20 @@ def _persist_transition_causal_span(
             key=lambda value: _parse_time(value) or datetime.min.replace(tzinfo=timezone.utc),
         )
     else:
-        reconcile = next(
-            (item for item in spans if item.get("span_id") == f"reconcile:{job_id}"),
-            None,
+        reconcile_prefix = f"reconcile:{job_id}"
+        reconcile = max(
+            (
+                item
+                for item in spans
+                if (
+                    str(item.get("span_id") or "") == reconcile_prefix
+                    or str(item.get("span_id") or "").startswith(reconcile_prefix + ":")
+                )
+                and item.get("finished_at")
+            ),
+            key=lambda item: _parse_time(item.get("finished_at"))
+            or datetime.min.replace(tzinfo=timezone.utc),
+            default=None,
         )
         job_span = next(
             (item for item in spans if item.get("span_id") == f"job:{job_id}"),
