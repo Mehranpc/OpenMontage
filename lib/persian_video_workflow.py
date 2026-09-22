@@ -636,6 +636,31 @@ def phase_time_accounting(
     }
 
 
+def _freeze_performance_summary(state: dict[str, Any], *, now: datetime) -> None:
+    """Append a reporting revision while retaining earlier acceptance evidence."""
+    previous = state.get("performance_summary")
+    if isinstance(previous, Mapping):
+        state.setdefault("performance_summary_history", []).append(dict(previous))
+    accounting = phase_time_accounting(state, now=now)
+    window = _parse_timestamp(str(state.get("budget_window_started_at") or state["created_at"]))
+    candidate = state.get("approval") or (state.get("evidence") or {}).get("awaiting_human") or {}
+    state["performance_summary"] = {
+        **accounting,
+        "recorded_at": now.isoformat(),
+        "status": state.get("status"),
+        "candidate_sha256": candidate.get("candidate_sha256"),
+        "revision_cycle": int(state.get("user_revision_cycles") or 0),
+        "revision_window": phase_time_accounting(state, now=now, since=window),
+        "endToEndSloSeconds": END_TO_END_SLO_SECONDS,
+        "endToEndSloExceeded": accounting["workflow_wall_seconds"] > END_TO_END_SLO_SECONDS,
+        "phaseSloExceeded": {
+            name: any(bool(item.get("slo_exceeded")) for item in entries if isinstance(item, Mapping))
+            for name, entries in (state.get("phase_telemetry") or {}).items()
+            if isinstance(entries, list)
+        },
+    }
+
+
 def _finish_phase_telemetry(
     state: dict[str, Any], phase: str, *, outcome: str, now: datetime | None = None
 ) -> None:
@@ -1254,6 +1279,11 @@ def _complete_phase_impl(
         raise PersianVideoWorkflowError(
             f"cannot complete {phase!r}; next phase is {state.get('next_phase')!r}"
         )
+    if phase == "awaiting_human":
+        from lib.persian_run_kernel import reconcile_terminal_jobs
+
+        reconcile_terminal_jobs(project_id, pipeline_dir=pipeline_dir)
+        state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     if phase not in {"open_backlot", "awaiting_human"} and not int(
         (state.get("attempts") or {}).get(phase, 0)
     ):
@@ -1334,6 +1364,7 @@ def _complete_phase_impl(
     else:
         state["next_phase"] = PHASES[_phase_index(phase) + 1]
     _finish_phase_telemetry(state, phase, outcome="succeeded", now=now)
+    reconcile_phase_telemetry(state, now=now)
     if phase == "awaiting_human":
         terminal_now = now or datetime.now(timezone.utc)
         trace = state.get("causal_telemetry")
@@ -1344,24 +1375,7 @@ def _complete_phase_impl(
                 finished_at=terminal_now,
                 outcome="awaiting_human",
             )
-        accounting = phase_time_accounting(state, now=terminal_now)
-        state["performance_summary"] = {
-            **accounting,
-            "endToEndSloSeconds": END_TO_END_SLO_SECONDS,
-            "endToEndSloExceeded": accounting["workflow_wall_seconds"] > END_TO_END_SLO_SECONDS,
-            "phaseSloExceeded": {
-                name: any(
-                    bool(item.get("slo_exceeded"))
-                    for item in entries if isinstance(item, Mapping)
-                )
-                for name, entries in (state.get("phase_telemetry") or {}).items()
-                if isinstance(entries, list)
-            },
-        }
-    # Phase completion reconciles any older unfinished attempts that a crash may
-    # have left behind. At the terminal transition this also asserts that the
-    # workflow cannot ship with historical attempts still marked `running`.
-    reconcile_phase_telemetry(state, now=now)
+        _freeze_performance_summary(state, now=terminal_now)
     _write_state(_project_root(state), state)
     return state
 
@@ -2533,20 +2547,7 @@ def reconcile_approved_compose_checkpoint(
             "persian_text_verified": bool(report.get("persian_text_verified")),
         }
         reconcile_phase_telemetry(state, now=approved_at)
-        accounting = phase_time_accounting(state, now=approved_at)
-        state["performance_summary"] = {
-            **accounting,
-            "endToEndSloSeconds": END_TO_END_SLO_SECONDS,
-            "endToEndSloExceeded": accounting["workflow_wall_seconds"] > END_TO_END_SLO_SECONDS,
-            "phaseSloExceeded": {
-                name: any(
-                    bool(item.get("slo_exceeded"))
-                    for item in entries if isinstance(item, Mapping)
-                )
-                for name, entries in (state.get("phase_telemetry") or {}).items()
-                if isinstance(entries, list)
-            },
-        }
+        _freeze_performance_summary(state, now=approved_at)
         _write_state(_project_root(state), state)
     return state
 

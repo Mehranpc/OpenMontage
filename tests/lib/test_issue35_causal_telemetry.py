@@ -70,6 +70,45 @@ def test_phase_attempts_join_one_persistent_production_trace(tmp_path: Path) -> 
     assert phase_spans[0]["count_toward_wall"] is False
 
 
+def test_completed_phase_does_not_certify_unobserved_work(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path)
+    state = workflow.record_phase_attempt(
+        "run", "prepare_inputs", pipeline_dir=projects_root, now=BASE
+    )
+    completed = workflow.complete_phase(
+        "run", "prepare_inputs", pipeline_dir=projects_root,
+        now=BASE + timedelta(seconds=100),
+        evidence={
+            "authoritative_script_sha256": state["input"]["approved_script"]["sha256"],
+            "narration_sha256": state["input"]["narration"]["sha256"],
+        },
+    )
+    result = workflow.phase_time_accounting(completed, now=BASE + timedelta(seconds=100))
+    assert result["workflow_wall_seconds"] == 100.0
+    assert result["causal_covered_seconds"] == 0.0
+    assert result["unattributed_wall_seconds"] == 100.0
+    assert result["editorial_wall_seconds"] == 0.0
+
+
+def test_historical_residuals_remain_readable_without_blocking_measured_evidence() -> None:
+    state = {"created_at": BASE.isoformat(),
+             "causal_telemetry": telemetry.new_causal_trace("legacy", started_at=BASE)}
+    telemetry.record_causal_interval(
+        state, span_id="old-residual", name="inferred editorial work",
+        category="agent_editorial_work", kind="phase_residual",
+        started_at=BASE, finished_at=BASE + timedelta(seconds=100),
+    )
+    telemetry.record_causal_interval(
+        state, span_id="measured", name="actual renderer",
+        category="browser_render_execution",
+        started_at=BASE + timedelta(seconds=20), finished_at=BASE + timedelta(seconds=30),
+    )
+    result = workflow.phase_time_accounting(state, now=BASE + timedelta(seconds=100))
+    assert result["causal_coverage_percent"] == 10.0
+    assert result["unattributed_wall_seconds"] == 90.0
+    assert state["causal_telemetry"]["spans"][1]["count_toward_wall"] is True
+
+
 def test_durable_job_records_child_span_with_explicit_semantic_category(tmp_path: Path) -> None:
     projects_root = _fresh_project(tmp_path)
     started = kernel.start_phase_job(
