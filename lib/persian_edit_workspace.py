@@ -371,7 +371,7 @@ def _typography_payload(edit: Mapping[str, Any]) -> list[dict[str, Any]]:
 def _asset_payload(edit: Mapping[str, Any]) -> list[dict[str, Any]]:
     persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
     result: list[dict[str, Any]] = []
-    tokens = ("src", "source", "asset", "provider", "clip", "query", "crop", "window", "media", "path", "url", "video")
+    tokens = ("src", "source", "asset", "provider", "clip", "query", "crop", "window", "media", "path", "url", "video", "attribution")
     for raw in persian.get("shots") or []:
         if not isinstance(raw, Mapping):
             continue
@@ -455,7 +455,7 @@ def _unclassified_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
 
     asset_tokens = (
         "src", "source", "asset", "provider", "clip", "query", "crop",
-        "window", "media", "path", "url", "video",
+        "window", "media", "path", "url", "video", "attribution",
     )
     known_shot = {
         "id", "startSeconds", "endSeconds", "visualEventId", "changeType",
@@ -568,6 +568,8 @@ def _allowed_scopes(mutation_surface: list[str]) -> set[str]:
             allowed.update({"typography", "timeline"})
         elif value.startswith("assets."):
             allowed.add("assets")
+        elif value.startswith("subject_regions."):
+            allowed.add("subject_regions")
         elif value.startswith("runtime."):
             pass
     return allowed
