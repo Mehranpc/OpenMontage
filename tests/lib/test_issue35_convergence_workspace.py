@@ -390,6 +390,132 @@ def test_front_door_edit_stage_derives_workspace_budget_cycle_and_recovery_metad
     assert result["convergenceBudget"] == {"maxCandidates": 4, "revisionCycle": 2}
 
 
+def test_front_door_global_convergence_exhaustion_stops_workflow(tmp_path: Path, monkeypatch) -> None:
+    import json
+    from lib import persian_video_workflow as workflow
+
+    project = tmp_path / "run"
+    project.mkdir()
+    source = project / "candidate.json"
+    state = {
+        "project_id": "run",
+        "status": "active",
+        "next_phase": "no_copy_preflight",
+        "budgets": {"max_revisions_per_stage": 1},
+        "user_revision_cycles": 0,
+        "hook_selection": {"authority": "test"},
+        "read_allowlist": {"project_root": str(project)},
+        "projects_root": str(tmp_path),
+        "phase_telemetry": {},
+    }
+    monkeypatch.setattr(workflow, "load_workflow_state", lambda *args, **kwargs: state)
+    monkeypatch.setattr(workflow, "validate_edit_hook_authority", lambda *args, **kwargs: {"valid": True})
+
+    source.write_text(json.dumps(_edit()), encoding="utf-8")
+    workflow.stage_workflow_edit_draft("run", "base", source, pipeline_dir=tmp_path)
+
+    source.write_text(json.dumps(_edit(recipe="recipe-b")), encoding="utf-8")
+    workflow.stage_workflow_edit_draft(
+        "run",
+        "layout-1",
+        source,
+        parent_attempt_id="base",
+        diagnostic_code="FILM_TYPE_LAYOUT_OVERFLOW",
+        recovery_class="FILM_TYPE_LAYOUT",
+        strategy="select_curated_typography_recipe",
+        changed_fields=["typography.recipe"],
+        pipeline_dir=tmp_path,
+    )
+
+    source.write_text(json.dumps(_edit(recipe="recipe-c")), encoding="utf-8")
+    with pytest.raises(PersianEditWorkspaceError, match="global candidate budget exhausted"):
+        workflow.stage_workflow_edit_draft(
+            "run",
+            "layout-2",
+            source,
+            parent_attempt_id="layout-1",
+            diagnostic_code="FILM_TYPE_LAYOUT_OVERFLOW",
+            recovery_class="FILM_TYPE_LAYOUT",
+            strategy="select_curated_typography_recipe",
+            changed_fields=["typography.recipe"],
+            pipeline_dir=tmp_path,
+        )
+
+    convergence = workspace.convergence_status(project, revision_cycle=0)
+    assert convergence["status"] == "needs_revision"
+    assert convergence["candidateCount"] == 2
+    assert not (project / ".convergence" / "edit" / "layout-2" / "candidate.json").exists()
+    assert state["status"] == "needs_revision"
+    assert state["next_phase"] is None
+    assert state["recovery_stop"]["outcome"] == "needs_human_editorial_revision"
+    assert state["recovery_stop"]["reason"] == "global_candidate_budget_exhausted"
+    assert state["recovery_stop"]["globalCandidatesUsed"] == 2
+    assert state["recovery_stop"]["globalMaxCandidates"] == 2
+
+
+def test_front_door_reconciles_preexisting_convergence_stop_before_staging(tmp_path: Path, monkeypatch) -> None:
+    import json
+    from lib import persian_video_workflow as workflow
+
+    project = tmp_path / "run"
+    project.mkdir()
+    workspace.stage_edit_draft(project, "base", _edit(), max_candidates=2)
+    workspace.stage_edit_draft(
+        project,
+        "layout-1",
+        _edit(recipe="recipe-b"),
+        parent_attempt_id="base",
+        diagnostic_issue=_layout_issue(),
+        strategy="select_curated_typography_recipe",
+        changed_fields=["typography.recipe"],
+        max_candidates=2,
+    )
+    with pytest.raises(PersianEditWorkspaceError, match="global candidate budget exhausted"):
+        workspace.stage_edit_draft(
+            project,
+            "layout-2",
+            _edit(recipe="recipe-c"),
+            parent_attempt_id="layout-1",
+            diagnostic_issue=_layout_issue(),
+            strategy="select_curated_typography_recipe",
+            changed_fields=["typography.recipe"],
+            max_candidates=2,
+        )
+
+    source = project / "candidate.json"
+    source.write_text(json.dumps(_edit(recipe="recipe-c")), encoding="utf-8")
+    state = {
+        "project_id": "run",
+        "status": "active",
+        "next_phase": "no_copy_preflight",
+        "budgets": {"max_revisions_per_stage": 1},
+        "user_revision_cycles": 0,
+        "hook_selection": {"authority": "test"},
+        "read_allowlist": {"project_root": str(project)},
+        "projects_root": str(tmp_path),
+        "phase_telemetry": {},
+    }
+    monkeypatch.setattr(workflow, "load_workflow_state", lambda *args, **kwargs: state)
+    monkeypatch.setattr(workflow, "validate_edit_hook_authority", lambda *args, **kwargs: {"valid": True})
+
+    with pytest.raises(workflow.PersianVideoWorkflowError, match="requires human editorial revision"):
+        workflow.stage_workflow_edit_draft(
+            "run",
+            "layout-2",
+            source,
+            parent_attempt_id="layout-1",
+            diagnostic_code="FILM_TYPE_LAYOUT_OVERFLOW",
+            recovery_class="FILM_TYPE_LAYOUT",
+            strategy="select_curated_typography_recipe",
+            changed_fields=["typography.recipe"],
+            pipeline_dir=tmp_path,
+        )
+
+    assert state["status"] == "needs_revision"
+    assert state["next_phase"] is None
+    assert state["recovery_stop"]["source"] == "convergence_workspace"
+    assert state["recovery_stop"]["revisionCycle"] == 0
+
 def test_front_door_parser_exposes_recovery_candidate_metadata_and_compare_command() -> None:
     from lib import persian_video_workflow as workflow
 
