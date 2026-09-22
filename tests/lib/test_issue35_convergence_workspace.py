@@ -100,6 +100,33 @@ def test_candidate_manifest_is_immutable_parented_and_dependency_aware(tmp_path:
         )
 
 
+def test_layout_recovery_classifies_nested_presentation_recipe_as_typography(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    base = _edit()
+    hook = base["persian"]["moments"][0]
+    hook.pop("recipe", None)
+    hook["presentation"] = {"recipeId": "editorial-hero-balanced"}
+    workspace.stage_edit_draft(project, "base", base, max_candidates=10)
+
+    child = deepcopy(base)
+    child["persian"]["moments"][0]["presentation"]["recipeId"] = "editorial-hero-compact"
+    staged = workspace.stage_edit_draft(
+        project,
+        "layout-1",
+        child,
+        parent_attempt_id="base",
+        diagnostic_issue=_layout_issue(),
+        strategy="select_curated_typography_recipe",
+        changed_fields=["typography.recipe"],
+        max_candidates=10,
+        revision_cycle=0,
+    )
+
+    assert staged["changedScopes"] == ["typography"]
+    manifest = workspace.load_convergence_candidate(project, "layout-1")
+    assert manifest["changedScopes"] == ["typography"]
+
+
 def test_recovery_mutation_surface_rejects_unrelated_edit_changes(tmp_path: Path) -> None:
     project = tmp_path / "project"
     workspace.stage_edit_draft(project, "base", _edit(), max_candidates=10)
