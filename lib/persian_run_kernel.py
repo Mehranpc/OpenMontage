@@ -42,8 +42,10 @@ def require_measured_phase_commit(state: Mapping[str, Any], phase: str,
             "with the same durable job identity, not direct complete"
         )
     envelope = _read_json(_envelope_path(state, job_id))
-    if envelope.get("phase") != phase or envelope.get("phaseAttempt") != (state.get("attempts") or {}).get(phase):
-        raise workflow.PersianVideoWorkflowError("media execution belongs to another phase attempt")
+    if (envelope.get("phase") != phase
+            or envelope.get("phaseAttempt") != (state.get("attempts") or {}).get(phase)
+            or int(envelope.get("revisionCycle", 0)) != int(state.get("user_revision_cycles") or 0)):
+        raise workflow.PersianVideoWorkflowError("media execution belongs to another phase attempt or revision cycle")
     if envelope.get("executionOutcome") != "succeeded" or envelope.get("telemetryOutcome") != "succeeded":
         raise workflow.PersianVideoWorkflowError("media execution and causal reporting must succeed before commit")
     result = envelope.get("semanticResult")
@@ -549,6 +551,7 @@ def start_phase_job(
         "projectId": project_id,
         "phase": phase,
         "phaseAttempt": int(phase_attempt),
+        "revisionCycle": int(state.get("user_revision_cycles") or 0),
         "jobId": actual_job_id,
         "traceId": trace_id,
         "causalSpanId": f"job:{actual_job_id}",
@@ -782,6 +785,15 @@ def commit_phase_job(
         return state
 
     phase_evidence = dict(evidence or {})
+    if phase in MEDIA_EXECUTION_PHASES and evidence is None:
+        semantic = envelope.get("semanticResult")
+        data = semantic.get("data") if isinstance(semantic, Mapping) else None
+        derived = data.get("phase_evidence") if isinstance(data, Mapping) else None
+        if not isinstance(derived, Mapping):
+            raise PersianRunKernelError(
+                "media job result requires phase_evidence when commit evidence is omitted"
+            )
+        phase_evidence = dict(derived)
     token = _COMMIT_JOB.set(job_id)
     try:
         committed = workflow.complete_phase(
@@ -846,8 +858,9 @@ def run_inline_fixture_media_phase(
         started = datetime.now(timezone.utc)
         envelope = {
             "version": _ENVELOPE_VERSION, "path": str(path), "projectId": project_id,
-            "phase": phase, "phaseAttempt": attempt, "jobId": job_id,
-            "executionMode": "inline_fixture", "startedAt": started.isoformat(),
+            "phase": phase, "phaseAttempt": attempt,
+            "revisionCycle": int(state.get("user_revision_cycles") or 0),
+            "jobId": job_id, "executionMode": "inline_fixture", "startedAt": started.isoformat(),
             "executionOutcome": "running", "telemetryOutcome": "pending",
             "workflowTransitionOutcome": "pending", "workflowTransitionAttempts": 0,
         }
