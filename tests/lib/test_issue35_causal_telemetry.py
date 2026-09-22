@@ -608,3 +608,21 @@ def test_one_shot_run_is_idempotent_after_successful_commit(tmp_path: Path) -> N
     assert durable_before["createdAt"] == durable_after["createdAt"]
     spans = workflow.load_workflow_state("run", pipeline_dir=projects_root)["causal_telemetry"]["spans"]
     assert sum(span.get("span_id") == "job:idempotent-one-shot" for span in spans) == 1
+
+
+
+def test_run_kernel_cli_exposes_bounded_one_shot_run() -> None:
+    args = kernel.build_parser().parse_args([
+        "run", "project", "job",
+        "--phase", "render_final_candidate",
+        "--idempotence-key", "render-v1",
+        "--telemetry-category", "browser_render_execution",
+        "--poll-interval-seconds", "0.25",
+        "--timeout-seconds", "900",
+        "--evidence-json", "/tmp/evidence.json",
+        "--", "python", "render.py",
+    ])
+    assert args.command == "run"
+    assert args.poll_interval_seconds == 0.25
+    assert args.timeout_seconds == 900.0
+    assert args.argv[-2:] == ["python", "render.py"]
