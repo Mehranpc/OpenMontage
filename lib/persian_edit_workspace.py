@@ -360,6 +360,9 @@ def _typography_payload(edit: Mapping[str, Any]) -> list[dict[str, Any]]:
                     for token in ("recipe", "layout", "typograph", "font", "style", "line", "placement")
                 )
             }
+            presentation = raw.get("presentation")
+            if isinstance(presentation, Mapping) and "recipeId" in presentation:
+                style["presentation.recipeId"] = presentation.get("recipeId")
             if style:
                 result.append({"collection": collection, "id": raw.get("id"), **style})
     return result
@@ -473,7 +476,10 @@ def _unclassified_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
             shot_unknown.append({"id": raw.get("id"), **extras})
 
     style_tokens = ("recipe", "layout", "typograph", "font", "style", "line", "placement")
-    known_moment = {"id", "kind", "startSeconds", "endSeconds", "segments", "text", "userAuthoredShortHook"}
+    known_moment = {
+        "id", "kind", "startSeconds", "endSeconds", "segments", "text",
+        "userAuthoredShortHook", "presentation",
+    }
     moment_unknown: list[dict[str, Any]] = []
     for collection in ("moments", "typographicBeats"):
         for raw in persian.get(collection) or []:
@@ -485,6 +491,15 @@ def _unclassified_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
                 if key not in known_moment
                 and not any(token in str(key).lower() for token in style_tokens)
             }
+            presentation = raw.get("presentation")
+            if isinstance(presentation, Mapping):
+                presentation_unknown = {
+                    str(key): value
+                    for key, value in presentation.items()
+                    if key != "recipeId"
+                }
+                if presentation_unknown:
+                    extras["presentation"] = presentation_unknown
             if extras:
                 moment_unknown.append({"collection": collection, "id": raw.get("id"), **extras})
 
