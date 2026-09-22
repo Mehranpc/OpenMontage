@@ -107,7 +107,7 @@ _CLASS_POLICIES: dict[str, dict[str, Any]] = {
     },
     "ASSET_SELECTION": {
         "maxAttempts": 2,
-        "strategies": ["use_authored_alternate_query", "stop_for_editorial_revision"],
+        "strategies": ["use_authored_alternate_query", "reuse_reviewed_non_overlapping_source_window", "stop_for_editorial_revision"],
         "mutationSurface": ["assets.selection", "assets.query", "subject_regions.review"],
         "preserve": ["approved_script", "narration", "audio_mix", "copy"],
     },
