@@ -831,7 +831,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="machine_local_execution",
         choices=sorted(CAUSAL_CATEGORIES - {"workflow_wall"}),
     )
-    start.add_argument("argv", nargs=argparse.REMAINDER)
+    start.add_argument("argv", nargs="+")
 
     run = sub.add_parser(
         "run", help="start, wait for, reconcile, and commit one current-phase durable execution"
@@ -848,7 +848,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--evidence-json")
     run.add_argument("--poll-interval-seconds", type=float, default=0.5)
     run.add_argument("--timeout-seconds", type=float, default=1800.0)
-    run.add_argument("argv", nargs=argparse.REMAINDER)
+    run.add_argument("argv", nargs="+")
 
     status = sub.add_parser("status", help="reconcile one execution envelope")
     status.add_argument("project_id")
