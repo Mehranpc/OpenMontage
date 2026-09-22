@@ -2721,7 +2721,8 @@ def stage_workflow_edit_draft(
 
 
 def preflight_workflow_edit_draft(
-    project_id: str, attempt_id: str, *, pipeline_dir: Path | None = None
+    project_id: str, attempt_id: str, *, pipeline_dir: Path | None = None,
+    recertify_promoted: bool = False,
 ) -> dict[str, Any]:
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     if state.get("next_phase") != "no_copy_preflight":
@@ -2732,7 +2733,10 @@ def preflight_workflow_edit_draft(
     if not isinstance(decision, Mapping):
         raise PersianVideoWorkflowError("workflow is missing its hook-selection authority record")
     return preflight_edit_draft(
-        _project_root(state), attempt_id, hook_authority=decision
+        _project_root(state),
+        attempt_id,
+        hook_authority=decision,
+        recertify_promoted=recertify_promoted,
     )
 
 
@@ -2954,6 +2958,14 @@ def build_parser() -> argparse.ArgumentParser:
     edit_preflight = sub.add_parser("edit-preflight", help="preflight one staged edit draft")
     edit_preflight.add_argument("project_id")
     edit_preflight.add_argument("attempt_id")
+    edit_preflight.add_argument(
+        "--recertify-promoted",
+        action="store_true",
+        help=(
+            "recompute policy/code-dependent preflight evidence for the already-promoted "
+            "canonical digest without creating a new convergence candidate"
+        ),
+    )
 
     edit_promote = sub.add_parser("edit-promote", help="promote a digest-bound passing edit draft")
     edit_promote.add_argument("project_id")
@@ -3103,7 +3115,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 changed_fields=args.changed_fields,
             ))
         elif args.command == "edit-preflight":
-            _print_json(preflight_workflow_edit_draft(args.project_id, args.attempt_id))
+            _print_json(preflight_workflow_edit_draft(
+                args.project_id,
+                args.attempt_id,
+                recertify_promoted=args.recertify_promoted,
+            ))
         elif args.command == "edit-promote":
             _print_json(promote_workflow_edit_draft(args.project_id, args.attempt_id))
         elif args.command == "edit-compare":
