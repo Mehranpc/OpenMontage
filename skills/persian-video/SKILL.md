@@ -124,6 +124,10 @@ Every durable command must use the narrowest truthful causal category. Use `prov
 
 `status.time_accounting` keeps real wall time as the top-level metric and reports `causal_coverage_percent`, category durations, explicit concurrency, and any remaining `unattributed_wall_seconds`. Unattributed time is an instrumentation diagnostic, not a bucket to silently assign to providers or editorial work.
 
+Accounting policy `2.0` excludes inferred `phase_residual` spans from measured coverage, including historical residuals. Phase start/end timestamps alone do not prove continuous editorial or review work. Record actual work intervals; preserve gaps as unknown. Existing frozen summaries remain historical evidence. New terminal summaries retain prior summaries in `performance_summary_history`, bind the candidate digest, and show whole-run and `revision_window` accounting separately.
+
+Before `awaiting_human`, the front door reconciles durable execution envelopes through the kernel, then settles phase telemetry, then freezes the summary. Pending jobs or failed telemetry reporting block presentation without discarding successful media. Retry reconciliation for the same identity; never rerender just to repair reporting.
+
 A child process exit code of zero is **not** semantic success. Tool/helper commands run through this kernel must persist their normalized JSON result to the path supplied in `OPENMONTAGE_DURABLE_RESULT_PATH`; a result with `success=false` blocks workflow advancement even when the process exits normally. If expensive execution succeeded but workflow commit/reporting later fails, retry `commit` for the same job rather than rerunning the expensive stage.
 
 The lower-level `persian_video_workflow job-start/job-status` commands remain compatibility/debug primitives. Normal production should use the run-kernel commands above so execution truth and workflow advancement stay bound to one durable envelope.

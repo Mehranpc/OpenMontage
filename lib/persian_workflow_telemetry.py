@@ -108,8 +108,12 @@ def _span_times(span: Mapping[str, Any]) -> tuple[datetime, datetime] | None:
     return started, finished
 
 
+def _counts_toward_wall(span: Mapping[str, Any]) -> bool:
+    return bool(span.get("count_toward_wall")) and span.get("kind") != "phase_residual"
+
+
 def _validate_overlap(spans: list[Mapping[str, Any]], candidate: Mapping[str, Any]) -> None:
-    if not candidate.get("count_toward_wall"):
+    if not _counts_toward_wall(candidate):
         return
     candidate_times = _span_times(candidate)
     if candidate_times is None:
@@ -118,7 +122,7 @@ def _validate_overlap(spans: list[Mapping[str, Any]], candidate: Mapping[str, An
     for existing in spans:
         if str(existing.get("span_id")) == str(candidate.get("span_id")):
             continue
-        if not existing.get("count_toward_wall"):
+        if not _counts_toward_wall(existing):
             continue
         existing_times = _span_times(existing)
         if existing_times is None:
@@ -321,7 +325,7 @@ def causal_time_accounting(
     counted = 0
     raw_total = 0.0
     for raw in list(trace.get("spans") or []):
-        if not isinstance(raw, Mapping) or not raw.get("count_toward_wall"):
+        if not isinstance(raw, Mapping) or not _counts_toward_wall(raw):
             continue
         started = _parse(raw.get("started_at"))
         finished = _parse(raw.get("finished_at"))
@@ -357,6 +361,7 @@ def causal_time_accounting(
     human_idle = category_seconds["human_idle"]
     external = provider + machine + browser
     return {
+        "accounting_policy_version": "2.0",
         "job_runtime_seconds": round(wall, 3),
         "workflow_wall_seconds": round(wall, 3),
         "provider_wait_seconds": round(provider, 3),
@@ -426,11 +431,10 @@ def _complement_intervals(
 def backfill_phase_residual_spans(
     state: dict[str, Any], phase: str, attempt: int
 ) -> list[dict[str, Any]]:
-    """Attribute only the uncovered wall intervals inside one finished phase attempt.
+    """Retain diagnostic gaps without certifying them as measured work.
 
-    Phase spans stay structural. Durable/provider/render/reconciliation children keep
-    their own categories; this helper fills only the complement, so a whole render
-    phase is never relabelled as render time or editorial time.
+    A phase boundary proves elapsed time, not what happened inside it. Historical
+    residual records stay readable but are excluded by accounting policy 2.0.
     """
     trace = _causal_trace(state)
     if trace is None:
@@ -480,7 +484,7 @@ def backfill_phase_residual_spans(
             parent_span_id=phase_id,
             outcome="succeeded",
             kind="phase_residual",
-            count_toward_wall=True,
+            count_toward_wall=False,
             fields={"phase": phase, "attempt": attempt},
         ))
     return created

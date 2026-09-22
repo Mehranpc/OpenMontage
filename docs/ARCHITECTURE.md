@@ -81,13 +81,13 @@ OpenMontage/
 
 ### 1. Agent-First Orchestration
 
-There is **no Python orchestrator**. The LLM agent:
+There is **no general Python creative orchestrator**. The LLM agent:
 - Reads the pipeline manifest to know the stage order
 - Reads each stage-director skill for detailed instructions
 - Calls tools, evaluates results, makes creative decisions
 - Writes checkpoints to persist state between stages
 
-Python provides **tools and persistence only**. All intelligence lives in skill instructions (Markdown) and pipeline manifests (YAML).
+Python provides **tools and persistence by default**. The Persian front door is a bounded exception: `persian_video_workflow` and `persian_run_kernel` own deterministic progression, budgets, execution truth, recovery, and telemetry. Creative judgement and semantic review remain agent-owned; canonical checkpoints govern approval.
 
 ### 2. No LLM API Key in Runtime
 

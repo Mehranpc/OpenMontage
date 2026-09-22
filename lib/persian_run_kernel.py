@@ -544,6 +544,38 @@ def reconcile_phase_job(
     return _decorate_job(job, envelope)
 
 
+def reconcile_terminal_jobs(
+    project_id: str, *, pipeline_dir: Path | None = None
+) -> None:
+    """Settle durable execution/reporting before freezing a presentation summary.
+
+    Historical failed attempts are retained; pending execution or failed reporting
+    prevents presentation and remains recoverable through the same job identity.
+    """
+    state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    for path in sorted((_project_root(state) / ".jobs").glob("*/execution-envelope.json")):
+        job = reconcile_phase_job(project_id, path.parent.name, pipeline_dir=pipeline_dir)
+        envelope = job["executionEnvelope"]
+        if envelope.get("executionOutcome") not in {"succeeded", "failed", "interrupted"}:
+            raise PersianRunKernelError(f"durable job {path.parent.name!r} is still pending")
+        if envelope.get("telemetryOutcome") != "succeeded":
+            raise PersianRunKernelError(
+                f"durable job {path.parent.name!r} causal telemetry requires reconciliation: "
+                f"{envelope.get('telemetryError', 'not reported')}"
+            )
+        phase = str(envelope["phase"])
+        window_start = _parse_time(state.get("budget_window_started_at") or state.get("created_at"))
+        job_start = _parse_time(envelope.get("startedAt"))
+        in_current_window = window_start is None or job_start is None or job_start >= window_start
+        if (in_current_window and phase in state.get("completed_phases", [])
+                and envelope.get("phaseAttempt") == (state.get("attempts") or {}).get(phase)
+                and envelope.get("executionOutcome") != "succeeded"):
+            raise PersianRunKernelError(
+                f"completed phase {phase!r} requires successful semantic execution "
+                f"for durable job {path.parent.name!r}"
+            )
+
+
 def _record_commit_failure(
     envelope: dict[str, Any], evidence: Mapping[str, Any], exc: Exception
 ) -> None:

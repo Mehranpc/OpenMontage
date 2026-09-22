@@ -287,3 +287,57 @@ def test_replay_rejects_a_different_command_for_the_same_job_identity(tmp_path: 
             idempotence_key="stable-command-v1",
             pipeline_dir=projects_root,
         )
+
+
+def test_terminal_presentation_reconciles_legacy_observed_job_without_rerunning(tmp_path: Path) -> None:
+    from tests.lib.test_persian_video_workflow import _review_ready_project
+
+    _, candidate, review_path, _ = _review_ready_project(tmp_path)
+    original_bytes = candidate.read_bytes()
+    started = kernel.start_phase_job(
+        "run", job_id="late-review", phase="final_review",
+        argv=["python", "-c", _semantic_child(success=True)],
+        idempotence_key="late-review-v1", pipeline_dir=tmp_path,
+    )
+    for _ in range(100):
+        durable = workflow.reconcile_workflow_job("run", "late-review", pipeline_dir=tmp_path)
+        if durable.get("status") == "succeeded":
+            break
+        time.sleep(0.05)
+    assert durable["status"] == "succeeded"
+    workflow.complete_phase(
+        "run", "final_review", evidence={"final_review_path": str(review_path)},
+        pipeline_dir=tmp_path,
+    )
+    presented = workflow.complete_phase("run", "awaiting_human", pipeline_dir=tmp_path)
+    operational = [s for s in presented["causal_telemetry"]["spans"] if s["kind"] == "durable_job"]
+    assert operational and all(s["finished_at"] for s in operational)
+    assert presented["performance_summary"]["machine_execution_seconds"] > 0
+    envelope = kernel.load_execution_envelope("run", "late-review", pipeline_dir=tmp_path)
+    assert envelope["executionOutcome"] == "succeeded"
+    assert envelope["phaseAttempt"] == started["phaseAttempt"]
+    kernel.reconcile_phase_job("run", "late-review", pipeline_dir=tmp_path)
+    repeated = workflow.load_workflow_state("run", pipeline_dir=tmp_path)
+    assert repeated["causal_telemetry"]["spans"] == presented["causal_telemetry"]["spans"]
+    assert repeated["performance_summary"] == presented["performance_summary"]
+    assert candidate.read_bytes() == original_bytes
+
+
+def test_terminal_presentation_cannot_hide_a_pending_job(tmp_path: Path) -> None:
+    from tests.lib.test_persian_video_workflow import _review_ready_project
+
+    _, _, review_path, _ = _review_ready_project(tmp_path)
+    kernel.start_phase_job(
+        "run", job_id="pending-review", phase="final_review",
+        argv=["python", "-c", _semantic_child(success=True)],
+        idempotence_key="pending-review-v1", pipeline_dir=tmp_path, launch=False,
+    )
+    workflow.complete_phase(
+        "run", "final_review", evidence={"final_review_path": str(review_path)},
+        pipeline_dir=tmp_path,
+    )
+    with pytest.raises(kernel.PersianRunKernelError, match="successful semantic execution"):
+        workflow.complete_phase("run", "awaiting_human", pipeline_dir=tmp_path)
+    state = workflow.load_workflow_state("run", pipeline_dir=tmp_path)
+    assert state["status"] == "active"
+    assert "performance_summary" not in state

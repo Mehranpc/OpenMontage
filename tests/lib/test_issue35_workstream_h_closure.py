@@ -10,7 +10,7 @@ from lib import persian_workflow_telemetry as telemetry
 BASE = datetime(2026, 9, 20, 7, 0, tzinfo=timezone.utc)
 
 
-def test_phase_residual_backfill_accounts_only_uncovered_review_time() -> None:
+def test_phase_residual_backfill_keeps_uncovered_review_time_unattributed() -> None:
     state = {
         "created_at": BASE.isoformat(),
         "causal_telemetry": telemetry.new_causal_trace("trace-h", started_at=BASE),
@@ -43,9 +43,9 @@ def test_phase_residual_backfill_accounts_only_uncovered_review_time() -> None:
 
     result = workflow.phase_time_accounting(state, now=BASE + timedelta(seconds=30))
     assert result["browser_render_seconds"] == 10.0
-    assert result["review_phase_seconds"] == 20.0
-    assert result["causal_coverage_percent"] == 100.0
-    assert result["unattributed_wall_seconds"] == 0.0
+    assert result["review_phase_seconds"] == 0.0
+    assert result["causal_coverage_percent"] == 33.333
+    assert result["unattributed_wall_seconds"] == 20.0
 
 
 def test_reconcile_superseded_attempt_backfills_residual_time() -> None:
@@ -87,8 +87,8 @@ def test_reconcile_superseded_attempt_backfills_residual_time() -> None:
     assert len(residual) == 1
     assert residual[0]["category"] == "review_evidence_assembly"
     result = workflow.phase_time_accounting(state, now=BASE + timedelta(seconds=20))
-    assert result["review_phase_seconds"] == 10.0
-    assert result["unattributed_wall_seconds"] == 10.0
+    assert result["review_phase_seconds"] == 0.0
+    assert result["unattributed_wall_seconds"] == 20.0
 
 
 def test_human_idle_is_explicit_and_reopens_finished_run_trace() -> None:
@@ -139,6 +139,7 @@ def test_approved_compose_checkpoint_reconciles_workflow_to_completed(
         "phase_telemetry": {},
         "causal_telemetry": trace,
         "performance_slo": {"endToEndSeconds": 2700},
+        "performance_summary": {"workflow_wall_seconds": 10.0, "candidate_sha256": digest},
     }
     telemetry.finish_causal_span(
         state,
@@ -178,6 +179,10 @@ def test_approved_compose_checkpoint_reconciles_workflow_to_completed(
     assert result["status"] == "completed"
     assert result["next_phase"] is None
     assert result["approval"]["candidate_sha256"] == digest
+    assert result["performance_summary_history"] == [
+        {"workflow_wall_seconds": 10.0, "candidate_sha256": digest}
+    ]
+    assert result["performance_summary"]["candidate_sha256"] == digest
     assert written["status"] == "completed"
     accounting = result["performance_summary"]
     assert accounting["human_idle_seconds"] == 10.0
