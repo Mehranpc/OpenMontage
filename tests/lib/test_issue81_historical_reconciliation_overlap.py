@@ -29,10 +29,13 @@ def _fresh_project(tmp_path: Path) -> Path:
     return projects_root
 
 
-def _wait_for_terminal_durable_state(path: Path) -> dict:
+def _wait_for_terminal_durable_reporting(path: Path) -> dict:
     for _ in range(100):
         payload = json.loads(path.read_text(encoding="utf-8"))
-        if payload.get("status") in {"succeeded", "failed", "interrupted"}:
+        if (
+            payload.get("status") in {"succeeded", "failed", "interrupted"}
+            and payload.get("reportingOutcome") in {"succeeded", "failed"}
+        ):
             return payload
         time.sleep(0.05)
     return json.loads(path.read_text(encoding="utf-8"))
@@ -53,8 +56,9 @@ def test_historical_reconciliation_does_not_overlap_later_measured_work(tmp_path
 
     job_dir = projects_root / "run" / ".jobs" / "old-failure"
     durable_path = job_dir / "state.json"
-    durable = _wait_for_terminal_durable_state(durable_path)
+    durable = _wait_for_terminal_durable_reporting(durable_path)
     assert durable["status"] == "failed"
+    assert durable["reportingOutcome"] == "succeeded"
 
     historical_start = BASE + timedelta(seconds=5)
     historical_finish = BASE + timedelta(seconds=10)
