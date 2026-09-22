@@ -1544,6 +1544,9 @@ def complete_phase(
     """Complete one phase and persist success/failure timing without inventing progress."""
     current = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     _assert_no_open_explicit_work(current, phase)
+    from lib.persian_run_kernel import require_measured_phase_commit
+
+    require_measured_phase_commit(current, phase)
     try:
         return _complete_phase_impl(
             project_id, phase, evidence=evidence, pipeline_dir=pipeline_dir, now=now

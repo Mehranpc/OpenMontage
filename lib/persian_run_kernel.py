@@ -7,6 +7,7 @@ result, persisted evidence/checkpoint state, and workflow transition outcome.
 from __future__ import annotations
 
 import argparse
+from contextvars import ContextVar
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -22,6 +23,21 @@ from lib.persian_workflow_telemetry import (
     record_causal_interval,
 )
 from lib import persian_video_workflow as workflow
+
+MEDIA_EXECUTION_PHASES = frozenset({
+    "render_opening_candidate", "render_final_candidate", "master_final_candidate",
+})
+_COMMIT_JOB: ContextVar[str | None] = ContextVar("persian_commit_job", default=None)
+
+
+def require_measured_phase_commit(state: Mapping[str, Any], phase: str) -> None:
+    """Media completion belongs to the run kernel, never a bare phase transition."""
+    if phase in MEDIA_EXECUTION_PHASES and _COMMIT_JOB.get() is None:
+        raise workflow.PersianVideoWorkflowError(
+            f"{phase} must complete through the run kernel; use run/status/commit "
+            "with the same durable job identity, not direct complete"
+        )
+
 
 _ENVELOPE_VERSION = "1.0"
 _JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
@@ -733,6 +749,7 @@ def commit_phase_job(
         return state
 
     phase_evidence = dict(evidence or {})
+    token = _COMMIT_JOB.set(job_id)
     try:
         committed = workflow.complete_phase(
             project_id,
@@ -747,6 +764,8 @@ def commit_phase_job(
         _record_commit_failure(envelope, phase_evidence, exc)
         _atomic_json(Path(str(envelope["path"])), envelope)
         raise
+    finally:
+        _COMMIT_JOB.reset(token)
 
     _persist_transition_causal_span(
         project_id, envelope, pipeline_dir=pipeline_dir, outcome="succeeded"
