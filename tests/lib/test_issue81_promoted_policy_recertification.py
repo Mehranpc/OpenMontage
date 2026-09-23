@@ -103,6 +103,42 @@ def test_recertification_is_explicit_and_only_for_the_promoted_canonical_digest(
         workspace.preflight_edit_draft(project, "base", recertify_promoted=True)
 
 
+def test_staged_same_digest_can_be_recertified_after_dependency_change_without_new_candidate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _stub_preflight(monkeypatch)
+    project = tmp_path / "project"
+    payload = _edit()
+
+    workspace.stage_edit_draft(project, "base", payload, max_candidates=1)
+    before = workspace.load_convergence_candidate(project, "base")
+    before_hook_digest = before["dependencyDigests"]["hook"]
+    canonical_digest = before["artifactSha256"]
+
+    monkeypatch.setattr(workspace, "HOOK_TIMING_POLICY_VERSION", "9.9")
+    monkeypatch.setattr(preflight, "HOOK_TIMING_POLICY_VERSION", "9.9")
+
+    with pytest.raises(PersianEditWorkspaceError, match="dependency context changed"):
+        workspace.preflight_edit_draft(project, "base")
+
+    second = workspace.preflight_edit_draft(
+        project, "base", recertify_staged=True
+    )
+    assert second["ok"] is True
+    assert second["recertifiedStagedCandidate"] is True
+    assert second["artifactSha256"] == canonical_digest
+
+    after = workspace.load_convergence_candidate(project, "base")
+    assert after["artifactSha256"] == canonical_digest
+    assert after["dependencyDigests"]["hook"] != before_hook_digest
+    assert after["disposition"] == "preflight_passed"
+    assert len(after["certificationHistory"]) == 1
+
+    status = workspace.convergence_status(project)
+    assert status["candidateCount"] == 1
+    assert status["candidateIds"] == ["base"]
+
+
 def test_front_door_exposes_promoted_policy_recertification_as_an_explicit_opt_in(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -122,12 +158,16 @@ def test_front_door_exposes_promoted_policy_recertification_as_an_explicit_opt_i
     monkeypatch.setattr(workflow, "load_workflow_state", lambda *args, **kwargs: state)
     captured = {}
 
-    def fake_preflight(project_dir, attempt_id, *, hook_authority=None, recertify_promoted=False):
+    def fake_preflight(
+        project_dir, attempt_id, *, hook_authority=None,
+        recertify_promoted=False, recertify_staged=False,
+    ):
         captured.update(
             project_dir=project_dir,
             attempt_id=attempt_id,
             hook_authority=hook_authority,
             recertify_promoted=recertify_promoted,
+            recertify_staged=recertify_staged,
         )
         return {"ok": True}
 
@@ -138,3 +178,44 @@ def test_front_door_exposes_promoted_policy_recertification_as_an_explicit_opt_i
     assert result == {"ok": True}
     assert captured["attempt_id"] == "base"
     assert captured["recertify_promoted"] is True
+
+
+def test_front_door_exposes_staged_policy_recertification_as_an_explicit_opt_in(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    parser = workflow.build_parser()
+    parsed = parser.parse_args(
+        ["edit-preflight", "run", "base", "--recertify-staged"]
+    )
+    assert parsed.recertify_staged is True
+
+    project = tmp_path / "run"
+    state = {
+        "project_id": "run",
+        "next_phase": "no_copy_preflight",
+        "hook_selection": {"mode": "user_supplied"},
+        "read_allowlist": {"project_root": str(project)},
+    }
+    monkeypatch.setattr(workflow, "load_workflow_state", lambda *args, **kwargs: state)
+    captured = {}
+
+    def fake_preflight(
+        project_dir, attempt_id, *, hook_authority=None,
+        recertify_promoted=False, recertify_staged=False,
+    ):
+        captured.update(
+            project_dir=project_dir,
+            attempt_id=attempt_id,
+            hook_authority=hook_authority,
+            recertify_promoted=recertify_promoted,
+            recertify_staged=recertify_staged,
+        )
+        return {"ok": True}
+
+    monkeypatch.setattr(workflow, "preflight_edit_draft", fake_preflight)
+    result = workflow.preflight_workflow_edit_draft(
+        "run", "base", pipeline_dir=tmp_path, recertify_staged=True
+    )
+    assert result == {"ok": True}
+    assert captured["attempt_id"] == "base"
+    assert captured["recertify_staged"] is True
