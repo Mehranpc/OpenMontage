@@ -307,9 +307,11 @@ def test_terminal_presentation_reconciles_legacy_observed_job_without_rerunning(
     assert durable["status"] == "succeeded"
     workflow.complete_phase(
         "run", "final_review", evidence={"final_review_path": str(review_path)},
-        pipeline_dir=tmp_path,
+        pipeline_dir=tmp_path, now=BASE,
     )
-    presented = workflow.complete_phase("run", "awaiting_human", pipeline_dir=tmp_path)
+    presented = workflow.complete_phase(
+        "run", "awaiting_human", pipeline_dir=tmp_path, now=BASE
+    )
     operational = [s for s in presented["causal_telemetry"]["spans"] if s["kind"] == "durable_job"]
     assert operational and all(s["finished_at"] for s in operational)
     assert presented["performance_summary"]["machine_execution_seconds"] > 0
@@ -334,10 +336,12 @@ def test_terminal_presentation_cannot_hide_a_pending_job(tmp_path: Path) -> None
     )
     workflow.complete_phase(
         "run", "final_review", evidence={"final_review_path": str(review_path)},
-        pipeline_dir=tmp_path,
+        pipeline_dir=tmp_path, now=BASE,
     )
     with pytest.raises(kernel.PersianRunKernelError, match="successful semantic execution"):
-        workflow.complete_phase("run", "awaiting_human", pipeline_dir=tmp_path)
+        workflow.complete_phase(
+            "run", "awaiting_human", pipeline_dir=tmp_path, now=BASE
+        )
     state = workflow.load_workflow_state("run", pipeline_dir=tmp_path)
     assert state["status"] == "active"
     assert "performance_summary" not in state

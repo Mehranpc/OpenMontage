@@ -2896,10 +2896,14 @@ def workflow_status(
     phase_elapsed = (
         _phase_elapsed_seconds(state, str(phase), now=current) if phase in PHASES else 0.0
     )
-    window_started = _parse_timestamp(
-        str(state.get("budget_window_started_at") or state.get("created_at") or "")
+    window_raw = str(
+        state.get("budget_window_started_at") or state.get("created_at") or ""
+    ).strip()
+    total_elapsed = (
+        max(0.0, (current - _parse_timestamp(window_raw)).total_seconds())
+        if window_raw
+        else 0.0
     )
-    total_elapsed = max(0.0, (current - window_started).total_seconds())
     budget_seconds = int((state.get("budgets") or {}).get("max_wall_time_minutes", 0)) * 60
     last_path, last_at = _last_project_write(_project_root(state))
     idle_seconds = None if last_at is None else max(0.0, (current - last_at).total_seconds())
