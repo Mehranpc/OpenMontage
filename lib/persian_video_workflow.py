@@ -46,6 +46,11 @@ from lib.persian_music_commands import (
     fetch_music as fetch_music_command,
     search_music as search_music_command,
 )
+from lib.persian_region_commands import (
+    PersianRegionCommandError,
+    build_sheets as build_region_sheets_command,
+    propose_regions as propose_regions_command,
+)
 from lib.persian_asset_workspace import (
     PersianAssetWorkspaceError,
     asset_workspace_status,
@@ -2408,6 +2413,34 @@ def fetch_workflow_music(
     )
 
 
+def _require_region_phase(state: Mapping[str, Any]) -> None:
+    if state.get("status") != "active" or state.get("next_phase") != "review_subject_regions":
+        raise PersianVideoWorkflowError(
+            "region tooling is available only during active review_subject_regions"
+        )
+
+
+def build_workflow_region_sheets(
+    project_id: str, *, pipeline_dir: Path | None = None
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    _require_region_phase(state)
+    project_root = _project_root(state)
+    return build_region_sheets_command(project_root.parent, project_root.name)
+
+
+def propose_workflow_regions(
+    project_id: str, input_path: str | Path, *, pipeline_dir: Path | None = None
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    _require_region_phase(state)
+    source = assert_read_allowed(state, str(input_path))
+    project_root = _project_root(state)
+    return propose_regions_command(
+        project_root.parent, project_root.name, _read_json(str(source))
+    )
+
+
 def _candidate_path(project_root: Path, reported: str) -> Path:
     raw = Path(reported).expanduser()
     path = raw.resolve() if raw.is_absolute() else (project_root / raw).resolve()
@@ -3496,6 +3529,18 @@ def build_parser() -> argparse.ArgumentParser:
     music_fetch.add_argument("--metadata-json", required=True, metavar="PATH")
     music_fetch.add_argument("--output-path", default="assets/music/bed.mp3")
 
+    regions = sub.add_parser("regions", help="deterministic subject-region review tools")
+    regions_sub = regions.add_subparsers(dest="regions_command", required=True)
+    regions_build = regions_sub.add_parser(
+        "build-sheets", help="build cached start/middle/end 10x10 review sheets"
+    )
+    regions_build.add_argument("project_id")
+    regions_propose = regions_sub.add_parser(
+        "propose", help="convert reviewed grid annotations into a non-final proposal"
+    )
+    regions_propose.add_argument("project_id")
+    regions_propose.add_argument("--json", required=True, metavar="PATH")
+
     asset_request = sub.add_parser("asset-request", help="clamp a stock request to workflow budgets")
     asset_request.add_argument("project_id")
     asset_request.add_argument("--retry-pass", type=int, required=True)
@@ -3696,6 +3741,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                         args.project_id, args.search_id, args.metadata_json,
                         output_path=args.output_path,
                     ))
+        elif args.command == "regions":
+            if args.regions_command == "build-sheets":
+                _print_json(build_workflow_region_sheets(args.project_id))
+            elif args.regions_command == "propose":
+                _print_json(propose_workflow_regions(args.project_id, args.json))
         elif args.command == "asset-request":
             _print_json(
                 bounded_asset_search_request(
@@ -3766,7 +3816,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "job-status":
             _print_json(reconcile_workflow_job(args.project_id, args.job_id))
         return 0
-    except (PersianVideoWorkflowError, PersianAssetCommandError, PersianMusicCommandError, PersianAssetWorkspaceError, PersianEditWorkspaceError, DurableJobError, CheckpointValidationError) as exc:
+    except (PersianVideoWorkflowError, PersianAssetCommandError, PersianMusicCommandError, PersianRegionCommandError, PersianAssetWorkspaceError, PersianEditWorkspaceError, DurableJobError, CheckpointValidationError) as exc:
         parser = build_parser()
         parser.error(str(exc))
     return 2
