@@ -307,6 +307,7 @@ stages:
     checkpoint_required: true
     human_approval_default: true
     review_focus:
+      - "Before compose execution read pipelines/persian-footage/final-candidate-protocol; it owns the digest-bound candidate and human-gate lifecycle."
       - "render_runtime MUST remain 'remotion'. The Persian composition depends on Estedad loading through FontFace and on canvas text measurement; neither exists on the ffmpeg path. A silent swap to ffmpeg or hyperframes is a CRITICAL governance violation — raise a structured blocker instead."
       - Output dimensions match the chosen format exactly
       - "Frames are MEASURED with lib.persian_verify, not eyeballed: verify_frames for ink, per-line right-edge anchor offset, text column, zone occupancy, and contrast. Frames are sampled at each MOMENT's midpoint, not at fixed intervals — text covers at most 55% of the runtime by design, so a blindly chosen window probably contains no type. Hand-rolled brightness or contrast detectors do not work over footage; the compose-director records twelve approaches that footage or the codec defeated."
