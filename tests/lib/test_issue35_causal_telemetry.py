@@ -764,7 +764,12 @@ def test_send_back_interrupts_open_explicit_work_span_in_superseded_phase(tmp_pa
     spans = rewound["causal_telemetry"]["spans"]
     finished = next(span for span in spans if span.get("span_id") == started["span_id"])
     assert finished["finished_at"] == (BASE + timedelta(seconds=15)).isoformat()
-    assert finished["outcome"] == "interrupted"
+    assert finished["outcome"] == "abandoned_unverified"
+    assert finished["count_toward_wall"] is False
+    assert finished["measurement_disposition"] == "unverified_abandonment"
+    accounting = workflow.phase_time_accounting(rewound, now=BASE + timedelta(seconds=15))
+    assert accounting["editorial_wall_seconds"] == 0.0
+    assert accounting["unattributed_wall_seconds"] == 15.0
     assert not [
         span for span in spans
         if span.get("count_toward_wall") and not span.get("finished_at")
@@ -792,3 +797,75 @@ def test_explicit_work_cli_exposes_prospective_start_and_finish() -> None:
     assert finish.command == "work-finish"
     assert finish.span_id == "work:final_review:1:1"
     assert finish.outcome == "succeeded"
+
+    abandon = workflow.build_parser().parse_args([
+        "work-abandon", "project", "work:final_review:1:1", "--reason", "agent interrupted",
+    ])
+    assert abandon.command == "work-abandon"
+    assert abandon.reason == "agent interrupted"
+
+
+def test_abandon_explicit_work_preserves_unknown_wall_time_and_allows_restart(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path)
+    started = workflow.start_explicit_work_span(
+        "run", category="agent_editorial_work", name="prepare approved inputs",
+        pipeline_dir=projects_root, now=BASE + timedelta(seconds=5),
+    )
+    recovery_time = BASE + timedelta(hours=4)
+    with pytest.raises(workflow.PersianVideoWorkflowError, match="requires a reason"):
+        workflow.abandon_explicit_work_span(
+            "run", started["span_id"], reason=" ", pipeline_dir=projects_root,
+            now=recovery_time,
+        )
+    recovered = workflow.abandon_explicit_work_span(
+        "run", started["span_id"], reason="session ended without work-finish",
+        pipeline_dir=projects_root, now=recovery_time,
+    )
+    assert recovered["started_at"] == started["started_at"]
+    assert recovered["finished_at"] == recovery_time.isoformat()
+    assert recovered["outcome"] == "abandoned_unverified"
+    assert recovered["recovery_reason"] == "session ended without work-finish"
+    assert recovered["count_toward_wall"] is False
+    assert workflow.abandon_explicit_work_span(
+        "run", started["span_id"], reason="retry", pipeline_dir=projects_root,
+        now=recovery_time + timedelta(minutes=1),
+    ) == recovered
+    assert workflow.finish_explicit_work_span(
+        "run", started["span_id"], pipeline_dir=projects_root,
+        now=recovery_time + timedelta(minutes=1),
+    ) == recovered
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    accounting = workflow.phase_time_accounting(state, now=recovery_time)
+    assert accounting["editorial_wall_seconds"] == 0.0
+    assert accounting["unattributed_wall_seconds"] == 4 * 3600.0
+    restarted = workflow.start_explicit_work_span(
+        "run", category="agent_editorial_work", name="resume actual work",
+        pipeline_dir=projects_root, now=recovery_time + timedelta(seconds=1),
+    )
+    assert restarted["span_id"] != started["span_id"]
+    workflow.finish_explicit_work_span(
+        "run", restarted["span_id"], pipeline_dir=projects_root,
+        now=recovery_time + timedelta(seconds=11),
+    )
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    accounting = workflow.phase_time_accounting(state, now=recovery_time + timedelta(seconds=11))
+    assert accounting["editorial_wall_seconds"] == 10.0
+    assert accounting["unattributed_wall_seconds"] == 4 * 3600 + 1.0
+
+
+def test_interrupted_finish_does_not_charge_unverified_elapsed_time(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path)
+    started = workflow.start_explicit_work_span(
+        "run", category="review_evidence_assembly", name="review shot evidence",
+        pipeline_dir=projects_root, now=BASE + timedelta(seconds=5),
+    )
+    recovered = workflow.finish_explicit_work_span(
+        "run", started["span_id"], outcome="interrupted",
+        pipeline_dir=projects_root, now=BASE + timedelta(hours=2),
+    )
+    assert recovered["outcome"] == "abandoned_unverified"
+    assert recovered["count_toward_wall"] is False
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    accounting = workflow.phase_time_accounting(state, now=BASE + timedelta(hours=2))
+    assert accounting["review_phase_seconds"] == 0.0
+    assert accounting["unattributed_wall_seconds"] == 7200.0
