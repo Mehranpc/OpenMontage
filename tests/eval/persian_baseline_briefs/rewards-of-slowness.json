@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "rewards-of-slowness",
+  "title_fa": "پاداش آهسته‌تر شدن",
+  "language": "fa",
+  "request_fa": "یک ویدیوی ۶۰ ثانیه‌ای فارسی برای اینستاگرام بساز دربارهٔ این‌که آهسته‌تر انجام دادن بعضی کارهای روزمره چگونه می‌تواند توجه و کیفیت تصمیم‌گیری را بهتر کند. لحن تأملی اما عملی باشد و پایان به یک اقدام ساده برسد.",
+  "format": "vertical",
+  "duration_seconds": 60,
+  "mode": "narrated",
+  "render_runtime": "remotion",
+  "active_profile": "film-type-2.16",
+  "cache_state": "cold",
+  "quality_anchors": ["opening_hook", "visual_variety", "persian_readability", "resolution"]
+}
