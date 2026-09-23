@@ -128,6 +128,69 @@ def test_layout_recovery_classifies_nested_presentation_recipe_as_typography(tmp
     assert manifest["changedScopes"] == ["typography"]
 
 
+def test_layout_recovery_can_resegment_same_hook_copy_as_line_plan(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    base = _edit()
+    hook = base["persian"]["moments"][0]
+    hook.pop("recipe", None)
+    hook["presentation"] = {"recipeId": "editorial-hero-compact"}
+    hook["segments"] = [
+        {"role": "lead", "text": "در این آزمایش،"},
+        {"role": "hero", "text": "پیامِ صبح روز بعد"},
+        {"role": "tail", "text": "بیشترین تمایل به ادامهٔ رابطه را نشان داد."},
+    ]
+    base["metadata"]["semanticPosterStack"] = {
+        "version": "1.0",
+        "authoritativeHookText": "در این آزمایش، پیامِ صبح روز بعد بیشترین تمایل به ادامهٔ رابطه را نشان داد.",
+        "authoritativeHookSha256": "test-sha",
+        "phrases": [
+            {"role": "setup", "text": "در این آزمایش،"},
+            {"role": "subject_hero", "text": "پیامِ صبح روز بعد"},
+            {"role": "payoff", "text": "بیشترین تمایل به ادامهٔ رابطه را نشان داد."},
+        ],
+    }
+    workspace.stage_edit_draft(project, "base", base, max_candidates=10)
+
+    child = deepcopy(base)
+    child_hook = child["persian"]["moments"][0]
+    child_hook["segments"] = [
+        {"role": "hero", "text": "در این آزمایش، پیامِ صبح روز بعد"},
+        {"role": "tail", "text": "بیشترین تمایل به ادامهٔ رابطه را نشان داد."},
+    ]
+    child["metadata"]["semanticPosterStack"]["phrases"] = [
+        {"role": "subject_hero", "text": "در این آزمایش، پیامِ صبح روز بعد"},
+        {"role": "payoff", "text": "بیشترین تمایل به ادامهٔ رابطه را نشان داد."},
+    ]
+
+    staged = workspace.stage_edit_draft(
+        project,
+        "layout-line-plan",
+        child,
+        parent_attempt_id="base",
+        diagnostic_issue=_layout_issue(),
+        strategy="rebalance_measured_line_plan",
+        changed_fields=["typography.line_plan"],
+        max_candidates=10,
+        revision_cycle=0,
+    )
+    assert staged["changedScopes"] == ["typography"]
+
+    rewritten = deepcopy(child)
+    rewritten["persian"]["moments"][0]["segments"][0]["text"] = "در این آزمایش، پیامِ امشب"
+    with pytest.raises(PersianEditWorkspaceError, match="mutation surface"):
+        workspace.stage_edit_draft(
+            project,
+            "layout-line-plan-copy-change",
+            rewritten,
+            parent_attempt_id="base",
+            diagnostic_issue=_layout_issue(),
+            strategy="rebalance_measured_line_plan",
+            changed_fields=["typography.line_plan"],
+            max_candidates=10,
+            revision_cycle=0,
+        )
+
+
 def test_asset_selection_recovery_atomically_rebinds_provenance_and_reviewed_regions(tmp_path: Path) -> None:
     project = tmp_path / "project"
     base = _edit()

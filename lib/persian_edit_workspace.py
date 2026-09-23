@@ -161,12 +161,15 @@ def _hook_dependency_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
     for raw in persian.get("moments") or []:
         if isinstance(raw, Mapping) and raw.get("kind") == "hook":
             hook_moments.append({
-                key: raw.get(key)
-                for key in (
-                    "id", "kind", "startSeconds", "endSeconds", "segments",
-                    "userAuthoredShortHook",
-                )
-                if key in raw
+                **{
+                    key: raw.get(key)
+                    for key in (
+                        "id", "kind", "startSeconds", "endSeconds",
+                        "userAuthoredShortHook",
+                    )
+                    if key in raw
+                },
+                "text": _segment_copy_text(raw.get("segments")),
             })
     return {
         "durationSeconds": persian.get("durationSeconds"),
@@ -319,6 +322,30 @@ def _semantic_segments(value: object) -> list[Any]:
     return result
 
 
+def _segment_copy_text(value: object) -> str:
+    """Return painted segment text while ignoring visual segmentation metadata.
+
+    Film Type 2.16 explicitly allows a measured line-plan recovery to re-segment
+    the same viewer-visible phrase. Segment roles, phrase locks, and boundaries
+    are typography/layout decisions; changing the actual words or punctuation is
+    still a copy change. Normalise only the inter-segment separator so moving a
+    boundary does not masquerade as a rewrite.
+    """
+    parts: list[str] = []
+    for raw in value or [] if isinstance(value, list) else []:
+        if isinstance(raw, Mapping):
+            text = raw.get("text")
+            if text is not None:
+                cleaned = str(text).strip()
+                if cleaned:
+                    parts.append(cleaned)
+        elif raw is not None:
+            cleaned = str(raw).strip()
+            if cleaned:
+                parts.append(cleaned)
+    return " ".join(parts)
+
+
 def _copy_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
     persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
     moments = []
@@ -326,7 +353,7 @@ def _copy_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(raw, Mapping):
             moments.append({
                 "id": raw.get("id"),
-                "segments": _semantic_segments(raw.get("segments")),
+                "text": _segment_copy_text(raw.get("segments")),
             })
     captions = []
     for raw in persian.get("captions") or []:
@@ -338,13 +365,14 @@ def _copy_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
             beats.append({
                 "id": raw.get("id"),
                 "text": raw.get("text"),
-                "segments": _semantic_segments(raw.get("segments")),
+                "segmentText": _segment_copy_text(raw.get("segments")),
             })
     return {"moments": moments, "captions": captions, "typographicBeats": beats}
 
 
 def _typography_payload(edit: Mapping[str, Any]) -> list[dict[str, Any]]:
     persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
+    metadata = edit.get("metadata") if isinstance(edit.get("metadata"), Mapping) else {}
     result: list[dict[str, Any]] = []
     ignored = {"id", "kind", "startSeconds", "endSeconds", "segments", "text"}
     for collection in ("moments", "typographicBeats"):
@@ -363,8 +391,18 @@ def _typography_payload(edit: Mapping[str, Any]) -> list[dict[str, Any]]:
             presentation = raw.get("presentation")
             if isinstance(presentation, Mapping) and "recipeId" in presentation:
                 style["presentation.recipeId"] = presentation.get("recipeId")
+            segments = _semantic_segments(raw.get("segments"))
+            if segments:
+                style["linePlan"] = segments
             if style:
                 result.append({"collection": collection, "id": raw.get("id"), **style})
+    semantic_poster_stack = metadata.get("semanticPosterStack")
+    if semantic_poster_stack is not None:
+        result.append({
+            "collection": "metadata",
+            "id": "semanticPosterStack",
+            "value": semantic_poster_stack,
+        })
     return result
 
 
@@ -407,14 +445,14 @@ def _timeline_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
             if not isinstance(raw, Mapping):
                 continue
             item = {str(key): raw.get(key) for key in keys if key in raw}
-            item["segmentReveals"] = [
-                {
-                    "index": index,
-                    "revealAfterSeconds": segment.get("revealAfterSeconds", 0),
-                }
-                for index, segment in enumerate(raw.get("segments") or [])
+            # Timeline semantics are the reveal groups, not how many visual text
+            # segments happen to share each group. A Film Type line-plan recovery
+            # may re-segment simultaneous hook copy without changing timing.
+            item["segmentReveals"] = sorted({
+                float(segment.get("revealAfterSeconds", 0))
+                for segment in (raw.get("segments") or [])
                 if isinstance(segment, Mapping)
-            ]
+            })
             result.append(item)
         return result
 
@@ -443,7 +481,9 @@ def _unclassified_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
     metadata_unknown = {
         str(key): value
         for key, value in metadata.items()
-        if key not in {"hookQuality", "targetPlatform", "target_platform"}
+        if key not in {
+            "hookQuality", "targetPlatform", "target_platform", "semanticPosterStack",
+        }
     }
     known_persian = {
         "durationSeconds", "platformTarget", "shots", "moments", "typographicBeats",
