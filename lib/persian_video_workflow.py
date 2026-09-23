@@ -36,6 +36,11 @@ from lib.persian_alignment_provider import (
     build_alignment_provider_plan,
     validate_alignment_provider_decision,
 )
+from lib.persian_asset_commands import (
+    PersianAssetCommandError,
+    build_manifest as build_asset_manifest_command,
+    write_assets_checkpoint as write_assets_checkpoint_command,
+)
 from lib.persian_asset_workspace import (
     PersianAssetWorkspaceError,
     asset_workspace_status,
@@ -2331,6 +2336,46 @@ def select_workflow_asset_candidate(
     )
 
 
+
+def build_workflow_asset_manifest(
+    project_id: str, *, video_format: str = "vertical",
+    overrides_path: str | Path | None = None, pipeline_dir: Path | None = None,
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    _require_asset_candidate_phase(state)
+    overrides: dict[str, Any] = {}
+    if overrides_path is not None:
+        source = assert_read_allowed(state, str(overrides_path))
+        overrides = _read_json(str(source))
+    project_root = _project_root(state)
+    return build_asset_manifest_command(
+        project_root.parent, project_root.name,
+        video_format=video_format, overrides=overrides,
+    )
+
+
+def write_workflow_assets_checkpoint(
+    project_id: str, *, review_path: str | Path | None = None,
+    metadata_path: str | Path | None = None, tool_gap: str | None = None,
+    pipeline_dir: Path | None = None,
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    _require_asset_candidate_phase(state)
+    review = (
+        _read_json(str(assert_read_allowed(state, str(review_path))))
+        if review_path is not None else None
+    )
+    metadata = (
+        _read_json(str(assert_read_allowed(state, str(metadata_path))))
+        if metadata_path is not None else None
+    )
+    project_root = _project_root(state)
+    return write_assets_checkpoint_command(
+        project_root.parent, project_root.name, review=review, metadata=metadata,
+        tool_gap=tool_gap,
+    )
+
+
 def _candidate_path(project_root: Path, reported: str) -> Path:
     raw = Path(reported).expanduser()
     path = raw.resolve() if raw.is_absolute() else (project_root / raw).resolve()
@@ -3397,6 +3442,18 @@ def build_parser() -> argparse.ArgumentParser:
     guard.add_argument("project_id")
     guard.add_argument("path")
 
+    assets = sub.add_parser("assets", help="deterministic asset manifest/checkpoint commands")
+    assets_sub = assets.add_subparsers(dest="assets_command", required=True)
+    assets_build = assets_sub.add_parser("build-manifest", help="build the canonical manifest from selected candidates")
+    assets_build.add_argument("project_id")
+    assets_build.add_argument("--format", choices=["vertical", "landscape", "square"], default="vertical")
+    assets_build.add_argument("--overrides-json", metavar="PATH")
+    assets_checkpoint = assets_sub.add_parser("write-checkpoint", help="write the validated assets checkpoint")
+    assets_checkpoint.add_argument("project_id")
+    assets_checkpoint.add_argument("--review-json", metavar="PATH")
+    assets_checkpoint.add_argument("--metadata-json", metavar="PATH")
+    assets_checkpoint.add_argument("--tool-gap", help="record a failed checkpoint instead of improvising a script")
+
     asset_request = sub.add_parser("asset-request", help="clamp a stock request to workflow budgets")
     asset_request.add_argument("project_id")
     asset_request.add_argument("--retry-pass", type=int, required=True)
@@ -3494,7 +3551,7 @@ def _read_json(path: str) -> dict[str, Any]:
 
 
 def _print_json(value: Mapping[str, Any]) -> None:
-    print(json.dumps(dict(value), ensure_ascii=False, indent=2))
+    print(json.dumps(dict(value), ensure_ascii=False, indent=2, sort_keys=True))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -3578,6 +3635,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "guard-read":
             state = load_workflow_state(args.project_id)
             _print_json({"allowed_path": str(assert_read_allowed(state, args.path))})
+        elif args.command == "assets":
+            if args.assets_command == "build-manifest":
+                _print_json(build_workflow_asset_manifest(
+                    args.project_id, video_format=args.format,
+                    overrides_path=args.overrides_json,
+                ))
+            elif args.assets_command == "write-checkpoint":
+                _print_json(write_workflow_assets_checkpoint(
+                    args.project_id, review_path=args.review_json,
+                    metadata_path=args.metadata_json, tool_gap=args.tool_gap,
+                ))
         elif args.command == "asset-request":
             _print_json(
                 bounded_asset_search_request(
@@ -3648,7 +3716,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "job-status":
             _print_json(reconcile_workflow_job(args.project_id, args.job_id))
         return 0
-    except (PersianVideoWorkflowError, PersianAssetWorkspaceError, PersianEditWorkspaceError, DurableJobError, CheckpointValidationError) as exc:
+    except (PersianVideoWorkflowError, PersianAssetCommandError, PersianAssetWorkspaceError, PersianEditWorkspaceError, DurableJobError, CheckpointValidationError) as exc:
         parser = build_parser()
         parser.error(str(exc))
     return 2

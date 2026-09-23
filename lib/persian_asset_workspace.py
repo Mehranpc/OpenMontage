@@ -803,6 +803,112 @@ def select_asset_candidate(
     }
 
 
+
+def build_asset_manifest_from_workspace(
+    project_dir: Path,
+    *,
+    video_format: str = "vertical",
+    overrides: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build canonical rows from the durable selection ledger, never a second ledger."""
+    clean_format = str(video_format or "").strip().lower()
+    if clean_format not in {"vertical", "landscape", "square"}:
+        raise PersianAssetWorkspaceError("video_format must be vertical, landscape, or square")
+    selections = _read_selections(project_dir)
+    if not selections:
+        raise PersianAssetWorkspaceError(
+            "asset workspace has no selected candidates; select reviewed candidates first"
+        )
+    options = dict(overrides or {})
+    per_event = options.pop("assets", {})
+    if not isinstance(per_event, Mapping):
+        raise PersianAssetWorkspaceError("manifest overrides.assets must be an object")
+    unknown = sorted(set(per_event) - set(selections))
+    if unknown:
+        raise PersianAssetWorkspaceError(
+            "manifest overrides reference unselected visual events: " + ", ".join(unknown)
+        )
+
+    assets: list[dict[str, Any]] = []
+    for event_id in sorted(selections):
+        selection = selections[event_id]
+        candidate = load_asset_candidate(
+            project_dir, str(selection.get("candidateId") or "")
+        )
+        source = candidate.get("source") if isinstance(candidate.get("source"), Mapping) else {}
+        evidence = _manifest_evidence(candidate)
+        binding = _manifest_binding(candidate)
+        provider = str(binding["provider"])
+        creator = str(source.get("creator") or "").strip()
+        provider_label = "Pexels" if provider == "pexels" else "Pixabay"
+        raw_license = source.get("license")
+        if isinstance(raw_license, Mapping):
+            license_name = str(raw_license.get("name") or "").strip()
+        else:
+            license_name = str(raw_license or "").strip()
+        if not license_name:
+            license_name = f"{provider_label} License"
+        row: dict[str, Any] = {
+            **binding,
+            **evidence,
+            "id": binding["asset_candidate_id"],
+            "type": "video",
+            "kind": "video",
+            "source_tool": "direct_clip_search",
+            "scene_id": evidence["semantic_beat_id"],
+            "beat_id": evidence["semantic_beat_id"],
+            "path": str(source.get("path") or ""),
+            "width": int(source.get("width") or 0),
+            "height": int(source.get("height") or 0),
+            "original_url": str(source.get("originalUrl") or ""),
+            "license": license_name,
+            "attribution": (
+                f"Video by {creator} on {provider_label}"
+                if creator else f"Video on {provider_label}"
+            ),
+            "fallback_level": "exact_literal",
+        }
+        event_override = per_event.get(event_id, {})
+        if not isinstance(event_override, Mapping):
+            raise PersianAssetWorkspaceError(
+                f"manifest override for {event_id!r} must be an object"
+            )
+        allowed_override_fields = {
+            "attribution", "fallback_level", "fallback_reason", "license",
+            "opening_semantic_match", "semantic_direction", "semantic_role",
+        }
+        unsupported_fields = sorted(set(event_override) - allowed_override_fields)
+        if unsupported_fields:
+            raise PersianAssetWorkspaceError(
+                f"manifest override for {event_id!r} cannot replace canonical fields: "
+                + ", ".join(unsupported_fields)
+            )
+        row.update({str(key): value for key, value in event_override.items()})
+        assets.append(row)
+
+    manifest: dict[str, Any] = {
+        "version": "1.0",
+        "format": clean_format,
+        "assets": assets,
+        "metadata": {"project_id": project_dir.name},
+    }
+    for key in ("music", "musicTrack", "word_timings", "total_cost_usd"):
+        if key in options:
+            manifest[key] = options[key]
+    if "metadata" in options:
+        if not isinstance(options["metadata"], Mapping):
+            raise PersianAssetWorkspaceError("manifest overrides.metadata must be an object")
+        manifest["metadata"].update(dict(options["metadata"]))
+    unsupported = sorted(
+        set(options) - {"music", "musicTrack", "word_timings", "total_cost_usd", "metadata"}
+    )
+    if unsupported:
+        raise PersianAssetWorkspaceError(
+            "unsupported manifest override keys: " + ", ".join(unsupported)
+        )
+    return manifest
+
+
 def asset_workspace_status(project_dir: Path) -> dict[str, Any]:
     root = _root(project_dir)
     passes = sorted((_discovery_root(project_dir) / "passes").glob("pass-*.json")) if root.exists() else []
@@ -859,6 +965,7 @@ def asset_workspace_status(project_dir: Path) -> dict[str, Any]:
 __all__ = [
     "PersianAssetWorkspaceError",
     "asset_workspace_status",
+    "build_asset_manifest_from_workspace",
     "load_asset_candidate",
     "record_candidate_review",
     "record_discovery_pass",
