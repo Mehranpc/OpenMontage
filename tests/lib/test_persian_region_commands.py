@@ -346,6 +346,27 @@ def test_propose_rejects_stale_sheet_index(tmp_path: Path, monkeypatch: pytest.M
         commands.propose_regions(tmp_path, "run", _annotations())
 
 
+def test_propose_rejects_tampered_index_and_corrupt_review_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project(tmp_path)
+    _fake_ffmpeg(monkeypatch)
+    commands.build_sheets(tmp_path, "run")
+    index_path = project / "artifacts" / "subject-region-sheets" / "index.json"
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index["shots"][0]["frames"][0]["timelineEndSeconds"] = 99.0
+    _write_json(index_path, index)
+
+    with pytest.raises(commands.PersianRegionCommandError, match="index is corrupt or incompatible"):
+        commands.propose_regions(tmp_path, "run", _annotations())
+
+    commands.build_sheets(tmp_path, "run")
+    frame_path = project / "artifacts" / "subject-region-sheets" / "shot-001-start.png"
+    frame_path.write_bytes(b"corrupt")
+    with pytest.raises(commands.PersianRegionCommandError, match="review output is missing or corrupt"):
+        commands.propose_regions(tmp_path, "run", _annotations())
+
+
 def test_front_door_exposes_regions_commands_and_returns_exit_2_on_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

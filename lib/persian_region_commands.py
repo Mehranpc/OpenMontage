@@ -344,6 +344,45 @@ def _existing_output_digests(index: Mapping[str, Any] | None) -> dict[str, str]:
     return result
 
 
+def _build_recipe() -> dict[str, Any]:
+    return {
+        "commandVersion": REGION_COMMAND_VERSION,
+        "framePositions": list(FRAME_POSITIONS),
+        "edgeSeconds": FRAME_EDGE_SECONDS,
+        "scaleWidth": FRAME_SCALE_WIDTH,
+        "frameFilter": FRAME_FILTER,
+        "shotSheetFilter": "[0][1][2]hstack=inputs=3[out]",
+        "groupFilter": "[0][1]vstack=inputs=2[out]",
+        "groupSize": 2,
+    }
+
+
+def _index_fingerprint(
+    input_record: Mapping[str, Any], shots: Sequence[Mapping[str, Any]]
+) -> str:
+    return _digest({
+        "inputs": dict(input_record),
+        "recipe": _build_recipe(),
+        "shots": [
+            {
+                "beatId": shot["beatId"],
+                "visualEventId": shot["visualEventId"],
+                "sourcePath": shot["sourcePath"],
+                "sourceWindow": shot["sourceWindow"],
+                "timeline": shot["timeline"],
+            }
+            for shot in shots
+        ],
+    })
+
+
+def _same_float(left: object, right: object) -> bool:
+    try:
+        return abs(float(left) - float(right)) <= 1e-6
+    except (TypeError, ValueError):
+        return False
+
+
 def _build_shot_plan(project: Path, manifest: Mapping[str, Any], scene_plan: Mapping[str, Any]) -> list[dict[str, Any]]:
     assets = manifest.get("assets")
     if not isinstance(assets, list) or not assets:
@@ -449,30 +488,8 @@ def build_sheets(
         "scenePlanPath": _relative(scene_path, project),
         "scenePlanSha256": _hash_file(scene_path),
     }
-    recipe = {
-        "commandVersion": REGION_COMMAND_VERSION,
-        "framePositions": list(FRAME_POSITIONS),
-        "edgeSeconds": FRAME_EDGE_SECONDS,
-        "scaleWidth": FRAME_SCALE_WIDTH,
-        "frameFilter": FRAME_FILTER,
-        "shotSheetFilter": "[0][1][2]hstack=inputs=3[out]",
-        "groupFilter": "[0][1]vstack=inputs=2[out]",
-        "groupSize": 2,
-    }
-    fingerprint = _digest({
-        "inputs": input_record,
-        "recipe": recipe,
-        "shots": [
-            {
-                "beatId": shot["beatId"],
-                "visualEventId": shot["visualEventId"],
-                "sourcePath": shot["sourcePath"],
-                "sourceWindow": shot["sourceWindow"],
-                "timeline": shot["timeline"],
-            }
-            for shot in shots
-        ],
-    })
+    recipe = _build_recipe()
+    fingerprint = _index_fingerprint(input_record, shots)
 
     output_root = project / SHEET_DIR
     index_path = output_root / INDEX_NAME
@@ -591,6 +608,92 @@ def build_sheets(
     }
 
 
+def _validate_sheet_index(
+    project: Path,
+    index: Mapping[str, Any],
+    *,
+    manifest: Mapping[str, Any],
+    scene_plan: Mapping[str, Any],
+    input_record: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    canonical = _build_shot_plan(project, manifest, scene_plan)
+    fail = "subject-region sheet index is corrupt or incompatible; run regions build-sheets again"
+    if (
+        index.get("version") != "1.0"
+        or index.get("commandVersion") != REGION_COMMAND_VERSION
+        or index.get("grid") != {"columns": GRID_COLUMNS, "rows": GRID_ROWS}
+        or index.get("inputs") != dict(input_record)
+        or index.get("fingerprint") != _index_fingerprint(input_record, canonical)
+    ):
+        raise PersianRegionCommandError(fail)
+
+    indexed_shots = index.get("shots")
+    if not isinstance(indexed_shots, list) or len(indexed_shots) != len(canonical):
+        raise PersianRegionCommandError(fail)
+
+    for expected, indexed in zip(canonical, indexed_shots):
+        if not isinstance(indexed, Mapping):
+            raise PersianRegionCommandError(fail)
+        for key in ("shotId", "beatId", "visualEventId", "sourceId", "sourcePath", "sourceWindow", "timeline"):
+            if indexed.get(key) != expected.get(key):
+                raise PersianRegionCommandError(fail)
+        if not _same_float(indexed.get("sourceDurationSeconds"), expected.get("sourceDurationSeconds")):
+            raise PersianRegionCommandError(fail)
+
+        indexed_frames = indexed.get("frames")
+        if not isinstance(indexed_frames, list) or len(indexed_frames) != len(FRAME_POSITIONS):
+            raise PersianRegionCommandError(fail)
+        for frame_index, position in enumerate(FRAME_POSITIONS):
+            frame = indexed_frames[frame_index]
+            if not isinstance(frame, Mapping):
+                raise PersianRegionCommandError(fail)
+            interval = expected["frameIntervals"][frame_index]
+            expected_path = (SHEET_DIR / f"{expected['fileStem']}-{position}.png").as_posix()
+            if (
+                frame.get("position") != position
+                or not _same_float(frame.get("sourceSeconds"), expected["frameTimes"][frame_index])
+                or not _same_float(frame.get("timelineStartSeconds"), interval[0])
+                or not _same_float(frame.get("timelineEndSeconds"), interval[1])
+                or frame.get("path") != expected_path
+            ):
+                raise PersianRegionCommandError(fail)
+            digest = str(frame.get("sha256") or "")
+            if not _cached_png_ok(project / expected_path, digest):
+                raise PersianRegionCommandError(
+                    "subject-region review output is missing or corrupt; run regions build-sheets again"
+                )
+
+        expected_sheet_path = (SHEET_DIR / f"{expected['fileStem']}-sheet.png").as_posix()
+        sheet = indexed.get("sheet")
+        if not isinstance(sheet, Mapping) or sheet.get("path") != expected_sheet_path:
+            raise PersianRegionCommandError(fail)
+        if not _cached_png_ok(project / expected_sheet_path, str(sheet.get("sha256") or "")):
+            raise PersianRegionCommandError(
+                "subject-region review output is missing or corrupt; run regions build-sheets again"
+            )
+
+    groups = index.get("groups")
+    expected_group_count = (len(canonical) + 1) // 2
+    if not isinstance(groups, list) or len(groups) != expected_group_count:
+        raise PersianRegionCommandError(fail)
+    for group_index, group in enumerate(groups):
+        if not isinstance(group, Mapping):
+            raise PersianRegionCommandError(fail)
+        members = canonical[group_index * 2:group_index * 2 + 2]
+        expected_path = (SHEET_DIR / f"group-{group_index + 1:03d}-grid.png").as_posix()
+        if (
+            group.get("groupId") != f"group-{group_index + 1}"
+            or group.get("shotIds") != [str(member["shotId"]) for member in members]
+            or group.get("path") != expected_path
+        ):
+            raise PersianRegionCommandError(fail)
+        if not _cached_png_ok(project / expected_path, str(group.get("sha256") or "")):
+            raise PersianRegionCommandError(
+                "subject-region review output is missing or corrupt; run regions build-sheets again"
+            )
+    return canonical
+
+
 def _grid_region(raw: object, *, label: str) -> dict[str, float]:
     if not isinstance(raw, Mapping):
         raise PersianRegionCommandError(f"{label}.grid must be an object")
@@ -690,18 +793,21 @@ def propose_regions(
         raise PersianRegionCommandError("subject-region sheet index has no input binding")
     manifest_path = project / "artifacts" / "asset_manifest.json"
     scene_path = project / "artifacts" / "scene_plan.json"
-    if (
-        not manifest_path.is_file()
-        or not scene_path.is_file()
-        or _hash_file(manifest_path) != str(inputs.get("assetManifestSha256") or "")
-        or _hash_file(scene_path) != str(inputs.get("scenePlanSha256") or "")
-    ):
+    manifest = _read_object(manifest_path, label="asset manifest")
+    scene_plan = _read_object(scene_path, label="scene plan")
+    input_record = {
+        "assetManifestPath": _relative(manifest_path, project),
+        "assetManifestSha256": _hash_file(manifest_path),
+        "scenePlanPath": _relative(scene_path, project),
+        "scenePlanSha256": _hash_file(scene_path),
+    }
+    if dict(inputs) != input_record:
         raise PersianRegionCommandError(
             "subject-region sheet index is stale; run regions build-sheets again"
         )
-    shots = index.get("shots")
-    if not isinstance(shots, list) or not shots:
-        raise PersianRegionCommandError("subject-region sheet index has no shots")
+    canonical_shots = _validate_sheet_index(
+        project, index, manifest=manifest, scene_plan=scene_plan, input_record=input_record
+    )
     raw_shots = annotations.get("shots") if isinstance(annotations, Mapping) else None
     if not isinstance(raw_shots, list) or not raw_shots:
         raise PersianRegionCommandError("region annotations require non-empty shots")
@@ -717,7 +823,7 @@ def propose_regions(
             raise PersianRegionCommandError(f"duplicate annotated shot id: {shot_id}")
         by_id[shot_id] = raw
 
-    expected_ids = [str(shot.get("shotId") or "") for shot in shots if isinstance(shot, Mapping)]
+    expected_ids = [str(shot["shotId"]) for shot in canonical_shots]
     missing = [shot_id for shot_id in expected_ids if shot_id not in by_id]
     unexpected = sorted(set(by_id) - set(expected_ids))
     if missing:
@@ -730,9 +836,7 @@ def propose_regions(
         )
 
     proposed_rows: list[dict[str, Any]] = []
-    for shot in shots:
-        if not isinstance(shot, Mapping):
-            raise PersianRegionCommandError("subject-region sheet index contains invalid shot")
+    for shot in canonical_shots:
         shot_id = str(shot["shotId"])
         annotation = by_id[shot_id]
         observed = str(annotation.get("observed") or "").strip()
@@ -761,29 +865,9 @@ def propose_regions(
                 f"{shot_id} missing frame annotations: {', '.join(missing_positions)}"
             )
 
-        index_frames = shot.get("frames")
-        if not isinstance(index_frames, list) or len(index_frames) != 3:
-            raise PersianRegionCommandError(f"{shot_id} sheet index must contain three frames")
-        by_position = {
-            str(frame.get("position") or ""): frame
-            for frame in index_frames
-            if isinstance(frame, Mapping)
-        }
         timed: list[dict[str, Any]] = []
-        for position in FRAME_POSITIONS:
-            indexed = by_position.get(position)
-            if not isinstance(indexed, Mapping):
-                raise PersianRegionCommandError(f"{shot_id} index missing {position} frame")
-            start = _number(
-                indexed.get("timelineStartSeconds"),
-                label=f"{shot_id}.{position}.timelineStartSeconds",
-            )
-            end = _number(
-                indexed.get("timelineEndSeconds"),
-                label=f"{shot_id}.{position}.timelineEndSeconds",
-            )
-            if start < 0 or end <= start:
-                raise PersianRegionCommandError(f"{shot_id}.{position} has invalid timeline interval")
+        for frame_index, position in enumerate(FRAME_POSITIONS):
+            start, end = shot["frameIntervals"][frame_index]
             for region in _annotation_regions(
                 annotation_frames[position], label=f"{shot_id}.{position}"
             ):
