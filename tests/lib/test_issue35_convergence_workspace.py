@@ -191,6 +191,35 @@ def test_layout_recovery_can_resegment_same_hook_copy_as_line_plan(tmp_path: Pat
         )
 
 
+def test_layout_recovery_can_add_exact_text_as_line_plan_typography(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    base = _edit()
+    workspace.stage_edit_draft(project, "base", base, max_candidates=10)
+
+    child = deepcopy(base)
+    child["persian"]["moments"][0]["exactText"] = {
+        "text": "بازی‌های ویدیویی",
+        "sha256": "79b0ff41e91997987fe99b13fc42b2fb877f98c20d7e5005b13442d04fde9eb7",
+        "encoding": "utf-8",
+        "normalization": "none",
+    }
+    staged = workspace.stage_edit_draft(
+        project,
+        "layout-exact-text",
+        child,
+        parent_attempt_id="base",
+        diagnostic_issue=_layout_issue(),
+        strategy="rebalance_measured_line_plan",
+        changed_fields=["typography.line_plan"],
+        max_candidates=10,
+        revision_cycle=0,
+    )
+
+    assert staged["changedScopes"] == ["typography"]
+    manifest = workspace.load_convergence_candidate(project, "layout-exact-text")
+    assert manifest["changedScopes"] == ["typography"]
+
+
 def test_asset_selection_recovery_atomically_rebinds_provenance_and_reviewed_regions(tmp_path: Path) -> None:
     project = tmp_path / "project"
     base = _edit()
