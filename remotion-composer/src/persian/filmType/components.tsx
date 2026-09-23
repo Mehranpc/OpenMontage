@@ -106,7 +106,8 @@ const DiffuseField: React.FC<{layout:FilmMomentLayout;rows?:readonly FilmRow[];f
   ? fieldRows.map(row=>{
      const pad=cfg.rowPaddingPx??0, inkHeight=row.abovePx+row.belowPx;
      const {rx,ry}=diffuseRadii(row.widthPx+2*pad,inkHeight+2*pad,cfg,bounded);
-     const rowRight=align==="center"?anchor+row.widthPx/2:align==="left"?anchor+row.widthPx:anchor;
+     const rowAnchor=anchor+(row.offsetXPx??0);
+     const rowRight=align==="center"?rowAnchor+row.widthPx/2:align==="left"?rowAnchor+row.widthPx:rowAnchor;
      return {rx,ry,cx:left+rowRight-row.widthPx/2,cy:top+row.baselinePx-row.abovePx+inkHeight/2+travel};
     })
   : [{...diffuseRadii(layout.widthPx,layout.heightPx,cfg,bounded),
@@ -199,7 +200,7 @@ export const PersianFilmTypeMoment: React.FC<{
   const anchor = align === "center" ? layout.widthPx/2 : align === "left" ? p.layout.inkPaddingPx : layout.widthPx-p.layout.inkPaddingPx;
   if (!kahrobaReady) return null;
   return <AbsoluteFill data-film-type-moment={moment.id} data-film-type-placement={layout.placement} style={{pointerEvents:"none"}}>
-    {busyBackground ? <FilmContrastField rect={layout.rect} format={format} color={p.contrast.darkField}
+    {busyBackground && !layout.subjectWrap ? <FilmContrastField rect={layout.rect} format={format} color={p.contrast.darkField}
       alpha={0.42} plateau={0.56} paddingPx={92} opacity={fieldLife.opacity} kind="text"/> : null}
     {diffuse ? <DiffuseField layout={layout} rows={visibleRows} format={format} design={design} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)} anchor={anchor} align={align} peakMultiplier={fieldPeakMultiplier}/> : modern ? <CompactFilmField featherPx={layout.fieldFeatherPx} rect={layout.rect} format={format} design={design} color={dark?p.contrast.darkField:p.contrast.lightField}
       alpha={p.contrast.strengths[layout.strength]} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)}/> : <FilmContrastField rect={layout.rect} format={format} color={dark?p.contrast.darkField:p.contrast.lightField}
@@ -220,11 +221,12 @@ export const PersianFilmTypeMoment: React.FC<{
         const y = replaceSequence || (cut && !modern) ? 0 : p.motion.travelPx * (1-life.arrive);
         const accented216 = p.profileVersion === "2.16.0" && row.accentWords.length > 0;
         const punch = accented216 ? .985 + .015 * life.arrive : 1;
-        const transform = `translate(0 ${y}) translate(${anchor} 0) scale(${punch}) translate(${-anchor} 0)`;
+        const rowAnchor = anchor + (row.offsetXPx ?? 0);
+        const transform = `translate(0 ${y}) translate(${rowAnchor} 0) scale(${punch}) translate(${-rowAnchor} 0)`;
         const segmentHasSemanticAccent = (moment.segments[row.segmentIndex]?.accentWords?.length ?? 0) > 0;
         return <g key={index} data-film-type-row={index} opacity={life.opacity} transform={transform}>
-          <Run row={row} x={anchor} align={align} color={color} accent={accent} semanticHero={p.profileVersion === "2.16.0" && row.role === "hero" && !segmentHasSemanticAccent} emphasis={moment.presentation?.emphasis === "inline"}/>
-          {accented216 && moment.kind !== "hook" ? <EditorialBurst row={row} anchor={anchor} align={align} accent={accent} progress={life.arrive} opacity={life.opacity}/> : null}
+          <Run row={row} x={rowAnchor} align={align} color={color} accent={accent} semanticHero={p.profileVersion === "2.16.0" && row.role === "hero" && !segmentHasSemanticAccent} emphasis={moment.presentation?.emphasis === "inline"}/>
+          {accented216 && moment.kind !== "hook" ? <EditorialBurst row={row} anchor={rowAnchor} align={align} accent={accent} progress={life.arrive} opacity={life.opacity}/> : null}
         </g>;
       })}
     </svg>

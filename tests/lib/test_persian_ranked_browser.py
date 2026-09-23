@@ -4,6 +4,7 @@ Requires the composer's installed dependencies and Chromium. A skip is not a pas
 """
 import copy
 import json
+import math
 import os
 from pathlib import Path
 import unittest
@@ -133,6 +134,58 @@ class RankedBrowserContracts(unittest.TestCase):
         q=self.prepare(p);layout=q['filmType']['moments']['hook']
         self.assertEqual(layout['subjectSafety'],'checked-against-supplied-regions')
         self.assertFalse(self._overlaps(layout['rect'],region))
+
+    def test_default_216_subject_wrap_preserves_issue81_hook_and_clears_hard_paint(self):
+        p=self.props();p['durationSeconds']=20
+        p['shots']=[{'id':'opening','source':'unused.mp4','startSeconds':0,'endSeconds':20,'visualComplexity':'busy',
+                     'avoidRegions':[{'x':0.31,'y':0.22,'w':0.36,'h':0.29,'priority':'hard','startSeconds':0,'endSeconds':5.2},
+                                     {'x':0.56,'y':0.48,'w':0.34,'h':0.27,'priority':'hard','startSeconds':0,'endSeconds':5.2},
+                                     {'x':0.06,'y':0.02,'w':0.92,'h':0.73,'priority':'soft','startSeconds':0,'endSeconds':5.2}]}]
+        p['moments']=[{'id':'hook','kind':'hook','purpose':'hook-pattern-interrupt','startSeconds':0,'endSeconds':4.6,
+                       'presentation':{'placement':'auto','motion':'cut-in','treatment':'editorial','recipeId':'editorial-hero-compact'},
+                       'segments':[{'role':'lead','semanticRole':'setup','text':'در این آزمایش،'},
+                                   {'role':'lead','semanticRole':'bridge','text':'پیامِ صبح روز بعد'},
+                                   {'role':'hero','semanticRole':'subject_hero','text':'بیشترین'},
+                                   {'role':'tail','semanticRole':'connector','text':'تمایل به ادامهٔ رابطه'},
+                                   {'role':'tail','semanticRole':'payoff','text':'را نشان داد.'}]}]
+        q=self.prepare(p);layout=q['filmType']['moments']['hook']
+        self.assertTrue(layout.get('subjectWrap'))
+        self.assertEqual(layout['placement'],'subject-wrap')
+        self.assertEqual(layout['subjectSafety'],'checked-against-supplied-regions')
+        self.assertEqual(' '.join(row['text'] for row in layout['rows']),
+                         'در این آزمایش، پیامِ صبح روز بعد بیشترین تمایل به ادامهٔ رابطه را نشان داد.')
+        self.assertGreaterEqual(max(row['fontSizePx'] for row in layout['rows'] if row['role']=='hero'),72)
+        self.assertTrue(any(abs(row.get('offsetXPx',0))>1 for row in layout['rows']))
+        margin=12;motion=18;width,height=FRAME['vertical'];ink_pad=12
+        anchor=layout['widthPx']-ink_pad
+        hard=p['shots'][0]['avoidRegions'][:2]
+        for row in layout['rows']:
+            row_anchor=anchor+row.get('offsetXPx',0)
+            collision={'x':layout['rect']['x']+(row_anchor-row['widthPx']-margin)/width,
+                       'y':layout['rect']['y']+(row['baselinePx']-row['abovePx']-margin)/height,
+                       'w':(row['widthPx']+2*margin)/width,
+                       'h':(row['abovePx']+row['belowPx']+motion+2*margin)/height}
+            self.assertFalse(any(self._overlaps(collision,region) for region in hard),row['text'])
+        safe=q['design']['resolved']['formats']['vertical']['safeArea']
+        self.assertGreaterEqual(layout['rect']['x'],safe['left'])
+        self.assertGreaterEqual(layout['rect']['y'],safe['top'])
+        self.assertLessEqual(layout['rect']['x']+layout['rect']['w'],1-safe['right']+1e-8)
+        self.assertLessEqual(layout['rect']['y']+layout['rect']['h']+motion/height,1-safe['bottom']+1e-8)
+        field=q['design']['resolved']['contrast']['diffuseField']
+        peak=min(.72,layout['fieldPeakAlpha']*1.55)
+        for row in layout['rows']:
+            row_anchor=anchor+row.get('offsetXPx',0)
+            ink_height=row['abovePx']+row['belowPx']
+            rx=max(field['minRadiusPx'],(row['widthPx']+2*field['rowPaddingPx'])*field['radiusScale'])
+            ry=max(field['minRadiusPx'],(ink_height+2*field['rowPaddingPx'])*field['radiusScale'])
+            cx=layout['rect']['x']*width+row_anchor-row['widthPx']/2
+            cy=layout['rect']['y']*height+row['baselinePx']-row['abovePx']+ink_height/2
+            for region in hard:
+                dx=max(region['x']*width-cx,0,cx-(region['x']+region['w'])*width)
+                dy=max(region['y']*height-(cy+motion),0,cy-(region['y']+region['h'])*height)
+                radius=math.hypot(dx/rx,dy/ry)
+                influence=0 if radius>=1 else math.exp(-3*radius*radius)*(1-radius*radius)**2
+                self.assertLessEqual(influence*peak,field['maxSubjectAlpha']+0.001)
 
     def test_default_216_soft_region_allows_measured_overlap_when_no_hard_collision(self):
         p=self.props()
