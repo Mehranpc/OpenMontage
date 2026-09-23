@@ -83,8 +83,8 @@ Count findings by severity:
 | Scenario | Action |
 |----------|--------|
 | 0 critical, any suggestions/nitpicks | **Pass** — proceed to checkpoint. Note suggestions for the record. |
-| 1+ critical findings | **Revise** — fix all critical findings, then re-review (max 2 rounds). |
-| After 2 revision rounds, still critical | **Pass with warnings** — proceed anyway, note unresolved issues. Never block indefinitely. |
+| 1+ critical findings and revision budget remains | **Revise** — fix all critical findings, then re-review. |
+| Revision budget exhausted with critical findings | **Needs decision** — stop automation, checkpoint `metadata.quality_disposition=needs_decision`, and surface the unresolved blockers. Final delivery is forbidden. |
 
 ### Step 7: Record Review
 
@@ -93,7 +93,7 @@ Structure your review as:
 ```
 ## Review: [stage_name] — Round [N]
 
-**Decision:** PASS / REVISE / PASS_WITH_WARNINGS
+**Decision:** PASS / REVISE / NEEDS_DECISION
 
 ### Findings
 
@@ -121,7 +121,7 @@ Structure your review as:
 
 2. **Critical means critical.** Don't inflate severity. A missing schema field is critical. A slightly wordy paragraph is a suggestion. A comma splice is a nitpick.
 
-3. **Two rounds max.** The goal is shipping, not perfection. After two revision rounds, pass with warnings and move on. Perfectionism kills pipelines.
+3. **The manifest owns the revision ceiling.** Read `orchestration.max_revisions_per_stage` from the active pipeline manifest. When the ceiling is exhausted, stop automation and record `quality_disposition=needs_decision`. Never convert unresolved critical findings into final delivery. Suggestions and nitpicks remain non-blocking.
 
 4. **Review the artifact, not the process.** You're checking the output, not how it was produced. If the brief is compelling, it doesn't matter if the agent used an unusual approach.
 
