@@ -330,6 +330,54 @@ def test_global_candidate_budget_is_enforced_by_workspace(tmp_path: Path) -> Non
     assert workspace.convergence_status(project)["unresolved"]["reason"] == "global_candidate_budget_exhausted"
 
 
+def test_final_blocked_candidate_terminalizes_without_staging_past_global_budget(
+    monkeypatch, tmp_path: Path
+) -> None:
+    project = tmp_path / "project"
+    workspace.stage_edit_draft(project, "base", _edit(), max_candidates=2)
+    workspace.stage_edit_draft(
+        project,
+        "layout-1",
+        _edit(recipe="recipe-b"),
+        parent_attempt_id="base",
+        diagnostic_issue=_layout_issue(),
+        strategy="select_curated_typography_recipe",
+        changed_fields=["typography.recipe"],
+        max_candidates=2,
+    )
+
+    def fake_aggregate(edit, *, base_dir=None, precomputed_components=None, scratch_dir=None):
+        return {
+            "version": 1,
+            "policyVersion": preflight.PREFLIGHT_POLICY_VERSION,
+            "ok": False,
+            "status": "refused",
+            "artifactSha256": workspace.artifact_sha256(edit),
+            "blockingIssues": [_layout_issue()],
+            "recoveryBudgets": {"FILM_TYPE_LAYOUT": 3},
+            "warnings": [],
+            "watermarkDiagnostics": None,
+            "nextActions": [],
+            "diagnosticLayers": ["browser"],
+            "mediaCopies": 0,
+            "evidence": {},
+        }
+
+    monkeypatch.setattr(workspace, "aggregate_preflight_edit_decisions", fake_aggregate)
+    report = workspace.preflight_edit_draft(project, "layout-1")
+    assert report["ok"] is False
+
+    unresolved = workspace.mark_blocked_convergence_exhausted(
+        project, "layout-1", max_candidates=2, revision_cycle=0
+    )
+    assert unresolved is not None
+    assert unresolved["reason"] == "global_candidate_budget_exhausted"
+    assert unresolved["globalCandidatesUsed"] == 2
+    assert unresolved["globalMaxCandidates"] == 2
+    assert workspace.convergence_status(project)["candidateIds"] == ["base", "layout-1"]
+    assert not (project / ".convergence" / "edit" / "layout-2" / "candidate.json").exists()
+
+
 def test_layout_candidate_reuses_unrelated_retention_and_hook_checks(monkeypatch, tmp_path: Path) -> None:
     project = tmp_path / "project"
     calls = {"contract": 0, "retention": 0, "hook": 0, "browser": 0}
@@ -549,6 +597,58 @@ def test_front_door_global_convergence_exhaustion_stops_workflow(tmp_path: Path,
     assert state["recovery_stop"]["reason"] == "global_candidate_budget_exhausted"
     assert state["recovery_stop"]["globalCandidatesUsed"] == 2
     assert state["recovery_stop"]["globalMaxCandidates"] == 2
+
+
+def test_front_door_preflight_terminalizes_when_last_allowed_candidate_is_blocked(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from lib import persian_video_workflow as workflow
+
+    project = tmp_path / "run"
+    project.mkdir()
+    workspace.stage_edit_draft(project, "base", _edit(), max_candidates=2)
+    workspace.stage_edit_draft(
+        project,
+        "layout-1",
+        _edit(recipe="recipe-b"),
+        parent_attempt_id="base",
+        diagnostic_issue=_layout_issue(),
+        strategy="select_curated_typography_recipe",
+        changed_fields=["typography.recipe"],
+        max_candidates=2,
+    )
+    workspace._update_candidate(
+        project,
+        "layout-1",
+        disposition="blocked",
+        producedDiagnostics=[_layout_issue()],
+    )
+    state = {
+        "project_id": "run",
+        "status": "active",
+        "next_phase": "no_copy_preflight",
+        "budgets": {"max_revisions_per_stage": 1},
+        "user_revision_cycles": 0,
+        "hook_selection": {"authority": "test"},
+        "read_allowlist": {"project_root": str(project)},
+        "projects_root": str(tmp_path),
+        "phase_telemetry": {},
+    }
+    monkeypatch.setattr(workflow, "load_workflow_state", lambda *args, **kwargs: state)
+    monkeypatch.setattr(
+        workflow,
+        "preflight_edit_draft",
+        lambda *args, **kwargs: {"ok": False, "blockingIssues": [_layout_issue()]},
+    )
+
+    report = workflow.preflight_workflow_edit_draft("run", "layout-1", pipeline_dir=tmp_path)
+
+    assert report["ok"] is False
+    assert report["convergenceStop"]["outcome"] == "needs_human_editorial_revision"
+    assert report["convergenceStop"]["globalCandidatesUsed"] == 2
+    assert state["status"] == "needs_revision"
+    assert state["next_phase"] is None
+    assert workspace.convergence_status(project)["candidateCount"] == 2
 
 
 def test_front_door_reconciles_preexisting_convergence_stop_before_staging(tmp_path: Path, monkeypatch) -> None:
