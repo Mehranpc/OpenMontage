@@ -120,8 +120,41 @@ class RankedBrowserContracts(unittest.TestCase):
         p=self.props();p['moments'][0]['presentation']['placement']='upper-right'
         region={'x':0.20,'y':0.14,'w':0.80,'h':0.51}
         p['shots'][0]['avoidRegions']=[region]
-        with self.assertRaisesRegex(ValueError,'no curated adaptive editorial recipe fits|blocked by region'):
+        with self.assertRaisesRegex(ValueError,'no curated adaptive editorial recipe fits|blocked by region') as raised:
             self.prepare(p)
+        self.assertNotEqual(raised.exception.code,'ASSET_SELECTION_HARD_REGION_COLLISION')
+    def test_default_216_hard_region_collision_reports_asset_identity(self):
+        p=self.props(text='نیاز به توجه')
+        p['shots'][0]['avoidRegions']=[{'x':0,'y':0,'w':1,'h':1,'priority':'hard'}]
+        with self.assertRaises(FilmTypePreflightError) as raised:
+            self.prepare(p)
+        self.assertEqual(raised.exception.code,'ASSET_SELECTION_HARD_REGION_COLLISION')
+        self.assertEqual(raised.exception.diagnostics,{'momentId':'m','shotIds':['s']})
+
+    def test_default_216_copy_reading_failure_is_not_asset_collision(self):
+        p=self.props(text='آ'*300)
+        with self.assertRaises(FilmTypePreflightError) as raised:
+            self.prepare(p)
+        self.assertNotEqual(raised.exception.code,'ASSET_SELECTION_HARD_REGION_COLLISION')
+
+    def test_default_216_independent_recipe_failure_is_not_asset_collision(self):
+        p=self.props(text='آ'*70)
+        p['durationSeconds']=90
+        p['shots'][0]['endSeconds']=90
+        p['moments'][0]['endSeconds']=80
+        p['shots'][0]['avoidRegions']=[{'x':0,'y':0,'w':1,'h':1,'priority':'hard'}]
+        with self.assertRaises(FilmTypePreflightError) as raised:
+            self.prepare(p)
+        self.assertNotEqual(raised.exception.code,'ASSET_SELECTION_HARD_REGION_COLLISION')
+        self.assertIn('no curated adaptive editorial recipe fits',str(raised.exception))
+
+    def test_pinned_214_does_not_emit_216_asset_diagnostic(self):
+        p=self.props(text='نیاز به توجه',design=self.pinned_214())
+        p['shots'][0]['avoidRegions']=[{'x':0,'y':0,'w':1,'h':1,'priority':'hard'}]
+        with self.assertRaises(FilmTypePreflightError) as raised:
+            self.prepare(p)
+        self.assertNotEqual(raised.exception.code,'ASSET_SELECTION_HARD_REGION_COLLISION')
+
     def test_default_216_hook_respects_reviewed_subject_region(self):
         p=self.props();p['durationSeconds']=20
         p['moments']=[{'id':'hook','kind':'hook','purpose':'hook-pattern-interrupt',

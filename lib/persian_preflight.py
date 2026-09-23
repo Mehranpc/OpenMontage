@@ -26,7 +26,7 @@ from lib.persian_recovery_policy import (
     recovery_class_for_code, recovery_policy_for_issue,
 )
 
-PREFLIGHT_POLICY_VERSION = "2.1"
+PREFLIGHT_POLICY_VERSION = "2.2"
 _DIAGNOSTIC_PREFIX_RE = re.compile(r"^\[([A-Z0-9_]+)\]\s*")
 
 
@@ -553,20 +553,23 @@ def aggregate_preflight_edit_decisions(
             )
         )
     except FilmTypePreflightError as exc:
-        actions = [
+        asset_collision = exc.code == "ASSET_SELECTION_HARD_REGION_COLLISION"
+        actions = ([
+            "Inspect an already reviewed alternate shot/crop for the named moment; if needed, send back to acquire_assets within the existing budget. Preserve approved copy and do not weaken hard regions.",
+        ] if asset_collision else [
             "Use watermarkDiagnostics to choose another approved fixed anchor or suppress only the colliding watermark interval.",
             "Do not change footage, scenes, subject regions, copy, or asset selection for watermark recovery.",
-        ] if exc.diagnostics else ["Resolve the Film Type browser-preflight refusal and retry."]
+        ] if exc.code.startswith("WATERMARK_") else ["Resolve the Film Type browser-preflight refusal and retry."])
         return _report(
             ok=False, edit=edit,
             blocking=[{
                 "code": exc.code,
                 "message": str(exc),
-                "recoveryClass": "FILM_TYPE_LAYOUT",
+                "recoveryClass": "ASSET_SELECTION" if asset_collision else recovery_class_for_code(exc.code, "FILM_TYPE_LAYOUT"),
                 **({"details": exc.diagnostics} if exc.diagnostics else {}),
             }],
             evidence=evidence,
-            watermark_diagnostics=exc.diagnostics or watermark_feasibility,
+            watermark_diagnostics=(exc.diagnostics if exc.code.startswith("WATERMARK_") else watermark_feasibility),
             next_actions=actions,
             diagnostic_layers=["browser"],
         )

@@ -106,6 +106,43 @@ def test_missing_reviewed_regions_are_not_misclassified_as_typography(
     assert "subject_regions" not in plan["preserve"]
 
 
+def test_measured_hard_collision_routes_to_asset_reselection_without_copy_change(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"fixture")
+    payload = _edit(str(source))
+
+    def refuse(*args, **kwargs):
+        raise FilmTypePreflightError(
+            "Moment moment-1: hard regions blocked otherwise fitting candidates",
+            code="ASSET_SELECTION_HARD_REGION_COLLISION",
+            diagnostics={"momentId": "moment-1", "shotIds": ["shot-1"]},
+        )
+
+    monkeypatch.setattr(preflight, "browser_preflight_edit_decisions", refuse)
+    report = preflight.aggregate_preflight_edit_decisions(payload, base_dir=tmp_path)
+    issue = report["blockingIssues"][0]
+    assert issue["code"] == "ASSET_SELECTION_HARD_REGION_COLLISION"
+    assert issue["details"] == {"momentId": "moment-1", "shotIds": ["shot-1"]}
+    assert issue["recoveryClass"] == "ASSET_SELECTION"
+    assert "copy" in issue["recoveryPlan"]["preserve"]
+    assert any("send back to acquire_assets" in action for action in report["nextActions"])
+
+
+def test_plain_layout_failure_stays_layout_recovery(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"fixture")
+
+    def refuse(*args, **kwargs):
+        raise FilmTypePreflightError("Moment moment-1: no curated measured candidate fits")
+
+    monkeypatch.setattr(preflight, "browser_preflight_edit_decisions", refuse)
+    report = preflight.aggregate_preflight_edit_decisions(_edit(str(source)), base_dir=tmp_path)
+    issue = report["blockingIssues"][0]
+    assert issue["recoveryClass"] == "FILM_TYPE_LAYOUT"
+
+
 def test_subject_region_evidence_validator_is_fail_closed_and_complete() -> None:
     with pytest.raises(SubjectRegionReviewError, match="shot_regions"):
         validate_subject_region_review_evidence({}, expected_shot_ids=["shot-1"])

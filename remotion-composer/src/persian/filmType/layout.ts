@@ -661,6 +661,7 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
   const ranked = (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")))));
   const diffuse = (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0" || (p.profileVersion === "2.13.0" || p.profileVersion === "2.14.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0"))));
   const blocked: string[] = [];
+  const hardBlockedShots = new Set<string>();
   const candidates: {layout: FilmMomentLayout; score: number}[] = [];
   const ladder = moment.kind === "figure" && moment.segments.some(s => s.role === "hero" && splitQuantity(s.text))
     ? p.typography.figureLadderPx : moment.kind === "hook" ? p.typography.titleLadderPx : p.typography.statementLadderPx;
@@ -684,7 +685,7 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
       const collision = expand(moving,l.collisionMarginPx/dims.width,l.collisionMarginPx/dims.height);
       if (!inSafe(moving,cfg.safeArea,padX,padY)) { if(blocked.length<3) blocked.push(`${zone}: outside safe area`); continue; }
       const obstacle = hardRelevant.find(r => intersects(collision,r));
-      if(obstacle && enforceSubject) { const detail=`${zone}: ink blocked by hard region ${avoid.indexOf(obstacle)} at ${obstacle.startSeconds}-${obstacle.endSeconds}s`; if(blocked.length<3&&!blocked.includes(detail)) blocked.push(detail); continue; }
+      if(obstacle && enforceSubject) { if(obstacle.shotId) hardBlockedShots.add(obstacle.shotId); const detail=`${zone}: ink blocked by hard region ${avoid.indexOf(obstacle)} at ${obstacle.startSeconds}-${obstacle.endSeconds}s`; if(blocked.length<3&&!blocked.includes(detail)) blocked.push(detail); continue; }
       const softOverlaps = softRelevant.filter(r => intersects(collision,r));
       const strength = moment.presentation?.contrastStrength ?? p.contrast.defaultStrength;
       if (!Object.prototype.hasOwnProperty.call(p.contrast.strengths,strength)) throw new Error(`Moment ${moment.id}: unsupported contrastStrength.`);
@@ -774,6 +775,17 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
   if (enforceSubject) {
     const wrapped = subjectWrapLayout(moment,props,p,hardRelevant,softRelevant,reviewed);
     if (wrapped) return wrapped;
+  }
+  // A hard collision alone is not causal: later recipe/occupancy gates might
+  // also fail. Retry this one moment in the same browser with only subject
+  // obstacles removed. No alternate asset or region is invented or persisted.
+  let fitsWithoutSubject = false;
+  if (p.profileVersion === "2.16.0" && authored === "auto" && hardBlockedShots.size > 0) {
+    try { placeMoment(moment,props,p,[]); fitsWithoutSubject = true; }
+    catch { /* Independent copy, recipe, or safe-area failure stays layout. */ }
+  }
+  if (fitsWithoutSubject) {
+    throw new Error(`Moment ${moment.id}: no safe measured placement remains; reviewed hard subject regions blocked otherwise fitting candidates. Keep the authored copy and inspect a reviewed alternate shot or crop. OPENMONTAGE_DIAGNOSTICS=${JSON.stringify({code:"ASSET_SELECTION_HARD_REGION_COLLISION",details:{momentId:moment.id,shotIds:[...hardBlockedShots].sort()}})}`);
   }
   if ((p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")) throw new Error(`Moment ${moment.id}: no curated adaptive editorial recipe fits the measured pixels inside the safe area. Preserve the authored phrase; revise recipe, placement, or duration explicitly rather than applying a character-count proxy. Diagnostics: ${blocked.join("; ") || "no curated measured candidate fits"}`);
   throw new Error(`Moment ${moment.id}: no readable Film Type placement fits the safe area and supplied subject regions. Shorten the authored phrase, choose another legal placement, or change the shot; do not clip, hide text, or shrink below the profile floors. Diagnostics: ${blocked.join("; ") || "no size fits; check copy length and height"}`);
