@@ -41,6 +41,11 @@ from lib.persian_asset_commands import (
     build_manifest as build_asset_manifest_command,
     write_assets_checkpoint as write_assets_checkpoint_command,
 )
+from lib.persian_music_commands import (
+    PersianMusicCommandError,
+    fetch_music as fetch_music_command,
+    search_music as search_music_command,
+)
 from lib.persian_asset_workspace import (
     PersianAssetWorkspaceError,
     asset_workspace_status,
@@ -2376,6 +2381,33 @@ def write_workflow_assets_checkpoint(
     )
 
 
+def search_workflow_music(
+    project_id: str, input_path: str | Path, *, pipeline_dir: Path | None = None
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    _require_asset_candidate_phase(state)
+    source = assert_read_allowed(state, str(input_path))
+    project_root = _project_root(state)
+    return search_music_command(
+        project_root.parent, project_root.name, _read_json(str(source))
+    )
+
+
+def fetch_workflow_music(
+    project_id: str, search_id: str, metadata_path: str | Path, *,
+    output_path: str | Path = "assets/music/bed.mp3",
+    pipeline_dir: Path | None = None,
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    _require_asset_candidate_phase(state)
+    source = assert_read_allowed(state, str(metadata_path))
+    project_root = _project_root(state)
+    return fetch_music_command(
+        project_root.parent, project_root.name, search_id, _read_json(str(source)),
+        output_path=output_path,
+    )
+
+
 def _candidate_path(project_root: Path, reported: str) -> Path:
     raw = Path(reported).expanduser()
     path = raw.resolve() if raw.is_absolute() else (project_root / raw).resolve()
@@ -3453,6 +3485,16 @@ def build_parser() -> argparse.ArgumentParser:
     assets_checkpoint.add_argument("--review-json", metavar="PATH")
     assets_checkpoint.add_argument("--metadata-json", metavar="PATH")
     assets_checkpoint.add_argument("--tool-gap", help="record a failed checkpoint instead of improvising a script")
+    assets_music = assets_sub.add_parser("music", help="cached idempotent music acquisition")
+    music_sub = assets_music.add_subparsers(dest="music_command", required=True)
+    music_search = music_sub.add_parser("search", help="search/download once into the project cache")
+    music_search.add_argument("project_id")
+    music_search.add_argument("--json", required=True, metavar="PATH")
+    music_fetch = music_sub.add_parser("fetch", help="promote cached music with audited provenance")
+    music_fetch.add_argument("project_id")
+    music_fetch.add_argument("search_id")
+    music_fetch.add_argument("--metadata-json", required=True, metavar="PATH")
+    music_fetch.add_argument("--output-path", default="assets/music/bed.mp3")
 
     asset_request = sub.add_parser("asset-request", help="clamp a stock request to workflow budgets")
     asset_request.add_argument("project_id")
@@ -3646,6 +3688,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.project_id, review_path=args.review_json,
                     metadata_path=args.metadata_json, tool_gap=args.tool_gap,
                 ))
+            elif args.assets_command == "music":
+                if args.music_command == "search":
+                    _print_json(search_workflow_music(args.project_id, args.json))
+                elif args.music_command == "fetch":
+                    _print_json(fetch_workflow_music(
+                        args.project_id, args.search_id, args.metadata_json,
+                        output_path=args.output_path,
+                    ))
         elif args.command == "asset-request":
             _print_json(
                 bounded_asset_search_request(
@@ -3716,7 +3766,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "job-status":
             _print_json(reconcile_workflow_job(args.project_id, args.job_id))
         return 0
-    except (PersianVideoWorkflowError, PersianAssetCommandError, PersianAssetWorkspaceError, PersianEditWorkspaceError, DurableJobError, CheckpointValidationError) as exc:
+    except (PersianVideoWorkflowError, PersianAssetCommandError, PersianMusicCommandError, PersianAssetWorkspaceError, PersianEditWorkspaceError, DurableJobError, CheckpointValidationError) as exc:
         parser = build_parser()
         parser.error(str(exc))
     return 2
