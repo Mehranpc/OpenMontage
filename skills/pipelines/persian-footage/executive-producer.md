@@ -32,9 +32,18 @@ this file does not repeat those rules.
 
 # Executive Producer — Persian Footage Pipeline
 
+## Minimal context routing
+
+At bootstrap, read `profile-routing.md` and `review-policy.md`; do not preload every
+director or `film-type-history.md`. Before each phase, read only
+`phase-cards/<phase>.md`. Open that phase's director/reference only for the details
+the card names. A phase transition discards the prior phase's working instructions.
+This keeps the active prompt bounded while the manifest and checkpoint remain the
+authorities for progression.
+
 ## Final-candidate protocol
 
-Read `skills/pipelines/persian-footage/final-candidate-protocol.md`. Intermediate stages run autonomously; compose is the single post-render human gate.
+Read `skills/pipelines/persian-footage/final-candidate-protocol.md` only when entering compose. Intermediate stages run autonomously; compose is the single post-render human gate.
 
 ## When To Use
 
