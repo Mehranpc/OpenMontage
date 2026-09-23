@@ -595,9 +595,9 @@ The reviewer is a meta skill (`skills/meta/reviewer.md`) — advisory, never dir
 
 - Self-review after every stage execution, before checkpointing.
 - Load `review_focus` items from the pipeline manifest for the current stage.
-- Maximum two review rounds. After that, pass with warnings and move on.
-- Findings categorized: critical (must fix), suggestion (should fix), nitpick (nice-to-have).
-- Critical findings -> fix and re-review. Suggestions -> note and proceed.
+- Read the revision ceiling from the active pipeline manifest (`orchestration.max_revisions_per_stage`); prose must not invent a second limit.
+- When that ceiling is exhausted with unresolved critical findings, stop automation and checkpoint `metadata.quality_disposition=needs_decision`; never represent the result as finally deliverable.
+- Findings categorized: critical (must fix before final delivery), suggestion (should fix), nitpick (nice-to-have), or investigation. Suggestions and nitpicks do not block progression.
 - Check playbook `quality_rules` as constraints, not suggestions.
 
 ## Human Checkpoint Protocol

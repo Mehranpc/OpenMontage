@@ -173,6 +173,8 @@
       "properties": {
         "mode": { "type": "string" },
         "skill": { "type": "string" },
+        "policy_version": { "type": "string", "description": "Policy contract pinned at run start" },
+        "active_profile": { "type": "string", "description": "Execution profile pinned at run start" },
         "budget_default_usd": { "type": "number" },
         "max_revisions_per_stage": { "type": "integer" },
         "max_send_backs": { "type": "integer" },

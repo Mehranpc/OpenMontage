@@ -34,6 +34,8 @@ reference_input:
 orchestration:
   mode: executive-producer
   skill: pipelines/persian-footage/executive-producer
+  policy_version: "persian-speed-quality-v2"
+  active_profile: "film-type-2.16"
   # Stock footage and local transcription cost nothing. The budget is nonzero only
   # to leave room for an optional paid TTS if the user chooses one.
   budget_default_usd: 0.50

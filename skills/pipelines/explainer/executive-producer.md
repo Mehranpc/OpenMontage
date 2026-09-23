@@ -119,8 +119,8 @@ EXECUTE_STAGE(stage_name):
      If REVISE:
        - Increment revision_counts[stage_name]
        - If revision_counts[stage_name] >= 3:
-           - PASS WITH WARNINGS (never block forever)
-           - Log unresolved issues
+           - STOP AUTOMATION with quality_disposition: needs_decision
+           - Log unresolved critical issues; final delivery is forbidden
        - Else:
            - Compose specific feedback for the director
            - Re-run SPAWN DIRECTOR with feedback injected
