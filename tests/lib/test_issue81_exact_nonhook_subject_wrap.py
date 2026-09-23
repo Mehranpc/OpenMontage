@@ -37,6 +37,22 @@ class ExactNonHookSubjectWrap(unittest.TestCase):
         self.assertEqual(layout["placement"], "subject-wrap")
         self.assertEqual(" ".join(row["text"] for row in layout["rows"]), "در این مطالعه، ۵۴۳ نفر")
         self.assertEqual(layout["subjectSafety"], "checked-against-supplied-regions")
+        tokens = original["design"]["resolved"]["layout"]
+        width, height = 1080, 1920
+        for row in layout["rows"]:
+            anchor = layout["widthPx"] - tokens["inkPaddingPx"] + row.get("offsetXPx", 0)
+            margin = tokens["collisionMarginPx"]
+            collision = {
+                "x": layout["rect"]["x"] + (anchor - row["widthPx"] - margin) / width,
+                "y": layout["rect"]["y"] + (row["baselinePx"] - row["abovePx"] - margin) / height,
+                "w": (row["widthPx"] + 2 * margin) / width,
+                "h": (row["abovePx"] + row["belowPx"] + tokens["motionClearancePx"] + 2 * margin) / height,
+            }
+            for shot in original["shots"]:
+                for region in shot["avoidRegions"]:
+                    overlap_width = min(collision["x"] + collision["w"], region["x"] + region["w"]) - max(collision["x"], region["x"])
+                    overlap_height = min(collision["y"] + collision["h"], region["y"] + region["h"]) - max(collision["y"], region["y"])
+                    self.assertFalse(overlap_width > .5 / width and overlap_height > .5 / height, row["text"])
 
         without_exact = copy.deepcopy(props)
         del without_exact["moments"][0]["exactText"]
