@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 import time
 
@@ -293,7 +294,9 @@ def test_terminal_presentation_reconciles_legacy_observed_job_without_rerunning(
     from tests.lib.test_persian_video_workflow import _review_ready_project
 
     state, candidate, review_path, _ = _review_ready_project(tmp_path)
-    state["budgets"]["max_wall_time_minutes"] = 365 * 24 * 60
+    current = datetime.now(timezone.utc).isoformat()
+    state["budget_window_started_at"] = current
+    state["phase_telemetry"]["final_review"][-1]["started_at"] = current
     workflow._write_state(tmp_path / "run", state)
     original_bytes = candidate.read_bytes()
     started = kernel.start_phase_job(
@@ -329,7 +332,9 @@ def test_terminal_presentation_cannot_hide_a_pending_job(tmp_path: Path) -> None
     from tests.lib.test_persian_video_workflow import _review_ready_project
 
     state, _, review_path, _ = _review_ready_project(tmp_path)
-    state["budgets"]["max_wall_time_minutes"] = 365 * 24 * 60
+    current = datetime.now(timezone.utc).isoformat()
+    state["budget_window_started_at"] = current
+    state["phase_telemetry"]["final_review"][-1]["started_at"] = current
     workflow._write_state(tmp_path / "run", state)
     kernel.start_phase_job(
         "run", job_id="pending-review", phase="final_review",
