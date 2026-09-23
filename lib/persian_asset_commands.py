@@ -9,7 +9,6 @@ from uuid import uuid4
 
 from lib.checkpoint import read_checkpoint, write_checkpoint
 from lib.persian_asset_workspace import (
-    PersianAssetWorkspaceError,
     build_asset_manifest_from_workspace,
     validate_asset_manifest_against_workspace,
 )
@@ -50,6 +49,25 @@ def _atomic_stable_json(path: Path, value: Mapping[str, Any]) -> bool:
     return True
 
 
+def _validate_manifest(project_dir: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    scene_path = project_dir / "artifacts" / "scene_plan.json"
+    scene_plan = (
+        _read_object(scene_path, label="scene plan") if scene_path.is_file() else None
+    )
+    try:
+        validate_artifact("asset_manifest", manifest)
+        assert_video_only(manifest)
+        workspace_check = validate_asset_manifest_against_workspace(project_dir, manifest)
+    except Exception as exc:
+        raise PersianAssetCommandError(str(exc)) from exc
+    audit_problems = audit_asset_manifest(manifest, scene_plan)
+    if audit_problems:
+        raise PersianAssetCommandError(
+            "asset manifest audit failed: " + " | ".join(audit_problems)
+        )
+    return workspace_check
+
+
 def build_manifest(
     pipeline_dir: Path,
     project_id: str,
@@ -64,19 +82,7 @@ def build_manifest(
     manifest = build_asset_manifest_from_workspace(
         project_dir, video_format=video_format, overrides=overrides or {}
     )
-    scene_path = project_dir / "artifacts" / "scene_plan.json"
-    scene_plan = _read_object(scene_path, label="scene plan") if scene_path.is_file() else None
-    try:
-        validate_artifact("asset_manifest", manifest)
-        assert_video_only(manifest)
-        workspace_check = validate_asset_manifest_against_workspace(project_dir, manifest)
-    except Exception as exc:
-        raise PersianAssetCommandError(str(exc)) from exc
-    audit_problems = audit_asset_manifest(manifest, scene_plan)
-    if audit_problems:
-        raise PersianAssetCommandError(
-            "asset manifest audit failed: " + " | ".join(audit_problems)
-        )
+    workspace_check = _validate_manifest(project_dir, manifest)
 
     manifest_path = project_dir / "artifacts" / "asset_manifest.json"
     changed = _atomic_stable_json(manifest_path, manifest)
@@ -109,21 +115,18 @@ def write_assets_checkpoint(
     pipeline_dir = Path(pipeline_dir).expanduser().resolve()
     project_dir = pipeline_dir / project_id
     manifest_path = project_dir / "artifacts" / "asset_manifest.json"
-    manifest = _read_object(manifest_path, label="canonical asset manifest") if manifest_path.is_file() else None
     clean_gap = str(tool_gap or "").strip()
     status = "failed" if clean_gap else "completed"
-    artifacts: dict[str, Any] = {"asset_manifest": manifest} if manifest is not None else {}
-    if status == "completed" and manifest is None:
-        raise PersianAssetCommandError(
-            "canonical asset manifest is missing; run assets build-manifest first"
-        )
-    if manifest is not None:
-        try:
-            validate_artifact("asset_manifest", manifest)
-            assert_video_only(manifest)
-            validate_asset_manifest_against_workspace(project_dir, manifest)
-        except Exception as exc:
-            raise PersianAssetCommandError(str(exc)) from exc
+    manifest = None
+    artifacts: dict[str, Any] = {}
+    if not clean_gap:
+        if not manifest_path.is_file():
+            raise PersianAssetCommandError(
+                "canonical asset manifest is missing; run assets build-manifest first"
+            )
+        manifest = _read_object(manifest_path, label="canonical asset manifest")
+        _validate_manifest(project_dir, manifest)
+        artifacts = {"asset_manifest": manifest}
 
     checkpoint_metadata = dict(metadata or {})
     checkpoint_metadata.setdefault("produced_by", "persian-video assets write-checkpoint")

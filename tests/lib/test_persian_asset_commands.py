@@ -123,3 +123,18 @@ def test_front_door_exposes_nested_assets_commands() -> None:
     ])
     assert checkpointed.assets_command == "write-checkpoint"
     assert checkpointed.tool_gap == "missing provider field"
+
+
+def test_write_checkpoint_reaudits_canonical_manifest(tmp_path: Path) -> None:
+    project = tmp_path / "run"
+    _selected_candidate(project)
+    commands.build_manifest(tmp_path, "run")
+    path = project / "artifacts" / "asset_manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["assets"][0].pop("attribution")
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    import pytest
+
+    with pytest.raises(commands.PersianAssetCommandError, match="missing attribution"):
+        commands.write_assets_checkpoint(tmp_path, "run")
