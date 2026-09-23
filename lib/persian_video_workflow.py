@@ -2947,6 +2947,7 @@ def stage_workflow_edit_draft(
 def preflight_workflow_edit_draft(
     project_id: str, attempt_id: str, *, pipeline_dir: Path | None = None,
     recertify_promoted: bool = False,
+    recertify_staged: bool = False,
 ) -> dict[str, Any]:
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     if state.get("next_phase") != "no_copy_preflight":
@@ -2961,6 +2962,7 @@ def preflight_workflow_edit_draft(
         attempt_id,
         hook_authority=decision,
         recertify_promoted=recertify_promoted,
+        recertify_staged=recertify_staged,
     )
 
 
@@ -3206,6 +3208,15 @@ def build_parser() -> argparse.ArgumentParser:
             "canonical digest without creating a new convergence candidate"
         ),
     )
+    edit_preflight.add_argument(
+        "--recertify-staged",
+        action="store_true",
+        help=(
+            "recompute policy/code-dependent preflight evidence for the same immutable "
+            "staged/blocked candidate after dependency context changes, without consuming "
+            "another convergence candidate"
+        ),
+    )
 
     edit_promote = sub.add_parser("edit-promote", help="promote a digest-bound passing edit draft")
     edit_promote.add_argument("project_id")
@@ -3367,6 +3378,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.project_id,
                 args.attempt_id,
                 recertify_promoted=args.recertify_promoted,
+                recertify_staged=args.recertify_staged,
             ))
         elif args.command == "edit-promote":
             _print_json(promote_workflow_edit_draft(args.project_id, args.attempt_id))

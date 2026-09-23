@@ -208,6 +208,7 @@ _COMPONENT_IMPLEMENTATION_PATHS: dict[str, tuple[str, ...]] = {
         "lib/persian_edit_workspace.py",
         "lib/persian_preflight.py",
         "lib/persian_edit_contract.py",
+        "lib/persian_sync.py",
         "lib/persian_film_type.py",
         "lib/persian_captions.py",
         "lib/persian_srt.py",
@@ -1072,7 +1073,12 @@ def preflight_edit_draft(
     project_dir: Path, attempt_id: str, *,
     hook_authority: Mapping[str, Any] | None = None,
     recertify_promoted: bool = False,
+    recertify_staged: bool = False,
 ) -> dict[str, Any]:
+    if recertify_promoted and recertify_staged:
+        raise PersianEditWorkspaceError(
+            "choose only one recertification mode: promoted or staged"
+        )
     draft, report_path, _ = _paths(project_dir, attempt_id)
     if not draft.is_file():
         raise PersianEditWorkspaceError(f"edit draft does not exist: {draft}")
@@ -1088,26 +1094,43 @@ def preflight_edit_draft(
         manifest = load_convergence_candidate(project_dir, attempt_id)
         staged_dependencies = manifest.get("dependencyDigests")
         if staged_dependencies and staged_dependencies != dependency_digests:
-            if not recertify_promoted:
+            if not (recertify_promoted or recertify_staged):
                 raise PersianEditWorkspaceError(
                     "refusing preflight: staged dependency context changed after candidate creation"
                 )
-            if manifest.get("disposition") != "promoted":
-                raise PersianEditWorkspaceError(
-                    "promoted candidate recertification requires the candidate to already be promoted"
-                )
-            canonical = project_dir.expanduser().resolve() / "artifacts" / "edit_decisions.json"
-            if not canonical.is_file():
-                raise PersianEditWorkspaceError(
-                    "promoted candidate recertification requires the canonical edit artifact"
-                )
-            canonical_payload = json.loads(canonical.read_text(encoding="utf-8"))
-            canonical_digest = artifact_sha256(canonical_payload)
             manifest_digest = str(manifest.get("artifactSha256") or "")
-            if canonical_digest != digest or manifest_digest != digest:
+            if manifest_digest != digest:
                 raise PersianEditWorkspaceError(
-                    "promoted candidate recertification requires the same canonical edit digest"
+                    "candidate recertification requires the same immutable edit digest"
                 )
+            if recertify_promoted:
+                if manifest.get("disposition") != "promoted":
+                    raise PersianEditWorkspaceError(
+                        "promoted candidate recertification requires the candidate to already be promoted"
+                    )
+                canonical = project_dir.expanduser().resolve() / "artifacts" / "edit_decisions.json"
+                if not canonical.is_file():
+                    raise PersianEditWorkspaceError(
+                        "promoted candidate recertification requires the canonical edit artifact"
+                    )
+                canonical_payload = json.loads(canonical.read_text(encoding="utf-8"))
+                canonical_digest = artifact_sha256(canonical_payload)
+                if canonical_digest != digest:
+                    raise PersianEditWorkspaceError(
+                        "promoted candidate recertification requires the same canonical edit digest"
+                    )
+            else:
+                disposition = str(manifest.get("disposition") or "")
+                if disposition == "promoted":
+                    raise PersianEditWorkspaceError(
+                        "staged candidate recertification cannot rewrite promoted certification; "
+                        "use promoted recertification"
+                    )
+                if disposition not in {"staged", "blocked", "preflight_passed"}:
+                    raise PersianEditWorkspaceError(
+                        "staged candidate recertification requires a staged, blocked, or "
+                        "preflight-passed immutable candidate"
+                    )
 
             old_report_sha = str(manifest.get("preflightReportSha256") or "")
             old_report = None
@@ -1158,9 +1181,10 @@ def preflight_edit_draft(
                 recertificationReason=history_record["reason"],
             )
             recertified = True
-    elif recertify_promoted:
+    elif recertify_promoted or recertify_staged:
+        mode = "promoted" if recertify_promoted else "staged"
         raise PersianEditWorkspaceError(
-            "promoted candidate recertification requires an existing promoted candidate"
+            f"{mode} candidate recertification requires an existing candidate"
         )
     cache_path = _cache_path(project_dir, digest)
 
@@ -1240,7 +1264,10 @@ def preflight_edit_draft(
     report["attemptId"] = attempt_id
     report["draftPath"] = str(draft)
     if recertified:
-        report["recertifiedPromotedCandidate"] = True
+        if recertify_promoted:
+            report["recertifiedPromotedCandidate"] = True
+        if recertify_staged:
+            report["recertifiedStagedCandidate"] = True
     _atomic_json(report_path, report)
     report_sha = hashlib.sha256(report_path.read_bytes()).hexdigest()
     _update_candidate(

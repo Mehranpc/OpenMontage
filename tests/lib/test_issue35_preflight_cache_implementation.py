@@ -79,6 +79,7 @@ def test_browser_dependency_digest_contains_implementation_identity() -> None:
     identity = workspace._component_implementation_digests()
 
     assert set(identity) == {"retention", "hook", "browser"}
+    assert "lib/persian_sync.py" in workspace._COMPONENT_IMPLEMENTATION_PATHS["browser"]
     assert all(len(value) == 64 for value in identity.values())
     assert all(value for value in identity.values())
     assert digests["browser"] != workspace._stable_digest(
