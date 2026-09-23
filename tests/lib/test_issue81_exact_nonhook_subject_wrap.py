@@ -4,6 +4,7 @@ import os
 import unittest
 
 from lib.persian_brand import exact_text_record
+from lib.persian_film_type import FilmTypePreflightError
 
 
 @unittest.skipUnless(os.environ.get("OPENMONTAGE_BROWSER_TESTS") == "1", "requires Chromium")
@@ -56,5 +57,6 @@ class ExactNonHookSubjectWrap(unittest.TestCase):
 
         without_exact = copy.deepcopy(props)
         del without_exact["moments"][0]["exactText"]
-        with self.assertRaisesRegex(ValueError, "no curated adaptive editorial recipe fits"):
+        with self.assertRaises(FilmTypePreflightError) as raised:
             browser.prepare(without_exact)
+        self.assertEqual(raised.exception.code, "ASSET_SELECTION_HARD_REGION_COLLISION")
