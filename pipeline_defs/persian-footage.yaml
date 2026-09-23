@@ -52,14 +52,10 @@ extensions:
   custom_tools: false
 
 required_skills:
+  # Eager bootstrap context only. The current phase card routes to one stage skill.
   - pipelines/persian-footage/executive-producer
-  - pipelines/persian-footage/idea-director
-  - pipelines/persian-footage/script-director
-  - pipelines/persian-footage/scene-director
-  - pipelines/persian-footage/asset-director
-  - pipelines/persian-footage/edit-director
-  - pipelines/persian-footage/compose-director
-  - pipelines/persian-footage/final-candidate-protocol
+  - pipelines/persian-footage/profile-routing
+  - pipelines/persian-footage/review-policy
   - meta/reviewer
   - meta/checkpoint-protocol
 
