@@ -48,7 +48,8 @@ from lib.persian_asset_workspace import (
 )
 from lib.persian_edit_workspace import (
     PersianEditWorkspaceError, artifact_sha256, compare_edit_candidates, convergence_status,
-    load_promotable_edit_draft, preflight_edit_draft, promote_edit_draft, stage_edit_draft,
+    load_promotable_edit_draft, mark_blocked_convergence_exhausted, preflight_edit_draft,
+    promote_edit_draft, stage_edit_draft,
 )
 from lib.persian_rendered_review import (
     HOOK_RENDER_REVIEW_VERSIONS,
@@ -2957,13 +2958,30 @@ def preflight_workflow_edit_draft(
     decision = state.get("hook_selection")
     if not isinstance(decision, Mapping):
         raise PersianVideoWorkflowError("workflow is missing its hook-selection authority record")
-    return preflight_edit_draft(
+    report = preflight_edit_draft(
         _project_root(state),
         attempt_id,
         hook_authority=decision,
         recertify_promoted=recertify_promoted,
         recertify_staged=recertify_staged,
     )
+    if report.get("ok") is not True:
+        max_candidates = 1 + int((state.get("budgets") or {}).get("max_revisions_per_stage", 0))
+        revision_cycle = int(state.get("user_revision_cycles") or 0)
+        mark_blocked_convergence_exhausted(
+            _project_root(state),
+            attempt_id,
+            max_candidates=max_candidates,
+            revision_cycle=revision_cycle,
+        )
+        convergence = convergence_status(
+            _project_root(state), revision_cycle=revision_cycle
+        )
+        if _terminalize_from_convergence_stop(
+            state, convergence, revision_cycle=revision_cycle
+        ):
+            report["convergenceStop"] = dict(state.get("recovery_stop") or {})
+    return report
 
 
 def promote_workflow_edit_draft(

@@ -713,6 +713,74 @@ def convergence_status(
     }
 
 
+def mark_blocked_convergence_exhausted(
+    project_dir: Path,
+    attempt_id: str,
+    *,
+    max_candidates: int,
+    revision_cycle: int,
+) -> dict[str, Any] | None:
+    """Persist the terminal stop when the final allowed candidate is blocked.
+
+    Convergence used to persist ``needs_revision`` only when callers attempted to
+    stage one candidate *past* the global budget. That made the valid boundary
+    state (N/N candidates, last one blocked) remain falsely active until an
+    illegal extra staging request was made. Terminalize at the completed blocked
+    preflight instead, without creating another candidate.
+    """
+    if max_candidates < 1:
+        raise PersianEditWorkspaceError("max_candidates must be positive")
+    manifest = load_convergence_candidate(project_dir, attempt_id)
+    if int(manifest.get("revisionCycle") or 0) != int(revision_cycle):
+        return None
+    if manifest.get("disposition") != "blocked":
+        return None
+
+    manifests = [
+        item for item in _candidate_manifests(project_dir)
+        if int(item.get("revisionCycle") or 0) == int(revision_cycle)
+    ]
+    if len(manifests) < max_candidates:
+        return None
+
+    diagnostics = manifest.get("producedDiagnostics")
+    diagnostic_issue = (
+        diagnostics[0]
+        if isinstance(diagnostics, list)
+        and diagnostics
+        and isinstance(diagnostics[0], Mapping)
+        else None
+    )
+    recovery_class = None
+    max_attempts = None
+    if isinstance(diagnostic_issue, Mapping):
+        recovery_class = str(diagnostic_issue.get("recoveryClass") or "") or None
+        try:
+            plan = recovery_policy_for_issue(diagnostic_issue)
+        except Exception:
+            plan = None
+        if isinstance(plan, Mapping):
+            recovery_class = str(plan.get("recoveryClass") or recovery_class or "") or None
+            if plan.get("maxAttempts") is not None:
+                max_attempts = int(plan["maxAttempts"])
+
+    attempts_used = (
+        sum(1 for item in manifests if item.get("recoveryClass") == recovery_class)
+        if recovery_class else 0
+    )
+    return _write_unresolved(
+        project_dir,
+        reason="global_candidate_budget_exhausted",
+        recovery_class=recovery_class,
+        attempts_used=attempts_used,
+        max_attempts=max_attempts,
+        global_used=len(manifests),
+        global_max=max_candidates,
+        diagnostic_issue=diagnostic_issue,
+        revision_cycle=revision_cycle,
+    )
+
+
 def compare_edit_candidates(project_dir: Path, left_attempt_id: str, right_attempt_id: str) -> dict[str, Any]:
     left = _load_draft(project_dir, left_attempt_id)
     right = _load_draft(project_dir, right_attempt_id)
