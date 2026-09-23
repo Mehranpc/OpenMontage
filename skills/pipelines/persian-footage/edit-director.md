@@ -20,7 +20,7 @@ The first moment is the hook, starts by 0.6s, and must be earned by the approved
 
 ## Timing and pacing
 
-Every narrated moment carries spoken-form `anchorText`. Re-derive timings from current word timings; never rescale an old edit by duration ratio. Active 2.16 hooks are complete simultaneous 3–5 second compositions.
+Every narrated moment carries spoken-form `anchorText`. Re-derive timings from current word timings; never rescale an old edit by duration ratio. With `simultaneous_hook_typography=True`, each active 2.16 hook remains a complete 3–5 second composition.
 
 ```python
 from lib.persian_sync import TimedWord, audit_sync, retime_moments

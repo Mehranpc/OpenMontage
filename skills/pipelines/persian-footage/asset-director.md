@@ -45,7 +45,7 @@ Before alignment run:
 python -m lib.persian_video_workflow alignment-plan <project-id>
 ```
 
-Then use durable `alignment-start` → `alignment-status` → `alignment-commit`. `execute_alignment_with_fallback` is a low-level worker/test primitive, not the production entrypoint. Never call `registry.get("mlx_whisper_transcriber").execute` or `registry.get("transcriber").execute` here. The approved script owns words; provider timings are only a clock.
+Then use durable `alignment-start` → `alignment-status` → `alignment-commit`. `execute_alignment_with_fallback` is a low-level worker/test primitive, not the production entrypoint. Never invoke registry transcriber providers directly from asset sourcing; provider selection and fallback belong to the production front door. The approved script owns words; provider timings are only a clock.
 
 ## Music
 
