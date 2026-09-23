@@ -392,6 +392,9 @@ def _typography_payload(edit: Mapping[str, Any]) -> list[dict[str, Any]]:
             presentation = raw.get("presentation")
             if isinstance(presentation, Mapping) and "recipeId" in presentation:
                 style["presentation.recipeId"] = presentation.get("recipeId")
+            exact_text = raw.get("exactText")
+            if exact_text is not None:
+                style["exactText"] = exact_text
             segments = _semantic_segments(raw.get("segments"))
             if segments:
                 style["linePlan"] = segments
@@ -519,7 +522,7 @@ def _unclassified_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
     style_tokens = ("recipe", "layout", "typograph", "font", "style", "line", "placement")
     known_moment = {
         "id", "kind", "startSeconds", "endSeconds", "segments", "text",
-        "userAuthoredShortHook", "presentation",
+        "userAuthoredShortHook", "presentation", "exactText",
     }
     moment_unknown: list[dict[str, Any]] = []
     for collection in ("moments", "typographicBeats"):
