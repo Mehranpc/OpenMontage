@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "first-date-first-text",
+  "title_fa": "اولین قرار و اولین پیام",
+  "language": "fa",
+  "request_fa": "یک ویدیوی ۶۰ ثانیه‌ای فارسی برای اینستاگرام بساز که با موقعیت اولین قرار شروع شود و توضیح دهد اولین پیام بعد از قرار را چه زمانی و با چه لحنی بفرستیم. لحن صمیمی، روشن و بدون بازی روانی باشد.",
+  "format": "vertical",
+  "duration_seconds": 60,
+  "mode": "narrated",
+  "render_runtime": "remotion",
+  "active_profile": "film-type-2.16",
+  "cache_state": "cold",
+  "quality_anchors": ["hook_semantic_match", "persian_readability", "human_presence", "licensed_music"]
+}

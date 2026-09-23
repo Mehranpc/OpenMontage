@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "coffee-hormones",
+  "title_fa": "قهوه و هورمون‌ها",
+  "language": "fa",
+  "request_fa": "یک ویدیوی ۶۰ ثانیه‌ای فارسی برای اینستاگرام بساز که رابطهٔ مصرف قهوه با هورمون‌ها و انرژی روزانه را با زبان محتاط و مبتنی بر منبع توضیح دهد؛ ادعای درمانی قطعی نداشته باشد و موضوع قهوه در تصویر پیوسته بماند.",
+  "format": "vertical",
+  "duration_seconds": 60,
+  "mode": "narrated",
+  "render_runtime": "remotion",
+  "active_profile": "film-type-2.16",
+  "cache_state": "cold",
+  "quality_anchors": ["source_honesty", "subject_continuity", "persian_readability", "licensed_music"]
+}
