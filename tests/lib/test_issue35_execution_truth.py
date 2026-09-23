@@ -290,7 +290,7 @@ def test_replay_rejects_a_different_command_for_the_same_job_identity(tmp_path: 
 
 
 def test_terminal_presentation_reconciles_legacy_observed_job_without_rerunning(tmp_path: Path) -> None:
-    from tests.lib.test_persian_video_workflow import _review_ready_project
+    from tests.lib.test_persian_video_workflow import BASE, _review_ready_project
 
     _, candidate, review_path, _ = _review_ready_project(tmp_path)
     original_bytes = candidate.read_bytes()
@@ -326,7 +326,7 @@ def test_terminal_presentation_reconciles_legacy_observed_job_without_rerunning(
 
 
 def test_terminal_presentation_cannot_hide_a_pending_job(tmp_path: Path) -> None:
-    from tests.lib.test_persian_video_workflow import _review_ready_project
+    from tests.lib.test_persian_video_workflow import BASE, _review_ready_project
 
     _, _, review_path, _ = _review_ready_project(tmp_path)
     kernel.start_phase_job(
