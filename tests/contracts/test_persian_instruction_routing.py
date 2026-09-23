@@ -29,3 +29,11 @@ def test_default_profile_does_not_eagerly_load_history():
     assert "film-type-2.16" in routing
     assert "film-type-history.md" in routing
     assert "never eager context" in routing
+
+
+def test_assets_phase_routes_region_review_to_canonical_cli():
+    text = (PIPELINE / "phase-cards" / "assets.md").read_text()
+    assert "regions build-sheets" in text
+    assert "regions propose" in text
+    assert "confirmationRequired" not in text or "non-final" in text
+    assert ".workspace/*.py" in text

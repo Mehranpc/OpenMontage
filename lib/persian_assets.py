@@ -224,6 +224,13 @@ def _scene_asset_requirements(
     return requirements, typographic_ids, explicit_event_beats
 
 
+def scene_asset_requirements(
+    scene_plan: dict[str, Any],
+) -> tuple[list[dict[str, Any]], set[str], set[str]]:
+    """Expose the canonical scene-plan-to-asset mapping for deterministic tools."""
+    return _scene_asset_requirements(scene_plan)
+
+
 class ImageFootageRejected(ValueError):
     """Raised when a Persian-pipeline manifest contains still-image footage.
 
@@ -541,4 +548,5 @@ __all__ = [
     "assert_video_only",
     "audit_asset_manifest",
     "assert_orientation",
+    "scene_asset_requirements",
 ]

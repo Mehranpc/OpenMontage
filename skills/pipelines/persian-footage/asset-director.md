@@ -31,6 +31,12 @@ Use `python -m lib.persian_video_workflow asset-request`, persist the bounded pr
 
 Selection must copy returned `manifestBinding` and `manifestEvidence` into the canonical row. Do not recreate the pool in chat, rename files to invent identity, or use `.workspace/*.py` as a ledger.
 
+## Subject-region review
+
+After the completed assets checkpoint advances the run to `review_subject_regions`, use `python -m lib.persian_video_workflow regions build-sheets <project-id>`. Inspect the generated start/middle/end frames and grouped 10×10 sheets, write only the grid annotations, then run `regions propose <project-id> --json <annotations.json>`. Each shot annotation must include `shot_id`, non-empty `observed`, and exactly one `start`, `middle`, and `end` frame. A frame is either `{"position":"start","priority":"hard","grid":{"x1":1,"y1":2,"x2":7,"y2":8}}`, `{"position":"middle","regions":[...]}` for multiple hard/soft boxes, or `{"position":"end","clear":true}` when review finds no protected region. Grid coordinates are integer cell boundaries from 0 through 10.
+
+The resulting `proposal.json` is derived, has `confirmationRequired: true`, and deliberately keeps candidate evidence under `proposedEvidence`; do not treat the proposal itself as confirmed review evidence. After explicit review, validate/use only the reviewed evidence through the existing subject-region validator. Do not recreate `build_region_sheets.py`, `grid_sheets.py`, or `build_subject_regions.py` under `.workspace/`.
+
 ## Selection rules
 
 A candidate must honestly serve narration intent and `desired_affect`, retain required subject/human presence through the whole selected crop, fit duration/orientation/resolution, leave feasible type geometry, and have low/medium staged-stock risk. High risk is rejected. Distinct non-overlapping windows from one source are allowed; visible overlap is not.
