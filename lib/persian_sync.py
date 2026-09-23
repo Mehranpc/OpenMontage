@@ -185,7 +185,15 @@ def _enumerated_display_anchor_problems(moment: PersianMoment) -> list[str]:
     numerically while still appearing seconds before the words it displays.  The
     same comparison also preserves spoken list order while allowing whole-word
     shortening inside each item (for example ``توجه دیداری`` -> ``توجه``).
+
+    The opening ``hook-pattern-interrupt`` is a deliberate semantic replacement:
+    its ``anchorText`` supplies the narration clock while hook authority separately
+    binds the viewer-visible result-first copy.  A prose comma inside that hook is
+    therefore not evidence of a spoken enumeration and must not be checked against
+    the opening narration as though it were a body list callout.
     """
+    if moment.kind == "hook" and moment.purpose == "hook-pattern-interrupt":
+        return []
     list_segments = [
         parts
         for segment in moment.segments

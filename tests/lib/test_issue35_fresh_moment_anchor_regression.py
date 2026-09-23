@@ -74,6 +74,28 @@ def test_list_callout_allows_ordered_whole_word_shortening() -> None:
     assert audit.problems == []
 
 
+def test_result_first_hook_prose_comma_is_not_treated_as_spoken_list() -> None:
+    moments = build_moments([
+        {
+            "id": "opening-hook",
+            "kind": "hook",
+            "purpose": "hook-pattern-interrupt",
+            "startSeconds": 5.69,
+            "endSeconds": 10.29,
+            "segments": [
+                {"role": "hero", "text": "در این آزمایش، پیامِ صبح روز بعد"},
+                {"role": "tail", "text": "بیشترین تمایل به ادامهٔ رابطه را نشان داد."},
+            ],
+            "anchorText": "علمی نشون",
+            "presentation": {"placement": "auto"},
+        }
+    ])
+
+    audit = audit_sync(moments, _words())
+
+    assert not any("enumerated display" in problem for problem in audit.problems)
+
+
 def test_asr_yeh_hamza_variant_consumes_full_enumerated_anchor_span() -> None:
     words = [
         TimedWord("توجه", 9.72, 10.14),
