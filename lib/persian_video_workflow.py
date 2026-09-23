@@ -1042,11 +1042,10 @@ def _parse_timestamp(value: str) -> datetime:
 def assert_within_wall_time(
     state: Mapping[str, Any], *, now: datetime | None = None
 ) -> None:
-    """Validate timing metadata without turning the 30/45m target into a kill switch.
+    """Validate budget timing metadata.
 
-    Issue #32 makes production duration an architecture/SLO signal. Correct work may
-    continue past the target; the terminal performance summary exposes the real wall
-    time and whether the target was exceeded.
+    Enforcement happens only after a phase finishes, so in-flight work is never
+    killed. The next phase cannot start after a persisted budget stop.
     """
     started = _parse_timestamp(
         str(state.get("budget_window_started_at") or state.get("created_at") or "")
@@ -1057,6 +1056,82 @@ def assert_within_wall_time(
     limit = int((state.get("budgets") or {}).get("max_wall_time_minutes", 0))
     if limit <= 0:
         raise PersianVideoWorkflowError("workflow max_wall_time_minutes must be positive")
+
+
+def _phase_elapsed_seconds(state: Mapping[str, Any], phase: str, *, now: datetime) -> float:
+    telemetry = state.get("phase_telemetry")
+    entries = telemetry.get(phase) if isinstance(telemetry, Mapping) else None
+    if not isinstance(entries, list) or not entries or not isinstance(entries[-1], Mapping):
+        return 0.0
+    latest = entries[-1]
+    duration = latest.get("duration_seconds")
+    if duration is not None:
+        return max(0.0, float(duration))
+    started_at = latest.get("started_at")
+    if not started_at:
+        return 0.0
+    return max(0.0, (now - _parse_timestamp(str(started_at))).total_seconds())
+
+
+def _budget_stop_payload(
+    state: Mapping[str, Any], completed_phase: str, *, now: datetime
+) -> dict[str, Any] | None:
+    window_started = _parse_timestamp(
+        str(state.get("budget_window_started_at") or state.get("created_at") or "")
+    )
+    wall_seconds = max(0.0, (now - window_started).total_seconds())
+    wall_limit_seconds = int((state.get("budgets") or {}).get("max_wall_time_minutes", 0)) * 60
+    phase_seconds = _phase_elapsed_seconds(state, completed_phase, now=now)
+    phase_limit = int(PHASE_SLO_SECONDS.get(completed_phase, 0))
+
+    if wall_seconds > wall_limit_seconds:
+        reason = "wall_budget_exceeded"
+        threshold_seconds = wall_limit_seconds
+        observed_seconds = wall_seconds
+    elif phase_limit and phase_seconds > 2 * phase_limit:
+        reason = "phase_budget_exceeded"
+        threshold_seconds = 2 * phase_limit
+        observed_seconds = phase_seconds
+    else:
+        return None
+
+    next_phase = state.get("next_phase")
+    remaining = list(PHASES[_phase_index(str(next_phase)):]) if next_phase in PHASES else []
+    overage_seconds = max(0.0, observed_seconds - threshold_seconds)
+    minimum_extra_minutes = max(1, int((overage_seconds + 59) // 60))
+    return {
+        "status": "failed",
+        "quality_disposition": "needs_decision",
+        "reason": reason,
+        "stopped_at": now.isoformat(),
+        "boundary_after_phase": completed_phase,
+        "next_phase": next_phase,
+        "remaining_phases": remaining,
+        "observed_seconds": round(observed_seconds, 3),
+        "threshold_seconds": threshold_seconds,
+        "options": [
+            {"action": "continue_with_extension", "minimum_extra_minutes": minimum_extra_minutes},
+            {"action": "continue_to_preview", "preview_phase": "render_opening_candidate"},
+            {"action": "stop"},
+        ],
+    }
+
+
+def _enforce_phase_boundary_budget(
+    state: dict[str, Any], completed_phase: str, *, now: datetime
+) -> bool:
+    stop = _budget_stop_payload(state, completed_phase, now=now)
+    if stop is None:
+        return False
+    state["status"] = "failed"
+    state["budget_stop"] = stop
+    trace = state.get("causal_telemetry")
+    if isinstance(trace, Mapping) and trace.get("run_span_id"):
+        finish_causal_span(
+            state, str(trace["run_span_id"]), finished_at=now, outcome="needs_decision"
+        )
+    return True
+
 
 _EXPLICIT_WORK_CATEGORIES = frozenset({
     "agent_editorial_work",
@@ -1290,6 +1365,10 @@ def record_phase_attempt(
         raise PersianVideoWorkflowError(
             f"cannot attempt {phase!r}; next phase is {state.get('next_phase')!r}"
         )
+    if state.get("status") != "active":
+        raise PersianVideoWorkflowError(
+            f"cannot start a phase while workflow status is {state.get('status')!r}"
+        )
     attempts = dict(state.get("attempts") or {})
     count = int(attempts.get(phase, 0)) + 1
     limit = 1 + int(state["budgets"]["max_revisions_per_stage"])
@@ -1491,12 +1570,16 @@ def _complete_phase_impl(
     """Advance exactly one phase; terminal advancement validates the real candidate."""
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     assert_within_wall_time(state, now=now)
+    if state.get("status") == "awaiting_human":
+        raise PersianVideoWorkflowError("workflow already stopped at awaiting_human")
+    if state.get("status") != "active":
+        raise PersianVideoWorkflowError(
+            f"cannot complete a phase while workflow status is {state.get('status')!r}"
+        )
     if (state.get("asset_usage") or {}).get("pending_pass") is not None:
         raise PersianVideoWorkflowError(
             "asset search result accounting must complete before send-back"
         )
-    if state.get("status") == "awaiting_human":
-        raise PersianVideoWorkflowError("workflow already stopped at awaiting_human")
     if phase != state.get("next_phase"):
         raise PersianVideoWorkflowError(
             f"cannot complete {phase!r}; next phase is {state.get('next_phase')!r}"
@@ -1585,10 +1668,13 @@ def _complete_phase_impl(
         state["next_phase"] = None
     else:
         state["next_phase"] = PHASES[_phase_index(phase) + 1]
-    _finish_phase_telemetry(state, phase, outcome="succeeded", now=now)
-    reconcile_phase_telemetry(state, now=now)
+    effective_now = now or datetime.now(timezone.utc)
+    _finish_phase_telemetry(state, phase, outcome="succeeded", now=effective_now)
+    reconcile_phase_telemetry(state, now=effective_now)
+    if phase != "awaiting_human":
+        _enforce_phase_boundary_budget(state, phase, now=effective_now)
     if phase == "awaiting_human":
-        terminal_now = now or datetime.now(timezone.utc)
+        terminal_now = effective_now
         trace = state.get("causal_telemetry")
         if isinstance(trace, Mapping) and trace.get("run_span_id"):
             finish_causal_span(
@@ -2779,11 +2865,49 @@ def reconcile_approved_compose_checkpoint(
         _write_state(_project_root(state), state)
     return state
 
+
+def _last_project_write(project_root: Path) -> tuple[str | None, datetime | None]:
+    latest_path: Path | None = None
+    latest_mtime = -1.0
+    for candidate in project_root.rglob("*"):
+        if not candidate.is_file():
+            continue
+        try:
+            modified = candidate.stat().st_mtime
+        except OSError:
+            continue
+        if modified > latest_mtime:
+            latest_path = candidate
+            latest_mtime = modified
+    if latest_path is None:
+        return None, None
+    return str(latest_path.relative_to(project_root)), datetime.fromtimestamp(
+        latest_mtime, tz=timezone.utc
+    )
+
+
 def workflow_status(
-    project_id: str, *, pipeline_dir: Path | None = None
+    project_id: str, *, pipeline_dir: Path | None = None, now: datetime | None = None
 ) -> dict[str, Any]:
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    current = now or datetime.now(timezone.utc)
     input_record = dict(state.get("input") or {})
+    phase = state.get("next_phase")
+    phase_elapsed = (
+        _phase_elapsed_seconds(state, str(phase), now=current) if phase in PHASES else 0.0
+    )
+    window_raw = str(
+        state.get("budget_window_started_at") or state.get("created_at") or ""
+    ).strip()
+    total_elapsed = (
+        max(0.0, (current - _parse_timestamp(window_raw)).total_seconds())
+        if window_raw
+        else 0.0
+    )
+    budget_seconds = int((state.get("budgets") or {}).get("max_wall_time_minutes", 0)) * 60
+    last_path, last_at = _last_project_write(_project_root(state))
+    idle_seconds = None if last_at is None else max(0.0, (current - last_at).total_seconds())
+    activity = "idle" if idle_seconds is None or idle_seconds >= 15 * 60 else "progressing"
     return {
         "project_id": state["project_id"],
         "status": state["status"],
@@ -2806,7 +2930,31 @@ def workflow_status(
         "time_accounting": phase_time_accounting(state),
         "performance_slo": state.get("performance_slo"),
         "performance_summary": state.get("performance_summary"),
+        "budget_stop": state.get("budget_stop"),
+        "operational_summary": {
+            "phase": phase,
+            "phase_elapsed_seconds": round(phase_elapsed, 3),
+            "total_elapsed_seconds": round(total_elapsed, 3),
+            "wall_budget_seconds": budget_seconds,
+            "last_written_file": last_path,
+            "last_write_at": last_at.isoformat() if last_at else None,
+            "idle_seconds": round(idle_seconds, 3) if idle_seconds is not None else None,
+            "activity": activity,
+        },
     }
+
+
+def format_status_line(status: Mapping[str, Any]) -> str:
+    summary = status.get("operational_summary") or {}
+    return (
+        f"project={status.get('project_id')} status={status.get('status')} "
+        f"phase={summary.get('phase') or '-'} "
+        f"phase_elapsed={summary.get('phase_elapsed_seconds', 0):.3f}s "
+        f"total={summary.get('total_elapsed_seconds', 0):.3f}/"
+        f"{summary.get('wall_budget_seconds', 0)}s "
+        f"last_write={summary.get('last_written_file') or '-'} "
+        f"activity={summary.get('activity') or 'idle'}"
+    )
 
 
 def _load_text_file(path: str) -> str:
@@ -3152,8 +3300,9 @@ def build_parser() -> argparse.ArgumentParser:
     attach.add_argument("project_id")
     attach.add_argument("path")
 
-    status = sub.add_parser("status", help="show bounded workflow state")
+    status = sub.add_parser("status", help="show one-line bounded workflow status")
     status.add_argument("project_id")
+    status.add_argument("--json", action="store_true", help="emit the full machine-readable state")
 
     approval_reconcile = sub.add_parser(
         "reconcile-approval",
@@ -3365,7 +3514,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             state = attach_narration(args.project_id, args.path)
             _print_json(workflow_status(state["project_id"]))
         elif args.command == "status":
-            _print_json(workflow_status(args.project_id))
+            status = workflow_status(args.project_id)
+            if args.json:
+                _print_json(status)
+            else:
+                print(format_status_line(status))
         elif args.command == "reconcile-approval":
             _print_json(reconcile_approved_compose_checkpoint(args.project_id))
         elif args.command == "alignment-plan":
