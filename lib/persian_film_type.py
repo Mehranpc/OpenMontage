@@ -46,7 +46,7 @@ def _split_diagnostics(detail: str) -> tuple[str, str, dict[str, Any]]:
         return human.strip(), "FILM_TYPE_PREPASS", {}
     if not isinstance(payload, dict):
         return human.strip(), "FILM_TYPE_PREPASS", {}
-    diagnostics = payload.get("watermarkDiagnostics")
+    diagnostics = payload.get("details", payload.get("watermarkDiagnostics"))
     return human.strip(), str(payload.get("code") or "FILM_TYPE_PREPASS"), diagnostics if isinstance(diagnostics, dict) else {}
 
 
