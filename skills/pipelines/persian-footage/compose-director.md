@@ -11,10 +11,10 @@ Render the accepted `edit_decisions` exactly once as the candidate, verify the e
 ## Preflight and render
 
 ```python
-from lib.persian_preflight import run_preflight
+from lib.persian_preflight import preflight_edit_decisions
 
-preflight = run_preflight(edit_decisions)
-assert preflight.passed, preflight.problems
+preflight = preflight_edit_decisions(edit_decisions)
+assert preflight["ok"], preflight
 ```
 
 Use `persian_compose`, not `video_compose`:
