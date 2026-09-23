@@ -290,9 +290,11 @@ def test_replay_rejects_a_different_command_for_the_same_job_identity(tmp_path: 
 
 
 def test_terminal_presentation_reconciles_legacy_observed_job_without_rerunning(tmp_path: Path) -> None:
-    from tests.lib.test_persian_video_workflow import BASE, _review_ready_project
+    from tests.lib.test_persian_video_workflow import _review_ready_project
 
-    _, candidate, review_path, _ = _review_ready_project(tmp_path)
+    state, candidate, review_path, _ = _review_ready_project(tmp_path)
+    state["budgets"]["max_wall_time_minutes"] = 365 * 24 * 60
+    workflow._write_state(tmp_path / "run", state)
     original_bytes = candidate.read_bytes()
     started = kernel.start_phase_job(
         "run", job_id="late-review", phase="final_review",
@@ -307,11 +309,9 @@ def test_terminal_presentation_reconciles_legacy_observed_job_without_rerunning(
     assert durable["status"] == "succeeded"
     workflow.complete_phase(
         "run", "final_review", evidence={"final_review_path": str(review_path)},
-        pipeline_dir=tmp_path, now=BASE,
+        pipeline_dir=tmp_path,
     )
-    presented = workflow.complete_phase(
-        "run", "awaiting_human", pipeline_dir=tmp_path, now=BASE
-    )
+    presented = workflow.complete_phase("run", "awaiting_human", pipeline_dir=tmp_path)
     operational = [s for s in presented["causal_telemetry"]["spans"] if s["kind"] == "durable_job"]
     assert operational and all(s["finished_at"] for s in operational)
     assert presented["performance_summary"]["machine_execution_seconds"] > 0
@@ -326,9 +326,11 @@ def test_terminal_presentation_reconciles_legacy_observed_job_without_rerunning(
 
 
 def test_terminal_presentation_cannot_hide_a_pending_job(tmp_path: Path) -> None:
-    from tests.lib.test_persian_video_workflow import BASE, _review_ready_project
+    from tests.lib.test_persian_video_workflow import _review_ready_project
 
-    _, _, review_path, _ = _review_ready_project(tmp_path)
+    state, _, review_path, _ = _review_ready_project(tmp_path)
+    state["budgets"]["max_wall_time_minutes"] = 365 * 24 * 60
+    workflow._write_state(tmp_path / "run", state)
     kernel.start_phase_job(
         "run", job_id="pending-review", phase="final_review",
         argv=["python", "-c", _semantic_child(success=True)],
@@ -336,12 +338,10 @@ def test_terminal_presentation_cannot_hide_a_pending_job(tmp_path: Path) -> None
     )
     workflow.complete_phase(
         "run", "final_review", evidence={"final_review_path": str(review_path)},
-        pipeline_dir=tmp_path, now=BASE,
+        pipeline_dir=tmp_path,
     )
     with pytest.raises(kernel.PersianRunKernelError, match="successful semantic execution"):
-        workflow.complete_phase(
-            "run", "awaiting_human", pipeline_dir=tmp_path, now=BASE
-        )
+        workflow.complete_phase("run", "awaiting_human", pipeline_dir=tmp_path)
     state = workflow.load_workflow_state("run", pipeline_dir=tmp_path)
     assert state["status"] == "active"
     assert "performance_summary" not in state
