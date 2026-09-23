@@ -68,6 +68,14 @@ python -m lib.persian_video_workflow complete <project-id> --evidence-json /abs/
 
 Do not start an explicit work span retrospectively and do not leave one open while waiting. `complete` refuses an open explicit work span. The lower-level `attempt` command remains available for phases whose measurable work is entirely represented by durable jobs.
 
+If a session stops without `work-finish` and the actual stop time is unknown, recover the open span before resuming work:
+
+```bash
+python -m lib.persian_video_workflow work-abandon <project-id> <span-id> --reason "session interrupted before work-finish"
+```
+
+This preserves the span's original start and recovery time with an `abandoned_unverified` outcome, but charges none of the unverified interval as measured work. The wall time remains unattributed. Start a new work span for newly observed work; never use a successful `work-finish` at recovery time to retroactively charge the gap. `work-finish --outcome interrupted` and send-back also abandon an open span on the same terms.
+
 For `acquire_assets`, use the bounded acquisition + durable candidate workspace instead of maintaining a separate selection ledger in chat or generated helper scripts. The normal lifecycle is:
 
 ```bash
