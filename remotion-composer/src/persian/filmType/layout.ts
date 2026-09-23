@@ -48,11 +48,17 @@ export type FilmRow = {
   text: string; role: string; segmentIndex: number; fontSizePx: number; weight: 400 | 500 | 700 | 900;
   family: string; direction: "rtl" | "ltr"; abovePx: number; belowPx: number;
   widthPx: number; baselinePx: number; revealAfterSeconds: number; accentWords: readonly string[];
+  /** Fallback-only horizontal displacement from the ordinary measured anchor.
+   * Undefined is intentionally identical to every historical layout. */
+  offsetXPx?: number;
 };
 export type FilmMomentLayout = {
   id: string; rows: FilmRow[]; widthPx: number; heightPx: number; rect: Rect;
   placement: string; subjectSafety: "checked-against-supplied-regions" | "not-checked";
   softSubjectOverlaps?: readonly {shotId?: string; regionIndex?: number}[];
+  /** 2.16 fallback that wraps authored semantic phrases around reviewed hard
+   * subject geometry while keeping every glyph inside the platform safe area. */
+  subjectWrap?: true;
   contrastMode: "dark" | "light"; strength: Strength; fieldFeatherPx?: number; fieldPeakAlpha?: number;
   recipeId?: "editorial-hero-balanced" | "editorial-hero-compact" | "editorial-callout-balanced";
   occupancyRatio?: number; lineBalanceRatio?: number;
@@ -399,6 +405,164 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
   return null;
 }
 
+/** Subject-wrap is deliberately a last-resort 2.16 semantic-poster-hook strategy.
+ * Normal adaptive recipes and every non-hook moment keep their historical geometry.
+ * Only after all ordinary hook placements fail do we reuse the exact rows already
+ * produced by `fitAtWidth` and route those measured rows through free screen-space
+ * corridors. Because the fitter remains authoritative, copy, Persian break grammar,
+ * phrase locks, font ladders and recipe line budgets are unchanged. */
+function subjectWrapLayout(
+  moment: PersianMoment,
+  props: PersianVideoProps,
+  p: FilmProfile,
+  hardRelevant: TimedRect[],
+  softRelevant: TimedRect[],
+  reviewed: boolean,
+): FilmMomentLayout | null {
+  if (p.profileVersion !== "2.16.0" || (moment.presentation?.placement ?? "auto") !== "auto") return null;
+  if (semanticPosterRoles(moment) === null) return null;
+  if (!hardRelevant.length) return null;
+  const recipe = editorialRecipe(moment,p);
+  if (!recipe) return null;
+  const fmt=props.format,dims=FORMAT_DIMENSIONS[fmt],cfg=p.formats[fmt],l=p.layout;
+  const padPx=safePadPx(p), margin=l.collisionMarginPx, motion=l.motionClearancePx;
+  const safeLeft=(cfg.safeArea.left??cfg.safeArea.side)*dims.width+padPx+l.edgeInsetPx;
+  const safeRight=(1-(cfg.safeArea.right??cfg.safeArea.side))*dims.width-padPx-l.edgeInsetPx;
+  const safeTop=cfg.safeArea.top*dims.height+padPx+l.edgeInsetPx;
+  const safeBottom=(1-cfg.safeArea.bottom)*dims.height-padPx-l.edgeInsetPx-motion;
+  const defaultGlobalAnchor=safeRight-l.inkPaddingPx;
+  const strength=moment.presentation?.contrastStrength??p.contrast.defaultStrength;
+  const contrastMode=moment.presentation?.contrastMode??"dark";
+  if (!Object.prototype.hasOwnProperty.call(p.contrast.strengths,strength) || (contrastMode!=="dark"&&contrastMode!=="light")) return null;
+  const ladder=p.typography.titleLadderPx;
+  const fractions=recipe.config.columnFractions;
+  const maxColumn=dims.width*(1-(cfg.safeArea.left??cfg.safeArea.side)-(cfg.safeArea.right??cfg.safeArea.side))-2*l.edgeInsetPx-2*padPx;
+  type Candidate={layout:FilmMomentLayout;score:number};
+  const candidates:Candidate[]=[];
+  for(const fraction of fractions){
+   for(const mainPx of ladder){
+    const fitted=fitAtWidth(moment,p,fmt,Math.min(dims.width*fraction,maxColumn),mainPx);
+    if(!fitted)continue;
+    const safeWidth=1-(cfg.safeArea.left??cfg.safeArea.side)-(cfg.safeArea.right??cfg.safeArea.side);
+    const safeHeight=1-cfg.safeArea.top-cfg.safeArea.bottom;
+    const compactOccupancy=Math.sqrt(Math.max(0,(fitted.widthPx/dims.width/safeWidth)*(fitted.heightPx/dims.height/safeHeight)));
+    if(compactOccupancy>recipe.config.occupancyMax)continue;
+    if(fitted.rows.length>p.typography.editorial!.maxHookLines)continue;
+    const rows=fitted.rows.map((row,index)=>{
+      const compactTopPx=row.baselinePx-row.abovePx;
+      const compactBottomPx=row.baselinePx+row.belowPx;
+      const previous=index?fitted.rows[index-1]:null;
+      const previousBottomPx=previous?previous.baselinePx+previous.belowPx:0;
+      return {...row,compactTopPx,compactBottomPx,gapBeforePx:index?compactTopPx-previousBottomPx:l.inkPaddingPx};
+    });
+    type PlacedRow={row:typeof rows[number];topPx:number;anchorPx:number;collision:Rect};
+    const placed:PlacedRow[]=[];
+    const placeRow=(rowIndex:number,previousBottomPx:number,totalOffset:number,maxOffset:number)=>{
+        if(rowIndex>=rows.length){
+          const minInkLeft=Math.min(...placed.map(item=>item.anchorPx-item.row.widthPx));
+          const maxInkRight=Math.max(...placed.map(item=>item.anchorPx));
+          const minInkTop=Math.min(...placed.map(item=>item.topPx));
+          const maxInkBottom=Math.max(...placed.map(item=>item.topPx+item.row.abovePx+item.row.belowPx));
+          const rectLeft=minInkLeft-l.inkPaddingPx,rectTop=minInkTop-l.inkPaddingPx;
+          const rectWidth=maxInkRight-minInkLeft+2*l.inkPaddingPx,rectHeight=maxInkBottom-minInkTop+2*l.inkPaddingPx;
+          const layoutWidthPx=Math.ceil(rectWidth),layoutHeightPx=Math.ceil(rectHeight);
+          const rect:Rect={x:rectLeft/dims.width,y:rectTop/dims.height,w:layoutWidthPx/dims.width,h:layoutHeightPx/dims.height};
+          const moving={...rect,h:rect.h+motion/dims.height};
+          if(!inSafe(moving,cfg.safeArea,padPx/dims.width,padPx/dims.height))return;
+          if(hardRelevant.some(region=>placed.some(item=>intersects(item.collision,region))))return;
+          const renderedDefaultGlobalAnchor=rectLeft+layoutWidthPx-l.inkPaddingPx;
+          const wrappedRows:FilmRow[]=placed.map(item=>({
+            text:item.row.text,role:item.row.role,segmentIndex:item.row.segmentIndex,fontSizePx:item.row.fontSizePx,
+            weight:item.row.weight,family:item.row.family,direction:item.row.direction,abovePx:item.row.abovePx,belowPx:item.row.belowPx,
+            widthPx:item.row.widthPx,baselinePx:round(item.topPx+item.row.abovePx-rectTop),
+            revealAfterSeconds:item.row.revealAfterSeconds,accentWords:item.row.accentWords,
+            offsetXPx:round(item.anchorPx-renderedDefaultGlobalAnchor),
+          }));
+          const softOverlaps=softRelevant.filter(region=>placed.some(item=>intersects(item.collision,region)));
+          const hero=wrappedRows.filter(row=>row.role==="hero"),heroWidths=hero.map(row=>row.widthPx);
+          const lineBalance=heroWidths.length>1?Math.min(...heroWidths)/Math.max(...heroWidths):1;
+          let peak=p.contrast.strengths[strength];
+          if(strength==="strong")peak=Math.max(peak,.46);
+          const fieldCfg=p.contrast.diffuseField;
+          if(fieldCfg){
+            const fieldPad=fieldCfg.rowPaddingPx??0;
+            for(const item of placed){
+              const inkHeight=item.row.abovePx+item.row.belowPx;
+              const radii=diffuseRadii(
+                item.row.widthPx+2*fieldPad,
+                inkHeight+2*fieldPad,
+                fieldCfg,
+                {width:dims.width,height:dims.height},
+              );
+              const cx=item.anchorPx-item.row.widthPx/2;
+              const cy=item.topPx+inkHeight/2;
+              for(const region of hardRelevant){
+                const dx=Math.max(region.x*dims.width-cx,0,cx-(region.x+region.w)*dims.width);
+                // The diffuse ellipse enters from +motion and settles at cy. Use
+                // the closest point across that whole paint trajectory, not only
+                // the settled glyph box.
+                const dy=Math.max(region.y*dims.height-(cy+motion),0,cy-(region.y+region.h)*dims.height);
+                const influence=diffuseAt(Math.hypot(dx/radii.rx,dy/radii.ry));
+                if(influence<=0)continue;
+                const regionShot=region.shotId
+                  ? props.shots.find(shot=>shot.id===region.shotId)
+                  : undefined;
+                const paintMultiplier=regionShot?.visualComplexity==="busy"?1.55:1;
+                peak=Math.min(peak,fieldCfg.maxSubjectAlpha/(influence*paintMultiplier+1e-6));
+              }
+            }
+          }
+          const layout:FilmMomentLayout={
+            id:moment.id,rows:wrappedRows,widthPx:layoutWidthPx,heightPx:layoutHeightPx,rect,placement:"subject-wrap",
+            subjectSafety:reviewed?"checked-against-supplied-regions":"not-checked",subjectWrap:true,
+            contrastMode,strength,fieldPeakAlpha:Math.floor(peak*1000)/1000,recipeId:recipe.id,
+            occupancyRatio:round(compactOccupancy),lineBalanceRatio:round(lineBalance),
+          };
+          if(softOverlaps.length)layout.softSubjectOverlaps=softOverlaps.map(region=>({shotId:region.shotId,regionIndex:region.regionIndex}));
+          const sideChanges=placed.slice(1).reduce((sum,item,index)=>sum+(Math.abs(item.anchorPx-placed[index].anchorPx)>margin*2?1:0),0);
+          const gapExpansion=Math.max(0,rectHeight-fitted.heightPx);
+          const shrink=1-mainPx/ladder[0];
+          const score=wrappedRows.length*6+sideChanges*1.25+(totalOffset/Math.max(1,rows.length))/dims.width
+            +maxOffset/dims.width+gapExpansion/dims.height+softOverlaps.length*100
+            +Math.abs(compactOccupancy-recipe.config.occupancyTarget)*4+shrink*3;
+          candidates.push({layout,score});
+          return;
+        }
+        const row=rows[rowIndex];
+        const minTop=rowIndex===0?safeTop+l.inkPaddingPx:previousBottomPx+row.gapBeforePx;
+        const rowHeight=row.abovePx+row.belowPx;
+        const topCandidates=[minTop,...hardRelevant.map(region=>(region.y+region.h)*dims.height+margin)]
+          .filter(top=>top>=minTop-1e-6&&top+rowHeight+l.inkPaddingPx<=safeBottom+1e-6)
+          .map(round);
+        const orderedTops=[...new Set(topCandidates)].sort((a,b)=>a-b);
+        for(const topPx of orderedTops){
+          const collisionTop=topPx-margin,collisionBottom=topPx+rowHeight+motion+margin;
+          const vertical=hardRelevant.filter(region=>collisionTop<(region.y+region.h)*dims.height&&collisionBottom>region.y*dims.height);
+          const anchors=[defaultGlobalAnchor];
+          for(const region of vertical){
+            anchors.push(region.x*dims.width-margin);
+            anchors.push((region.x+region.w)*dims.width+row.widthPx+margin);
+          }
+          const orderedAnchors=[...new Set(anchors.map(round))].sort((a,b)=>Math.abs(a-defaultGlobalAnchor)-Math.abs(b-defaultGlobalAnchor));
+          for(const anchorPx of orderedAnchors){
+            const left=anchorPx-row.widthPx-margin,right=anchorPx+margin;
+            if(left<safeLeft+l.inkPaddingPx-margin-1e-6||right>safeRight+margin+1e-6)continue;
+            if(vertical.some(region=>left<(region.x+region.w)*dims.width&&right>region.x*dims.width))continue;
+            const collision:Rect={x:left/dims.width,y:collisionTop/dims.height,w:(row.widthPx+2*margin)/dims.width,h:(collisionBottom-collisionTop)/dims.height};
+            const offset=Math.abs(anchorPx-defaultGlobalAnchor);
+            placed.push({row,topPx,anchorPx,collision});
+            placeRow(rowIndex+1,topPx+rowHeight,totalOffset+offset,Math.max(maxOffset,offset));
+            placed.pop();
+          }
+        }
+    };
+    placeRow(0,safeTop,0,0);
+   }
+  }
+  if(candidates.length){candidates.sort((a,b)=>a.score-b.score);return candidates[0].layout;}
+  return null;
+}
+
 export function intersects(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
@@ -606,6 +770,10 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
   if (candidates.length) {
     candidates.sort((a,b) => a.score-b.score);
     return candidates[0].layout;
+  }
+  if (enforceSubject) {
+    const wrapped = subjectWrapLayout(moment,props,p,hardRelevant,softRelevant,reviewed);
+    if (wrapped) return wrapped;
   }
   if ((p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")) throw new Error(`Moment ${moment.id}: no curated adaptive editorial recipe fits the measured pixels inside the safe area. Preserve the authored phrase; revise recipe, placement, or duration explicitly rather than applying a character-count proxy. Diagnostics: ${blocked.join("; ") || "no curated measured candidate fits"}`);
   throw new Error(`Moment ${moment.id}: no readable Film Type placement fits the safe area and supplied subject regions. Shorten the authored phrase, choose another legal placement, or change the shot; do not clip, hide text, or shrink below the profile floors. Diagnostics: ${blocked.join("; ") || "no size fits; check copy length and height"}`);
