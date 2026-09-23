@@ -1179,11 +1179,79 @@ def finish_explicit_work_span(
         raise PersianVideoWorkflowError(f"explicit work span not found: {span_id}")
     if existing.get("finished_at"):
         return existing
-    finished = finish_causal_span(
-        state, span_id, finished_at=(now or datetime.now(timezone.utc)), outcome=outcome
-    )
+    effective_now = now or datetime.now(timezone.utc)
+    if outcome == "interrupted":
+        finished = _abandon_open_explicit_work(
+            state, existing, reason="work-finish reported interruption without a verified stop time",
+            now=effective_now,
+        )
+    else:
+        finished = finish_causal_span(
+            state, span_id, finished_at=effective_now, outcome=outcome
+        )
     _write_state(_project_root(state), state)
     return finished
+
+
+def abandon_explicit_work_span(
+    project_id: str,
+    span_id: str,
+    *,
+    reason: str,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Recover an open span whose actual stop time is unknown.
+
+    The entire interval is unverified: closing it at recovery time as countable
+    work would invent editorial/review time. Keep both timestamps and the reason
+    in the trace, but leave the elapsed wall time unattributed.
+    """
+    explanation = str(reason).strip()
+    if not explanation:
+        raise PersianVideoWorkflowError("abandoning explicit work requires a reason")
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    trace = state.get("causal_telemetry")
+    spans = trace.get("spans") if isinstance(trace, Mapping) else None
+    existing = next(
+        (dict(span) for span in spans or []
+         if isinstance(span, Mapping) and span.get("span_id") == span_id),
+        None,
+    )
+    if existing is None or existing.get("kind") != "explicit_work":
+        raise PersianVideoWorkflowError(f"explicit work span not found: {span_id}")
+    if existing.get("finished_at"):
+        return existing
+    recovered_at = now or datetime.now(timezone.utc)
+    recovered = _abandon_open_explicit_work(state, existing, reason=explanation, now=recovered_at)
+    _write_state(_project_root(state), state)
+    return recovered
+
+
+def _abandon_open_explicit_work(
+    state: dict[str, Any], span: Mapping[str, Any], *, reason: str, now: datetime
+) -> dict[str, Any]:
+    return record_causal_interval(
+        state,
+        span_id=str(span["span_id"]),
+        name=str(span["name"]),
+        category=str(span["category"]),
+        started_at=str(span["started_at"]),
+        finished_at=now,
+        parent_span_id=str(span["parent_span_id"]),
+        outcome="abandoned_unverified",
+        kind="explicit_work",
+        count_toward_wall=False,
+        fields={
+            **{key: value for key, value in span.items() if key not in {
+                "trace_id", "span_id", "parent_span_id", "name", "kind", "category",
+                "started_at", "finished_at", "outcome", "count_toward_wall",
+                "concurrency_group",
+            }},
+            "measurement_disposition": "unverified_abandonment",
+            "recovery_reason": reason,
+        },
+    )
 
 
 def _interrupt_open_explicit_work_for_phase(
@@ -1193,8 +1261,8 @@ def _interrupt_open_explicit_work_for_phase(
     for span in _open_countable_work_spans(state):
         if span.get("kind") != "explicit_work" or span.get("phase") != phase:
             continue
-        finish_causal_span(
-            state, str(span["span_id"]), finished_at=now, outcome="interrupted"
+        _abandon_open_explicit_work(
+            state, span, reason="phase superseded before measured work was closed", now=now
         )
 
 
@@ -3140,6 +3208,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--outcome", choices=["succeeded", "failed", "interrupted"], default="succeeded"
     )
 
+    work_abandon = sub.add_parser(
+        "work-abandon", help="recover an open work interval with an unknown stop time"
+    )
+    work_abandon.add_argument("project_id")
+    work_abandon.add_argument("span_id")
+    work_abandon.add_argument("--reason", required=True)
+
     complete = sub.add_parser("complete", help="complete exactly one phase")
     complete.add_argument("project_id")
     complete.add_argument("--phase")
@@ -3316,6 +3391,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "work-finish":
             _print_json(finish_explicit_work_span(
                 args.project_id, args.span_id, outcome=args.outcome
+            ))
+        elif args.command == "work-abandon":
+            _print_json(abandon_explicit_work_span(
+                args.project_id, args.span_id, reason=args.reason
             ))
         elif args.command == "complete":
             state = load_workflow_state(args.project_id)

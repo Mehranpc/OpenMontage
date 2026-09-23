@@ -405,9 +405,9 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
   return null;
 }
 
-/** Subject-wrap is deliberately a last-resort 2.16 semantic-poster-hook strategy.
- * Normal adaptive recipes and every non-hook moment keep their historical geometry.
- * Only after all ordinary hook placements fail do we reuse the exact rows already
+/** Subject-wrap is a last-resort 2.16 recovery for semantic-poster hooks and
+ * authored exact-text figure/statement moments. Other non-hooks retain their
+ * historical geometry. Only after all ordinary placements fail do we reuse rows
  * produced by `fitAtWidth` and route those measured rows through free screen-space
  * corridors. Because the fitter remains authoritative, copy, Persian break grammar,
  * phrase locks, font ladders and recipe line budgets are unchanged. */
@@ -420,7 +420,10 @@ function subjectWrapLayout(
   reviewed: boolean,
 ): FilmMomentLayout | null {
   if (p.profileVersion !== "2.16.0" || (moment.presentation?.placement ?? "auto") !== "auto") return null;
-  if (semanticPosterRoles(moment) === null) return null;
+  const posterHook = semanticPosterRoles(moment) !== null;
+  const exactNonHook = moment.kind !== "hook" && Boolean(moment.exactText)
+    && (moment.kind === "figure" || moment.kind === "statement");
+  if (!posterHook && !exactNonHook) return null;
   if (!hardRelevant.length) return null;
   const recipe = editorialRecipe(moment,p);
   if (!recipe) return null;
@@ -434,7 +437,7 @@ function subjectWrapLayout(
   const strength=moment.presentation?.contrastStrength??p.contrast.defaultStrength;
   const contrastMode=moment.presentation?.contrastMode??"dark";
   if (!Object.prototype.hasOwnProperty.call(p.contrast.strengths,strength) || (contrastMode!=="dark"&&contrastMode!=="light")) return null;
-  const ladder=p.typography.titleLadderPx;
+  const ladder=posterHook ? p.typography.titleLadderPx : p.typography.statementLadderPx;
   const fractions=recipe.config.columnFractions;
   const maxColumn=dims.width*(1-(cfg.safeArea.left??cfg.safeArea.side)-(cfg.safeArea.right??cfg.safeArea.side))-2*l.edgeInsetPx-2*padPx;
   type Candidate={layout:FilmMomentLayout;score:number};
@@ -447,7 +450,9 @@ function subjectWrapLayout(
     const safeHeight=1-cfg.safeArea.top-cfg.safeArea.bottom;
     const compactOccupancy=Math.sqrt(Math.max(0,(fitted.widthPx/dims.width/safeWidth)*(fitted.heightPx/dims.height/safeHeight)));
     if(compactOccupancy>recipe.config.occupancyMax)continue;
-    if(fitted.rows.length>p.typography.editorial!.maxHookLines)continue;
+    // fitAtWidth owns each segment's recipe line budget. The aggregate hook
+    // limit is specific to poster hooks and must not reject non-hook line plans.
+    if(posterHook && fitted.rows.length>p.typography.editorial!.maxHookLines)continue;
     const rows=fitted.rows.map((row,index)=>{
       const compactTopPx=row.baselinePx-row.abovePx;
       const compactBottomPx=row.baselinePx+row.belowPx;
@@ -482,7 +487,7 @@ function subjectWrapLayout(
           const hero=wrappedRows.filter(row=>row.role==="hero"),heroWidths=hero.map(row=>row.widthPx);
           const lineBalance=heroWidths.length>1?Math.min(...heroWidths)/Math.max(...heroWidths):1;
           let peak=p.contrast.strengths[strength];
-          if(strength==="strong")peak=Math.max(peak,.46);
+          if(posterHook && strength==="strong")peak=Math.max(peak,.46);
           const fieldCfg=p.contrast.diffuseField;
           if(fieldCfg){
             const fieldPad=fieldCfg.rowPaddingPx??0;
