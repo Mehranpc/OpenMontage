@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -1205,3 +1206,81 @@ def test_successful_promotion_binds_draft_report_canonical_and_checkpoint_digest
         workflow.artifact_sha256(canonical), workflow.artifact_sha256(captured["edit"]),
     }
     assert len(digests) == 1
+
+
+def test_wall_budget_stops_at_next_phase_boundary(tmp_path: Path) -> None:
+    state, _ = _bootstrap(tmp_path)
+    state = record_phase_attempt(
+        "run", "prepare_inputs", pipeline_dir=tmp_path, now=BASE
+    )
+    stopped = complete_phase(
+        "run",
+        "prepare_inputs",
+        evidence=_prepare_inputs_evidence(state),
+        pipeline_dir=tmp_path,
+        now=BASE + timedelta(minutes=46),
+    )
+
+    assert stopped["status"] == "failed"
+    assert stopped["next_phase"] == "align_script_timing"
+    assert stopped["budget_stop"]["reason"] == "wall_budget_exceeded"
+    assert stopped["budget_stop"]["quality_disposition"] == "needs_decision"
+    assert stopped["budget_stop"]["remaining_phases"][0] == "align_script_timing"
+    assert [item["action"] for item in stopped["budget_stop"]["options"]] == [
+        "continue_with_extension", "continue_to_preview", "stop",
+    ]
+    with pytest.raises(PersianVideoWorkflowError, match="workflow status"):
+        record_phase_attempt(
+            "run", "align_script_timing", pipeline_dir=tmp_path,
+            now=BASE + timedelta(minutes=46, seconds=1),
+        )
+
+
+def test_double_phase_slo_stops_after_phase_without_interrupting_it(tmp_path: Path) -> None:
+    state, _ = _bootstrap(tmp_path)
+    state["completed_phases"] = list(PHASES[: PHASES.index("opening_review")])
+    state["next_phase"] = "opening_review"
+    state["attempts"] = {}
+    workflow._write_state(tmp_path / "run", state)
+
+    record_phase_attempt(
+        "run", "opening_review", pipeline_dir=tmp_path, now=BASE
+    )
+    stopped = workflow._complete_phase_impl(
+        "run", "opening_review", pipeline_dir=tmp_path,
+        now=BASE + timedelta(minutes=7),
+    )
+
+    assert "opening_review" in stopped["completed_phases"]
+    assert stopped["next_phase"] == "render_final_candidate"
+    assert stopped["status"] == "failed"
+    assert stopped["budget_stop"]["reason"] == "phase_budget_exceeded"
+    assert stopped["budget_stop"]["observed_seconds"] == 420.0
+    assert stopped["budget_stop"]["threshold_seconds"] == 360
+
+
+def test_status_summary_reports_budget_last_write_and_idle_state(tmp_path: Path) -> None:
+    state, _ = _bootstrap(tmp_path)
+    project_root = tmp_path / "run"
+    marker = project_root / "artifacts" / "latest.json"
+    marker.write_text("{}", encoding="utf-8")
+    for existing in project_root.rglob("*"):
+        if existing.is_file():
+            os.utime(existing, (BASE.timestamp(), BASE.timestamp()))
+    marker_time = (BASE + timedelta(minutes=1)).timestamp()
+    os.utime(marker, (marker_time, marker_time))
+
+    status = workflow.workflow_status(
+        "run", pipeline_dir=tmp_path, now=BASE + timedelta(minutes=17)
+    )
+    summary = status["operational_summary"]
+    assert summary["phase"] == "prepare_inputs"
+    assert summary["total_elapsed_seconds"] == 1020.0
+    assert summary["wall_budget_seconds"] == 2700
+    assert summary["last_written_file"] == "artifacts/latest.json"
+    assert summary["activity"] == "idle"
+    line = workflow.format_status_line(status)
+    assert "phase=prepare_inputs" in line
+    assert "total=1020.000/2700s" in line
+    assert "last_write=artifacts/latest.json" in line
+    assert line.endswith("activity=idle")

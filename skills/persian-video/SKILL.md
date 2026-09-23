@@ -48,7 +48,18 @@ For a later session, resume the same bounded state without resetting durable cou
 ```bash
 python -m lib.persian_video_workflow resume <project-id>
 python -m lib.persian_video_workflow status <project-id>
+python -m lib.persian_video_workflow status <project-id> --json
 ```
+
+`status` is read-only. Its default output is one operational line with the current
+phase, phase elapsed time, wall time versus budget, last written file, and
+`progressing`/`idle` (`idle` means no project write for 15 minutes). Use `--json`
+when routing by `next_phase` or inspecting telemetry. At a phase boundary, exceeding
+the wall budget or 2× the current phase SLO persists `status=failed`,
+`quality_disposition=needs_decision`, the remaining phases, and the exact choices to
+continue with more time, continue only to preview, or stop. Never start the next
+phase by bypassing that stop.
+
 ## Route only by code state
 
 Read `next_phase` from `status`; do not infer progress from conversation memory, filenames, or an earlier writing session.
