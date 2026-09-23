@@ -46,7 +46,7 @@ Sample the midpoint of every moment, the completed state of every build, the mid
 ```python
 from lib.persian_film_verify import verify_film_frames
 
-summary = verify_film_frames(frames, resolved_props=resolved_props)
+summary = verify_film_frames(frames, props=resolved_props, evidence=evidence)
 assert summary["passed"], summary["problems"]
 ```
 
