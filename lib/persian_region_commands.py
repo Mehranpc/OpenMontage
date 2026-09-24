@@ -347,6 +347,135 @@ def _existing_output_digests(index: Mapping[str, Any] | None) -> dict[str, str]:
     return result
 
 
+def _records_by_id(index: Mapping[str, Any] | None, key: str, id_key: str) -> dict[str, Mapping[str, Any]]:
+    if not isinstance(index, Mapping):
+        return {}
+    values = index.get(key)
+    if not isinstance(values, list):
+        return {}
+    result: dict[str, Mapping[str, Any]] = {}
+    for value in values:
+        if not isinstance(value, Mapping):
+            continue
+        record_id = str(value.get(id_key) or "")
+        if record_id:
+            result[record_id] = value
+    return result
+
+
+def _shot_cache_identity_from_plan(shot: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "shotId": shot["shotId"],
+        "beatId": shot["beatId"],
+        "visualEventId": shot["visualEventId"],
+        "sourceId": shot["sourceId"],
+        "sourcePath": shot["sourcePath"],
+        "sourceWindow": shot["sourceWindow"],
+        "sourceDurationSeconds": shot["sourceDurationSeconds"],
+        "frameSize": {"width": shot["width"], "height": shot["height"]},
+        "timeline": shot["timeline"],
+        "frames": [
+            {
+                "position": position,
+                "sourceSeconds": shot["frameTimes"][index],
+                "timelineStartSeconds": shot["frameIntervals"][index][0],
+                "timelineEndSeconds": shot["frameIntervals"][index][1],
+            }
+            for index, position in enumerate(FRAME_POSITIONS)
+        ],
+    }
+
+
+def _shot_cache_identity_from_record(shot: Mapping[str, Any]) -> dict[str, Any]:
+    frames = shot.get("frames")
+    normalized_frames: list[dict[str, Any]] = []
+    if isinstance(frames, list):
+        for frame in frames:
+            if not isinstance(frame, Mapping):
+                continue
+            normalized_frames.append({
+                "position": frame.get("position"),
+                "sourceSeconds": frame.get("sourceSeconds"),
+                "timelineStartSeconds": frame.get("timelineStartSeconds"),
+                "timelineEndSeconds": frame.get("timelineEndSeconds"),
+            })
+    return {
+        "shotId": shot.get("shotId"),
+        "beatId": shot.get("beatId"),
+        "visualEventId": shot.get("visualEventId"),
+        "sourceId": shot.get("sourceId"),
+        "sourcePath": shot.get("sourcePath"),
+        "sourceWindow": shot.get("sourceWindow"),
+        "sourceDurationSeconds": shot.get("sourceDurationSeconds"),
+        "frameSize": shot.get("frameSize"),
+        "timeline": shot.get("timeline"),
+        "frames": normalized_frames,
+    }
+
+
+def _shot_cache_matches(existing: Mapping[str, Any] | None, shot: Mapping[str, Any]) -> bool:
+    return bool(
+        isinstance(existing, Mapping)
+        and _shot_cache_identity_from_record(existing) == _shot_cache_identity_from_plan(shot)
+    )
+
+
+def _record_output_digests(record: Mapping[str, Any] | None) -> dict[str, str]:
+    if not isinstance(record, Mapping):
+        return {}
+    result: dict[str, str] = {}
+    frames = record.get("frames")
+    if isinstance(frames, list):
+        for frame in frames:
+            if isinstance(frame, Mapping):
+                path = str(frame.get("path") or "")
+                digest = str(frame.get("sha256") or "")
+                if path and digest:
+                    result[path] = digest
+    sheet = record.get("sheet")
+    if isinstance(sheet, Mapping):
+        path = str(sheet.get("path") or "")
+        digest = str(sheet.get("sha256") or "")
+        if path and digest:
+            result[path] = digest
+    return result
+
+
+def _recipe_cache_compatible(index: Mapping[str, Any] | None, recipe: Mapping[str, Any]) -> bool:
+    return bool(
+        isinstance(index, Mapping)
+        and index.get("version") == "1.0"
+        and index.get("commandVersion") == REGION_COMMAND_VERSION
+        and index.get("grid") == {"columns": GRID_COLUMNS, "rows": GRID_ROWS}
+        and index.get("recipe") == recipe
+    )
+
+
+def _group_cache_digest(
+    existing_group: Mapping[str, Any] | None,
+    members: Sequence[Mapping[str, Any]],
+    existing_shots: Mapping[str, Mapping[str, Any]],
+) -> str | None:
+    if not isinstance(existing_group, Mapping):
+        return None
+    shot_ids = [str(member.get("shotId") or "") for member in members]
+    if existing_group.get("shotIds") != shot_ids:
+        return None
+    for member in members:
+        shot_id = str(member.get("shotId") or "")
+        previous = existing_shots.get(shot_id)
+        if not isinstance(previous, Mapping):
+            return None
+        current_sheet = member.get("sheet")
+        previous_sheet = previous.get("sheet")
+        if not isinstance(current_sheet, Mapping) or not isinstance(previous_sheet, Mapping):
+            return None
+        if current_sheet.get("sha256") != previous_sheet.get("sha256"):
+            return None
+    digest = str(existing_group.get("sha256") or "")
+    return digest or None
+
+
 def _build_recipe() -> dict[str, Any]:
     return {
         "commandVersion": REGION_COMMAND_VERSION,
@@ -508,16 +637,25 @@ def build_sheets(
     existing = _read_optional_object(index_path)
     cache_same = bool(existing and existing.get("fingerprint") == fingerprint)
     expected_digests = _existing_output_digests(existing) if cache_same else {}
+    recipe_cache_compatible = _recipe_cache_compatible(existing, recipe)
+    existing_shots = _records_by_id(existing, "shots", "shotId")
+    existing_groups = _records_by_id(existing, "groups", "groupId")
     rebuilt: list[str] = []
     shot_records: list[dict[str, Any]] = []
 
     for shot in shots:
+        previous_shot = existing_shots.get(str(shot["shotId"]))
+        shot_expected = expected_digests if cache_same else (
+            _record_output_digests(previous_shot)
+            if recipe_cache_compatible and _shot_cache_matches(previous_shot, shot)
+            else {}
+        )
         frame_records: list[dict[str, Any]] = []
         frame_paths: list[Path] = []
         for frame_index, position in enumerate(FRAME_POSITIONS):
             destination = output_root / f"{shot['fileStem']}-{position}.png"
             relative = _relative(destination, project)
-            if not _cached_png_ok(destination, expected_digests.get(relative)):
+            if not _cached_png_ok(destination, shot_expected.get(relative)):
                 _render_png(
                     destination,
                     [
@@ -542,7 +680,7 @@ def build_sheets(
 
         sheet_path = output_root / f"{shot['fileStem']}-sheet.png"
         sheet_relative = _relative(sheet_path, project)
-        if not _cached_png_ok(sheet_path, expected_digests.get(sheet_relative)):
+        if not _cached_png_ok(sheet_path, shot_expected.get(sheet_relative)):
             _render_png(
                 sheet_path,
                 [
@@ -574,7 +712,13 @@ def build_sheets(
         members = shot_records[group_index:group_index + 2]
         group_path = output_root / f"group-{group_index // 2 + 1:03d}-grid.png"
         group_relative = _relative(group_path, project)
-        if not _cached_png_ok(group_path, expected_digests.get(group_relative)):
+        group_id = f"group-{group_index // 2 + 1}"
+        group_expected = expected_digests.get(group_relative) if cache_same else None
+        if group_expected is None and recipe_cache_compatible:
+            group_expected = _group_cache_digest(
+                existing_groups.get(group_id), members, existing_shots
+            )
+        if not _cached_png_ok(group_path, group_expected):
             first = project / members[0]["sheet"]["path"]
             if len(members) == 2:
                 second = project / members[1]["sheet"]["path"]
@@ -592,7 +736,7 @@ def build_sheets(
                 _copy_png_atomic(first, group_path)
             rebuilt.append(group_relative)
         groups.append({
-            "groupId": f"group-{group_index // 2 + 1}",
+            "groupId": group_id,
             "shotIds": [str(member["shotId"]) for member in members],
             "path": group_relative,
             "sha256": _hash_file(group_path),

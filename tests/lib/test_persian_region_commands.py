@@ -87,8 +87,13 @@ def _fake_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
         calls.append(args)
         output = Path(args[-1])
         output.parent.mkdir(parents=True, exist_ok=True)
-        payload = hashlib.sha256("\0".join(args[:-1]).encode("utf-8")).digest()
-        output.write_bytes(PNG + payload)
+        digest = hashlib.sha256("\0".join(args[:-1]).encode("utf-8"))
+        for index, arg in enumerate(args[:-1]):
+            if index > 0 and args[index - 1] == "-i":
+                source = Path(arg)
+                if source.is_file():
+                    digest.update(source.read_bytes())
+        output.write_bytes(PNG + digest.digest())
         return subprocess.CompletedProcess(args, 0, stdout=b"", stderr=b"")
 
     monkeypatch.setattr(commands.subprocess, "run", fake_run)
@@ -185,6 +190,37 @@ def test_build_sheets_is_idempotent_and_cache_hit_runs_no_ffmpeg(
     assert second["rebuiltOutputs"] == []
     assert len(calls) == before
     assert {path: path.stat().st_mtime_ns for path in outputs} == mtimes
+
+def test_build_sheets_rebuilds_only_changed_shot_and_dependent_group(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project(tmp_path)
+    calls = _fake_ffmpeg(monkeypatch)
+    commands.build_sheets(tmp_path, "run")
+    output_root = project / "artifacts" / "subject-region-sheets"
+    shot1_outputs = sorted(output_root.glob("shot-001-*.png"))
+    shot1_mtimes = {path: path.stat().st_mtime_ns for path in shot1_outputs}
+    before_calls = len(calls)
+
+    manifest_path = project / "artifacts" / "asset_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    event2 = next(row for row in manifest["assets"] if row["visual_event_id"] == "event-2")
+    event2["source_id"] = "src-2-replacement"
+    event2["source_in_seconds"] = 3.0
+    event2["source_window_end_seconds"] = 3.2
+    _write_json(manifest_path, manifest)
+
+    rebuilt = commands.build_sheets(tmp_path, "run")
+
+    assert len(calls) == before_calls + 5
+    assert rebuilt["rebuiltOutputs"] == [
+        "artifacts/subject-region-sheets/shot-002-start.png",
+        "artifacts/subject-region-sheets/shot-002-middle.png",
+        "artifacts/subject-region-sheets/shot-002-end.png",
+        "artifacts/subject-region-sheets/shot-002-sheet.png",
+        "artifacts/subject-region-sheets/group-001-grid.png",
+    ]
+    assert {path: path.stat().st_mtime_ns for path in shot1_outputs} == shot1_mtimes
 
 
 def test_build_sheets_repairs_only_corrupt_cached_output(
