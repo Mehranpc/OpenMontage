@@ -67,6 +67,20 @@ def _workspace(*, event1_alt: bool, event2_alt: bool = False) -> dict:
     }
 
 
+def _scene_checkpoint(event_id: str, *queries: str) -> dict:
+    return {
+        "status": "completed",
+        "artifacts": {
+            "scene_plan": {
+                "beats": [{
+                    "id": "beat",
+                    "visual_events": [{"id": event_id, "queries": list(queries)}],
+                }],
+            }
+        },
+    }
+
+
 def test_layout_failure_must_stay_in_same_phase_before_asset_reacquisition() -> None:
     plan = shot_local_recovery_plan(
         {"code": "FILM_TYPE_LAYOUT_OVERFLOW", "details": {"shotIds": ["shot-1"]}},
@@ -167,6 +181,12 @@ def test_scoped_asset_sendback_consumes_budget_and_search_cannot_escape_scope(
 ) -> None:
     _bootstrap_to_preflight(tmp_path)
     monkeypatch.setattr(workflow, "asset_workspace_status", lambda _: _workspace(event1_alt=True, event2_alt=False))
+    monkeypatch.setattr(
+        workflow, "read_checkpoint",
+        lambda *_args, **_kwargs: _scene_checkpoint(
+            "event-2", "replacement event two", "event two alternate"
+        ),
+    )
     rewound = request_send_back(
         "run", "acquire_assets",
         reason="shot-2 has no reviewed fitting option",
@@ -207,6 +227,66 @@ def test_scoped_asset_sendback_consumes_budget_and_search_cannot_escape_scope(
     assert [item["slot_id"] for item in issued["queries"]] == ["event-2"]
 
 
+
+def test_scoped_asset_request_rejects_unauthored_query_before_search_is_issued(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _bootstrap_to_preflight(tmp_path)
+    monkeypatch.setattr(
+        workflow,
+        "asset_workspace_status",
+        lambda _: _workspace(event1_alt=True, event2_alt=False),
+    )
+    request_send_back(
+        "run", "acquire_assets",
+        reason="shot-2 has no reviewed fitting option",
+        diagnostic_code="ASSET_SELECTION_HARD_REGION_COLLISION",
+        affected_shot_ids=["shot-1", "shot-2"],
+        pipeline_dir=tmp_path,
+        now=BASE,
+    )
+    monkeypatch.setattr(
+        workflow, "read_checkpoint",
+        lambda *_args, **_kwargs: _scene_checkpoint(
+            "event-2", "authored event two", "authored event two alternate"
+        ),
+    )
+
+    with pytest.raises(PersianVideoWorkflowError, match="not one of the authored queries"):
+        bounded_asset_search_request(
+            "run",
+            {
+                "queries": [{
+                    "query": "invented provider query",
+                    "slot_id": "event-2",
+                    "kind": "video",
+                }],
+                "sources": ["pexels", "pixabay_video"],
+            },
+            retry_pass=0,
+            pipeline_dir=tmp_path,
+            now=BASE,
+        )
+
+    state = load_workflow_state("run", pipeline_dir=tmp_path)
+    assert "pending_pass" not in (state.get("asset_usage") or {})
+
+    issued = bounded_asset_search_request(
+        "run",
+        {
+            "queries": [{
+                "query": "authored event two",
+                "slot_id": "event-2",
+                "kind": "video",
+            }],
+            "sources": ["pexels", "pixabay_video"],
+        },
+        retry_pass=0,
+        pipeline_dir=tmp_path,
+        now=BASE,
+    )
+    assert issued["queries"][0]["query"] == "authored event two"
+
 def test_unscoped_automatic_sendback_to_acquire_assets_is_forbidden(tmp_path: Path) -> None:
     _bootstrap_to_preflight(tmp_path)
     with pytest.raises(PersianVideoWorkflowError, match="requires --code and affected shot ids"):
@@ -223,6 +303,12 @@ def test_scoped_reacquisition_records_next_workspace_discovery_pass(
     workspace = _workspace(event1_alt=False)
     workspace["discoveryPassCount"] = 2
     monkeypatch.setattr(workflow, "asset_workspace_status", lambda _: workspace)
+    monkeypatch.setattr(
+        workflow, "read_checkpoint",
+        lambda *_args, **_kwargs: _scene_checkpoint(
+            "event-1", "replacement", "event one alternate"
+        ),
+    )
     passes: list[int] = []
     monkeypatch.setattr(
         workflow, "record_discovery_pass",

@@ -36,6 +36,7 @@ from lib.persian_alignment_provider import (
     build_alignment_provider_plan,
     validate_alignment_provider_decision,
 )
+from lib.persian_assets import scene_asset_requirements
 from lib.persian_asset_commands import (
     PersianAssetCommandError,
     build_manifest as build_asset_manifest_command,
@@ -2193,7 +2194,7 @@ def bounded_asset_search_request(
             raise PersianVideoWorkflowError(
                 "scoped reacquisition requires non-empty shot-scoped queries"
             )
-        query_events: list[str] = []
+        scoped_queries: list[tuple[Mapping[str, Any], str]] = []
         for query in queries:
             if not isinstance(query, Mapping):
                 raise PersianVideoWorkflowError("scoped reacquisition queries must be objects")
@@ -2204,7 +2205,43 @@ def bounded_asset_search_request(
                 raise PersianVideoWorkflowError(
                     f"asset query slot {event_id!r} is outside scoped reacquisition {sorted(allowed_events)}"
                 )
-            query_events.append(event_id)
+            scoped_queries.append((query, event_id))
+
+        projects_root = Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve()
+        try:
+            scene_checkpoint = read_checkpoint(projects_root, project_id, "scene_plan")
+        except (CheckpointValidationError, OSError, json.JSONDecodeError) as exc:
+            raise PersianVideoWorkflowError(
+                "scoped reacquisition requires a valid completed scene-plan checkpoint before asset search"
+            ) from exc
+        scene_plan = (
+            (scene_checkpoint.get("artifacts") or {}).get("scene_plan")
+            if scene_checkpoint else None
+        )
+        if (
+            not isinstance(scene_checkpoint, Mapping)
+            or scene_checkpoint.get("status") != "completed"
+            or not isinstance(scene_plan, Mapping)
+        ):
+            raise PersianVideoWorkflowError(
+                "scoped reacquisition requires a valid completed scene-plan checkpoint before asset search"
+            )
+        requirements, _, _ = scene_asset_requirements(dict(scene_plan))
+        authored_queries = {
+            str(requirement.get("visual_event_id") or ""): [
+                str(value) for value in requirement.get("queries") or []
+            ]
+            for requirement in requirements
+            if str(requirement.get("visual_event_id") or "")
+        }
+        for query, event_id in scoped_queries:
+            query_text = str(query.get("query") or "").strip()
+            if not query_text:
+                raise PersianVideoWorkflowError("scoped reacquisition query requires query text")
+            if query_text not in authored_queries.get(event_id, []):
+                raise PersianVideoWorkflowError(
+                    f"asset query {query_text!r} is not one of the authored queries for {event_id!r}"
+                )
         bounded["queries"] = [dict(item) for item in queries]
     if retry_pass == 1:
         sourcing_order = list(
