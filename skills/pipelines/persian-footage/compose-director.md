@@ -10,8 +10,8 @@ For a P4-pinned run, finish candidate staging with:
 
 ```bash
 python -m lib.persian_delivery_quality stage-candidate <project-id> \
-  --render-report-json <project>/artifacts/render_report.json \
-  --final-review-json <project>/artifacts/final_review.json
+  --render-report-json artifacts/render_report.json \
+  --final-review-json artifacts/final_review.json
 ```
 
 The producer binds `final_review.output_sha256` to the exact reported MP4 bytes when the review path matches, derives the strict `quality_report` from canonical review/telemetry/cost evidence, and writes the existing compose checkpoint. `shadow` records the full report without adding a new delivery blocker; `enforced` applies the same report through the checkpoint gate. Projects with no run-start policy pin remain legacy/in-flight and are not retroactively migrated.

@@ -6,7 +6,13 @@ from pathlib import Path
 import pytest
 
 import lib.persian_delivery_quality as delivery
-from lib.checkpoint import CheckpointValidationError, init_project, read_checkpoint
+from lib.checkpoint import (
+    CheckpointValidationError,
+    init_project,
+    read_checkpoint,
+    write_checkpoint,
+)
+from tests.contracts.test_phase0_contracts import sample_artifact
 from schemas.artifacts import validate_artifact
 
 
@@ -87,6 +93,31 @@ def _state(tmp_path: Path) -> dict:
     }
 
 
+def _complete_prerequisites(tmp_path: Path, *, include_cost: bool = True) -> None:
+    for stage, artifact_name in (
+        ("idea", "brief"),
+        ("script", "script"),
+        ("scene_plan", "scene_plan"),
+        ("assets", "asset_manifest"),
+        ("edit", "edit_decisions"),
+    ):
+        kwargs = {}
+        if stage == "assets" and include_cost:
+            kwargs["cost_snapshot"] = {"total_spent_usd": 0.0}
+        artifact = sample_artifact(artifact_name)
+        if artifact_name == "edit_decisions":
+            artifact["render_runtime"] = "remotion"
+        write_checkpoint(
+            tmp_path,
+            "run",
+            stage,
+            "completed",
+            {artifact_name: artifact},
+            pipeline_type="persian-footage",
+            **kwargs,
+        )
+
+
 def _write_inputs(tmp_path: Path, render: dict, review: dict) -> tuple[Path, Path]:
     artifacts = tmp_path / "run" / "artifacts"
     artifacts.mkdir(parents=True, exist_ok=True)
@@ -114,6 +145,7 @@ def test_shadow_producer_binds_review_and_persists_quality_report(
     tmp_path: Path, monkeypatch
 ) -> None:
     init_project("run", title="Run", pipeline_type="persian-footage", pipeline_dir=tmp_path)
+    _complete_prerequisites(tmp_path)
     candidate, digest = _candidate(tmp_path)
     render_path, review_path = _write_inputs(tmp_path, _render(candidate, digest), _review(candidate))
     _patch_runtime(monkeypatch, tmp_path)
@@ -142,6 +174,7 @@ def test_shadow_producer_binds_review_and_persists_quality_report(
 def test_enforced_producer_passes_exact_green_evidence(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("OPENMONTAGE_PERSIAN_DELIVERY_GATE_MODE", "enforced")
     init_project("run", title="Run", pipeline_type="persian-footage", pipeline_dir=tmp_path)
+    _complete_prerequisites(tmp_path)
     candidate, digest = _candidate(tmp_path)
     render_path, review_path = _write_inputs(tmp_path, _render(candidate, digest), _review(candidate))
     _patch_runtime(monkeypatch, tmp_path)
@@ -166,6 +199,7 @@ def test_enforced_producer_rejects_nested_final_review_blocker(
 ) -> None:
     monkeypatch.setenv("OPENMONTAGE_PERSIAN_DELIVERY_GATE_MODE", "enforced")
     init_project("run", title="Run", pipeline_type="persian-footage", pipeline_dir=tmp_path)
+    _complete_prerequisites(tmp_path)
     candidate, digest = _candidate(tmp_path)
     review = _review(candidate)
     review["checks"]["technical_probe"]["valid_container"] = False
@@ -202,6 +236,7 @@ def test_legacy_project_is_not_retroactively_migrated_or_enforced(
     }), encoding="utf-8")
     monkeypatch.setenv("OPENMONTAGE_PERSIAN_DELIVERY_GATE_MODE", "enforced")
     init_project("run", title="Legacy", pipeline_type="persian-footage", pipeline_dir=tmp_path)
+    _complete_prerequisites(tmp_path)
     candidate, digest = _candidate(tmp_path)
     render_path, review_path = _write_inputs(tmp_path, _render(candidate, digest), _review(candidate))
     _patch_runtime(monkeypatch, tmp_path)
@@ -219,4 +254,101 @@ def test_legacy_project_is_not_retroactively_migrated_or_enforced(
     assert "delivery_gate_policy" not in marker
     assert result["quality_report_path"] is None
     assert "quality_report" not in checkpoint["artifacts"]
-    assert set(checkpoint["artifacts"]) == {"render_report"}
+    assert set(checkpoint["artifacts"]) == {"render_report", "final_review"}
+
+
+def test_shadow_records_blocking_evidence_without_blocking_checkpoint(
+    tmp_path: Path, monkeypatch
+) -> None:
+    init_project("run", title="Run", pipeline_type="persian-footage", pipeline_dir=tmp_path)
+    _complete_prerequisites(tmp_path)
+    candidate, digest = _candidate(tmp_path)
+    review = _review(candidate)
+    review["checks"]["technical_probe"]["valid_container"] = False
+    render_path, review_path = _write_inputs(tmp_path, _render(candidate, digest), review)
+    _patch_runtime(monkeypatch, tmp_path)
+
+    result = delivery.stage_compose_candidate(
+        "run",
+        render_report_path=render_path,
+        final_review_path=review_path,
+        pipeline_dir=tmp_path,
+    )
+
+    checkpoint = read_checkpoint(tmp_path, "run", "compose")
+    assert result["delivery_disposition"] == "block"
+    assert checkpoint["status"] == "awaiting_human"
+    assert checkpoint["artifacts"]["quality_report"]["blockers"]
+
+
+def test_enforced_producer_rejects_stale_review_digest(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENMONTAGE_PERSIAN_DELIVERY_GATE_MODE", "enforced")
+    init_project("run", title="Run", pipeline_type="persian-footage", pipeline_dir=tmp_path)
+    _complete_prerequisites(tmp_path)
+    candidate, digest = _candidate(tmp_path)
+    render_path, review_path = _write_inputs(
+        tmp_path, _render(candidate, digest), _review(candidate, digest="0" * 64)
+    )
+    _patch_runtime(monkeypatch, tmp_path)
+
+    with pytest.raises(CheckpointValidationError, match="stale or not bound"):
+        delivery.stage_compose_candidate(
+            "run",
+            render_report_path=render_path,
+            final_review_path=review_path,
+            pipeline_dir=tmp_path,
+        )
+
+    quality = json.loads(
+        (tmp_path / "run" / "artifacts" / "quality_report.json").read_text(encoding="utf-8")
+    )
+    assert "final_review.output_sha256" in quality["stale_refs"]
+
+
+def test_enforced_producer_rejects_missing_review_check(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENMONTAGE_PERSIAN_DELIVERY_GATE_MODE", "enforced")
+    init_project("run", title="Run", pipeline_type="persian-footage", pipeline_dir=tmp_path)
+    _complete_prerequisites(tmp_path)
+    candidate, digest = _candidate(tmp_path)
+    review = _review(candidate)
+    del review["checks"]["audio_spotcheck"]["mix_intelligible"]
+    render_path, review_path = _write_inputs(tmp_path, _render(candidate, digest), review)
+    _patch_runtime(monkeypatch, tmp_path)
+
+    with pytest.raises(CheckpointValidationError, match="missing checks remain"):
+        delivery.stage_compose_candidate(
+            "run",
+            render_report_path=render_path,
+            final_review_path=review_path,
+            pipeline_dir=tmp_path,
+        )
+
+    quality = json.loads(
+        (tmp_path / "run" / "artifacts" / "quality_report.json").read_text(encoding="utf-8")
+    )
+    assert "final_review.checks.audio_spotcheck.mix_intelligible" in quality["missing_checks"]
+
+
+def test_enforced_producer_treats_unknown_cost_as_unassessed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("OPENMONTAGE_PERSIAN_DELIVERY_GATE_MODE", "enforced")
+    init_project("run", title="Run", pipeline_type="persian-footage", pipeline_dir=tmp_path)
+    _complete_prerequisites(tmp_path, include_cost=False)
+    candidate, digest = _candidate(tmp_path)
+    render_path, review_path = _write_inputs(tmp_path, _render(candidate, digest), _review(candidate))
+    _patch_runtime(monkeypatch, tmp_path)
+
+    with pytest.raises(CheckpointValidationError, match="missing checks remain"):
+        delivery.stage_compose_candidate(
+            "run",
+            render_report_path=render_path,
+            final_review_path=review_path,
+            pipeline_dir=tmp_path,
+        )
+
+    quality = json.loads(
+        (tmp_path / "run" / "artifacts" / "quality_report.json").read_text(encoding="utf-8")
+    )
+    assert quality["time_and_cost_summary"]["total_cost_usd"] == 0.0
+    assert "cost.total_spent_usd" in quality["missing_checks"]

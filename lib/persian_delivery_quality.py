@@ -209,26 +209,23 @@ def _review_findings(
     return sorted(blockers), sorted(stale_refs), sorted(missing_checks)
 
 
-def _known_cost_usd(projects_root: Path, project_id: str) -> float:
-    """Return canonical known spend without inventing a second cost ledger."""
-    try:
-        checkpoint = read_checkpoint(projects_root, project_id, "assets")
-    except Exception:
-        checkpoint = None
+def _known_cost_usd(projects_root: Path, project_id: str) -> tuple[float, bool]:
+    """Return canonical spend plus whether cost evidence was actually assessed."""
+    checkpoint = read_checkpoint(projects_root, project_id, "assets")
     if not isinstance(checkpoint, Mapping):
-        return 0.0
+        return 0.0, False
     snapshot = checkpoint.get("cost_snapshot")
     if isinstance(snapshot, Mapping):
         value = _number(snapshot.get("total_spent_usd"))
         if value is not None:
-            return value
+            return value, True
     artifacts = checkpoint.get("artifacts")
     manifest = artifacts.get("asset_manifest") if isinstance(artifacts, Mapping) else None
     if isinstance(manifest, Mapping):
         value = _number(manifest.get("total_cost_usd"))
         if value is not None:
-            return value
-    return 0.0
+            return value, True
+    return 0.0, False
 
 
 def _time_summary(
@@ -274,12 +271,14 @@ def build_quality_report(
     blockers, stale_refs, missing_checks = _review_findings(
         final_review, output_path=output_path, output_sha256=output_sha256
     )
+    total_cost_usd, cost_assessed = _known_cost_usd(projects_root, project_id)
     time_summary, telemetry_missing = _time_summary(
         state,
         now=effective_now,
-        total_cost_usd=_known_cost_usd(projects_root, project_id),
+        total_cost_usd=total_cost_usd,
     )
-    missing_checks = sorted({*missing_checks, *telemetry_missing})
+    cost_missing = [] if cost_assessed else ["cost.total_spent_usd"]
+    missing_checks = sorted({*missing_checks, *telemetry_missing, *cost_missing})
     clean = not blockers and not stale_refs and not missing_checks
     report = {
         "version": QUALITY_REPORT_VERSION,
@@ -337,7 +336,7 @@ def stage_compose_candidate(
     if policy is None:
         checkpoint_path = write_checkpoint(
             projects_root, project_id, "compose", "awaiting_human",
-            {"render_report": render_report}, pipeline_type="persian-footage",
+            {"render_report": render_report, "final_review": final_review}, pipeline_type="persian-footage",
         )
         return {
             "project_id": project_id,
