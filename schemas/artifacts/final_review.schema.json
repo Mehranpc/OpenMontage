@@ -11,6 +11,11 @@
       "type": "string",
       "description": "Path to the rendered output file that was reviewed"
     },
+    "output_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Digest of the exact rendered bytes inspected by this review. Required by the enforced Persian delivery gate."
+    },
     "status": {
       "type": "string",
       "enum": ["pass", "revise", "fail"],

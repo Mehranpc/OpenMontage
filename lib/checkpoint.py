@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from functools import lru_cache
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,6 +46,7 @@ CANONICAL_STAGE_ARTIFACTS = {
 SUPPLEMENTARY_ARTIFACTS = {
     "source_media_review",  # Required before first planning stage when user media exists
     "final_review",         # Required by compose stage before presenting to user
+    "quality_report",        # Exact-output delivery disposition and blocker summary
     "video_analysis_brief", # Reference-video grounding artifact carried alongside stages
 }
 
@@ -90,6 +92,10 @@ from lib.paths import PROJECTS_DIR, REPO_ROOT  # noqa: E402  (single source of t
 
 PROJECT_MARKER_FILENAME = "project.json"
 HISTORY_DIRNAME = "history"
+
+PERSIAN_DELIVERY_POLICY_VERSION = "p4-delivery-v1"
+PERSIAN_DELIVERY_POLICY_MODES = frozenset({"shadow", "enforced"})
+PERSIAN_DELIVERY_DEFAULT_MODE = "shadow"
 
 
 class CheckpointValidationError(ValueError):
@@ -244,8 +250,9 @@ def init_project(
         (project_dir / sub).mkdir(parents=True, exist_ok=True)
 
     marker_path = project_dir / PROJECT_MARKER_FILENAME
+    marker_exists = marker_path.exists()
     marker: dict[str, Any] = {}
-    if marker_path.exists():
+    if marker_exists:
         try:
             with open(marker_path, encoding="utf-8") as f:
                 marker = json.load(f)
@@ -253,6 +260,19 @@ def init_project(
             marker = {}
 
     marker.setdefault("version", "1.0")
+    if pipeline_type == "persian-footage" and not marker_exists:
+        delivery_mode = os.environ.get(
+            "OPENMONTAGE_PERSIAN_DELIVERY_GATE_MODE", PERSIAN_DELIVERY_DEFAULT_MODE
+        ).strip().lower()
+        if delivery_mode not in PERSIAN_DELIVERY_POLICY_MODES:
+            raise CheckpointValidationError(
+                "DELIVERY POLICY VIOLATION: OPENMONTAGE_PERSIAN_DELIVERY_GATE_MODE "
+                f"must be one of {sorted(PERSIAN_DELIVERY_POLICY_MODES)}, got {delivery_mode!r}"
+            )
+        marker["delivery_gate_policy"] = {
+            "version": PERSIAN_DELIVERY_POLICY_VERSION,
+            "mode": delivery_mode,
+        }
     marker.setdefault("created_at", datetime.now(timezone.utc).isoformat())
     marker["project_id"] = project_id
     marker["title"] = title
@@ -532,6 +552,71 @@ def _render_identity(
     return path, digest
 
 
+def _pinned_persian_delivery_policy(marker: object) -> tuple[str, str] | None:
+    """Return the run-start delivery policy; absent means legacy/in-flight."""
+    if not isinstance(marker, dict):
+        return None
+    policy = marker.get("delivery_gate_policy")
+    if not isinstance(policy, dict):
+        return None
+    version = str(policy.get("version") or "").strip()
+    mode = str(policy.get("mode") or "").strip().lower()
+    if version != PERSIAN_DELIVERY_POLICY_VERSION or mode not in PERSIAN_DELIVERY_POLICY_MODES:
+        raise CheckpointValidationError(
+            "DELIVERY POLICY VIOLATION: project.json contains an unknown or malformed pinned Persian delivery policy"
+        )
+    return version, mode
+
+
+def _validate_persian_delivery_gate(
+    pipeline_dir: Path, project_id: str, stage: str, status: str,
+    artifacts: dict[str, Any], marker: object,
+) -> None:
+    """Fail closed before a Persian candidate is presented or completed."""
+    if stage != "compose" or status not in {"awaiting_human", "completed"}:
+        return
+    policy = _pinned_persian_delivery_policy(marker)
+    if policy is None or policy[1] != "enforced":
+        return
+    report = artifacts.get("render_report")
+    quality = artifacts.get("quality_report")
+    review = artifacts.get("final_review")
+    if not isinstance(quality, dict):
+        raise CheckpointValidationError("DELIVERY GATE VIOLATION: enforced policy requires quality_report")
+    if not isinstance(review, dict):
+        raise CheckpointValidationError("DELIVERY GATE VIOLATION: enforced policy requires final_review")
+    try:
+        validate_artifact("quality_report", quality)
+        validate_artifact("final_review", review)
+    except Exception as exc:
+        raise CheckpointValidationError(f"DELIVERY GATE VIOLATION: delivery evidence failed schema validation: {exc}") from exc
+    if not isinstance(report, dict):
+        raise CheckpointValidationError("DELIVERY GATE VIOLATION: enforced policy requires render_report")
+    output_path, output_sha256 = _render_identity(report, pipeline_dir, project_id)
+    if (quality.get("policy_version"), quality.get("policy_mode")) != policy:
+        raise CheckpointValidationError("DELIVERY GATE VIOLATION: quality_report policy does not match the run-start pin")
+    for label, path, digest in [
+        ("quality_report", quality.get("output_path"), quality.get("output_sha256")),
+        ("final_review", review.get("output_path"), review.get("output_sha256")),
+    ]:
+        if str(path or "").strip() != output_path or str(digest or "").strip().lower() != output_sha256:
+            raise CheckpointValidationError(f"DELIVERY GATE VIOLATION: {label} is stale or not bound to the exact output path/sha256")
+    if review.get("status") != "pass":
+        raise CheckpointValidationError("DELIVERY GATE VIOLATION: final_review.status must be 'pass'")
+    blockers = quality.get("blockers") or []
+    stale_refs = quality.get("stale_refs") or []
+    missing_checks = quality.get("missing_checks") or []
+    if blockers or stale_refs or missing_checks:
+        raise CheckpointValidationError(
+            "DELIVERY GATE VIOLATION: unresolved blockers, stale refs, or missing checks remain "
+            f"(blockers={blockers}, stale_refs={stale_refs}, missing_checks={missing_checks})"
+        )
+    if quality.get("technical_disposition") != "pass" or quality.get("delivery_disposition") != "deliver":
+        raise CheckpointValidationError(
+            "DELIVERY GATE VIOLATION: delivery requires technical_disposition='pass' and delivery_disposition='deliver'"
+        )
+
+
 def _validate_persian_compose_lifecycle(
     pipeline_dir: Path,
     project_id: str,
@@ -668,7 +753,7 @@ def write_checkpoint(
     # cannot bypass either gate enforcement or style validation.
     marker = None
     marker_path = pipeline_dir / project_id / PROJECT_MARKER_FILENAME
-    if marker_path.exists() and (not pipeline_type or not style_playbook):
+    if marker_path.exists():
         try:
             with open(marker_path, encoding="utf-8") as f:
                 marker = json.load(f)
@@ -701,6 +786,9 @@ def write_checkpoint(
     if pipeline_type == "persian-footage":
         _validate_persian_compose_lifecycle(
             pipeline_dir, project_id, stage, status, artifacts, human_approved, metadata
+        )
+        _validate_persian_delivery_gate(
+            pipeline_dir, project_id, stage, status, artifacts, marker
         )
 
     # --- Gate enforcement (GI-4) ---
