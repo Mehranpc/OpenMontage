@@ -127,7 +127,10 @@ def test_measured_hard_collision_routes_to_asset_reselection_without_copy_change
     assert issue["details"] == {"momentId": "moment-1", "shotIds": ["shot-1"]}
     assert issue["recoveryClass"] == "ASSET_SELECTION"
     assert "copy" in issue["recoveryPlan"]["preserve"]
-    assert any("send back to acquire_assets" in action for action in report["nextActions"])
+    assert issue["recoveryPlan"]["strategies"][0] == "reuse_reviewed_non_overlapping_source_window"
+    action = " ".join(report["nextActions"])
+    assert "first reuse a reviewed alternate crop/window" in action
+    assert "only for named shots whose existing reviewed options are exhausted" in action
 
 
 def test_plain_layout_failure_stays_layout_recovery(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

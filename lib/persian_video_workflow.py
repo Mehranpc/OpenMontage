@@ -54,6 +54,7 @@ from lib.persian_region_commands import (
 from lib.persian_asset_workspace import (
     PersianAssetWorkspaceError,
     asset_workspace_status,
+    load_asset_candidate,
     record_candidate_review,
     record_discovery_pass,
     reject_asset_candidate,
@@ -87,7 +88,7 @@ from lib.persian_workflow_telemetry import (
     reconcile_phase_telemetry,
 )
 from lib.persian_quality_evidence import compose_quality_evidence
-from lib.persian_recovery_policy import recovery_policy_for_issue
+from lib.persian_recovery_policy import recovery_policy_for_issue, shot_local_recovery_plan
 from tools.video.persian_compose import render_independent_review_issues
 from schemas.artifacts import validate_artifact
 from jsonschema.exceptions import ValidationError
@@ -1660,6 +1661,8 @@ def _complete_phase_impl(
     if phase == "awaiting_human":
         phase_evidence.update(_validate_awaiting_human_candidate(state))
 
+    if phase == "acquire_assets" and isinstance(state.get("asset_reacquisition_scope"), Mapping):
+        phase_evidence["scopedReacquisition"] = dict(state["asset_reacquisition_scope"])
     if phase == "acquire_assets" and checkpoint is not None:
         artifacts = checkpoint.get("artifacts") if isinstance(checkpoint.get("artifacts"), Mapping) else {}
         manifest = artifacts.get("asset_manifest") if isinstance(artifacts, Mapping) else None
@@ -1678,6 +1681,8 @@ def _complete_phase_impl(
     all_evidence = dict(state.get("evidence") or {})
     all_evidence[phase] = phase_evidence
     state["evidence"] = all_evidence
+    if phase == "acquire_assets":
+        state.pop("asset_reacquisition_scope", None)
 
     if phase == "awaiting_human":
         state["status"] = "awaiting_human"
@@ -1919,6 +1924,41 @@ def record_recovery_attempt(
     return state
 
 
+def _recovery_edit_decisions(
+    state: Mapping[str, Any], *, edit_attempt_id: str | None = None
+) -> dict[str, Any]:
+    project_root = _project_root(state)
+    if edit_attempt_id is None:
+        path = project_root / "artifacts" / "edit_decisions.json"
+    else:
+        attempt = str(edit_attempt_id or "").strip()
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}", attempt) is None:
+            raise PersianVideoWorkflowError("invalid edit attempt id for scoped recovery")
+        path = (project_root / ".drafts" / "edit" / attempt / "edit_decisions.json").resolve()
+        if not _is_within(path, project_root):
+            raise PersianVideoWorkflowError("scoped recovery edit path escaped its project")
+    if not path.is_file():
+        raise PersianVideoWorkflowError(
+            f"scoped asset recovery requires edit decisions: {path}"
+        )
+    payload = _read_json(str(path))
+    if not isinstance(payload, dict):
+        raise PersianVideoWorkflowError("scoped recovery edit decisions must be an object")
+    return payload
+
+
+def _scope_allows_visual_event(state: Mapping[str, Any], visual_event_id: str) -> None:
+    scope = state.get("asset_reacquisition_scope")
+    if not isinstance(scope, Mapping):
+        return
+    allowed = {str(item) for item in scope.get("visualEventIds") or []}
+    event_id = str(visual_event_id or "").strip()
+    if event_id not in allowed:
+        raise PersianVideoWorkflowError(
+            f"visual event {event_id!r} is outside scoped reacquisition {sorted(allowed)}"
+        )
+
+
 def request_send_back(
     project_id: str,
     target_phase: str,
@@ -1927,6 +1967,9 @@ def request_send_back(
     pipeline_dir: Path | None = None,
     now: datetime | None = None,
     user_directed_revision: bool = False,
+    diagnostic_code: str | None = None,
+    affected_shot_ids: Sequence[str] | None = None,
+    edit_attempt_id: str | None = None,
 ) -> dict[str, Any]:
     """Rewind a bounded production; explicit user feedback may open one fresh cycle."""
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
@@ -1948,6 +1991,39 @@ def request_send_back(
         )
     if not reason.strip():
         raise PersianVideoWorkflowError("send-back requires a non-empty reason")
+
+    scoped_plan: dict[str, Any] | None = None
+    if target_phase == "acquire_assets" and not user_directed_revision:
+        code = str(diagnostic_code or "").strip().upper()
+        shots = [str(item).strip() for item in (affected_shot_ids or []) if str(item).strip()]
+        if not code:
+            raise PersianVideoWorkflowError(
+                "automatic acquire_assets send-back requires --code and affected shot ids"
+            )
+        try:
+            scoped_plan = shot_local_recovery_plan(
+                {"code": code, "details": {"shotIds": shots}},
+                _recovery_edit_decisions(state, edit_attempt_id=edit_attempt_id),
+                asset_workspace_status(_project_root(state)),
+            )
+        except ValueError as exc:
+            raise PersianVideoWorkflowError(str(exc)) from exc
+        if scoped_plan.get("sendBackAllowed") is not True:
+            if scoped_plan.get("recoveryClass") == "FILM_TYPE_LAYOUT":
+                raise PersianVideoWorkflowError(
+                    "acquire_assets send-back refused: FILM_TYPE_LAYOUT must be repaired in no_copy_preflight first"
+                )
+            options = scoped_plan.get("existingOptions") or {}
+            available = sorted(
+                shot_id for shot_id, rows in dict(options).items() if rows
+            )
+            suffix = f" for {', '.join(available)}" if available else ""
+            raise PersianVideoWorkflowError(
+                "acquire_assets send-back refused: existing reviewed asset option remains"
+                + suffix
+                + "; repair/reselect in no_copy_preflight first"
+            )
+
     current = state.get("next_phase")
     # Rewinding abandons the currently open attempt by definition. Close it as
     # superseded before changing the phase pointer so telemetry has no zombie work.
@@ -1984,6 +2060,26 @@ def request_send_back(
                 f"send-back budget exhausted: {used} requested > {limit} allowed"
             )
         state["send_backs"] = used
+    if scoped_plan is not None:
+        scope = {
+            "version": "1.0",
+            "diagnosticCode": str(scoped_plan["diagnosticCode"]),
+            "reasonCode": str(scoped_plan["reasonCode"]),
+            "shotIds": list(scoped_plan["reacquireShotIds"]),
+            "visualEventIds": list(scoped_plan["reacquireVisualEventIds"]),
+            "reason": reason.strip(),
+            **({"editAttemptId": edit_attempt_id} if edit_attempt_id else {}),
+        }
+        state["asset_reacquisition_scope"] = scope
+        usage = dict(state.get("asset_usage") or {})
+        usage["completed_passes"] = []
+        usage["acquisition_cycle"] = int(usage.get("acquisition_cycle") or 0) + 1
+        for key in ("pending_pass", "pending_output_dir", "pending_limits"):
+            usage.pop(key, None)
+        state["asset_usage"] = usage
+    elif target_phase != "acquire_assets" or user_directed_revision:
+        state.pop("asset_reacquisition_scope", None)
+
     state["status"] = "active"
     state["next_phase"] = target_phase
     state["completed_phases"] = [
@@ -1999,6 +2095,12 @@ def request_send_back(
         "target_phase": target_phase,
         "reason": reason.strip(),
         "archived_checkpoints": archived,
+        **({
+            "diagnostic_code": str(scoped_plan["diagnosticCode"]),
+            "reason_code": str(scoped_plan["reasonCode"]),
+            "shot_ids": list(scoped_plan["reacquireShotIds"]),
+            "visual_event_ids": list(scoped_plan["reacquireVisualEventIds"]),
+        } if scoped_plan is not None else {}),
         **({
             "user_directed_revision": True,
             "prior_send_backs": previous_send_backs,
@@ -2043,6 +2145,27 @@ def bounded_asset_search_request(
         )
 
     bounded = dict(request)
+    reacquisition_scope = state.get("asset_reacquisition_scope")
+    if isinstance(reacquisition_scope, Mapping):
+        allowed_events = {str(item) for item in reacquisition_scope.get("visualEventIds") or []}
+        queries = bounded.get("queries")
+        if not isinstance(queries, list) or not queries:
+            raise PersianVideoWorkflowError(
+                "scoped reacquisition requires non-empty shot-scoped queries"
+            )
+        query_events: list[str] = []
+        for query in queries:
+            if not isinstance(query, Mapping):
+                raise PersianVideoWorkflowError("scoped reacquisition queries must be objects")
+            event_id = str(query.get("slot_id") or "").strip()
+            if not event_id:
+                raise PersianVideoWorkflowError("scoped reacquisition query requires slot_id")
+            if event_id not in allowed_events:
+                raise PersianVideoWorkflowError(
+                    f"asset query slot {event_id!r} is outside scoped reacquisition {sorted(allowed_events)}"
+                )
+            query_events.append(event_id)
+        bounded["queries"] = [dict(item) for item in queries]
     if retry_pass == 1:
         sourcing_order = list(
             ((state.get("evidence") or {}).get("plan_scenes_moments") or {}).get("sourcing_order") or []
@@ -2250,8 +2373,22 @@ def record_asset_search_result(
         and str(clip.get("source") or clip.get("provider") or "").strip()
         and str(clip.get("source_id") or clip.get("clip_id") or "").strip()
     ]
+    scope = state.get("asset_reacquisition_scope")
+    if isinstance(scope, Mapping):
+        allowed_events = {str(item) for item in scope.get("visualEventIds") or []}
+        for clip in identified_clips:
+            slot_id = str(clip.get("slot_id") or "").strip()
+            if not slot_id or slot_id not in allowed_events:
+                raise PersianVideoWorkflowError(
+                    f"asset result clip slot {slot_id!r} is outside scoped reacquisition {sorted(allowed_events)}"
+                )
     if identified_clips:
-        record_discovery_pass(project_root, retry_pass, identified_clips)
+        workspace_pass = retry_pass
+        if isinstance(scope, Mapping):
+            workspace_pass = int(
+                asset_workspace_status(project_root).get("discoveryPassCount") or 0
+            )
+        record_discovery_pass(project_root, workspace_pass, identified_clips)
 
     candidates += int(usage.get("candidates_considered", 0))
     semantic_candidates += int(
@@ -2282,6 +2419,22 @@ def record_asset_search_result(
     return state
 
 
+def _scope_allows_candidate(state: Mapping[str, Any], candidate_id: str) -> None:
+    scope = state.get("asset_reacquisition_scope")
+    if not isinstance(scope, Mapping):
+        return
+    candidate = load_asset_candidate(_project_root(state), candidate_id)
+    context = candidate.get("context") if isinstance(candidate.get("context"), Mapping) else {}
+    _scope_allows_visual_event(state, str(context.get("visualEventId") or ""))
+
+
+def _require_music_not_scoped(state: Mapping[str, Any]) -> None:
+    if isinstance(state.get("asset_reacquisition_scope"), Mapping):
+        raise PersianVideoWorkflowError(
+            "music acquisition is forbidden during shot-scoped asset reacquisition"
+        )
+
+
 def _require_asset_candidate_phase(state: Mapping[str, Any]) -> None:
     if state.get("status") != "active" or state.get("next_phase") != "acquire_assets":
         raise PersianVideoWorkflowError(
@@ -2296,6 +2449,9 @@ def stage_workflow_asset_candidate(
     _require_asset_candidate_phase(state)
     source = assert_read_allowed(state, str(input_path))
     payload = _read_json(str(source))
+    _scope_allows_visual_event(
+        state, str(payload.get("visual_event_id") or payload.get("visualEventId") or "")
+    )
     return stage_asset_candidate(
         _project_root(state),
         discovery_id=str(payload.get("discovery_id") or payload.get("discoveryId") or ""),
@@ -2316,6 +2472,7 @@ def review_workflow_asset_candidate(
 ) -> dict[str, Any]:
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     _require_asset_candidate_phase(state)
+    _scope_allows_candidate(state, candidate_id)
     source = assert_read_allowed(state, str(input_path))
     return record_candidate_review(
         _project_root(state), candidate_id, _read_json(str(source))
@@ -2328,6 +2485,7 @@ def reject_workflow_asset_candidate(
 ) -> dict[str, Any]:
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     _require_asset_candidate_phase(state)
+    _scope_allows_candidate(state, candidate_id)
     return reject_asset_candidate(
         _project_root(state), candidate_id, category=category, reason=reason
     )
@@ -2340,6 +2498,7 @@ def select_workflow_asset_candidate(
 ) -> dict[str, Any]:
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     _require_asset_candidate_phase(state)
+    _scope_allows_visual_event(state, visual_event_id)
     return select_asset_candidate(
         _project_root(state), visual_event_id, candidate_id,
         rejected_alternatives=rejected_alternatives,
@@ -2392,6 +2551,7 @@ def search_workflow_music(
 ) -> dict[str, Any]:
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     _require_asset_candidate_phase(state)
+    _require_music_not_scoped(state)
     source = assert_read_allowed(state, str(input_path))
     project_root = _project_root(state)
     return search_music_command(
@@ -2406,6 +2566,7 @@ def fetch_workflow_music(
 ) -> dict[str, Any]:
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     _require_asset_candidate_phase(state)
+    _require_music_not_scoped(state)
     source = assert_read_allowed(state, str(metadata_path))
     project_root = _project_root(state)
     return fetch_music_command(
@@ -3504,6 +3665,9 @@ def build_parser() -> argparse.ArgumentParser:
     send_back.add_argument("project_id")
     send_back.add_argument("target_phase")
     send_back.add_argument("--reason", required=True)
+    send_back.add_argument("--code", dest="diagnostic_code")
+    send_back.add_argument("--shot-id", dest="shot_ids", action="append", default=[])
+    send_back.add_argument("--edit-attempt-id")
     send_back.add_argument(
         "--user-directed-revision", action="store_true",
         help="start a fresh bounded revision cycle after explicit new user feedback",
@@ -3727,6 +3891,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.target_phase,
                     reason=args.reason,
                     user_directed_revision=args.user_directed_revision,
+                    diagnostic_code=args.diagnostic_code,
+                    affected_shot_ids=args.shot_ids,
+                    edit_attempt_id=args.edit_attempt_id,
                 )
             )
         elif args.command == "hook-override":

@@ -53,3 +53,16 @@ def test_compose_phase_routes_through_canonical_validation_ladder():
     ):
         assert phrase in text
     assert "shared render-independent review rules" in text
+
+
+def test_assets_phase_routes_shot_local_recovery_before_reacquisition():
+    card = (PIPELINE / "phase-cards" / "assets.md").read_text()
+    director = (PIPELINE / "asset-director.md").read_text()
+    assert "never send `FILM_TYPE_LAYOUT` back to assets" in card
+    assert "reuse reviewed same-source window/crop first" in card
+    assert "Only exhausted shots" in card
+    assert "--code <code> --shot-id <shot-id>" in card
+    assert "reviewed non-overlapping window/crop from the selected source" in director
+    assert "another reviewed existing candidate" in director
+    assert "forbids unrelated music mutation" in director
+    assert "never reacquire the whole asset set" in director
