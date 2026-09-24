@@ -9,6 +9,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import datetime, timezone
+import os
+import platform
+from pathlib import Path
+import subprocess
 from typing import Any
 
 
@@ -21,6 +25,7 @@ CAUSAL_CATEGORIES = frozenset(
         "machine_local_execution",
         "provider_network_wait",
         "agent_editorial_work",
+        "agent_interphase",
         "browser_render_execution",
         "review_evidence_assembly",
         "accounting_reconciliation",
@@ -66,6 +71,71 @@ def _required_time(value: datetime | str, label: str) -> datetime:
         raise ValueError(f"{label} must be an ISO-8601 timestamp")
     return parsed
 
+
+
+def _count_files(root: Path, *, suffix: str | None = None) -> int:
+    if not root.is_dir():
+        return 0
+    return sum(
+        1 for path in root.rglob("*")
+        if path.is_file() and (suffix is None or path.suffix == suffix)
+    )
+
+
+def _code_revision(repo_root: Path) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo_root,
+            capture_output=True, text=True, timeout=2, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    value = (result.stdout or "").strip().lower()
+    if result.returncode == 0 and len(value) == 40 and all(ch in "0123456789abcdef" for ch in value):
+        return value
+    return "unknown"
+
+
+def collect_execution_metadata(*, repo_root: Path, project_root: Path) -> dict[str, Any]:
+    """Capture reproducibility metadata without mutating caches or project state."""
+    repo = Path(repo_root).expanduser().resolve()
+    project = Path(project_root).expanduser().resolve()
+    preflight_entries = _count_files(project / ".preflight" / "cache")
+    search_entries = sum(
+        1 for path in project.rglob("*.json")
+        if path.is_file() and ".search-cache" in path.parts
+    ) if project.is_dir() else 0
+    shared_clip_root = Path.home() / ".openmontage" / "clips_cache"
+    shared_clip_entries = sum(
+        1 for path in shared_clip_root.glob("*")
+        if path.is_file() and path.name != "manifest.json"
+    ) if shared_clip_root.is_dir() else 0
+    ad_hoc_scripts = sum(
+        1 for path in project.rglob("*.py")
+        if path.is_file() and ".workspace" in path.parts
+    ) if project.is_dir() else 0
+    warm = any((preflight_entries, search_entries, shared_clip_entries))
+    return {
+        "code_revision": _code_revision(repo),
+        "runtime": {
+            "python_version": platform.python_version(),
+            "python_implementation": platform.python_implementation(),
+            "platform": platform.platform(),
+        },
+        "hardware": {
+            "system": platform.system() or "unknown",
+            "release": platform.release() or "unknown",
+            "machine": platform.machine() or "unknown",
+            "logical_cpu_count": max(1, int(os.cpu_count() or 1)),
+        },
+        "cache": {
+            "classification": "warm" if warm else "cold",
+            "project_preflight_entries": preflight_entries,
+            "project_search_entries": search_entries,
+            "shared_clip_entries": shared_clip_entries,
+        },
+        "ad_hoc_script_count": ad_hoc_scripts,
+    }
 
 def new_causal_trace(trace_id: str, *, started_at: datetime | str) -> dict[str, Any]:
     trace_id = str(trace_id).strip()
@@ -353,6 +423,7 @@ def causal_time_accounting(
     coverage_percent = 100.0 if wall <= 0.0 else min(100.0, (covered / wall) * 100.0)
     provider = category_seconds["provider_network_wait"]
     editorial = category_seconds["agent_editorial_work"]
+    interphase = category_seconds["agent_interphase"]
     browser = category_seconds["browser_render_execution"]
     machine = category_seconds["machine_local_execution"]
     review = category_seconds["review_evidence_assembly"]
@@ -369,6 +440,7 @@ def causal_time_accounting(
         "browser_render_seconds": round(browser, 3),
         "accounting_lag_seconds": round(accounting, 3),
         "editorial_wall_seconds": round(editorial, 3),
+        "agent_interphase_seconds": round(interphase, 3),
         "review_phase_seconds": round(review, 3),
         "automated_recovery_seconds": round(recovery, 3),
         "human_idle_seconds": round(human_idle, 3),
@@ -620,6 +692,7 @@ __all__ = [
     "causal_phase_span_id",
     "backfill_phase_residual_spans",
     "causal_time_accounting",
+    "collect_execution_metadata",
     "finish_causal_span",
     "finish_phase_attempt_span",
     "new_causal_trace",
