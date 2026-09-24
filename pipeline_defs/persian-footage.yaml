@@ -42,6 +42,11 @@ orchestration:
   max_revisions_per_stage: 3
   max_send_backs: 2
   max_wall_time_minutes: 45
+  # Provider search is only one part of the 10-minute acquisition SLO. Keep it
+  # bounded so review/selection still has time, and cache identical provider
+  # metadata inside the project to avoid repeated network search on retries.
+  asset_search_timeout_seconds: 180
+  asset_search_cache_ttl_seconds: 21600
 
 extensions:
   custom_scripts: true
@@ -224,7 +229,7 @@ stages:
       - No clip_id fills two visual events
       - Clip orientation matches the chosen format
       - "Acquisition uses only sources [pexels, pixabay_video], clips_per_query 1, one primary query per footage visual event, and at most one retry pass with the authored alternate query, ordered by audit_scene_plan.sourcing_order (importance 3 -> 2 -> 1). No smoke-* provider probing is allowed inside a production project."
-      - "Every direct_clip_search call sets max_candidates_total, max_bytes_per_clip, and max_total_download_bytes. Quota exhaustion is a blocker; the agent may not raise a limit without explicit user approval."
+      - "Every direct_clip_search call sets max_candidates_total, max_bytes_per_clip, max_total_download_bytes, the policy-owned 180s timeout, and the 6h project-local provider-search metadata cache. Quota exhaustion or timeout is a blocker; the agent may not raise a limit or bypass the cache policy."
       - "filters.min_width is 1080. _pick_video_rendition takes the largest rendition at or below 1920px WIDE, and for a portrait clip width is the short edge — so without a floor, vertical clips arrive at 1440x2732, tens of MB each, for a 1080-wide render."
       - "The tool's post-download ffprobe values, not provider claims, satisfy duration and orientation. A mismatch or unknown probe is deleted immediately and never enters the manifest."
       - "SUBJECT/HUMAN INTENT SURVIVED SELECTION: required subject and human presence in the scene plan still exist in the inspected clip; a blurred/background presence does not count."

@@ -169,6 +169,8 @@ class WorkflowBudgets:
     max_candidates_total: int = 16
     max_bytes_per_clip: int = 96 * 1024 * 1024
     max_total_download_bytes: int = 512 * 1024 * 1024
+    asset_search_timeout_seconds: int = 180
+    asset_search_cache_ttl_seconds: int = 21600
 
 
 def get_workflow_budgets() -> WorkflowBudgets:
@@ -180,6 +182,8 @@ def get_workflow_budgets() -> WorkflowBudgets:
             max_revisions_per_stage=int(orchestration["max_revisions_per_stage"]),
             max_send_backs=int(orchestration["max_send_backs"]),
             max_wall_time_minutes=int(orchestration["max_wall_time_minutes"]),
+            asset_search_timeout_seconds=int(orchestration["asset_search_timeout_seconds"]),
+            asset_search_cache_ttl_seconds=int(orchestration["asset_search_cache_ttl_seconds"]),
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise PersianVideoWorkflowError(
@@ -197,6 +201,8 @@ def asset_search_policy() -> dict[str, Any]:
         "max_bytes_per_clip": budget.max_bytes_per_clip,
         "max_total_download_bytes": budget.max_total_download_bytes,
         "max_retry_passes": budget.asset_retry_passes,
+        "timeout_seconds": budget.asset_search_timeout_seconds,
+        "search_cache_ttl_seconds": budget.asset_search_cache_ttl_seconds,
     }
 
 
@@ -2218,6 +2224,20 @@ def bounded_asset_search_request(
     if int(bounded.get("clips_per_query", policy["clips_per_query"])) != policy["clips_per_query"]:
         raise PersianVideoWorkflowError("clips_per_query is fixed at 1 for Persian production")
     bounded["clips_per_query"] = policy["clips_per_query"]
+    requested_timeout = int(bounded.get("timeout_seconds", policy["timeout_seconds"]))
+    if requested_timeout != int(policy["timeout_seconds"]):
+        raise PersianVideoWorkflowError(
+            f"timeout_seconds is fixed at {policy['timeout_seconds']} for Persian production"
+        )
+    bounded["timeout_seconds"] = int(policy["timeout_seconds"])
+    requested_cache_ttl = int(
+        bounded.get("search_cache_ttl_seconds", policy["search_cache_ttl_seconds"])
+    )
+    if requested_cache_ttl != int(policy["search_cache_ttl_seconds"]):
+        raise PersianVideoWorkflowError(
+            "search_cache_ttl_seconds is fixed by Persian production policy"
+        )
+    bounded["search_cache_ttl_seconds"] = int(policy["search_cache_ttl_seconds"])
 
     used_semantic_candidates = int(
         usage.get("semantic_candidates_reviewed", usage.get("candidates_considered", 0))
@@ -2312,16 +2332,25 @@ def record_asset_search_result(
     semantic_raw = result_data.get("semantic_candidates_reviewed")
     technical_raw = result_data.get("technical_rejects", 0)
     duplicate_raw = result_data.get("duplicate_technical_rejects", 0)
+    cache_hits_raw = result_data.get("search_cache_hits", 0)
+    cache_misses_raw = result_data.get("search_cache_misses", 0)
     try:
         semantic_candidates = candidates if semantic_raw is None else int(semantic_raw)
         technical_rejects = int(technical_raw)
         duplicate_technical_rejects = int(duplicate_raw)
+        search_cache_hits = int(cache_hits_raw)
+        search_cache_misses = int(cache_misses_raw)
     except (TypeError, ValueError) as exc:
         raise PersianVideoWorkflowError(
             "asset semantic/technical candidate counters must be integers"
         ) from exc
-    if min(semantic_candidates, technical_rejects, duplicate_technical_rejects) < 0:
-        raise PersianVideoWorkflowError("asset semantic/technical candidate counters must be non-negative")
+    if min(
+        semantic_candidates, technical_rejects, duplicate_technical_rejects,
+        search_cache_hits, search_cache_misses,
+    ) < 0:
+        raise PersianVideoWorkflowError(
+            "asset semantic/technical/cache counters must be non-negative"
+        )
     if semantic_candidates > candidates:
         raise PersianVideoWorkflowError("semantic_candidates_reviewed cannot exceed candidates_considered")
     if technical_rejects > candidates:
@@ -2399,6 +2428,8 @@ def record_asset_search_result(
     )
     technical_rejects += int(usage.get("technical_rejects", 0))
     duplicate_technical_rejects += int(usage.get("duplicate_technical_rejects", 0))
+    search_cache_hits += int(usage.get("search_cache_hits", 0))
+    search_cache_misses += int(usage.get("search_cache_misses", 0))
     downloaded_bytes += int(usage.get("bytes_downloaded", 0))
     if semantic_candidates > policy["max_candidates_total"]:
         raise PersianVideoWorkflowError("asset semantic candidate budget exceeded")
@@ -2413,6 +2444,10 @@ def record_asset_search_result(
         semantic_candidates_reviewed=semantic_candidates,
         technical_rejects=technical_rejects,
         duplicate_technical_rejects=duplicate_technical_rejects,
+        search_cache_hits=search_cache_hits,
+        search_cache_misses=search_cache_misses,
+        search_timeout_seconds=int(policy["timeout_seconds"]),
+        search_cache_ttl_seconds=int(policy["search_cache_ttl_seconds"]),
         bytes_downloaded=downloaded_bytes,
         workspace_discovery_candidates=asset_workspace_status(project_root)["discoveryCandidateCount"],
         workspace_discovery_passes=asset_workspace_status(project_root)["discoveryPassCount"],
