@@ -30,13 +30,13 @@ jobs:
         with:
           clean: true
 
-      - name: Add Homebrew to PATH
-        run: echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+      - name: Configure pinned Mac toolchain
+        run: echo "$HOME/actions-runner/openmontage/toolchain-bin" >> "$GITHUB_PATH"
 
       - name: Verify Mac toolchain
         run: |
-          python3.11 --version
-          python3.11 -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)'
+          python3 --version
+          python3 -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)'
           node --version
           node -e 'process.exit(Number(process.versions.node.split(".")[0]) === 22 ? 0 : 1)'
           command -v ffmpeg
