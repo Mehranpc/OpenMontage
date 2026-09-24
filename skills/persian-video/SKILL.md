@@ -71,7 +71,7 @@ Read `next_phase` from `status`; do not infer progress from conversation memory,
 For short/non-durable agent or review work, measure only the interval that is actually being worked. `work-start` opens the current phase attempt if needed; `work-finish` closes the countable causal span. Close it before durable execution, user wait, or phase completion. The phase container itself remains non-counting, so gaps are never relabeled as work:
 
 ```bash
-python -m lib.persian_video_workflow work-start <project-id> --category <agent_editorial_work|review_evidence_assembly> --name "<truthful activity>"
+python -m lib.persian_video_workflow work-start <project-id> --category <agent_editorial_work|agent_interphase|review_evidence_assembly> --name "<truthful activity>"
 # perform only that measured work interval
 python -m lib.persian_video_workflow work-finish <project-id> <span-id>
 python -m lib.persian_video_workflow complete <project-id> --evidence-json /abs/evidence.json
@@ -154,6 +154,8 @@ python -m lib.persian_run_kernel commit <project-id> <job-id> --evidence-json /a
 Every durable command must use the narrowest truthful causal category. Use `provider_network_wait` for provider/API-bound work, `machine_local_execution` for local CPU/GPU/ffmpeg/MLX work, and `browser_render_execution` for Chromium/Remotion/browser-heavy execution. The workflow persists one `causal_trace_id`; durable jobs become child spans of their phase attempt, and first terminal reconciliation is recorded separately as `accounting_reconciliation`. Do not relabel a whole render phase as renderer time: only the durable browser/render span is renderer time.
 
 `status.time_accounting` keeps real wall time as the top-level metric and reports `causal_coverage_percent`, category durations, explicit concurrency, and any remaining `unattributed_wall_seconds`. Unattributed time is an instrumentation diagnostic, not a bucket to silently assign to providers or editorial work.
+
+Use `agent_interphase` only for prospectively measured agent work between phase executions; unlike phase containers, it counts toward wall coverage without opening the next phase attempt. Each run also pins code revision, Python/platform/hardware facts, initial cache classification, and `.workspace/*.py` count; the terminal performance summary refreshes cache/script counts so late-created state is visible.
 
 Accounting policy `2.0` excludes inferred `phase_residual` spans from measured coverage, including historical residuals. Phase start/end timestamps alone do not prove continuous editorial or review work. Record actual work intervals; preserve gaps as unknown. Existing frozen summaries remain historical evidence. New terminal summaries retain prior summaries in `performance_summary_history`, bind the candidate digest, and show whole-run and `revision_window` accounting separately.
 

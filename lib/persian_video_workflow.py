@@ -79,6 +79,7 @@ from lib.persian_workflow_telemetry import (
     backfill_phase_residual_spans,
     causal_phase_span_id,
     causal_time_accounting,
+    collect_execution_metadata,
     finish_causal_span,
     finish_phase_attempt_span,
     new_causal_trace,
@@ -676,6 +677,9 @@ def _freeze_performance_summary(state: dict[str, Any], *, now: datetime) -> None
     state["performance_summary"] = {
         **accounting,
         "recorded_at": now.isoformat(),
+        "execution_metadata": collect_execution_metadata(
+            repo_root=REPO_ROOT, project_root=_project_root(state)
+        ),
         "status": state.get("status"),
         "candidate_sha256": candidate.get("candidate_sha256"),
         "revision_cycle": int(state.get("user_revision_cycles") or 0),
@@ -836,6 +840,9 @@ def bootstrap_persian_video(
             "recovery_attempts": {},
             "phase_telemetry": {},
             "causal_telemetry": new_causal_trace(uuid4().hex, started_at=created_at),
+            "execution_metadata": collect_execution_metadata(
+                repo_root=REPO_ROOT, project_root=project_dir
+            ),
             "performance_slo": {
                 "phaseSeconds": dict(PHASE_SLO_SECONDS),
                 "endToEndSeconds": END_TO_END_SLO_SECONDS,
@@ -1161,6 +1168,7 @@ def _enforce_phase_boundary_budget(
 
 _EXPLICIT_WORK_CATEGORIES = frozenset({
     "agent_editorial_work",
+    "agent_interphase",
     "review_evidence_assembly",
 })
 
@@ -1224,35 +1232,58 @@ def start_explicit_work_span(
             "explicit work span is already open; finish existing measured work before starting another"
         )
     effective_now = now or datetime.now(timezone.utc)
-    attempt = _running_phase_attempt(state, phase)
-    if attempt is None:
-        state = record_phase_attempt(
-            project_id, phase, pipeline_dir=pipeline_dir, now=effective_now
-        )
-        attempt = int((state.get("attempts") or {}).get(phase) or 0)
-    if attempt <= 0:
-        raise PersianVideoWorkflowError("explicit work requires a durable phase attempt")
     trace = state.get("causal_telemetry")
     spans = list(trace.get("spans") or []) if isinstance(trace, Mapping) else []
-    sequence = 1 + sum(
-        1 for span in spans
-        if isinstance(span, Mapping)
-        and span.get("kind") == "explicit_work"
-        and span.get("phase") == phase
-        and int(span.get("attempt") or 0) == attempt
-    )
-    span_id = f"work:{phase}:{attempt}:{sequence}"
+    if category == "agent_interphase":
+        sequence = 1 + sum(
+            1 for span in spans
+            if isinstance(span, Mapping)
+            and span.get("kind") == "explicit_work"
+            and span.get("category") == "agent_interphase"
+            and span.get("phase") == phase
+        )
+        span_id = f"interphase:{phase}:{sequence}"
+        parent_span_id = str(trace.get("run_span_id") or "") if isinstance(trace, Mapping) else ""
+        fields = {
+            "phase": phase,
+            "sequence": sequence,
+            "measurement_scope": "interphase",
+            "after_phase": (state.get("completed_phases") or [None])[-1],
+        }
+    else:
+        attempt = _running_phase_attempt(state, phase)
+        if attempt is None:
+            state = record_phase_attempt(
+                project_id, phase, pipeline_dir=pipeline_dir, now=effective_now
+            )
+            attempt = int((state.get("attempts") or {}).get(phase) or 0)
+        if attempt <= 0:
+            raise PersianVideoWorkflowError("explicit work requires a durable phase attempt")
+        trace = state.get("causal_telemetry")
+        spans = list(trace.get("spans") or []) if isinstance(trace, Mapping) else []
+        sequence = 1 + sum(
+            1 for span in spans
+            if isinstance(span, Mapping)
+            and span.get("kind") == "explicit_work"
+            and span.get("phase") == phase
+            and int(span.get("attempt") or 0) == attempt
+        )
+        span_id = f"work:{phase}:{attempt}:{sequence}"
+        parent_span_id = causal_phase_span_id(phase, attempt)
+        fields = {"phase": phase, "attempt": attempt, "sequence": sequence}
+    if not parent_span_id:
+        raise PersianVideoWorkflowError("explicit work requires a causal parent span")
     span = record_causal_interval(
         state,
         span_id=span_id,
         name=label,
         category=category,
         started_at=effective_now,
-        parent_span_id=causal_phase_span_id(phase, attempt),
+        parent_span_id=parent_span_id,
         outcome="running",
         kind="explicit_work",
         count_toward_wall=True,
-        fields={"phase": phase, "attempt": attempt, "sequence": sequence},
+        fields=fields,
     )
     _write_state(_project_root(state), state)
     return span
