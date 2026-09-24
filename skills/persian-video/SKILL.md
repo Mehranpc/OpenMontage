@@ -68,7 +68,7 @@ Read `next_phase` from `status`; do not infer progress from conversation memory,
 - `plan_scenes_moments` through `render_final_candidate` → `narration-to-persian-video.md`
 - `final_review` / `awaiting_human` → `persian-final-review.md`
 
-For short/non-durable agent or review work, measure only the interval that is actually being worked. `work-start` opens the current phase attempt if needed; `work-finish` closes the countable causal span. Close it before durable execution, user wait, or phase completion. The phase container itself remains non-counting, so gaps are never relabeled as work:
+For short/non-durable agent or review work, measure only the interval that is actually being worked. `work-start` opens the current phase attempt if needed for phase-local editorial/review work; `work-finish` closes the countable causal span. When the agent is genuinely working **between** phase attempts, use `agent_interphase`: it is parented directly to the run and deliberately does not open the next phase attempt early. Close every work span before durable execution, user wait, or phase completion. The phase container itself remains non-counting, so gaps are never relabeled as work:
 
 ```bash
 python -m lib.persian_video_workflow work-start <project-id> --category <agent_editorial_work|agent_interphase|review_evidence_assembly> --name "<truthful activity>"

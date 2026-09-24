@@ -96,6 +96,32 @@ def _code_revision(repo_root: Path) -> str:
     return "unknown"
 
 
+def _command_version(argv: list[str], *, cwd: Path | None = None) -> str:
+    try:
+        result = subprocess.run(
+            argv, cwd=cwd, capture_output=True, text=True, timeout=2, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unavailable"
+    if result.returncode != 0:
+        return "unavailable"
+    first = (result.stdout or result.stderr or "").splitlines()
+    return first[0].strip() if first and first[0].strip() else "unavailable"
+
+
+def _remotion_version(repo_root: Path) -> str:
+    package = repo_root / "remotion-composer" / "package.json"
+    try:
+        payload = __import__("json").loads(package.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return "unavailable"
+    for section in ("dependencies", "devDependencies"):
+        block = payload.get(section)
+        if isinstance(block, Mapping) and block.get("remotion"):
+            return str(block["remotion"])
+    return "unavailable"
+
+
 def collect_execution_metadata(*, repo_root: Path, project_root: Path) -> dict[str, Any]:
     """Capture reproducibility metadata without mutating caches or project state."""
     repo = Path(repo_root).expanduser().resolve()
@@ -105,11 +131,20 @@ def collect_execution_metadata(*, repo_root: Path, project_root: Path) -> dict[s
         1 for path in project.rglob("*.json")
         if path.is_file() and ".search-cache" in path.parts
     ) if project.is_dir() else 0
-    shared_clip_root = Path.home() / ".openmontage" / "clips_cache"
-    shared_clip_entries = sum(
-        1 for path in shared_clip_root.glob("*")
-        if path.is_file() and path.name != "manifest.json"
-    ) if shared_clip_root.is_dir() else 0
+    shared_clip_root = Path(
+        os.environ.get("OPENMONTAGE_CACHE_DIR")
+        or (Path.home() / ".openmontage" / "clips_cache")
+    ).expanduser()
+    shared_manifest = shared_clip_root / "cache_manifest.jsonl"
+    shared_clip_entries = 0
+    if shared_manifest.is_file():
+        try:
+            shared_clip_entries = sum(
+                1 for line in shared_manifest.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            )
+        except OSError:
+            shared_clip_entries = 0
     ad_hoc_scripts = sum(
         1 for path in project.rglob("*.py")
         if path.is_file() and ".workspace" in path.parts
@@ -120,6 +155,9 @@ def collect_execution_metadata(*, repo_root: Path, project_root: Path) -> dict[s
         "runtime": {
             "python_version": platform.python_version(),
             "python_implementation": platform.python_implementation(),
+            "node_version": _command_version(["node", "--version"], cwd=repo),
+            "remotion_version": _remotion_version(repo),
+            "ffmpeg_version": _command_version(["ffmpeg", "-version"], cwd=repo),
             "platform": platform.platform(),
         },
         "hardware": {
