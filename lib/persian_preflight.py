@@ -8,6 +8,10 @@ from pathlib import Path
 import tempfile
 from typing import Any
 from tools.video.persian_compose_script_aligned import ScriptAlignedPersianCompose
+from tools.video.persian_compose import (
+    persian_validation_ladder,
+    render_independent_review_issues,
+)
 from lib.persian_retention import audit_persian_retention
 from lib.persian_hook_quality import (
     HOOK_TIMING_POLICY_VERSION,
@@ -26,7 +30,7 @@ from lib.persian_recovery_policy import (
     recovery_class_for_code, recovery_policy_for_issue,
 )
 
-PREFLIGHT_POLICY_VERSION = "2.2"
+PREFLIGHT_POLICY_VERSION = "2.3"
 _DIAGNOSTIC_PREFIX_RE = re.compile(r"^\[([A-Z0-9_]+)\]\s*")
 
 
@@ -476,13 +480,6 @@ def aggregate_preflight_edit_decisions(
     # evidence. Reuse saves work; it never weakens correctness.
     if retention is not None:
         evidence["retentionAudit"] = retention
-        if retention.get("problems"):
-            layers.append("retention")
-            blocking.extend(
-                {"code": "RETENTION_GATE", "message": problem, "recoveryClass": "EDIT_ARTIFACT"}
-                for problem in retention["problems"]
-            )
-            actions.append("Revise the edit decisions; do not weaken the retention gate.")
 
     hook_quality: dict[str, Any] | None = None
     cached_hook = precomputed.get("hookQualityAudit")
@@ -506,17 +503,29 @@ def aggregate_preflight_edit_decisions(
             hook_quality = None
     if hook_quality is not None:
         evidence["hookQualityAudit"] = hook_quality
-        if hook_quality.get("problems"):
+
+    evidence["validationLadder"] = persian_validation_ladder()
+    for issue in render_independent_review_issues(
+        retention_audit=retention, hook_quality_audit=hook_quality
+    ):
+        domain = issue["domain"]
+        code = issue["code"]
+        message = issue["message"]
+        if domain == "retention":
+            layers.append("retention")
+            blocking.append({
+                "code": code, "message": message, "recoveryClass": "EDIT_ARTIFACT"
+            })
+            actions.append("Revise the edit decisions; do not weaken the retention gate.")
+        else:
             layers.append("hook")
-            for problem in hook_quality["problems"]:
-                code = _problem_code(problem, "HOOK_QUALITY_GATE")
-                blocking.append({
-                    "code": code,
-                    "message": problem,
-                    "recoveryClass": recovery_class_for_code(
-                        code, _hook_recovery_class(problem)
-                    ),
-                })
+            blocking.append({
+                "code": code,
+                "message": message,
+                "recoveryClass": recovery_class_for_code(
+                    code, _hook_recovery_class(message)
+                ),
+            })
             actions.append(
                 "Revise the opening hook evidence/copy/edit; do not substitute decorative pattern interrupts for semantic value."
             )

@@ -132,3 +132,91 @@ def test_preflight_cli_is_compact_but_persists_full_report(tmp_path: Path, monke
     full = json.loads(output.read_text(encoding="utf-8"))
     assert full["blockingIssues"]
     assert len(stdout["reportSha256"]) == 64
+
+
+def test_validation_ladder_is_ordered_cheap_before_expensive_render() -> None:
+    from tools.video.persian_compose import persian_validation_ladder
+
+    ladder = persian_validation_ladder()
+    assert [stage["id"] for stage in ladder["stages"]] == [
+        "schema_authority",
+        "timing_paths_assets",
+        "layout_geometry_subject_regions",
+        "font_persian_text_preflight",
+        "opening_render",
+        "full_render",
+        "mastering",
+        "final_review",
+    ]
+    assert [stage["renderRequired"] for stage in ladder["stages"]] == [
+        False, False, False, False, True, True, True, True,
+    ]
+
+
+def test_render_independent_retention_rule_is_shared_by_preflight_and_final_review(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from lib import persian_video_workflow as workflow
+    from tools.video.persian_compose import render_independent_review_issues
+
+    retention = {"problems": ["retention issue"]}
+    shared = render_independent_review_issues(retention_audit=retention)
+    assert shared == [{
+        "code": "RETENTION_GATE",
+        "domain": "retention",
+        "message": "retention issue",
+    }]
+
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"fixture")
+    payload = _payload(str(source))
+    monkeypatch.setattr(preflight, "collect_persian_edit_diagnostics", lambda *a, **k: [])
+    monkeypatch.setattr(preflight, "audit_persian_retention", lambda _: retention)
+    monkeypatch.setattr(preflight, "audit_persian_hook_quality", lambda _: {
+        "version": "2.0", "required": False, "problems": [], "advisories": []
+    })
+    monkeypatch.setattr(
+        preflight, "browser_preflight_edit_decisions",
+        lambda *a, **k: pytest.fail("render/browser-heavy preflight must not run"),
+    )
+
+    report = preflight.aggregate_preflight_edit_decisions(payload, base_dir=tmp_path)
+    assert report["ok"] is False
+    assert report["blockingIssues"][0]["code"] == "RETENTION_GATE"
+    assert report["evidence"]["validationLadder"]["version"] == "1.0"
+    assert report["evidence"]["validationLadder"]["stages"][3]["id"] == "font_persian_text_preflight"
+
+    render_report = {
+        "retention_audit": retention,
+        "post_render_motion_qa": {"passed": True, "failRuns": []},
+        "silent_watch_audit": {
+            "main_point_understood": True,
+            "hook_direction_understood": True,
+            "conclusion_understood": True,
+            "notes": ["understood"],
+        },
+        "cut_rhythm": "acceptable",
+        "caption_readability": "acceptable",
+        "strongest_scene": "scene-a",
+        "weakest_scene": "scene-b",
+        "hook_strength": "acceptable",
+        "resolution_strength": "acceptable",
+    }
+    with pytest.raises(workflow.PersianVideoWorkflowError, match="RETENTION_GATE"):
+        workflow._render_report_review_fields(render_report)
+
+
+def test_required_hook_rule_is_shared_and_fail_closed_on_weak_disposition() -> None:
+    from tools.video.persian_compose import render_independent_review_issues
+
+    issues = render_independent_review_issues(hook_quality_audit={
+        "version": "2.0",
+        "required": True,
+        "disposition": "weak",
+        "problems": [],
+    })
+    assert issues == [{
+        "code": "HOOK_QUALITY_GATE",
+        "domain": "hook_quality",
+        "message": "required hook-quality disposition must be acceptable or strong",
+    }]

@@ -37,3 +37,19 @@ def test_assets_phase_routes_region_review_to_canonical_cli():
     assert "regions propose" in text
     assert "confirmationRequired" not in text or "non-final" in text
     assert ".workspace/*.py" in text
+
+
+def test_compose_phase_routes_through_canonical_validation_ladder():
+    text = (PIPELINE / "phase-cards" / "compose.md").read_text()
+    for phrase in (
+        "schema/copy authority",
+        "timing/paths/assets",
+        "layout/geometry/subject regions",
+        "no-copy Persian font/text preflight",
+        "opening-only render/review",
+        "full render",
+        "mastering",
+        "final review",
+    ):
+        assert phrase in text
+    assert "shared render-independent review rules" in text
