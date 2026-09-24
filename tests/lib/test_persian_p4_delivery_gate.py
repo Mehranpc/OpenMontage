@@ -6,7 +6,12 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from lib.checkpoint import CheckpointValidationError, init_project, write_checkpoint
+from lib.checkpoint import (
+    CheckpointValidationError,
+    _validate_persian_delivery_gate,
+    init_project,
+    write_checkpoint,
+)
 from schemas.artifacts import validate_artifact
 
 
@@ -139,9 +144,8 @@ def test_enforced_delivery_accepts_exact_green_evidence(tmp_path: Path, monkeypa
         "final_review": _review(path, digest),
         "quality_report": _quality(path, digest),
     }
-    checkpoint_path = write_checkpoint(
-        tmp_path, "run", "compose", "awaiting_human", artifacts,
-        pipeline_type="persian-footage",
+    marker = json.loads((tmp_path / "run" / "project.json").read_text())
+    _validate_persian_delivery_gate(
+        tmp_path, "run", "compose", "awaiting_human", artifacts, marker
     )
-    checkpoint = json.loads(checkpoint_path.read_text())
-    assert checkpoint["artifacts"]["quality_report"]["delivery_disposition"] == "deliver"
+    assert artifacts["quality_report"]["delivery_disposition"] == "deliver"
