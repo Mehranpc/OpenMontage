@@ -382,3 +382,30 @@ def test_front_door_exposes_regions_commands_and_returns_exit_2_on_failure(
     with pytest.raises(SystemExit) as exc:
         workflow.main(["regions", "build-sheets", "missing"])
     assert exc.value.code == 2
+
+
+def test_music_only_manifest_change_preserves_subject_region_png_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project(tmp_path)
+    calls = _fake_ffmpeg(monkeypatch)
+    first = commands.build_sheets(tmp_path, "run")
+    pngs = sorted((project / "artifacts" / "subject-region-sheets").glob("*.png"))
+    mtimes = {path: path.stat().st_mtime_ns for path in pngs}
+    before_calls = len(calls)
+
+    manifest_path = project / "artifacts" / "asset_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["musicTrack"] = {
+        "path": "assets/music/bed.mp3",
+        "provider": "pixabay",
+        "license": {"name": "Pixabay Content License"},
+    }
+    _write_json(manifest_path, manifest)
+
+    second = commands.build_sheets(tmp_path, "run")
+
+    assert second["fingerprint"] == first["fingerprint"]
+    assert second["rebuiltOutputs"] == []
+    assert len(calls) == before_calls
+    assert {path: path.stat().st_mtime_ns for path in pngs} == mtimes

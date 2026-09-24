@@ -88,6 +88,9 @@ from lib.persian_workflow_telemetry import (
     reconcile_phase_telemetry,
 )
 from lib.persian_quality_evidence import compose_quality_evidence
+from lib.persian_dependency_cache import (
+    edit_audio_dependency_digest, edit_final_review_dependency_digest,
+)
 from lib.persian_recovery_policy import recovery_policy_for_issue, shot_local_recovery_plan
 from tools.video.persian_compose import render_independent_review_issues
 from schemas.artifacts import validate_artifact
@@ -2809,10 +2812,31 @@ def _validate_cold_viewer_input_artifact(
     return {"path": str(path), "sha256": actual_sha}
 
 
+def _current_final_review_dependency_digests(
+    state: Mapping[str, Any],
+) -> dict[str, str] | None:
+    path = _project_root(state) / "artifacts" / "edit_decisions.json"
+    if not path.is_file():
+        return None
+    payload = _read_json(str(path))
+    return {
+        "audio_dependency_sha256": edit_audio_dependency_digest(payload),
+        "final_review_dependency_sha256": edit_final_review_dependency_digest(payload),
+    }
+
+
 def _validate_final_review_completion(
     state: Mapping[str, Any], evidence: Mapping[str, Any]
 ) -> dict[str, Any]:
     candidate = _validate_awaiting_human_candidate(state, require_final_review=False)
+    dependency_digests = _current_final_review_dependency_digests(state)
+    if dependency_digests is not None:
+        for key, current in dependency_digests.items():
+            recorded = str(evidence.get(key) or "").strip()
+            if recorded and recorded != current:
+                raise PersianVideoWorkflowError(
+                    f"final_review dependency evidence is stale: {key} changed after review"
+                )
     review_path = _project_file(state, evidence.get("final_review_path"), label="final_review artifact")
     try:
         review = json.loads(review_path.read_text(encoding="utf-8"))
@@ -2963,6 +2987,7 @@ def _validate_final_review_completion(
         "candidate_sha256": candidate["candidate_sha256"],
         "quality_evidence_path": quality_ref["path"],
         "quality_evidence_sha256": quality_ref["sha256"],
+        **(dependency_digests or {}),
         **({
             "cold_viewer_input_path": cold_input["path"],
             "cold_viewer_input_sha256": cold_input["sha256"],

@@ -37,6 +37,8 @@ After the completed assets checkpoint advances the run to `review_subject_region
 
 The resulting `proposal.json` is derived, has `confirmationRequired: true`, and deliberately keeps candidate evidence under `proposedEvidence`; do not treat the proposal itself as confirmed review evidence. After explicit review, validate/use only the reviewed evidence through the existing subject-region validator. Do not recreate `build_region_sheets.py`, `grid_sheets.py`, or `build_subject_regions.py` under `.workspace/`.
 
+Music-only manifest changes do not invalidate the visual subject-region sheet fingerprint. The index may refresh provenance, but cached PNG frames/sheets must be reused when visual asset windows and scene geometry are unchanged.
+
 ## Shot-local recovery
 
 A `FILM_TYPE_LAYOUT` fit failure stays in `no_copy_preflight`; repair the named layout/typography/reveal timing within its bounded recovery policy and do not reacquire footage. For `ASSET_SELECTION_HARD_REGION_COLLISION`, inspect already reviewed options for each named shot in this order: a reviewed non-overlapping window/crop from the selected source, then another reviewed existing candidate. Only a shot with no valid reviewed option may return to acquisition.

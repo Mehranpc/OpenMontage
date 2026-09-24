@@ -13,13 +13,16 @@ from typing import Any
 from uuid import uuid4
 
 from lib.persian_assets import scene_asset_requirements
+from lib.persian_dependency_cache import (
+    asset_visual_dependency_digest, scene_geometry_dependency_digest,
+)
 from lib.persian_subject_region_review import (
     SubjectRegionReviewError,
     validate_subject_region_review_evidence,
 )
 
 
-REGION_COMMAND_VERSION = "1.0"
+REGION_COMMAND_VERSION = "1.1"
 GRID_COLUMNS = 10
 GRID_ROWS = 10
 FRAME_POSITIONS = ("start", "middle", "end")
@@ -360,8 +363,15 @@ def _build_recipe() -> dict[str, Any]:
 def _index_fingerprint(
     input_record: Mapping[str, Any], shots: Sequence[Mapping[str, Any]]
 ) -> str:
+    dependency_inputs = {
+        key: input_record.get(key)
+        for key in (
+            "assetManifestPath", "assetVisualDependencySha256",
+            "scenePlanPath", "sceneGeometryDependencySha256",
+        )
+    }
     return _digest({
-        "inputs": dict(input_record),
+        "inputs": dependency_inputs,
         "recipe": _build_recipe(),
         "shots": [
             {
@@ -485,8 +495,10 @@ def build_sheets(
     input_record = {
         "assetManifestPath": _relative(manifest_path, project),
         "assetManifestSha256": _hash_file(manifest_path),
+        "assetVisualDependencySha256": asset_visual_dependency_digest(manifest),
         "scenePlanPath": _relative(scene_path, project),
         "scenePlanSha256": _hash_file(scene_path),
+        "sceneGeometryDependencySha256": scene_geometry_dependency_digest(scene_plan),
     }
     recipe = _build_recipe()
     fingerprint = _index_fingerprint(input_record, shots)
@@ -608,6 +620,14 @@ def build_sheets(
     }
 
 
+def _input_dependencies_match(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
+    keys = (
+        "assetManifestPath", "assetVisualDependencySha256",
+        "scenePlanPath", "sceneGeometryDependencySha256",
+    )
+    return all(left.get(key) == right.get(key) for key in keys)
+
+
 def _validate_sheet_index(
     project: Path,
     index: Mapping[str, Any],
@@ -622,7 +642,8 @@ def _validate_sheet_index(
         index.get("version") != "1.0"
         or index.get("commandVersion") != REGION_COMMAND_VERSION
         or index.get("grid") != {"columns": GRID_COLUMNS, "rows": GRID_ROWS}
-        or index.get("inputs") != dict(input_record)
+        or not isinstance(index.get("inputs"), Mapping)
+        or not _input_dependencies_match(index.get("inputs"), input_record)
         or index.get("fingerprint") != _index_fingerprint(input_record, canonical)
     ):
         raise PersianRegionCommandError(fail)
@@ -798,10 +819,12 @@ def propose_regions(
     input_record = {
         "assetManifestPath": _relative(manifest_path, project),
         "assetManifestSha256": _hash_file(manifest_path),
+        "assetVisualDependencySha256": asset_visual_dependency_digest(manifest),
         "scenePlanPath": _relative(scene_path, project),
         "scenePlanSha256": _hash_file(scene_path),
+        "sceneGeometryDependencySha256": scene_geometry_dependency_digest(scene_plan),
     }
-    if dict(inputs) != input_record:
+    if not _input_dependencies_match(inputs, input_record):
         raise PersianRegionCommandError(
             "subject-region sheet index is stale; run regions build-sheets again"
         )

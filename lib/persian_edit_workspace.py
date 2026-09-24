@@ -16,6 +16,10 @@ from typing import Any, Mapping, Sequence
 
 from lib.paths import REPO_ROOT
 from lib.persian_audio_policy import materialize_loudness_aware_mix
+from lib.persian_dependency_cache import (
+    edit_audio_dependency_payload, edit_final_review_dependency_payload,
+    edit_visual_dependency_payload,
+)
 from lib.persian_hook_quality import HOOK_TIMING_POLICY_VERSION
 from lib.persian_preflight import (
     PREFLIGHT_POLICY_VERSION, aggregate_preflight_edit_decisions, extract_edit_decisions,
@@ -294,7 +298,15 @@ def _dependency_digests(
         "browser": {
             "version": "browser-v1",
             "implementationSha256": implementation["browser"],
-            "deps": persian,
+            "deps": edit_visual_dependency_payload(edit),
+        },
+        "audio": {
+            "version": "audio-v1",
+            "deps": edit_audio_dependency_payload(edit),
+        },
+        "final_review": {
+            "version": "final-review-v1",
+            "deps": edit_final_review_dependency_payload(edit),
         },
     }
     return {
