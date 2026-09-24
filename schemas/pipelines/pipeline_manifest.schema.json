@@ -178,7 +178,17 @@
         "budget_default_usd": { "type": "number" },
         "max_revisions_per_stage": { "type": "integer" },
         "max_send_backs": { "type": "integer" },
-        "max_wall_time_minutes": { "type": "integer" }
+        "max_wall_time_minutes": { "type": "integer" },
+        "asset_search_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum wall-clock seconds for one automatic stock-search invocation."
+        },
+        "asset_search_cache_ttl_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Project-local provider-search metadata cache TTL in seconds; 0 disables caching."
+        }
       },
       "additionalProperties": false
     },

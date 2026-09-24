@@ -34,12 +34,16 @@ No CLIP model. No embeddings. No corpus index. Just files on disk.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import asdict
+import hashlib
 import json
 import subprocess
 import time
 import urllib.parse
 from pathlib import Path
 from typing import Any, Optional
+
+from tools.video.stock_sources.base import Candidate
 
 from tools.base_tool import (
     BaseTool,
@@ -64,6 +68,70 @@ _DEFAULT_MAX_BYTES_PER_CLIP = 96 * _MIB
 _DEFAULT_MAX_TOTAL_DOWNLOAD_BYTES = 512 * _MIB
 _DEFAULT_MAX_CANDIDATES_TOTAL = 24
 _FFPROBE_VALIDATION_TIMEOUT_SECONDS = 15.0
+_SEARCH_CACHE_VERSION = "1.0"
+_DEFAULT_SEARCH_CACHE_TTL_SECONDS = 3600.0
+
+
+def _search_cache_key(source_name: str, query: str, filters: Any) -> tuple[str, dict[str, Any]]:
+    payload = {
+        "version": _SEARCH_CACHE_VERSION,
+        "source": str(source_name),
+        "query": str(query),
+        "filters": {
+            "kind": getattr(filters, "kind", None),
+            "min_duration": getattr(filters, "min_duration", None),
+            "max_duration": getattr(filters, "max_duration", None),
+            "orientation": getattr(filters, "orientation", None),
+            "min_width": getattr(filters, "min_width", None),
+            "max_width": getattr(filters, "max_width", None),
+            "per_page": getattr(filters, "per_page", None),
+            "page": getattr(filters, "page", None),
+        },
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest(), payload
+
+
+def _load_search_cache(
+    path: Path, *, key_payload: dict[str, Any], now: float, ttl_seconds: float
+) -> list[Candidate] | None:
+    if ttl_seconds <= 0 or not path.is_file():
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        created = float(value.get("created_at_epoch"))
+        if value.get("version") != _SEARCH_CACHE_VERSION or value.get("key") != key_payload:
+            return None
+        if now < created or now - created > ttl_seconds:
+            return None
+        rows = value.get("candidates")
+        if not isinstance(rows, list):
+            return None
+        return [Candidate(**dict(row)) for row in rows if isinstance(row, dict)]
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+
+
+def _write_search_cache(
+    path: Path, *, key_payload: dict[str, Any], candidates: list[Candidate], created_at: float
+) -> bool:
+    value = {
+        "version": _SEARCH_CACHE_VERSION,
+        "created_at_epoch": created_at,
+        "key": key_payload,
+        "candidates": [asdict(candidate) for candidate in candidates],
+    }
+    try:
+        payload = (json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+        if path.is_file() and path.read_bytes() == payload:
+            return False
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp = path.with_suffix(path.suffix + ".tmp")
+        temp.write_bytes(payload)
+        temp.replace(path)
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
 
 
 class _DownloadQuotaExceeded(RuntimeError):
@@ -146,7 +214,7 @@ class _DownloadBudget:
 
 class DirectClipSearch(BaseTool):
     name = "direct_clip_search"
-    version = "0.2.0"
+    version = "0.3.0"
     tier = ToolTier.SOURCE
     capability = "clip_acquisition"
     provider = "openmontage"
@@ -270,6 +338,15 @@ class DirectClipSearch(BaseTool):
                     "Hard aggregate streamed-byte ceiling (default 512 MiB)."
                 ),
             },
+            "search_cache_ttl_seconds": {
+                "type": "number",
+                "default": 3600,
+                "minimum": 0,
+                "description": (
+                    "Project-local provider-search metadata cache TTL. A value of 0 "
+                    "disables search-result caching; downloaded-media validation still runs."
+                ),
+            },
             "filters": {
                 "type": "object",
                 "properties": {
@@ -316,7 +393,8 @@ class DirectClipSearch(BaseTool):
     side_effects = [
         "downloads clips to <output_dir>/clips/",
         "extracts thumbnails to <output_dir>/thumbnails/",
-        "calls external stock APIs",
+        "caches provider search metadata under <output_dir>/.search-cache/",
+        "calls external stock APIs on search-cache miss",
     ]
     user_visible_verification = [
         "Browse <output_dir>/thumbnails/ to visually verify clip matches",
@@ -374,6 +452,11 @@ class DirectClipSearch(BaseTool):
             extract_thumbs = bool(inputs.get("extract_thumbnails", True))
             skip_existing = bool(inputs.get("skip_existing", True))
             timeout_seconds = float(inputs.get("timeout_seconds", 600))
+            search_cache_ttl_seconds = float(
+                inputs.get("search_cache_ttl_seconds", _DEFAULT_SEARCH_CACHE_TTL_SECONDS)
+            )
+            if search_cache_ttl_seconds < 0:
+                raise ValueError("search_cache_ttl_seconds must be >= 0")
             max_candidates_total = int(
                 inputs.get("max_candidates_total", _DEFAULT_MAX_CANDIDATES_TOTAL)
             )
@@ -395,6 +478,7 @@ class DirectClipSearch(BaseTool):
 
             clips_dir = output_dir / "clips"
             thumbs_dir = output_dir / "thumbnails"
+            search_cache_dir = output_dir / ".search-cache"
             clips_dir.mkdir(parents=True, exist_ok=True)
             if extract_thumbs:
                 thumbs_dir.mkdir(parents=True, exist_ok=True)
@@ -447,6 +531,9 @@ class DirectClipSearch(BaseTool):
             semantic_candidates_reviewed = 0
             technical_rejects = 0
             duplicate_technical_rejects = 0
+            search_cache_hits = 0
+            search_cache_misses = 0
+            search_cache_writes = 0
             seen_technical_rejects: set[tuple[str, str, str, str]] = set()
 
             def register_technical_reject(
@@ -484,6 +571,11 @@ class DirectClipSearch(BaseTool):
                     "technical_rejects": technical_rejects,
                     "duplicate_technical_rejects": duplicate_technical_rejects,
                     "bytes_downloaded": download_budget.total_bytes,
+                    "timeout_seconds": timeout_seconds,
+                    "search_cache_ttl_seconds": search_cache_ttl_seconds,
+                    "search_cache_hits": search_cache_hits,
+                    "search_cache_misses": search_cache_misses,
+                    "search_cache_writes": search_cache_writes,
                     "max_candidates_total": max_candidates_total,
                     "max_bytes_per_clip": max_bytes_per_clip,
                     "max_total_download_bytes": max_total_download_bytes,
@@ -573,19 +665,34 @@ class DirectClipSearch(BaseTool):
                     if collected_for_query >= clips_per_query:
                         break
 
-                    try:
-                        with _requests_deadline(deadline):
-                            candidates = src.search(query, filters)
-                    except _DeadlineExceeded:
-                        return timeout_result(phase="search", query=query, source=src.name)
-                    except Exception as e:
-                        errors.append({
-                            "phase": "search",
-                            "source": src.name,
-                            "query": query,
-                            "error": f"{type(e).__name__}: {e}",
-                        })
-                        continue
+                    cache_key, cache_payload = _search_cache_key(src.name, query, filters)
+                    cache_path = search_cache_dir / f"{cache_key}.json"
+                    candidates = _load_search_cache(
+                        cache_path, key_payload=cache_payload, now=start,
+                        ttl_seconds=search_cache_ttl_seconds,
+                    )
+                    if candidates is not None:
+                        search_cache_hits += 1
+                    else:
+                        search_cache_misses += 1
+                        try:
+                            with _requests_deadline(deadline):
+                                candidates = src.search(query, filters)
+                        except _DeadlineExceeded:
+                            return timeout_result(phase="search", query=query, source=src.name)
+                        except Exception as e:
+                            errors.append({
+                                "phase": "search",
+                                "source": src.name,
+                                "query": query,
+                                "error": f"{type(e).__name__}: {e}",
+                            })
+                            continue
+                        if search_cache_ttl_seconds > 0 and _write_search_cache(
+                            cache_path, key_payload=cache_payload,
+                            candidates=list(candidates), created_at=start,
+                        ):
+                            search_cache_writes += 1
 
                     for cand in candidates:
                         if collected_for_query >= clips_per_query:

@@ -17,11 +17,15 @@ result = registry.get("direct_clip_search").execute({
     "filters": {"orientation": "portrait", "min_duration": 6, "min_width": 1080, "max_width": 1080},
     "output_dir": str(project_dir / "assets"),
     "clips_per_query": 1,
+    "timeout_seconds": 180,
+    "search_cache_ttl_seconds": 21600,
     "max_candidates_total": 16,
     "max_bytes_per_clip": 100663296,
     "max_total_download_bytes": 536870912,
 })
 ```
+
+Provider-search metadata is cached under the project for 6 hours using source + query + filters as the key. An identical retry reuses the cached candidate list without another provider API search or cache rewrite; filter changes or expiry re-query the provider. Cached search metadata never becomes selection truth: media still passes validation and candidate review/selection remains in the durable asset workspace.
 
 Follow the ordered fallback ladder: exact literal → emotional human → adjacent metaphor → abstract → beat-level typography. Record why each earlier level failed. Typography is last resort and must remain within budget.
 

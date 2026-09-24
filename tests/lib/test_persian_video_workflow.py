@@ -1316,3 +1316,34 @@ def test_awaiting_human_rejects_music_dependency_changed_after_final_review(tmp_
     canonical.write_text(json.dumps(edit), encoding="utf-8")
     with pytest.raises(PersianVideoWorkflowError, match="dependency.*stale|stale.*dependency"):
         complete_phase("run", "awaiting_human", pipeline_dir=tmp_path, now=BASE)
+
+
+def test_persian_asset_search_pins_timeout_and_project_search_cache(tmp_path):
+    _bootstrap_to_assets(tmp_path)
+    request = bounded_asset_search_request("run", {}, retry_pass=0, pipeline_dir=tmp_path, now=BASE)
+    assert request["timeout_seconds"] == workflow.asset_search_policy()["timeout_seconds"]
+    assert request["search_cache_ttl_seconds"] == workflow.asset_search_policy()["search_cache_ttl_seconds"]
+    assert request["timeout_seconds"] < workflow.PHASE_SLO_SECONDS["acquire_assets"]
+
+    other = tmp_path / "other"
+    _bootstrap_to_assets(other)
+    with pytest.raises(PersianVideoWorkflowError, match="timeout_seconds is fixed"):
+        bounded_asset_search_request(
+            "run", {"timeout_seconds": request["timeout_seconds"] + 1},
+            retry_pass=0, pipeline_dir=other, now=BASE,
+        )
+
+
+def test_asset_result_records_search_cache_telemetry(tmp_path):
+    _bootstrap_to_assets(tmp_path)
+    request = bounded_asset_search_request("run", {}, retry_pass=0, pipeline_dir=tmp_path, now=BASE)
+    result = _asset_result(request, candidates=0, downloaded_bytes=0)
+    result.update(search_cache_hits=3, search_cache_misses=1)
+    state = record_asset_search_result(
+        "run", retry_pass=0, result_data=result, pipeline_dir=tmp_path, now=BASE
+    )
+    usage = state["asset_usage"]
+    assert usage["search_cache_hits"] == 3
+    assert usage["search_cache_misses"] == 1
+    assert usage["search_timeout_seconds"] == workflow.asset_search_policy()["timeout_seconds"]
+    assert usage["search_cache_ttl_seconds"] == workflow.asset_search_policy()["search_cache_ttl_seconds"]
