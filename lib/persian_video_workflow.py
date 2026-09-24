@@ -3303,6 +3303,7 @@ def workflow_status(
         "asset_workspace": asset_workspace_status(_project_root(state)),
         "alignment_policy": state.get("alignment_policy") or alignment_execution_policy(state),
         "causal_trace_id": (state.get("causal_telemetry") or {}).get("trace_id"),
+        "execution_metadata": state.get("execution_metadata"),
         "time_accounting": phase_time_accounting(state),
         "performance_slo": state.get("performance_slo"),
         "performance_summary": state.get("performance_summary"),

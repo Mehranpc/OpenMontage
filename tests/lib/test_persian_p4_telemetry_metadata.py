@@ -63,6 +63,9 @@ def test_bootstrap_records_execution_environment_and_cache_state(tmp_path: Path)
     assert len(metadata["code_revision"]) == 40
     assert metadata["runtime"]["python_version"]
     assert metadata["runtime"]["python_implementation"]
+    assert metadata["runtime"]["node_version"]
+    assert metadata["runtime"]["remotion_version"]
+    assert metadata["runtime"]["ffmpeg_version"]
     assert metadata["hardware"]["system"]
     assert metadata["hardware"]["machine"]
     assert metadata["hardware"]["logical_cpu_count"] >= 1
@@ -106,3 +109,31 @@ def test_performance_summary_refreshes_execution_metadata_at_report_time(tmp_pat
     assert latest["cache"]["classification"] == "warm"
     assert latest["cache"]["project_search_entries"] == 1
     assert latest["ad_hoc_script_count"] == 1
+
+
+def test_status_exposes_pinned_start_execution_metadata(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path)
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    status = workflow.workflow_status("run", pipeline_dir=projects_root, now=BASE)
+    assert status["execution_metadata"] == state["execution_metadata"]
+
+
+def test_shared_clip_cache_classification_uses_real_manifest_entries(tmp_path: Path, monkeypatch) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    cache = tmp_path / "shared-cache"
+    cache.mkdir()
+    monkeypatch.setenv("OPENMONTAGE_CACHE_DIR", str(cache))
+    (cache / "cache_manifest.lock").write_text("")
+    (cache / "cache_manifest.jsonl").write_text("")
+
+    cold = telemetry.collect_execution_metadata(repo_root=workflow.REPO_ROOT, project_root=project)
+    assert cold["cache"]["shared_clip_entries"] == 0
+    assert cold["cache"]["classification"] == "cold"
+
+    (cache / "cache_manifest.jsonl").write_text(
+        '{"clip_id":"pexels_1","file_name":"pexels_1.mp4","size_bytes":10,"added_at":1,"last_access_at":1}\n'
+    )
+    warm = telemetry.collect_execution_metadata(repo_root=workflow.REPO_ROOT, project_root=project)
+    assert warm["cache"]["shared_clip_entries"] == 1
+    assert warm["cache"]["classification"] == "warm"
