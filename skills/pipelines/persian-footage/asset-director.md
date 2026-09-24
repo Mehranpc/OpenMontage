@@ -37,6 +37,12 @@ After the completed assets checkpoint advances the run to `review_subject_region
 
 The resulting `proposal.json` is derived, has `confirmationRequired: true`, and deliberately keeps candidate evidence under `proposedEvidence`; do not treat the proposal itself as confirmed review evidence. After explicit review, validate/use only the reviewed evidence through the existing subject-region validator. Do not recreate `build_region_sheets.py`, `grid_sheets.py`, or `build_subject_regions.py` under `.workspace/`.
 
+## Shot-local recovery
+
+A `FILM_TYPE_LAYOUT` fit failure stays in `no_copy_preflight`; repair the named layout/typography/reveal timing within its bounded recovery policy and do not reacquire footage. For `ASSET_SELECTION_HARD_REGION_COLLISION`, inspect already reviewed options for each named shot in this order: a reviewed non-overlapping window/crop from the selected source, then another reviewed existing candidate. Only a shot with no valid reviewed option may return to acquisition.
+
+Use the machine-scoped front door only for those exhausted shots: `python -m lib.persian_video_workflow send-back <project-id> acquire_assets --reason "<reason>" --code ASSET_SELECTION_HARD_REGION_COLLISION --shot-id <shot-id> [--shot-id <shot-id> ...] [--edit-attempt-id <attempt-id>]`. Every such rewind consumes the normal send-back budget. The resulting reacquisition scope permits search/stage/review/reject/select only for its named visual events and forbids unrelated music mutation; never reacquire the whole asset set for one defective shot.
+
 ## Selection rules
 
 A candidate must honestly serve narration intent and `desired_affect`, retain required subject/human presence through the whole selected crop, fit duration/orientation/resolution, leave feasible type geometry, and have low/medium staged-stock risk. High risk is rejected. Distinct non-overlapping windows from one source are allowed; visible overlap is not.

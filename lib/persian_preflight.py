@@ -564,7 +564,7 @@ def aggregate_preflight_edit_decisions(
     except FilmTypePreflightError as exc:
         asset_collision = exc.code == "ASSET_SELECTION_HARD_REGION_COLLISION"
         actions = ([
-            "Inspect an already reviewed alternate shot/crop for the named moment; if needed, send back to acquire_assets within the existing budget. Preserve approved copy and do not weaken hard regions.",
+            "Stay in no_copy_preflight and first reuse a reviewed alternate crop/window (same source first), then another reviewed existing candidate. Send back to acquire_assets only for named shots whose existing reviewed options are exhausted; preserve approved copy and hard regions.",
         ] if asset_collision else [
             "Use watermarkDiagnostics to choose another approved fixed anchor or suppress only the colliding watermark interval.",
             "Do not change footage, scenes, subject regions, copy, or asset selection for watermark recovery.",

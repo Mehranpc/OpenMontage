@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-RECOVERY_POLICY_VERSION = "2.1"
+RECOVERY_POLICY_VERSION = "2.2"
 
 _CLASS_POLICIES: dict[str, dict[str, Any]] = {
     "HOOK_SEMANTIC": {
@@ -107,7 +107,12 @@ _CLASS_POLICIES: dict[str, dict[str, Any]] = {
     },
     "ASSET_SELECTION": {
         "maxAttempts": 2,
-        "strategies": ["use_authored_alternate_query", "reuse_reviewed_non_overlapping_source_window", "stop_for_editorial_revision"],
+        "strategies": [
+            "reuse_reviewed_non_overlapping_source_window",
+            "reuse_reviewed_existing_candidate",
+            "use_authored_alternate_query",
+            "stop_for_editorial_revision",
+        ],
         "mutationSurface": ["assets.selection", "assets.query", "subject_regions.review"],
         "preserve": ["approved_script", "narration", "audio_mix", "copy"],
     },
@@ -163,6 +168,127 @@ def recovery_policy_for_issue(issue: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def shot_local_recovery_plan(
+    issue: Mapping[str, Any],
+    edit_decisions: Mapping[str, Any],
+    asset_workspace: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Plan local-first fit/asset recovery without widening the affected shot set."""
+    code = str(issue.get("code") or "UNKNOWN").strip().upper()
+    recovery_class = recovery_class_for_code(code, str(issue.get("recoveryClass") or ""))
+    if recovery_class not in {"FILM_TYPE_LAYOUT", "ASSET_SELECTION"}:
+        raise ValueError(
+            f"shot-local recovery is only defined for FILM_TYPE_LAYOUT/ASSET_SELECTION; got {recovery_class}"
+        )
+
+    details = issue.get("details") if isinstance(issue.get("details"), Mapping) else {}
+    raw_shot_ids = details.get("shotIds") if isinstance(details, Mapping) else None
+    if raw_shot_ids is None:
+        raw_shot_ids = issue.get("shotIds")
+    if raw_shot_ids is None:
+        raw_shot_ids = []
+    if not isinstance(raw_shot_ids, list) or any(not str(item).strip() for item in raw_shot_ids):
+        raise ValueError("shot-local recovery requires shotIds as a list of non-empty ids")
+    shot_ids = list(dict.fromkeys(str(item).strip() for item in raw_shot_ids))
+    if recovery_class == "ASSET_SELECTION" and not shot_ids:
+        raise ValueError("ASSET_SELECTION recovery requires affected shotIds")
+
+    persian = edit_decisions.get("persian") if isinstance(edit_decisions.get("persian"), Mapping) else {}
+    raw_shots = persian.get("shots") if isinstance(persian, Mapping) else None
+    if not isinstance(raw_shots, list):
+        raise ValueError("edit_decisions.persian.shots is required for shot-local recovery")
+    shots = {
+        str(shot.get("id") or "").strip(): shot
+        for shot in raw_shots
+        if isinstance(shot, Mapping) and str(shot.get("id") or "").strip()
+    }
+    missing = [shot_id for shot_id in shot_ids if shot_id not in shots]
+    if missing:
+        raise ValueError("shot-local recovery references unknown shot ids: " + ", ".join(missing))
+
+    if recovery_class == "FILM_TYPE_LAYOUT":
+        return {
+            "version": "1.0",
+            "diagnosticCode": code,
+            "recoveryClass": recovery_class,
+            "decision": "same_phase_repair",
+            "sendBackAllowed": False,
+            "affectedShotIds": shot_ids,
+            "localRepairShotIds": shot_ids,
+            "reacquireShotIds": [],
+            "reacquireVisualEventIds": [],
+            "existingOptions": {},
+            "reasonCode": "LAYOUT_REPAIR_REQUIRED_BEFORE_ASSET_REACQUISITION",
+        }
+
+    selected = asset_workspace.get("selectedCandidateIds")
+    reusable = asset_workspace.get("reusableCandidatesByVisualEvent")
+    selected = dict(selected) if isinstance(selected, Mapping) else {}
+    reusable = dict(reusable) if isinstance(reusable, Mapping) else {}
+    local: list[str] = []
+    reacquire: list[str] = []
+    reacquire_events: list[str] = []
+    existing_options: dict[str, list[dict[str, Any]]] = {}
+
+    for shot_id in shot_ids:
+        shot = shots[shot_id]
+        event_id = str(shot.get("visualEventId") or "").strip()
+        if not event_id:
+            raise ValueError(f"{shot_id} requires visualEventId for asset recovery")
+        selected_id = str(selected.get(event_id) or "")
+        event_candidates = reusable.get(event_id)
+        event_candidates = event_candidates if isinstance(event_candidates, list) else []
+        selected_source = ""
+        for item in event_candidates:
+            if not isinstance(item, Mapping) or str(item.get("candidateId") or "") != selected_id:
+                continue
+            identity = item.get("identity") if isinstance(item.get("identity"), Mapping) else {}
+            selected_source = str(identity.get("sourceId") or "")
+            break
+        alternates: list[dict[str, Any]] = []
+        for item in event_candidates:
+            if not isinstance(item, Mapping):
+                continue
+            candidate_id = str(item.get("candidateId") or "").strip()
+            if not candidate_id or candidate_id == selected_id:
+                continue
+            identity = item.get("identity") if isinstance(item.get("identity"), Mapping) else {}
+            source_id = str(identity.get("sourceId") or "")
+            alternates.append({
+                "candidateId": candidate_id,
+                "sourceId": source_id,
+                "sameSourceAsSelected": bool(selected_source and source_id == selected_source),
+                "candidateRank": int(item.get("candidateRank") or 999999),
+                "identity": dict(identity),
+            })
+        alternates.sort(key=lambda item: (
+            not item["sameSourceAsSelected"], item["candidateRank"], item["candidateId"]
+        ))
+        existing_options[shot_id] = alternates
+        if alternates:
+            local.append(shot_id)
+        else:
+            reacquire.append(shot_id)
+            reacquire_events.append(event_id)
+
+    return {
+        "version": "1.0",
+        "diagnosticCode": code,
+        "recoveryClass": recovery_class,
+        "decision": "scoped_asset_reacquisition" if reacquire else "same_phase_repair",
+        "sendBackAllowed": bool(reacquire),
+        "affectedShotIds": shot_ids,
+        "localRepairShotIds": local,
+        "reacquireShotIds": reacquire,
+        "reacquireVisualEventIds": list(dict.fromkeys(reacquire_events)),
+        "existingOptions": existing_options,
+        "reasonCode": (
+            "EXISTING_ASSET_OPTIONS_EXHAUSTED_FOR_SCOPED_SHOTS"
+            if reacquire else "REUSE_EXISTING_REVIEWED_ASSET_OPTION"
+        ),
+    }
+
+
 def recovery_budget_for_class(recovery_class: str) -> int:
     policy = _CLASS_POLICIES.get(str(recovery_class), _CLASS_POLICIES["EDIT_ARTIFACT"])
     return int(policy["maxAttempts"])
@@ -177,5 +303,6 @@ __all__ = [
     "recovery_class_for_code",
     "recovery_policy_for_issue",
     "recovery_budget_for_class",
+    "shot_local_recovery_plan",
     "known_recovery_classes",
 ]
