@@ -869,3 +869,55 @@ def test_interrupted_finish_does_not_charge_unverified_elapsed_time(tmp_path: Pa
     accounting = workflow.phase_time_accounting(state, now=BASE + timedelta(hours=2))
     assert accounting["review_phase_seconds"] == 0.0
     assert accounting["unattributed_wall_seconds"] == 7200.0
+
+
+def test_failed_transition_retry_does_not_claim_intervening_explicit_work(
+    tmp_path: Path,
+) -> None:
+    projects_root = _fresh_project(tmp_path)
+    kernel.start_phase_job(
+        "run",
+        job_id="transition-retry",
+        phase="prepare_inputs",
+        argv=["python", "-c", _semantic_child()],
+        idempotence_key="transition-retry-v1",
+        telemetry_category="machine_local_execution",
+        pipeline_dir=projects_root,
+    )
+    _wait(projects_root, "transition-retry")
+
+    with pytest.raises(workflow.PersianVideoWorkflowError, match="authoritative_script_sha256"):
+        kernel.commit_phase_job(
+            "run", "transition-retry", evidence={}, pipeline_dir=projects_root
+        )
+
+    work = workflow.start_explicit_work_span(
+        "run",
+        category="agent_editorial_work",
+        name="repair missing checkpoint evidence",
+        pipeline_dir=projects_root,
+    )
+    work = workflow.finish_explicit_work_span(
+        "run", work["span_id"], pipeline_dir=projects_root
+    )
+
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    committed = kernel.commit_phase_job(
+        "run",
+        "transition-retry",
+        evidence={
+            "authoritative_script_sha256": state["input"]["approved_script"]["sha256"],
+            "narration_sha256": state["input"]["narration"]["sha256"],
+        },
+        pipeline_dir=projects_root,
+    )
+    assert committed["next_phase"] == "align_script_timing"
+    persisted = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    transitions = [
+        span
+        for span in persisted["causal_telemetry"]["spans"]
+        if span.get("kind") == "workflow_transition"
+        and span.get("job_id") == "transition-retry"
+    ]
+    assert [span["outcome"] for span in transitions] == ["failed", "succeeded"]
+    assert transitions[1]["started_at"] >= work["finished_at"]

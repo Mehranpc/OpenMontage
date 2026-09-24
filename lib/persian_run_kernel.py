@@ -455,21 +455,13 @@ def _persist_transition_causal_span(
         (item for item in spans if item.get("span_id") == transition_span_id),
         None,
     )
-    prior = [
-        item
-        for item in spans
-        if item.get("kind") == "workflow_transition"
-        and str(item.get("job_id") or "") == job_id
-        and item.get("finished_at")
-        and item.get("span_id") != transition_span_id
-    ]
     if current and current.get("started_at"):
         start_value = current["started_at"]
-    elif prior:
-        start_value = max(
-            (str(item["finished_at"]) for item in prior),
-            key=lambda value: _parse_time(value) or datetime.min.replace(tzinfo=timezone.utc),
-        )
+    elif transition_attempt > 1:
+        # A retry is a new accounting operation. Starting it at the prior failed
+        # transition would falsely claim any intervening repair/editorial work and
+        # can overlap a prospectively measured explicit-work span.
+        start_value = _now()
     else:
         reconcile_prefix = f"reconcile:{job_id}"
         reconcile = max(
