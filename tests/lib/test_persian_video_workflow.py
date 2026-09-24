@@ -1284,3 +1284,35 @@ def test_status_summary_reports_budget_last_write_and_idle_state(tmp_path: Path)
     assert "total=1020.000/2700s" in line
     assert "last_write=artifacts/latest.json" in line
     assert line.endswith("activity=idle")
+
+
+def test_awaiting_human_rejects_music_dependency_changed_after_final_review(tmp_path):
+    _, _, review_path, _ = _review_ready_project(tmp_path)
+    project = tmp_path / "run"
+    canonical = project / "artifacts" / "edit_decisions.json"
+    canonical.parent.mkdir(parents=True, exist_ok=True)
+    edit = {
+        "version": "2.1",
+        "persian": {
+            "format": "vertical",
+            "durationSeconds": 12.0,
+            "shots": [],
+            "moments": [],
+            "typographicBeats": [],
+            "captions": [],
+            "audio": {"narration": "voice.wav", "musicGain": 0.2},
+            "musicTrack": {"path": "assets/music/a.mp3"},
+        },
+    }
+    canonical.write_text(json.dumps(edit), encoding="utf-8")
+    state = complete_phase(
+        "run", "final_review", evidence={"final_review_path": str(review_path)},
+        pipeline_dir=tmp_path, now=BASE,
+    )
+    assert state["evidence"]["final_review"]["final_review_dependency_sha256"]
+    assert state["evidence"]["final_review"]["audio_dependency_sha256"]
+
+    edit["persian"]["musicTrack"]["path"] = "assets/music/b.mp3"
+    canonical.write_text(json.dumps(edit), encoding="utf-8")
+    with pytest.raises(PersianVideoWorkflowError, match="dependency.*stale|stale.*dependency"):
+        complete_phase("run", "awaiting_human", pipeline_dir=tmp_path, now=BASE)
