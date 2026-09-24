@@ -82,8 +82,8 @@
 
 ## پیوست: مسیرها و دستورات بازتولید
 
-- Spec: `/Users/mehran.shabanii/Desktop/PERSIAN_PIPELINE_V2_SPEC.md`، به‌ویژه بخش‌های ۱۵، ۱۶ و ۲۰.
-- Preview: `/Users/mehran.shabanii/OpenMontage/projects/persian-v2-stage-b-preview/`.
+- Spec: `PERSIAN_PIPELINE_V2_SPEC.md` (local reference; not tracked)، به‌ویژه بخش‌های ۱۵، ۱۶ و ۲۰.
+- Preview: `projects/persian-v2-stage-b-preview/` (local project workspace; not tracked).
 - بازتولید ثبت‌شده در `REPRODUCE.txt` با `PersianCompose().execute(...)` و خروجی `v2-preview.mp4`.
 - بررسی‌های ارزان اجراشده: `git status --short`, `git diff --stat`, `find .../persian-v2-stage-b-preview`, parse کردن `persian_layout_report.json` و جست‌وجوی خطوط guard/implementation. هیچ render یا full test در این نوبت اجرا نشد.
 
