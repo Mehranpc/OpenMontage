@@ -197,6 +197,7 @@ def _assert_media_execution_slot(
     project_id: str,
     requested_job_id: str,
     *,
+    requested_idempotence_key: str,
     pipeline_dir: Path | None,
 ) -> None:
     """Allow at most one current-revision media execution until it is resolved.
@@ -213,6 +214,11 @@ def _assert_media_execution_slot(
         if owner_job_id == requested_job_id:
             continue
         envelope = _read_json(path)
+        if str(envelope.get("idempotenceKey") or "") == requested_idempotence_key:
+            # A restarted caller may present a fresh job id for the same logical
+            # operation. Let durable idempotence resolve it to the original job;
+            # the media slot must block only distinct logical executions.
+            continue
         if envelope.get("phase") not in MEDIA_EXECUTION_PHASES:
             continue
         if int(envelope.get("revisionCycle") or 0) != revision_cycle:
@@ -683,7 +689,10 @@ def start_phase_job(
         existing_path = _envelope_path(refreshed, job_id)
         if phase in MEDIA_EXECUTION_PHASES and not existing_path.is_file():
             _assert_media_execution_slot(
-                project_id, job_id, pipeline_dir=pipeline_dir
+                project_id,
+                job_id,
+                requested_idempotence_key=idempotence_key,
+                pipeline_dir=pipeline_dir,
             )
         return _start_phase_job_unlocked(
             project_id,

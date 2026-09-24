@@ -105,9 +105,11 @@ def test_only_one_media_execution_can_run_or_wait_for_commit(tmp_path: Path):
     _bootstrap(tmp_path)
     _advance_to(tmp_path, 'render_opening_candidate')
     output = tmp_path / 'run' / 'renders' / 'opening-locked.mp4'
+    side_effect = tmp_path / 'render-charge-count.txt'
     child = (
         "import hashlib,json,os,time; from pathlib import Path; "
-        "time.sleep(0.35); "
+        f"c=Path({str(side_effect)!r}); n=int(c.read_text()) if c.exists() else 0; "
+        "c.write_text(str(n+1)); time.sleep(0.35); "
         f"p=Path({str(output)!r}); p.parent.mkdir(parents=True, exist_ok=True); "
         "p.write_bytes(b'one render only'); "
         "Path(os.environ['OPENMONTAGE_DURABLE_RESULT_PATH']).write_text(json.dumps("
@@ -134,6 +136,18 @@ def test_only_one_media_execution_can_run_or_wait_for_commit(tmp_path: Path):
             break
         time.sleep(0.05)
     assert result and result['executionOutcome'] == 'succeeded'
+    assert side_effect.read_text() == '1'
+
+    # A restarted caller with the same logical identity must reconcile the owner,
+    # even if it presents a fresh process-local job id.
+    replay = kernel.start_phase_job(
+        'run', job_id='render-restarted-client', phase='render_opening_candidate',
+        argv=[sys.executable, '-c', child], idempotence_key='render-owner-v1',
+        telemetry_category='browser_render_execution', pipeline_dir=tmp_path,
+    )
+    assert replay['jobId'] == 'render-owner'
+    assert replay['executionOutcome'] == 'succeeded'
+    assert side_effect.read_text() == '1'
 
     # A finished render is still authoritative until its measured bytes are committed;
     # starting a second render would duplicate expensive work after a caller crash.
