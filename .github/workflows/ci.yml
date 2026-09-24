@@ -14,16 +14,9 @@ concurrency:
 
 jobs:
   validate:
-    name: OpenMontage CI (Mac)
-    runs-on:
-      - self-hosted
-      - macOS
-      - ARM64
-      - openmontage
+    name: OpenMontage CI (Ubuntu)
+    runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      PYTHON_VERSION: "3.11"
-      REMOTION_BROWSER_EXECUTABLE: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
     steps:
       - name: Checkout repository
@@ -31,19 +24,40 @@ jobs:
         with:
           clean: true
 
-      - name: Configure pinned Mac toolchain
-        run: echo "$HOME/actions-runner/openmontage/toolchain-bin" >> "$GITHUB_PATH"
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-      - name: Verify Mac toolchain
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: remotion-composer/package-lock.json
+
+      - name: Install FFmpeg
         run: |
-          python3 --version
-          python3 -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)'
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Configure system Chrome
+        shell: bash
+        run: |
+          CHROME_PATH="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)"
+          test -n "$CHROME_PATH"
+          echo "REMOTION_BROWSER_EXECUTABLE=$CHROME_PATH" >> "$GITHUB_ENV"
+          "$CHROME_PATH" --version
+
+      - name: Verify toolchain
+        run: |
+          python --version
+          python -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)'
           node --version
           node -e 'process.exit(Number(process.versions.node.split(".")[0]) === 22 ? 0 : 1)'
           command -v ffmpeg
           ffmpeg -version | head -n 1
           test -x "$REMOTION_BROWSER_EXECUTABLE"
-          "$REMOTION_BROWSER_EXECUTABLE" --version
 
       - name: Install Python dependencies
         run: make install-dev
