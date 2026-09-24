@@ -488,6 +488,22 @@ def _persist_transition_causal_span(
             or envelope.get("updatedAt")
             or _now()
         )
+        # The durable job may finish before required editorial/checkpoint work.
+        # A first commit transition begins after the latest completed countable
+        # interval in this phase; it must not claim that intervening work.
+        completed_boundaries = [
+            item.get("finished_at")
+            for item in spans
+            if item.get("count_toward_wall")
+            and item.get("finished_at")
+            and item.get("parent_span_id") == causal_phase_span_id(phase, phase_attempt)
+        ]
+        if completed_boundaries:
+            start_value = max(
+                [start_value, *completed_boundaries],
+                key=lambda value: _parse_time(value)
+                or datetime.min.replace(tzinfo=timezone.utc),
+            )
     start = _parse_time(start_value) or datetime.now(timezone.utc)
     end = None if outcome == "running" and finished_at is None else (finished_at or datetime.now(timezone.utc))
     if end is not None and end < start:

@@ -921,3 +921,50 @@ def test_failed_transition_retry_does_not_claim_intervening_explicit_work(
     ]
     assert [span["outcome"] for span in transitions] == ["failed", "succeeded"]
     assert transitions[1]["started_at"] >= work["finished_at"]
+
+
+def test_first_transition_starts_after_intervening_explicit_work(
+    tmp_path: Path,
+) -> None:
+    projects_root = _fresh_project(tmp_path)
+    kernel.start_phase_job(
+        "run",
+        job_id="first-transition-after-work",
+        phase="prepare_inputs",
+        argv=["python", "-c", _semantic_child()],
+        idempotence_key="first-transition-after-work-v1",
+        telemetry_category="machine_local_execution",
+        pipeline_dir=projects_root,
+    )
+    _wait(projects_root, "first-transition-after-work")
+
+    work = workflow.start_explicit_work_span(
+        "run",
+        category="agent_editorial_work",
+        name="build required checkpoint evidence",
+        pipeline_dir=projects_root,
+    )
+    work = workflow.finish_explicit_work_span(
+        "run", work["span_id"], pipeline_dir=projects_root
+    )
+
+    state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    committed = kernel.commit_phase_job(
+        "run",
+        "first-transition-after-work",
+        evidence={
+            "authoritative_script_sha256": state["input"]["approved_script"]["sha256"],
+            "narration_sha256": state["input"]["narration"]["sha256"],
+        },
+        pipeline_dir=projects_root,
+    )
+    assert committed["next_phase"] == "align_script_timing"
+    persisted = workflow.load_workflow_state("run", pipeline_dir=projects_root)
+    transition = next(
+        span
+        for span in persisted["causal_telemetry"]["spans"]
+        if span.get("kind") == "workflow_transition"
+        and span.get("job_id") == "first-transition-after-work"
+    )
+    assert transition["outcome"] == "succeeded"
+    assert transition["started_at"] >= work["finished_at"]
