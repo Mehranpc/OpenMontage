@@ -350,3 +350,41 @@ def test_terminal_presentation_cannot_hide_a_pending_job(tmp_path: Path) -> None
     state = workflow.load_workflow_state("run", pipeline_dir=tmp_path)
     assert state["status"] == "active"
     assert "performance_summary" not in state
+
+
+def test_reconcile_after_client_crash_reuses_external_execution_once(tmp_path: Path) -> None:
+    projects_root = _fresh_project(tmp_path, with_narration=True)
+    side_effect = tmp_path / "external-charge-count.txt"
+    child = (
+        "import json, os; from pathlib import Path; "
+        f"p=Path({str(side_effect)!r}); "
+        "count=int(p.read_text() or '0') if p.exists() else 0; "
+        "p.write_text(str(count+1)); "
+        "Path(os.environ['OPENMONTAGE_DURABLE_RESULT_PATH']).write_text("
+        "json.dumps({'success': True, 'data': {'external_work': 'charged-once'}}))"
+    )
+    first = kernel.start_phase_job(
+        "run", job_id="crash-safe", phase="prepare_inputs",
+        argv=["python", "-c", child], idempotence_key="crash-safe-v1",
+        pipeline_dir=projects_root,
+    )
+    terminal = _wait_for_job(projects_root, "crash-safe")
+    assert terminal["executionOutcome"] == "succeeded"
+    assert side_effect.read_text() == "1"
+
+    # Simulate the caller disappearing after external work completed but before commit.
+    replay = kernel.start_phase_job(
+        "run", job_id="fresh-client-job-id", phase="prepare_inputs",
+        argv=["python", "-c", child], idempotence_key="crash-safe-v1",
+        pipeline_dir=projects_root,
+    )
+    assert replay["jobId"] == first["jobId"] == "crash-safe"
+    assert replay["executionOutcome"] == "succeeded"
+    assert side_effect.read_text() == "1"
+
+    resumed = kernel.commit_phase_job(
+        "run", "crash-safe", evidence=_prepare_inputs_evidence(projects_root),
+        pipeline_dir=projects_root,
+    )
+    assert resumed["next_phase"] == "align_script_timing"
+    assert side_effect.read_text() == "1"

@@ -7,7 +7,9 @@ result, persisted evidence/checkpoint state, and workflow transition outcome.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
+import fcntl
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -172,6 +174,76 @@ def _read_json(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise PersianRunKernelError(f"execution envelope is not a JSON object: {path}")
     return value
+
+
+
+@contextmanager
+def _media_start_serialization(state: Mapping[str, Any], phase: str):
+    """Serialize media-job admission so concurrent callers cannot both launch renders."""
+    if phase not in MEDIA_EXECUTION_PHASES:
+        yield
+        return
+    lock_path = _project_root(state) / ".jobs" / ".media-start.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _assert_media_execution_slot(
+    project_id: str,
+    requested_job_id: str,
+    *,
+    pipeline_dir: Path | None,
+) -> None:
+    """Allow at most one current-revision media execution until it is resolved.
+
+    A successful render remains authoritative even after its process exits: callers
+    must commit/reconcile that exact job rather than launch duplicate expensive work.
+    Failed/interrupted historical jobs do not occupy the slot after reconciliation.
+    """
+    state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    revision_cycle = int(state.get("user_revision_cycles") or 0)
+    jobs_root = _project_root(state) / ".jobs"
+    for path in sorted(jobs_root.glob("*/execution-envelope.json")):
+        owner_job_id = path.parent.name
+        if owner_job_id == requested_job_id:
+            continue
+        envelope = _read_json(path)
+        if envelope.get("phase") not in MEDIA_EXECUTION_PHASES:
+            continue
+        if int(envelope.get("revisionCycle") or 0) != revision_cycle:
+            continue
+        if envelope.get("workflowTransitionOutcome") == "succeeded":
+            continue
+
+        if envelope.get("executionMode") != "inline_fixture":
+            try:
+                reconcile_phase_job(project_id, owner_job_id, pipeline_dir=pipeline_dir)
+            except Exception as exc:
+                raise PersianRunKernelError(
+                    f"media execution slot cannot be established while job {owner_job_id!r} "
+                    f"cannot be reconciled: {exc}"
+                ) from exc
+            envelope = _read_json(path)
+            if envelope.get("workflowTransitionOutcome") == "succeeded":
+                continue
+
+        outcome = str(envelope.get("executionOutcome") or "pending")
+        if outcome in {"failed", "interrupted"}:
+            continue
+        if outcome == "succeeded":
+            raise PersianRunKernelError(
+                f"successful media execution job {owner_job_id!r} must be committed/reconciled "
+                "before another media execution can start"
+            )
+        raise PersianRunKernelError(
+            f"media execution slot is occupied by job {owner_job_id!r} "
+            f"(phase={envelope.get('phase')!r}, outcome={outcome!r})"
+        )
 
 
 def _open_phase_attempt(state: Mapping[str, Any], phase: str) -> int | None:
@@ -443,7 +515,7 @@ def _persist_transition_causal_span(
     workflow._write_state(_project_root(state), state)
 
 
-def start_phase_job(
+def _start_phase_job_unlocked(
     project_id: str,
     *,
     job_id: str,
@@ -524,20 +596,26 @@ def start_phase_job(
 
     actual_job_id = str(job.get("jobId") or job_id)
     if actual_job_id != job_id:
-        if created_attempt:
-            try:
-                workflow.record_phase_failure(
-                    project_id,
-                    phase,
-                    reason=(
-                        f"idempotence key belongs to durable job {actual_job_id!r}; "
-                        f"reuse that job id instead of {job_id!r}"
-                    ),
-                    pipeline_dir=pipeline_dir,
-                    now=now,
-                )
-            except Exception:
-                pass
+        if not created_attempt:
+            # The logical operation already exists under this idempotence key. This
+            # is the expected recovery path after a caller crash: reconcile the
+            # durable identity instead of rerunning externally billed/download work.
+            return reconcile_phase_job(
+                project_id, actual_job_id, pipeline_dir=pipeline_dir
+            )
+        try:
+            workflow.record_phase_failure(
+                project_id,
+                phase,
+                reason=(
+                    f"idempotence key belongs to durable job {actual_job_id!r}; "
+                    f"reuse that job id instead of {job_id!r}"
+                ),
+                pipeline_dir=pipeline_dir,
+                now=now,
+            )
+        except Exception:
+            pass
         raise PersianRunKernelError(
             f"idempotence key belongs to existing durable job {actual_job_id!r}; reuse that job id"
         )
@@ -582,6 +660,42 @@ def start_phase_job(
     )
     _atomic_json(path, envelope)
     return _decorate_job(job, envelope)
+
+
+
+def start_phase_job(
+    project_id: str,
+    *,
+    job_id: str,
+    phase: str,
+    argv: Sequence[str],
+    idempotence_key: str,
+    telemetry_category: str = "machine_local_execution",
+    pipeline_dir: Path | None = None,
+    launch: bool = True,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Start one durable phase job with race-safe media execution admission."""
+    state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    guard = _media_start_serialization(state, phase) if phase in MEDIA_EXECUTION_PHASES else nullcontext()
+    with guard:
+        refreshed = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+        existing_path = _envelope_path(refreshed, job_id)
+        if phase in MEDIA_EXECUTION_PHASES and not existing_path.is_file():
+            _assert_media_execution_slot(
+                project_id, job_id, pipeline_dir=pipeline_dir
+            )
+        return _start_phase_job_unlocked(
+            project_id,
+            job_id=job_id,
+            phase=phase,
+            argv=argv,
+            idempotence_key=idempotence_key,
+            telemetry_category=telemetry_category,
+            pipeline_dir=pipeline_dir,
+            launch=launch,
+            now=now,
+        )
 
 
 def _close_failed_attempt_if_current(
