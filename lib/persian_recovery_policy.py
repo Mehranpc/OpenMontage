@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-RECOVERY_POLICY_VERSION = "2.2"
+RECOVERY_POLICY_VERSION = "2.3"
 
 _CLASS_POLICIES: dict[str, dict[str, Any]] = {
     "HOOK_SEMANTIC": {
@@ -35,8 +35,16 @@ _CLASS_POLICIES: dict[str, dict[str, Any]] = {
     },
     "HOOK_VISUAL_ALIGNMENT": {
         "maxAttempts": 2,
-        "strategies": ["select_already_acquired_opening_asset", "adjust_opening_source_window"],
-        "mutationSurface": ["opening.existing_asset_selection", "opening.source_window"],
+        "strategies": [
+            "select_already_acquired_opening_asset",
+            "adjust_opening_source_window",
+            "revise_hook_visual_evidence_only",
+        ],
+        "mutationSurface": [
+            "opening.existing_asset_selection",
+            "opening.source_window",
+            "hook.visual_evidence",
+        ],
         "preserve": ["approved_script", "narration", "audio_mix", "asset_budget"],
     },
     "CAPTION_CONTINUITY": {

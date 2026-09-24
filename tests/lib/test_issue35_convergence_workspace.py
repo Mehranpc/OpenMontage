@@ -220,6 +220,45 @@ def test_layout_recovery_can_add_exact_text_as_line_plan_typography(tmp_path: Pa
     assert manifest["changedScopes"] == ["typography"]
 
 
+def test_hook_visual_alignment_can_revise_declared_perceptual_evidence(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    base = _edit()
+    base["metadata"]["hookQuality"] = {
+        "perceptualChanges": [
+            {"kind": "typography", "atSeconds": 0.8, "evidence": "Invalid decorative event."}
+        ]
+    }
+    workspace.stage_edit_draft(project, "base", base, max_candidates=10)
+
+    child = deepcopy(base)
+    child["metadata"]["hookQuality"]["perceptualChanges"] = [
+        {
+            "kind": "subject_motion",
+            "atSeconds": 1.4,
+            "evidence": "Reviewed source frames show the subject moving within the opening window.",
+        }
+    ]
+    staged = workspace.stage_edit_draft(
+        project,
+        "visual-evidence-1",
+        child,
+        parent_attempt_id="base",
+        diagnostic_issue={"code": "HOOK_QUALITY_GATE", "recoveryClass": "HOOK_VISUAL_ALIGNMENT"},
+        strategy="revise_hook_visual_evidence_only",
+        changed_fields=["hook.visual_evidence"],
+        max_candidates=10,
+        revision_cycle=0,
+    )
+
+    assert staged["changedScopes"] == ["hook"]
+    manifest = workspace.load_convergence_candidate(project, "visual-evidence-1")
+    assert manifest["mutationSurface"] == [
+        "opening.existing_asset_selection",
+        "opening.source_window",
+        "hook.visual_evidence",
+    ]
+
+
 def test_asset_selection_recovery_atomically_rebinds_provenance_and_reviewed_regions(tmp_path: Path) -> None:
     project = tmp_path / "project"
     base = _edit()
