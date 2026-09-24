@@ -23,6 +23,7 @@ jobs:
     timeout-minutes: 60
     env:
       PYTHON_VERSION: "3.11"
+      REMOTION_BROWSER_EXECUTABLE: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
     steps:
       - name: Checkout repository
@@ -41,6 +42,8 @@ jobs:
           node -e 'process.exit(Number(process.versions.node.split(".")[0]) === 22 ? 0 : 1)'
           command -v ffmpeg
           ffmpeg -version | head -n 1
+          test -x "$REMOTION_BROWSER_EXECUTABLE"
+          "$REMOTION_BROWSER_EXECUTABLE" --version
 
       - name: Install Python dependencies
         run: make install-dev

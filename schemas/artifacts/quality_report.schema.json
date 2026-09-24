@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/artifacts/quality_report",
+  "title": "Delivery Quality Report",
+  "description": "Fail-closed delivery disposition bound to the exact rendered bytes and pinned gate policy.",
+  "type": "object",
+  "required": [
+    "version",
+    "policy_version",
+    "policy_mode",
+    "generated_at",
+    "output_path",
+    "output_sha256",
+    "technical_disposition",
+    "delivery_disposition",
+    "blockers",
+    "stale_refs",
+    "missing_checks",
+    "time_and_cost_summary"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "policy_version": {
+      "type": "string",
+      "const": "p4-delivery-v1"
+    },
+    "policy_mode": {
+      "type": "string",
+      "enum": [
+        "shadow",
+        "enforced"
+      ]
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "output_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "output_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "technical_disposition": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "block"
+      ]
+    },
+    "delivery_disposition": {
+      "type": "string",
+      "enum": [
+        "deliver",
+        "block"
+      ]
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "stale_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "missing_checks": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "time_and_cost_summary": {
+      "type": "object",
+      "required": [
+        "workflow_wall_seconds",
+        "unattributed_wall_seconds",
+        "causal_coverage_percent",
+        "total_cost_usd"
+      ],
+      "properties": {
+        "workflow_wall_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "unattributed_wall_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "causal_coverage_percent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "total_cost_usd": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
