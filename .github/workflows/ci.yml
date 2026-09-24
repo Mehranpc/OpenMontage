@@ -4,25 +4,29 @@ on:
   pull_request:
     branches:
       - main
-  push:
-    branches:
-      - main
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   validate:
-    name: Validate Python
-    runs-on: ubuntu-latest
+    name: OpenMontage CI (Mac)
+    runs-on:
+      - self-hosted
+      - macOS
+      - ARM64
+      - openmontage
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -40,8 +44,13 @@ jobs:
           cache: npm
           cache-dependency-path: remotion-composer/package-lock.json
 
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Add Homebrew to PATH
+        run: echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+
+      - name: Verify system dependencies
+        run: |
+          command -v ffmpeg
+          ffmpeg -version | head -n 1
 
       - name: Install Python dependencies
         run: make install-dev
