@@ -88,6 +88,7 @@ from lib.persian_workflow_telemetry import (
 )
 from lib.persian_quality_evidence import compose_quality_evidence
 from lib.persian_recovery_policy import recovery_policy_for_issue
+from tools.video.persian_compose import render_independent_review_issues
 from schemas.artifacts import validate_artifact
 from jsonschema.exceptions import ValidationError
 
@@ -2532,15 +2533,24 @@ def _final_quality_evidence_artifact(
     return {"path": str(path), "sha256": _hash_file(path)}
 
 
-def _render_report_review_fields(report: Mapping[str, Any]) -> None:
+def _render_report_review_fields(
+    report: Mapping[str, Any], *, hook_quality_audit: Mapping[str, Any] | None = None
+) -> None:
     retention = report.get("retention_audit")
     if not isinstance(retention, Mapping):
         raise PersianVideoWorkflowError("final review requires render_report.retention_audit")
-    problems = retention.get("problems")
-    if not isinstance(problems, list):
-        raise PersianVideoWorkflowError("retention_audit.problems must be a list")
-    if problems:
-        raise PersianVideoWorkflowError("retention_audit has blocking problems; revise before human review")
+    shared_issues = render_independent_review_issues(
+        retention_audit=retention, hook_quality_audit=hook_quality_audit
+    )
+    if shared_issues:
+        issue = shared_issues[0]
+        if issue["domain"] == "retention":
+            raise PersianVideoWorkflowError(
+                f"retention_audit has blocking problems: [{issue['code']}] {issue['message']}"
+            )
+        raise PersianVideoWorkflowError(
+            f"render-independent review rule failed: [{issue['code']}] {issue['message']}"
+        )
 
     motion = report.get("post_render_motion_qa")
     if not isinstance(motion, Mapping):
@@ -2592,8 +2602,12 @@ def _required_preflight_hook_quality(state: Mapping[str, Any]) -> dict[str, Any]
     audit = ((report.get("evidence") or {}).get("hookQualityAudit")) if isinstance(report, Mapping) else None
     if not isinstance(audit, Mapping) or audit.get("required") is not True:
         return None
-    if str(audit.get("disposition") or "") not in {"acceptable", "strong"} or list(audit.get("problems") or []):
-        raise PersianVideoWorkflowError("required preflight hook-quality audit is not passing")
+    shared_issues = render_independent_review_issues(hook_quality_audit=audit)
+    if shared_issues:
+        issue = shared_issues[0]
+        raise PersianVideoWorkflowError(
+            f"required preflight hook-quality audit is not passing: [{issue['code']}] {issue['message']}"
+        )
     return dict(audit)
 
 
@@ -2750,7 +2764,7 @@ def _validate_final_review_completion(
     report = (checkpoint.get("artifacts") or {}).get("render_report") if checkpoint else None
     if not isinstance(report, Mapping):
         raise PersianVideoWorkflowError("compose checkpoint is missing render_report")
-    _render_report_review_fields(report)
+    _render_report_review_fields(report, hook_quality_audit=preflight_hook)
     quality_evidence = _final_review_quality_evidence(report, hook_review=hook_review)
     if hook_review_strength is not None and str(report.get("hook_strength") or "").strip() != hook_review_strength:
         raise PersianVideoWorkflowError(

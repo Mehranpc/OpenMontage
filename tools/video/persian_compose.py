@@ -48,11 +48,12 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import secrets
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from lib.persian_plates import derive_beat_windows
 from lib.persian_brand import resolve_watermark
@@ -128,6 +129,92 @@ def _composer_dir() -> Path:
 # Brief narration pauses are not editorial music breaks. Holding the duck through
 # sub-second gaps prevents severe gain pumping between adjacent spoken phrases.
 SHORT_SPEECH_GAP_HOLD_SECONDS = 0.9
+
+PERSIAN_VALIDATION_LADDER_VERSION = "1.0"
+_PERSIAN_VALIDATION_LADDER = (
+    ("schema_authority", False),
+    ("timing_paths_assets", False),
+    ("layout_geometry_subject_regions", False),
+    ("font_persian_text_preflight", False),
+    ("opening_render", True),
+    ("full_render", True),
+    ("mastering", True),
+    ("final_review", True),
+)
+_REVIEW_DIAGNOSTIC_PREFIX_RE = re.compile(r"^\[([A-Z0-9_]+)\]\s*")
+
+
+def persian_validation_ladder() -> dict[str, Any]:
+    """Return the canonical cheap-before-expensive Persian validation order."""
+    return {
+        "version": PERSIAN_VALIDATION_LADDER_VERSION,
+        "stages": [
+            {"order": index, "id": stage_id, "renderRequired": render_required}
+            for index, (stage_id, render_required) in enumerate(
+                _PERSIAN_VALIDATION_LADDER, start=1
+            )
+        ],
+    }
+
+
+def render_independent_review_issues(
+    *,
+    retention_audit: Mapping[str, Any] | None = None,
+    hook_quality_audit: Mapping[str, Any] | None = None,
+) -> list[dict[str, str]]:
+    """Apply final-review rules that do not require rendered pixels or audio.
+
+    Preflight and final review call this exact function so an authored blocker cannot
+    pass cheaply and then be rediscovered only after an expensive render.
+    """
+    issues: list[dict[str, str]] = []
+    if retention_audit is not None:
+        problems = retention_audit.get("problems")
+        if not isinstance(problems, list):
+            issues.append({
+                "code": "RETENTION_AUDIT_INVALID",
+                "domain": "retention",
+                "message": "retention_audit.problems must be a list",
+            })
+        else:
+            issues.extend(
+                {
+                    "code": "RETENTION_GATE",
+                    "domain": "retention",
+                    "message": str(problem),
+                }
+                for problem in problems
+            )
+
+    if hook_quality_audit is not None:
+        problems = hook_quality_audit.get("problems")
+        if not isinstance(problems, list):
+            issues.append({
+                "code": "HOOK_QUALITY_AUDIT_INVALID",
+                "domain": "hook_quality",
+                "message": "hook-quality problems must be a list",
+            })
+            problems = []
+        for problem in problems:
+            message = str(problem)
+            match = _REVIEW_DIAGNOSTIC_PREFIX_RE.match(message.strip())
+            issues.append({
+                "code": match.group(1) if match else "HOOK_QUALITY_GATE",
+                "domain": "hook_quality",
+                "message": message,
+            })
+        if (
+            hook_quality_audit.get("required") is True
+            and not problems
+            and str(hook_quality_audit.get("disposition") or "")
+            not in {"acceptable", "strong"}
+        ):
+            issues.append({
+                "code": "HOOK_QUALITY_GATE",
+                "domain": "hook_quality",
+                "message": "required hook-quality disposition must be acceptable or strong",
+            })
+    return issues
 
 
 class PersianCompose(BaseTool):
