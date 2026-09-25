@@ -66,7 +66,7 @@ from lib.persian_asset_workspace import (
 from lib.persian_edit_workspace import (
     PersianEditWorkspaceError, artifact_sha256, compare_edit_candidates, convergence_status,
     load_promotable_edit_draft, mark_blocked_convergence_exhausted, preflight_edit_draft,
-    promote_edit_draft, stage_edit_draft,
+    probe_edit_draft, promote_edit_draft, stage_edit_draft,
 )
 from lib.persian_rendered_review import (
     HOOK_RENDER_REVIEW_VERSIONS,
@@ -75,7 +75,8 @@ from lib.persian_rendered_review import (
     validate_rendered_hook_review,
     validate_cold_viewer_review_input,
 )
-from lib.persian_hook_quality import resolve_hook_timing_authority
+from lib.persian_hook_quality import HOOK_TIMING_POLICY_VERSION, resolve_hook_timing_authority
+from lib.persian_preflight import PREFLIGHT_POLICY_VERSION
 from lib.persian_workflow_telemetry import (
     backfill_phase_residual_spans,
     causal_phase_span_id,
@@ -3620,19 +3621,61 @@ def stage_workflow_edit_draft(
     }
 
 
+def _workflow_edit_preflight_context(
+    state: Mapping[str, Any], *, operation: str
+) -> tuple[Mapping[str, Any], dict[str, Any]]:
+    if state.get("next_phase") != "no_copy_preflight":
+        raise PersianVideoWorkflowError(
+            f"{operation} is only valid during no_copy_preflight; "
+            f"next phase is {state.get('next_phase')!r}"
+        )
+    decision = state.get("hook_selection")
+    if not isinstance(decision, Mapping):
+        raise PersianVideoWorkflowError(
+            "workflow is missing its hook-selection authority record"
+        )
+    profile_version = str(state.get("film_type_profile_version") or "").strip()
+    if not profile_version:
+        raise PersianVideoWorkflowError(
+            "workflow is missing its pinned Film Type profile version"
+        )
+    context = {
+        "hookAuthority": {
+            "mode": decision.get("mode"),
+            "authoritative": decision.get("authoritative"),
+            "sha256": decision.get("sha256"),
+        },
+        "policyPin": {
+            "filmTypeProfileVersion": profile_version,
+            "preflightPolicyVersion": PREFLIGHT_POLICY_VERSION,
+            "hookTimingPolicyVersion": HOOK_TIMING_POLICY_VERSION,
+        },
+    }
+    return decision, context
+
+
+def probe_workflow_edit_draft(
+    project_id: str, attempt_id: str, *, pipeline_dir: Path | None = None
+) -> dict[str, Any]:
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    decision, context = _workflow_edit_preflight_context(
+        state, operation="edit probe"
+    )
+    report = probe_edit_draft(
+        _project_root(state), attempt_id, hook_authority=decision
+    )
+    return {**report, "workflowAuthorityContext": context}
+
+
 def preflight_workflow_edit_draft(
     project_id: str, attempt_id: str, *, pipeline_dir: Path | None = None,
     recertify_promoted: bool = False,
     recertify_staged: bool = False,
 ) -> dict[str, Any]:
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
-    if state.get("next_phase") != "no_copy_preflight":
-        raise PersianVideoWorkflowError(
-            f"edit preflight is only valid during no_copy_preflight; next phase is {state.get('next_phase')!r}"
-        )
-    decision = state.get("hook_selection")
-    if not isinstance(decision, Mapping):
-        raise PersianVideoWorkflowError("workflow is missing its hook-selection authority record")
+    decision, context = _workflow_edit_preflight_context(
+        state, operation="edit preflight"
+    )
     report = preflight_edit_draft(
         _project_root(state),
         attempt_id,
@@ -3656,6 +3699,7 @@ def preflight_workflow_edit_draft(
             state, convergence, revision_cycle=revision_cycle
         ):
             report["convergenceStop"] = dict(state.get("recovery_stop") or {})
+    report["workflowAuthorityContext"] = context
     return report
 
 
@@ -3935,6 +3979,13 @@ def build_parser() -> argparse.ArgumentParser:
     edit_stage.add_argument("--strategy")
     edit_stage.add_argument("--changed-field", dest="changed_fields", action="append")
 
+    edit_probe = sub.add_parser(
+        "edit-probe",
+        help="run canonical edit preflight read-only with workflow authority context",
+    )
+    edit_probe.add_argument("project_id")
+    edit_probe.add_argument("attempt_id")
+
     edit_preflight = sub.add_parser("edit-preflight", help="preflight one staged edit draft")
     edit_preflight.add_argument("project_id")
     edit_preflight.add_argument("attempt_id")
@@ -4184,6 +4235,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 recovery_class=args.recovery_class,
                 strategy=args.strategy,
                 changed_fields=args.changed_fields,
+            ))
+        elif args.command == "edit-probe":
+            _print_json(probe_workflow_edit_draft(
+                args.project_id, args.attempt_id
             ))
         elif args.command == "edit-preflight":
             _print_json(preflight_workflow_edit_draft(

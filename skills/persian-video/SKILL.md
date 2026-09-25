@@ -117,6 +117,19 @@ python -m lib.persian_video_workflow edit-stage <project-id> <base-candidate-id>
 python -m lib.persian_video_workflow edit-preflight <project-id> <base-candidate-id>
 ```
 
+For a diagnostic-only check of the exact same staged candidate, use the supported
+read-only front door instead of invoking `lib.persian_preflight` directly:
+
+```bash
+python -m lib.persian_video_workflow edit-probe <project-id> <candidate-id>
+```
+
+`edit-probe` loads the same workflow hook authority and policy/version pin and calls
+the same aggregate preflight oracle as `edit-preflight`, but it does not persist
+preflight reports, caches, candidate dispositions, counters, phase completion, or
+other durable workflow state. It remains wall-budget guarded because the canonical
+oracle may legitimately reach Chromium.
+
 When preflight returns a named recoverable diagnostic, the agent chooses one permitted strategy and stages exactly one bounded child candidate with explicit ancestry and mutation metadata:
 
 ```bash
