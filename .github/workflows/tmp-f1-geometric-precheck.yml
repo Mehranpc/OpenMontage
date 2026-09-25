@@ -28,169 +28,127 @@ jobs:
           def replace_once(path, old, new):
               p = Path(path)
               text = p.read_text(encoding="utf-8")
-              if old not in text:
-                  raise SystemExit(f"anchor missing in {path}: {old[:80]!r}")
               if text.count(old) != 1:
-                  raise SystemExit(f"anchor is not unique in {path}: {text.count(old)}")
+                  raise SystemExit(f"expected one anchor in {path}, found {text.count(old)}")
               p.write_text(text.replace(old, new, 1), encoding="utf-8")
 
           geo = Path("lib/persian_geometric_precheck.py")
           text = geo.read_text(encoding="utf-8")
-          old = '''def geometric_hard_region_precheck(\n    edit: Mapping[str, Any],\n    *,\n    film_type_profile_version: str | None,\n    repo_root: Path = REPO_ROOT,\n) -> dict[str, Any]:\n    \"\"\"Return blockers proven without browser measurement.\n\n    Missing font/profile evidence returns ``status=unknown`` and zero blockers.\n    That is deliberately not a pass: downstream Chromium remains authoritative.\n    \"\"\"\n    if film_type_profile_version != _SUPPORTED_PROFILE:\n        return {\"status\": \"unknown\", \"blockingIssues\": [], \"reason\": \"unsupported_profile\"}\n    profile = _profile(repo_root, film_type_profile_version)\n    if profile is None:\n        return {\"status\": \"unknown\", \"blockingIssues\": [], \"reason\": \"profile_unavailable\"}\n    persian = edit.get(\"persian\")\n    if not isinstance(persian, Mapping):\n        return {\"status\": \"unknown\", \"blockingIssues\": [], \"reason\": \"missing_persian\"}\n'''
-          new = '''def geometric_hard_region_precheck(\n    edit: Mapping[str, Any],\n    *,\n    film_type_profile_version: str | None = None,\n    repo_root: Path = REPO_ROOT,\n) -> dict[str, Any]:\n    \"\"\"Return blockers proven without browser measurement.\n\n    Missing font/profile evidence returns ``status=unknown`` and zero blockers.\n    That is deliberately not a pass: downstream Chromium remains authoritative.\n    \"\"\"\n    persian = edit.get(\"persian\")\n    if not isinstance(persian, Mapping):\n        return {\"status\": \"unknown\", \"blockingIssues\": [], \"reason\": \"missing_persian\"}\n    if film_type_profile_version is None:\n        design = persian.get(\"design\")\n        if isinstance(design, Mapping):\n            raw_version = str(design.get(\"profileVersion\") or \"\").strip()\n            film_type_profile_version = raw_version or None\n    if film_type_profile_version != _SUPPORTED_PROFILE:\n        return {\"status\": \"unknown\", \"blockingIssues\": [], \"reason\": \"unsupported_profile\"}\n    profile = _profile(repo_root, film_type_profile_version)\n    if profile is None:\n        return {\"status\": \"unknown\", \"blockingIssues\": [], \"reason\": \"profile_unavailable\"}\n'''
-          if old not in text:
-              raise SystemExit("geometric helper signature anchor missing")
+          old = (
+              "def geometric_hard_region_precheck(\n"
+              "    edit: Mapping[str, Any],\n"
+              "    *,\n"
+              "    film_type_profile_version: str | None,\n"
+              "    repo_root: Path = REPO_ROOT,\n"
+              ") -> dict[str, Any]:\n"
+              "    \"\"\"Return blockers proven without browser measurement.\n\n"
+              "    Missing font/profile evidence returns ``status=unknown`` and zero blockers.\n"
+              "    That is deliberately not a pass: downstream Chromium remains authoritative.\n"
+              "    \"\"\"\n"
+              "    if film_type_profile_version != _SUPPORTED_PROFILE:\n"
+              "        return {\"status\": \"unknown\", \"blockingIssues\": [], \"reason\": \"unsupported_profile\"}\n"
+              "    profile = _profile(repo_root, film_type_profile_version)\n"
+              "    if profile is None:\n"
+              "        return {\"status\": \"unknown\", \"blockingIssues\": [], \"reason\": \"profile_unavailable\"}\n"
+              "    persian = edit.get(\"persian\")\n"
+              "    if not isinstance(persian, Mapping):\n"
+              "        return {\"status\": \"unknown\", \"blockingIssues\": [], \"reason\": \"missing_persian\"}\n"
+          )
+          new = (
+              "def geometric_hard_region_precheck(\n"
+              "    edit: Mapping[str, Any],\n"
+              "    *,\n"
+              "    film_type_profile_version: str | None = None,\n"
+              "    repo_root: Path = REPO_ROOT,\n"
+              ") -> dict[str, Any]:\n"
+              "    \"\"\"Return blockers proven without browser measurement.\n\n"
+              "    Missing font/profile evidence returns ``status=unknown`` and zero blockers.\n"
+              "    That is deliberately not a pass: downstream Chromium remains authoritative.\n"
+              "    \"\"\"\n"
+              "    persian = edit.get(\"persian\")\n"
+              "    if not isinstance(persian, Mapping):\n"
+              "        return {\"status\": \"unknown\", \"blockingIssues\": [], \"reason\": \"missing_persian\"}\n"
+              "    if film_type_profile_version is None:\n"
+              "        design = persian.get(\"design\")\n"
+              "        if isinstance(design, Mapping):\n"
+              "            raw_version = str(design.get(\"profileVersion\") or \"\").strip()\n"
+              "            film_type_profile_version = raw_version or None\n"
+              "    if film_type_profile_version != _SUPPORTED_PROFILE:\n"
+              "        return {\"status\": \"unknown\", \"blockingIssues\": [], \"reason\": \"unsupported_profile\"}\n"
+              "    profile = _profile(repo_root, film_type_profile_version)\n"
+              "    if profile is None:\n"
+              "        return {\"status\": \"unknown\", \"blockingIssues\": [], \"reason\": \"profile_unavailable\"}\n"
+          )
+          if text.count(old) != 1:
+              raise SystemExit("geometric helper signature anchor mismatch")
           geo.write_text(text.replace(old, new, 1), encoding="utf-8")
 
-          preflight = "lib/persian_preflight.py"
           replace_once(
-              preflight,
-              'from lib.persian_film_type import FilmTypePreflightError\n',
-              'from lib.persian_film_type import FilmTypePreflightError\nfrom lib.persian_geometric_precheck import geometric_hard_region_precheck\n',
+              "lib/persian_preflight.py",
+              "from lib.persian_film_type import FilmTypePreflightError\n",
+              "from lib.persian_film_type import FilmTypePreflightError\nfrom lib.persian_geometric_precheck import geometric_hard_region_precheck\n",
           )
-          replace_once(preflight, 'PREFLIGHT_POLICY_VERSION = "2.3"', 'PREFLIGHT_POLICY_VERSION = "2.4"')
-          anchor = '''    evidence[\"watermarkPolicy\"] = {\n        \"placement\": \"approved-fixed-anchors\",\n        \"subjectGeometryAgnostic\": True,\n        \"collisionInputs\": [\"subtitle\", \"editorial_text\"],\n    }\n\n    if blocking:\n'''
-          insertion = '''    evidence[\"watermarkPolicy\"] = {\n        \"placement\": \"approved-fixed-anchors\",\n        \"subjectGeometryAgnostic\": True,\n        \"collisionInputs\": [\"subtitle\", \"editorial_text\"],\n    }\n\n    if not blocking:\n        geometry = geometric_hard_region_precheck(edit, repo_root=root)\n        evidence[\"geometricPrecheck\"] = geometry\n        geometry_blockers = geometry.get(\"blockingIssues\")\n        if isinstance(geometry_blockers, list) and geometry_blockers:\n            layers.append(\"geometric_precheck\")\n            blocking.extend(dict(item) for item in geometry_blockers if isinstance(item, Mapping))\n            actions.append(\n                \"Repair the reviewed asset/subject geometry; do not weaken hard regions or approved copy.\"\n            )\n\n    if blocking:\n'''
-          replace_once(preflight, anchor, insertion)
+          replace_once(
+              "lib/persian_preflight.py",
+              'PREFLIGHT_POLICY_VERSION = "2.3"',
+              'PREFLIGHT_POLICY_VERSION = "2.4"',
+          )
+          old = (
+              '    evidence["watermarkPolicy"] = {\n'
+              '        "placement": "approved-fixed-anchors",\n'
+              '        "subjectGeometryAgnostic": True,\n'
+              '        "collisionInputs": ["subtitle", "editorial_text"],\n'
+              '    }\n\n'
+              '    if blocking:\n'
+          )
+          new = (
+              '    evidence["watermarkPolicy"] = {\n'
+              '        "placement": "approved-fixed-anchors",\n'
+              '        "subjectGeometryAgnostic": True,\n'
+              '        "collisionInputs": ["subtitle", "editorial_text"],\n'
+              '    }\n\n'
+              '    if not blocking:\n'
+              '        geometry = geometric_hard_region_precheck(edit, repo_root=root)\n'
+              '        evidence["geometricPrecheck"] = geometry\n'
+              '        geometry_blockers = geometry.get("blockingIssues")\n'
+              '        if isinstance(geometry_blockers, list) and geometry_blockers:\n'
+              '            layers.append("geometric_precheck")\n'
+              '            blocking.extend(dict(item) for item in geometry_blockers if isinstance(item, Mapping))\n'
+              '            actions.append("Repair the reviewed asset/subject geometry; do not weaken hard regions or approved copy.")\n\n'
+              '    if blocking:\n'
+          )
+          replace_once("lib/persian_preflight.py", old, new)
 
-          workspace = "lib/persian_edit_workspace.py"
           replace_once(
-              workspace,
-              'from lib.persian_hook_quality import HOOK_TIMING_POLICY_VERSION\n',
-              'from lib.persian_hook_quality import HOOK_TIMING_POLICY_VERSION\nfrom lib.persian_geometric_precheck import geometric_hard_region_precheck\n',
+              "lib/persian_edit_workspace.py",
+              "from lib.persian_hook_quality import HOOK_TIMING_POLICY_VERSION\n",
+              "from lib.persian_hook_quality import HOOK_TIMING_POLICY_VERSION\nfrom lib.persian_geometric_precheck import geometric_hard_region_precheck\n",
           )
           replace_once(
-              workspace,
+              "lib/persian_edit_workspace.py",
               '        "lib/persian_film_type.py",\n',
               '        "lib/persian_film_type.py",\n        "lib/persian_geometric_precheck.py",\n',
           )
-          stage_anchor = '''    diagnostic_cause = dict(issue) if issue else None\n    expected_identity = {\n'''
-          stage_insert = '''    geometry = geometric_hard_region_precheck(edit, repo_root=REPO_ROOT)\n    geometry_blockers = geometry.get(\"blockingIssues\")\n    if isinstance(geometry_blockers, list) and geometry_blockers:\n        blocker = next((dict(item) for item in geometry_blockers if isinstance(item, Mapping)), {})\n        code = str(blocker.get(\"code\") or \"ASSET_SELECTION_HARD_REGION_COLLISION\")\n        details = blocker.get(\"details\") if isinstance(blocker.get(\"details\"), Mapping) else {}\n        raise PersianEditWorkspaceError(\n            f\"[{code}] geometric precheck refused before candidate consumption; \"\n            f\"details.stage={details.get('stage', 'geometric_precheck')}; \"\n            f\"{blocker.get('message', 'provably infeasible reviewed hard-region geometry')}\"\n        )\n\n    diagnostic_cause = dict(issue) if issue else None\n    expected_identity = {\n'''
-          replace_once(workspace, stage_anchor, stage_insert)
-
-          test = Path("tests/lib/test_persian_geometric_precheck.py")
-          test.write_text(r'''from __future__ import annotations
-
-import json
-from pathlib import Path
-
-import pytest
-
-import lib.persian_edit_workspace as edit_workspace
-import lib.persian_geometric_precheck as geometry
-import lib.persian_preflight as preflight
-from lib.persian_edit_workspace import PersianEditWorkspaceError
-
-ROOT = Path(__file__).resolve().parents[2]
-FIXTURE = ROOT / "tests" / "fixtures" / "persian" / "p4_failed_shadow" / "issue138-v1.json"
-METRICS = ROOT / "tests" / "fixtures" / "persian" / "p4_failed_shadow" / "issue138-f1-kahroba-metrics-v1.json"
-
-
-def _blocker() -> dict:
-    return {
-        "code": "ASSET_SELECTION_HARD_REGION_COLLISION",
-        "message": "provably infeasible F1 geometry",
-        "recoveryClass": "ASSET_SELECTION",
-        "details": {"stage": "geometric_precheck", "proof": "fixture"},
-    }
-
-
-def _minimal_edit() -> dict:
-    return {
-        "persian": {
-            "format": "vertical",
-            "durationSeconds": 10.0,
-            "design": {"profile": "film-type", "profileVersion": "2.16.0"},
-            "shots": [],
-            "moments": [],
-            "audio": {},
-            "watermark": {"persianText": "طریقت تسلیم", "latinText": "Pathway"},
-        }
-    }
-
-
-def test_issue138_f1_fixture_is_provably_infeasible_without_browser() -> None:
-    fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    metrics = json.loads(METRICS.read_text(encoding="utf-8"))
-    profile = json.loads((ROOT / "styles" / "persian-footage" / "film-type.json").read_text(encoding="utf-8"))
-    safe_raw = profile["formats"]["vertical"]["safeArea"]
-    safe = {
-        "x": safe_raw.get("left", safe_raw["side"]),
-        "y": safe_raw["top"],
-        "w": 1 - safe_raw.get("left", safe_raw["side"]) - safe_raw.get("right", safe_raw["side"]),
-        "h": 1 - safe_raw["top"] - safe_raw["bottom"],
-    }
-    regions = [
-        {key: float(region[key]) for key in ("x", "y", "w", "h")}
-        for region in fixture["authority"]["reviewedHardRegions"]["shot-2"][:2]
-    ]
-    assert geometry.prove_mandatory_strip_infeasible(
-        safe_area=safe,
-        hard_regions=regions,
-        width_fraction=float(metrics["minimumMandatoryTokenWidthPx"]) / 1080.0,
-        height_fraction=1.0 / 1920.0,
-    )
-
-
-def test_geometric_report_preserves_f1_blocking_class(monkeypatch: pytest.MonkeyPatch) -> None:
-    fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    metrics = json.loads(METRICS.read_text(encoding="utf-8"))
-    hard = fixture["authority"]["reviewedHardRegions"]["shot-2"]
-    edit = _minimal_edit()
-    edit["persian"]["shots"] = [{
-        "id": "shot-2", "startSeconds": 5.22, "endSeconds": 13.36,
-        "avoidRegions": hard,
-    }]
-    edit["persian"]["moments"] = [{
-        "id": "moment-2", "kind": "statement", "startSeconds": 5.67, "endSeconds": 9.2,
-        "segments": [{"role": "hero", "text": "پژوهشگرا آزمایش کردند"}],
-    }]
-    monkeypatch.setattr(
-        geometry,
-        "_mandatory_token_width",
-        lambda *args, **kwargs: (
-            float(metrics["minimumMandatoryTokenWidthPx"]),
-            metrics["tokens"][0]["sha256"],
-            metrics["fontAssetSha256"],
-        ),
-    )
-    report = geometry.geometric_hard_region_precheck(edit, repo_root=ROOT)
-    assert report["status"] == "refused"
-    issue = report["blockingIssues"][0]
-    assert issue["code"] == "ASSET_SELECTION_HARD_REGION_COLLISION"
-    assert issue["details"]["stage"] == "geometric_precheck"
-    assert issue["details"]["browserMeasurementRequiredForRejection"] is False
-
-
-def test_aggregate_preflight_rejects_geometry_before_browser(monkeypatch: pytest.MonkeyPatch) -> None:
-    edit = _minimal_edit()
-    monkeypatch.setattr(preflight, "collect_persian_edit_diagnostics", lambda *args, **kwargs: [])
-    monkeypatch.setattr(preflight, "audit_persian_retention", lambda *args, **kwargs: {"problems": []})
-    monkeypatch.setattr(preflight, "audit_persian_hook_quality", lambda *args, **kwargs: {"problems": [], "timingPolicy": {"version": preflight.HOOK_TIMING_POLICY_VERSION}})
-    monkeypatch.setattr(preflight, "render_independent_review_issues", lambda **kwargs: [])
-    monkeypatch.setattr(preflight, "geometric_hard_region_precheck", lambda *args, **kwargs: {"status": "refused", "blockingIssues": [_blocker()]})
-    def fail_browser(*args, **kwargs):
-        raise AssertionError("Chromium/browser preflight must not run after a deterministic F1 rejection")
-    monkeypatch.setattr(preflight, "browser_preflight_edit_decisions", fail_browser)
-    report = preflight.aggregate_preflight_edit_decisions(edit, base_dir=ROOT)
-    assert report["ok"] is False
-    assert report["blockingIssues"][0]["code"] == "ASSET_SELECTION_HARD_REGION_COLLISION"
-    assert report["blockingIssues"][0]["details"]["stage"] == "geometric_precheck"
-    assert report["diagnosticLayers"] == ["geometric_precheck"]
-
-
-def test_edit_stage_rejects_before_candidate_consumption(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    project = tmp_path / "project"
-    monkeypatch.setattr(edit_workspace, "geometric_hard_region_precheck", lambda *args, **kwargs: {"status": "refused", "blockingIssues": [_blocker()]})
-    with pytest.raises(PersianEditWorkspaceError, match=r"ASSET_SELECTION_HARD_REGION_COLLISION.*details\.stage=geometric_precheck"):
-        edit_workspace.stage_edit_draft(project, "f1-impossible", _minimal_edit())
-    assert not (project / ".convergence" / "edit" / "f1-impossible" / "candidate.json").exists()
-    assert not (project / ".drafts" / "edit" / "f1-impossible" / "edit_decisions.json").exists()
-''', encoding="utf-8")
+          old = "    diagnostic_cause = dict(issue) if issue else None\n    expected_identity = {\n"
+          new = (
+              '    geometry = geometric_hard_region_precheck(edit, repo_root=REPO_ROOT)\n'
+              '    geometry_blockers = geometry.get("blockingIssues")\n'
+              '    if isinstance(geometry_blockers, list) and geometry_blockers:\n'
+              '        blocker = next((dict(item) for item in geometry_blockers if isinstance(item, Mapping)), {})\n'
+              '        code = str(blocker.get("code") or "ASSET_SELECTION_HARD_REGION_COLLISION")\n'
+              '        details = blocker.get("details") if isinstance(blocker.get("details"), Mapping) else {}\n'
+              '        raise PersianEditWorkspaceError(\n'
+              '            f"[{code}] geometric precheck refused before candidate consumption; "\n'
+              '            f"details.stage={details.get(\'stage\', \'geometric_precheck\')}; "\n'
+              '            f"{blocker.get(\'message\', \'provably infeasible reviewed hard-region geometry\')}"\n'
+              '        )\n\n'
+              '    diagnostic_cause = dict(issue) if issue else None\n'
+              '    expected_identity = {\n'
+          )
+          replace_once("lib/persian_edit_workspace.py", old, new)
           PY
       - name: Install test dependencies
-        run: |
-          python -m pip install -q -r requirements.txt pytest
+        run: python -m pip install -q -r requirements.txt pytest
       - name: Run focused F1 regressions
         run: |
           python -m pytest tests/lib/test_persian_geometric_precheck.py -q
@@ -201,6 +159,6 @@ def test_edit_stage_rejects_before_candidate_consumption(monkeypatch: pytest.Mon
           rm .github/workflows/tmp-f1-geometric-precheck.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add requirements.txt lib/persian_geometric_precheck.py lib/persian_preflight.py lib/persian_edit_workspace.py tests/lib/test_persian_geometric_precheck.py tests/fixtures/persian/p4_failed_shadow/issue138-f1-kahroba-metrics-v1.json .github/workflows/tmp-f1-geometric-precheck.yml
+          git add -A
           git commit -m "fix: reject provably impossible hard-region layouts early"
           git push origin HEAD:${GITHUB_REF_NAME}
