@@ -113,6 +113,18 @@ jobs:
           make install-dev
           npm ci --prefix remotion-composer
 
+      - name: Install licensed Film Type font
+        shell: bash
+        env:
+          KAHROBA_FONT_WOFF2_BASE64: ${{ secrets.KAHROBA_FONT_WOFF2_BASE64 }}
+        run: |
+          test -n "$KAHROBA_FONT_WOFF2_BASE64"
+          umask 077
+          font_source="$(mktemp)"
+          trap 'rm -f "$font_source"' EXIT
+          printf '%s' "$KAHROBA_FONT_WOFF2_BASE64" | base64 --decode > "$font_source"
+          .venv/bin/python scripts/install_kahroba_font.py "$font_source"
+
       - name: Run targeted media smoke
         env:
           OPENMONTAGE_L2_MEDIA_TESTS: "1"
