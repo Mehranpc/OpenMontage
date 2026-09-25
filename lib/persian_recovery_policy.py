@@ -179,6 +179,21 @@ def recovery_policy_for_issue(issue: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _crop_key(identity: Mapping[str, Any]) -> str:
+    """A comparable key for the frame geometry an asset alternate would deliver."""
+    crop = identity.get("intendedCrop")
+    crop = crop if isinstance(crop, Mapping) else {}
+    mode = str(crop.get("mode") or "")
+    rect = crop.get("rect")
+    rect = dict(rect) if isinstance(rect, Mapping) else {}
+    for key in ("x", "y", "w", "h"):
+        if key in crop and key not in rect:
+            rect[key] = crop[key]
+    if not rect:
+        return mode
+    return mode + ":" + ",".join(f"{key}={rect.get(key)}" for key in sorted(rect))
+
+
 def shot_local_recovery_plan(
     issue: Mapping[str, Any],
     edit_decisions: Mapping[str, Any],
@@ -250,12 +265,21 @@ def shot_local_recovery_plan(
         event_candidates = reusable.get(event_id)
         event_candidates = event_candidates if isinstance(event_candidates, list) else []
         selected_source = ""
+        selected_crop = ""
         for item in event_candidates:
             if not isinstance(item, Mapping) or str(item.get("candidateId") or "") != selected_id:
                 continue
             identity = item.get("identity") if isinstance(item.get("identity"), Mapping) else {}
             selected_source = str(identity.get("sourceId") or "")
+            selected_crop = _crop_key(identity)
             break
+        # A hard-region placement collision is a property of the frame's geometry: a
+        # subject sits where the type needs to be. An alternate that shares the
+        # selected source *and* crop shows the same geometry, so reusing it cannot
+        # move that subject -- only different footage or a different crop can. Left
+        # unfiltered, a 0.1s window shift counted as a repair and the run dead-ended
+        # on a reuse strategy that could not possibly succeed (#152).
+        geometry_bound = code.startswith("ASSET_SELECTION_HARD_REGION_COLLISION")
         alternates: list[dict[str, Any]] = []
         for item in event_candidates:
             if not isinstance(item, Mapping):
@@ -265,6 +289,13 @@ def shot_local_recovery_plan(
                 continue
             identity = item.get("identity") if isinstance(item.get("identity"), Mapping) else {}
             source_id = str(identity.get("sourceId") or "")
+            if (
+                geometry_bound
+                and selected_source
+                and source_id == selected_source
+                and _crop_key(identity) == selected_crop
+            ):
+                continue
             alternates.append({
                 "candidateId": candidate_id,
                 "sourceId": source_id,
