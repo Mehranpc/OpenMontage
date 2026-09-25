@@ -145,6 +145,19 @@ python -m lib.persian_video_workflow edit-compare <project-id> <parent-candidate
 
 `status` exposes the durable convergence state, candidate IDs, promoted candidate, and any structured `needs_revision` stop. Candidate ceilings come from workflow state and recovery policy; never maintain a second probe counter in chat or a helper script. The workspace rejects out-of-surface mutations, reuses only dependency-identical preflight components, runs browser-heavy checks only after cheap blockers pass, and keeps failed candidates non-canonical. The lower-level `recovery-attempt` command is compatibility/debug bookkeeping and is **not** part of normal edit convergence. Do not create ad hoc `probe_*` artifacts or generated Python orchestration scripts.
 
+Asset-selection recovery is workspace-bound. A recovery draft that changes footage/source-window identity must bind every changed shot to an exact reviewed asset-workspace candidate before `edit-stage` can consume a convergence candidate. Write a project-local binding object such as:
+
+```json
+{
+  "version": "1.0",
+  "shotBindings": [
+    {"shotId": "shot-2", "candidateId": "asset-..."}
+  ]
+}
+```
+
+and stage with `--asset-binding-json <project-local-path>`. The candidate id carries immutable provider/source/window/crop/review authority; never infer a new crop or treat a recovery strategy name as review evidence. If no exact reviewed candidate exists, use the bounded `send-back` to `acquire_assets`, review/select the resulting candidate through the asset workspace, rebuild the canonical manifest, and only then promote. Promotion refuses when the manifest selection is not the same identity bound into the edit candidate.
+
 If browser preflight reports `ASSET_SELECTION_HARD_REGION_COLLISION`, its `details.momentId` and `details.shotIds` identify reviewed hard regions that blocked measured placement. The same browser run confirms that the moment fits when only subject obstacles are omitted; it never persists that counterfactual. Keep the approved moment copy and hard regions. Reuse a reviewed alternate with truthful geometry if available; otherwise use the existing bounded `send-back` to `acquire_assets` and its shared acquisition budget. Scene planning and asset selection cannot certify this fit earlier: exact on-screen moments first exist in the edit draft, after selected-window subject review. A width-only or explicit-placement refusal remains a layout issue, not evidence that the asset is incompatible.
 
 Promote only the exact passing candidate, then complete the phase:

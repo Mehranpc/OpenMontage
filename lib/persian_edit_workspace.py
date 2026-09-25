@@ -26,6 +26,11 @@ from lib.persian_preflight import (
     PREFLIGHT_POLICY_VERSION, aggregate_preflight_edit_decisions, extract_edit_decisions,
 )
 from lib.persian_recovery_policy import recovery_policy_for_issue
+from lib.persian_asset_workspace import (
+    PersianAssetWorkspaceError,
+    validate_edit_asset_bindings,
+    validate_edit_asset_bindings_against_manifest,
+)
 from lib.persian_project_workspace import workspace_directory
 
 _ATTEMPT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
@@ -439,6 +444,19 @@ def _asset_payload(edit: Mapping[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
+def _asset_changed_shot_ids(
+    base_edit: Mapping[str, Any] | None, edit: Mapping[str, Any]
+) -> list[str]:
+    if base_edit is None:
+        return []
+    before = {str(item.get("id") or ""): item for item in _asset_payload(base_edit)}
+    after = {str(item.get("id") or ""): item for item in _asset_payload(edit)}
+    return sorted(
+        shot_id for shot_id in set(before) | set(after)
+        if shot_id and before.get(shot_id) != after.get(shot_id)
+    )
+
+
 def _scene_payload(edit: Mapping[str, Any]) -> list[dict[str, Any]]:
     persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
     result: list[dict[str, Any]] = []
@@ -848,6 +866,7 @@ def _candidate_identity(manifest: Mapping[str, Any]) -> dict[str, Any]:
         "candidateId", "parentCandidateId", "baseArtifactSha256", "artifactSha256",
         "dependencyDigests", "recoveryClass", "strategy", "mutationSurface", "preserve",
         "changedFields", "changedScopes", "diagnosticCause", "revisionCycle",
+        "assetBindings",
     )
     return {key: manifest.get(key) for key in keys}
 
@@ -958,6 +977,8 @@ def stage_edit_draft(
     max_candidates: int = 4,
     revision_cycle: int = 0,
     hook_authority: Mapping[str, Any] | None = None,
+    asset_binding_request: Mapping[str, Any] | None = None,
+    enforce_asset_bindings: bool = False,
 ) -> dict[str, Any]:
     draft, report, canonical = _paths(project_dir, attempt_id)
     edit = extract_edit_decisions(dict(payload))
@@ -1034,6 +1055,40 @@ def stage_edit_draft(
                 f"allowed={mutation_surface}; preserve={preserve}"
             )
 
+    normalized_asset_bindings: list[dict[str, Any]] = []
+    asset_changed_shots = _asset_changed_shot_ids(base_edit, edit)
+    binding_required = bool(
+        enforce_asset_bindings
+        and resolved_class == "ASSET_SELECTION"
+        and (
+            asset_changed_shots
+            or strategy in {
+                "reuse_reviewed_non_overlapping_source_window",
+                "reuse_reviewed_existing_candidate",
+                "use_authored_alternate_query",
+            }
+        )
+    )
+    if asset_binding_request is not None:
+        try:
+            normalized_asset_bindings = validate_edit_asset_bindings(
+                project_dir,
+                edit,
+                asset_binding_request,
+                required_shot_ids=asset_changed_shots,
+            )
+        except PersianAssetWorkspaceError as exc:
+            raise PersianEditWorkspaceError(
+                "asset selection recovery is not bound to reviewed asset-workspace evidence: "
+                f"{exc}; send back to acquire_assets when no exact reviewed candidate exists"
+            ) from exc
+    elif binding_required:
+        raise PersianEditWorkspaceError(
+            "asset selection recovery requires exact reviewed asset-workspace bindings "
+            "before edit-stage candidate consumption; send back to acquire_assets when "
+            "no exact reviewed candidate exists"
+        )
+
     diagnostic_cause = dict(issue) if issue else None
     expected_identity = {
         "candidateId": attempt_id,
@@ -1049,6 +1104,7 @@ def stage_edit_draft(
         "changedScopes": changed_scopes,
         "diagnosticCause": diagnostic_cause,
         "revisionCycle": int(revision_cycle),
+        "assetBindings": normalized_asset_bindings,
     }
     candidate_path = _candidate_path(project_dir, attempt_id)
     if candidate_path.is_file():
@@ -1463,6 +1519,26 @@ def promote_edit_draft(
     edit, _, digest = load_promotable_edit_draft(
         project_dir, attempt_id, hook_authority=hook_authority
     )
+    candidate_manifest = load_convergence_candidate(project_dir, attempt_id)
+    asset_bindings = candidate_manifest.get("assetBindings")
+    if isinstance(asset_bindings, list) and asset_bindings:
+        asset_manifest_path = project_dir.expanduser().resolve() / "artifacts" / "asset_manifest.json"
+        if not asset_manifest_path.is_file():
+            raise PersianEditWorkspaceError(
+                "refusing promotion: edit-bound asset recovery requires canonical asset_manifest rebinding"
+            )
+        try:
+            asset_manifest = json.loads(asset_manifest_path.read_text(encoding="utf-8"))
+            if not isinstance(asset_manifest, Mapping):
+                raise PersianAssetWorkspaceError("canonical asset_manifest must be an object")
+            validate_edit_asset_bindings_against_manifest(
+                project_dir, asset_bindings, asset_manifest
+            )
+        except (OSError, json.JSONDecodeError, PersianAssetWorkspaceError) as exc:
+            raise PersianEditWorkspaceError(
+                "refusing promotion: canonical asset_manifest does not match edit-bound "
+                f"reviewed asset identity: {exc}"
+            ) from exc
 
     canonical.parent.mkdir(parents=True, exist_ok=True)
     if canonical.exists():

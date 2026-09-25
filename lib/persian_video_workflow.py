@@ -3541,6 +3541,7 @@ def stage_workflow_edit_draft(
     recovery_class: str | None = None,
     strategy: str | None = None,
     changed_fields: Sequence[str] | None = None,
+    asset_binding_path: str | Path | None = None,
     pipeline_dir: Path | None = None,
 ) -> dict[str, Any]:
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
@@ -3550,6 +3551,10 @@ def stage_workflow_edit_draft(
         )
     source = assert_read_allowed(state, input_path)
     payload = _read_json(str(source))
+    asset_binding_request = None
+    if asset_binding_path is not None:
+        binding_source = assert_read_allowed(state, asset_binding_path)
+        asset_binding_request = _read_json(str(binding_source))
     decision = state.get("hook_selection")
     if not isinstance(decision, Mapping):
         raise PersianVideoWorkflowError("workflow is missing its hook-selection authority record")
@@ -3606,6 +3611,8 @@ def stage_workflow_edit_draft(
             max_candidates=max_candidates,
             revision_cycle=revision_cycle,
             hook_authority=decision,
+            asset_binding_request=asset_binding_request,
+            enforce_asset_bindings=True,
         )
     except PersianEditWorkspaceError:
         stopped = convergence_status(_project_root(state), revision_cycle=revision_cycle)
@@ -3978,6 +3985,11 @@ def build_parser() -> argparse.ArgumentParser:
     edit_stage.add_argument("--recovery-class")
     edit_stage.add_argument("--strategy")
     edit_stage.add_argument("--changed-field", dest="changed_fields", action="append")
+    edit_stage.add_argument(
+        "--asset-binding-json",
+        metavar="PATH",
+        help="bind asset-selection recovery shots to exact reviewed asset-workspace candidates",
+    )
 
     edit_probe = sub.add_parser(
         "edit-probe",
@@ -4235,6 +4247,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 recovery_class=args.recovery_class,
                 strategy=args.strategy,
                 changed_fields=args.changed_fields,
+                asset_binding_path=args.asset_binding_json,
             ))
         elif args.command == "edit-probe":
             _print_json(probe_workflow_edit_draft(

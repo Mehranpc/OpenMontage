@@ -575,6 +575,165 @@ def _same_number(left: object, right: object) -> bool:
         return False
 
 
+def validate_edit_asset_bindings(
+    project_dir: Path,
+    edit: Mapping[str, Any],
+    request: Mapping[str, Any],
+    *,
+    required_shot_ids: Sequence[str] = (),
+) -> list[dict[str, Any]]:
+    """Bind edit shots to exact immutable reviewed asset-workspace identities."""
+    if not isinstance(request, Mapping) or str(request.get("version") or "") != "1.0":
+        raise PersianAssetWorkspaceError(
+            "edit asset binding request must be an object with version='1.0'"
+        )
+    raw_bindings = request.get("shotBindings")
+    if not isinstance(raw_bindings, list) or not raw_bindings:
+        raise PersianAssetWorkspaceError(
+            "edit asset binding request requires a non-empty shotBindings list"
+        )
+    persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
+    raw_shots = persian.get("shots") if isinstance(persian, Mapping) else None
+    if not isinstance(raw_shots, list):
+        raise PersianAssetWorkspaceError("edit asset binding requires persian.shots")
+    shots = {
+        str(shot.get("id") or ""): shot
+        for shot in raw_shots
+        if isinstance(shot, Mapping) and str(shot.get("id") or "").strip()
+    }
+    required = {str(item) for item in required_shot_ids if str(item).strip()}
+    seen: set[str] = set()
+    normalized: list[dict[str, Any]] = []
+    root = project_dir.expanduser().resolve()
+    for index, raw in enumerate(raw_bindings):
+        if not isinstance(raw, Mapping):
+            raise PersianAssetWorkspaceError(
+                f"shotBindings[{index}] must be an object"
+            )
+        shot_id = str(raw.get("shotId") or "").strip()
+        candidate_id = str(raw.get("candidateId") or "").strip()
+        if not shot_id or not candidate_id:
+            raise PersianAssetWorkspaceError(
+                f"shotBindings[{index}] requires shotId and candidateId"
+            )
+        if shot_id in seen:
+            raise PersianAssetWorkspaceError(f"duplicate edit asset binding for {shot_id!r}")
+        seen.add(shot_id)
+        shot = shots.get(shot_id)
+        if not isinstance(shot, Mapping):
+            raise PersianAssetWorkspaceError(
+                f"edit asset binding references unknown shot {shot_id!r}"
+            )
+        candidate = load_asset_candidate(project_dir, candidate_id)
+        if candidate.get("disposition") == "rejected" or not candidate.get("reviewSha256"):
+            raise PersianAssetWorkspaceError(
+                f"edit asset binding candidate {candidate_id!r} must have immutable review evidence"
+            )
+        event_id = str(shot.get("visualEventId") or "").strip()
+        candidate_event = str((candidate.get("context") or {}).get("visualEventId") or "").strip()
+        if not event_id or candidate_event != event_id:
+            raise PersianAssetWorkspaceError(
+                f"edit shot {shot_id!r} visual event does not match candidate {candidate_id!r}"
+            )
+        source_value = str(shot.get("source") or shot.get("src") or "").strip()
+        candidate_source = str((candidate.get("source") or {}).get("path") or "").strip()
+        if not source_value or not candidate_source:
+            raise PersianAssetWorkspaceError(
+                f"edit shot {shot_id!r} and candidate {candidate_id!r} require source paths"
+            )
+        edit_path = Path(source_value).expanduser()
+        edit_path = edit_path.resolve() if edit_path.is_absolute() else (root / edit_path).resolve()
+        candidate_path = Path(candidate_source).expanduser().resolve()
+        if edit_path != candidate_path:
+            raise PersianAssetWorkspaceError(
+                f"edit shot {shot_id!r} source does not match reviewed candidate {candidate_id!r}"
+            )
+        try:
+            timeline_start = float(shot.get("startSeconds") or 0.0)
+            timeline_end = float(shot.get("endSeconds") or 0.0)
+            source_start = float(shot.get("sourceInSeconds") or 0.0)
+        except (TypeError, ValueError) as exc:
+            raise PersianAssetWorkspaceError(
+                f"edit shot {shot_id!r} has invalid source-window timing"
+            ) from exc
+        duration = timeline_end - timeline_start
+        if duration <= 0:
+            raise PersianAssetWorkspaceError(
+                f"edit shot {shot_id!r} must have positive timeline duration"
+            )
+        edit_window = {
+            "startSeconds": round(source_start, 6),
+            "endSeconds": round(source_start + duration, 6),
+        }
+        identity = candidate.get("identity") if isinstance(candidate.get("identity"), Mapping) else {}
+        candidate_window = identity.get("sourceWindow") if isinstance(identity, Mapping) else None
+        if not isinstance(candidate_window, Mapping) or {
+            "startSeconds": round(float(candidate_window.get("startSeconds") or 0.0), 6),
+            "endSeconds": round(float(candidate_window.get("endSeconds") or 0.0), 6),
+        } != edit_window:
+            raise PersianAssetWorkspaceError(
+                f"edit shot {shot_id!r} source window is absent from reviewed candidate {candidate_id!r}"
+            )
+        crop = identity.get("intendedCrop") if isinstance(identity, Mapping) else None
+        if not isinstance(crop, Mapping):
+            raise PersianAssetWorkspaceError(
+                f"reviewed candidate {candidate_id!r} is missing crop identity"
+            )
+        normalized.append({
+            "shotId": shot_id,
+            "visualEventId": event_id,
+            "candidateId": candidate_id,
+            "candidateIdentitySha256": str(candidate.get("identitySha256") or ""),
+            "reviewSha256": str(candidate.get("reviewSha256") or ""),
+            "manifestBinding": _manifest_binding(candidate),
+        })
+    if required:
+        missing = sorted(required - seen)
+        extra = sorted(seen - required)
+        if missing or extra:
+            raise PersianAssetWorkspaceError(
+                "edit asset bindings must cover exactly the asset-changed shots; "
+                f"missing={missing}, extra={extra}"
+            )
+    return sorted(normalized, key=lambda item: item["shotId"])
+
+
+def validate_edit_asset_bindings_against_manifest(
+    project_dir: Path,
+    bindings: Sequence[Mapping[str, Any]],
+    manifest: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Require promoted edit bindings to equal the selected canonical manifest."""
+    validated = validate_asset_manifest_against_workspace(project_dir, manifest)
+    rows = manifest.get("assets") if isinstance(manifest, Mapping) else None
+    if not isinstance(rows, list):
+        raise PersianAssetWorkspaceError("canonical asset_manifest.assets must be a list")
+    by_event: dict[str, list[Mapping[str, Any]]] = {}
+    for row in rows:
+        if isinstance(row, Mapping):
+            by_event.setdefault(str(row.get("visual_event_id") or ""), []).append(row)
+    for binding in bindings:
+        event_id = str(binding.get("visualEventId") or "")
+        candidate_id = str(binding.get("candidateId") or "")
+        matches = by_event.get(event_id) or []
+        if len(matches) != 1:
+            raise PersianAssetWorkspaceError(
+                f"asset_manifest must contain exactly one row for bound visual event {event_id!r}"
+            )
+        row = matches[0]
+        expected = {
+            "asset_candidate_id": candidate_id,
+            "asset_candidate_identity_sha256": str(binding.get("candidateIdentitySha256") or ""),
+            "asset_review_sha256": str(binding.get("reviewSha256") or ""),
+        }
+        for field, value in expected.items():
+            if str(row.get(field) or "") != value:
+                raise PersianAssetWorkspaceError(
+                    f"asset_manifest {event_id!r} {field} does not match the edit-bound reviewed candidate"
+                )
+    return {**validated, "validatedEditBindingCount": len(bindings)}
+
+
 def validate_asset_manifest_against_workspace(
     project_dir: Path, manifest: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -974,4 +1133,6 @@ __all__ = [
     "select_asset_candidate",
     "stage_asset_candidate",
     "validate_asset_manifest_against_workspace",
+    "validate_edit_asset_bindings",
+    "validate_edit_asset_bindings_against_manifest",
 ]
