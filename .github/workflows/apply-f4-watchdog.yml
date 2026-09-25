@@ -34,13 +34,13 @@ jobs:
 
       - name: Run targeted watchdog regressions
         run: |
-          python -m pytest -q \
+          .venv/bin/python -m pytest -q \
             tests/lib/test_issue138_in_phase_watchdog.py \
             tests/lib/test_persian_video_workflow.py::test_wall_budget_stops_at_next_phase_boundary
 
       - name: Validate Python syntax and patch whitespace
         run: |
-          python -m py_compile lib/persian_video_workflow.py lib/persian_run_kernel.py
+          .venv/bin/python -m py_compile lib/persian_video_workflow.py lib/persian_run_kernel.py
           git diff --check
 
       - name: Commit implementation and remove patch scaffold
