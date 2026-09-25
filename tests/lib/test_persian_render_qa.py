@@ -127,6 +127,7 @@ class TestWindowMeanBinWidth:
         samples = [(0.0, 60.0), (1.0, 25.0), (2.0, 60.0)]
         assert window_mean(samples, 0.5, 1.5) == pytest.approx(42.5)
 
+
 class TestTypographicPlateLuminance:
     def test_dark_plate_with_real_moment_text_is_not_dead_black(self, monkeypatch, tmp_path) -> None:
         samples = [(float(i), 20.0 if 19 <= i < 25 else 80.0) for i in range(0, 51)]
@@ -142,6 +143,21 @@ class TestTypographicPlateLuminance:
         assert qa.passed is True
         assert qa.dead_runs == []
         assert qa.beat_luma[0]["meanYavg"] == pytest.approx(35.0)
+
+    def test_partial_second_plate_boundary_is_not_a_dead_stretch(self, monkeypatch, tmp_path) -> None:
+        """#147: the L3 plate began at 38.11s, inside the 38-39s YAVG bin."""
+        samples = [(37.0, 80.0), (38.0, 21.4), (39.0, 20.0), (40.0, 20.0), (41.0, 80.0)]
+        monkeypatch.setattr(
+            "lib.persian_render_qa.measure_per_second_luma",
+            lambda *a, **k: (samples, 0.1),
+        )
+        qa = audit_render_luminance(
+            tmp_path / "render.mp4",
+            beat_windows=[{"id": "beat-10", "startSeconds": 38.11, "endSeconds": 40.97}],
+            moment_windows=[{"id": "m-card", "startSeconds": 38.11, "endSeconds": 40.97}],
+        )
+        assert qa.passed is True
+        assert qa.dead_runs == []
 
     def test_dark_plate_without_moment_text_still_fails(self, monkeypatch, tmp_path) -> None:
         samples = [(float(i), 20.0 if 19 <= i < 25 else 80.0) for i in range(0, 51)]
