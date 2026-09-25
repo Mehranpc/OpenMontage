@@ -54,11 +54,16 @@ python -m lib.persian_video_workflow status <project-id> --json
 `status` is read-only. Its default output is one operational line with the current
 phase, phase elapsed time, wall time versus budget, last written file, and
 `progressing`/`idle` (`idle` means no project write for 15 minutes). Use `--json`
-when routing by `next_phase` or inspecting telemetry. At a phase boundary, exceeding
-the wall budget or 2× the current phase SLO persists `status=failed`,
-`quality_disposition=needs_decision`, the remaining phases, and the exact choices to
-continue with more time, continue only to preview, or stop. Never start the next
-phase by bypassing that stop.
+when routing by `next_phase` or inspecting telemetry. Before a supported front-door
+command admits new active work, before a new durable run-kernel execution starts, and
+at safe checkpoints while a durable child is running, the same wall/SLO policy is
+enforced. An overrun persists `status=failed`,
+`quality_disposition=needs_decision`, stable budget evidence, current phase/work
+identity, and the blocked operation before new expensive work continues. Existing
+status/reconciliation paths and external asset-result settlement stay usable so
+durable evidence is not lost.
+Phase completion keeps the same boundary stop policy. Resume only after an explicit
+budget decision; never bypass the persisted stop.
 
 ## Route only by code state
 

@@ -1076,10 +1076,10 @@ def _parse_timestamp(value: str) -> datetime:
 def assert_within_wall_time(
     state: Mapping[str, Any], *, now: datetime | None = None
 ) -> None:
-    """Validate budget timing metadata.
+    """Validate budget timing metadata against the caller's effective clock.
 
-    Enforcement happens only after a phase finishes, so in-flight work is never
-    killed. The next phase cannot start after a persisted budget stop.
+    Phase-boundary and front-door checkpoints evaluate policy separately; this
+    helper only verifies that the active timing window is coherent.
     """
     started = _parse_timestamp(
         str(state.get("budget_window_started_at") or state.get("created_at") or "")
@@ -1200,6 +1200,51 @@ def _open_countable_work_spans(state: Mapping[str, Any]) -> list[dict[str, Any]]
         and not span.get("finished_at")
         and span.get("kind") not in {"run", "phase_attempt"}
     ]
+
+
+def enforce_front_door_budget(
+    project_id: str,
+    *,
+    operation: str,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+    operation_evidence: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Persist an actionable stop before admitting more active workflow work."""
+    operation_name = str(operation or "").strip()
+    if not operation_name:
+        raise PersianVideoWorkflowError("front-door budget operation must be non-empty")
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    phase = str(state.get("next_phase") or "")
+    if state.get("status") != "active" or phase not in PHASES:
+        return state
+    effective_now = now or datetime.now(timezone.utc)
+    assert_within_wall_time(state, now=effective_now)
+    if not _enforce_phase_boundary_budget(state, phase, now=effective_now):
+        return state
+
+    stop = dict(state.get("budget_stop") or {})
+    stop.pop("boundary_after_phase", None)
+    stop["boundary_before_operation"] = operation_name
+    stop["phase"] = phase
+    stop["phase_attempt"] = _running_phase_attempt(state, phase)
+    stop["open_work_span_ids"] = [
+        str(span["span_id"])
+        for span in _open_countable_work_spans(state)
+        if span.get("span_id")
+    ]
+    if operation_evidence:
+        stop["operation_evidence"] = {
+            str(key): value
+            for key, value in operation_evidence.items()
+            if isinstance(value, (str, int, float, bool)) or value is None
+        }
+    state["budget_stop"] = stop
+    _write_state(_project_root(state), state)
+    raise PersianVideoWorkflowError(
+        f"{stop.get('reason')}: workflow budget blocks {operation_name!r}; "
+        "resume with an explicit budget decision before starting more work"
+    )
 
 
 def start_explicit_work_span(
@@ -3948,9 +3993,48 @@ def _print_json(value: Mapping[str, Any]) -> None:
     print(json.dumps(dict(value), ensure_ascii=False, indent=2, sort_keys=True))
 
 
+_BUDGET_GUARD_EXEMPT_COMMANDS = frozenset({
+    "bootstrap",
+    "status",
+    "guard-read",
+    "edit-compare",
+    "asset-result",
+    "job-status",
+    "alignment-status",
+    "resume",
+    "work-finish",
+    "work-abandon",
+    "complete",
+    "alignment-commit",
+    "reconcile-approval",
+})
+
+
+def _cli_operation_name(args: argparse.Namespace) -> str:
+    parts = [str(args.command)]
+    for attr in ("assets_command", "music_command", "regions_command"):
+        value = getattr(args, attr, None)
+        if value:
+            parts.append(str(value))
+    return ":".join(parts)
+
+
+def _enforce_cli_front_door_budget(args: argparse.Namespace) -> None:
+    if str(args.command) in _BUDGET_GUARD_EXEMPT_COMMANDS:
+        return
+    project_id = getattr(args, "project_id", None)
+    if not project_id:
+        return
+    enforce_front_door_budget(
+        str(project_id),
+        operation=f"workflow:{_cli_operation_name(args)}",
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        _enforce_cli_front_door_budget(args)
         if args.command == "bootstrap":
             narration_path, approved_script = _bootstrap_inputs(args)
             state = bootstrap_persian_video(

@@ -266,6 +266,87 @@ def _open_phase_attempt(state: Mapping[str, Any], phase: str) -> int | None:
         return None
 
 
+def _idempotence_already_persisted(
+    state: Mapping[str, Any], idempotence_key: str
+) -> bool:
+    index_path = _project_root(state) / ".jobs" / "idempotence.json"
+    if not index_path.is_file():
+        return False
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PersianRunKernelError(
+            f"durable idempotence index is unreadable: {index_path}"
+        ) from exc
+    if not isinstance(index, Mapping):
+        raise PersianRunKernelError("durable idempotence index must be a JSON object")
+    return bool(index.get(idempotence_key))
+
+
+def _enforce_new_execution_budget(
+    state: Mapping[str, Any],
+    *,
+    project_id: str,
+    phase: str,
+    job_id: str,
+    argv: Sequence[str],
+    idempotence_key: str,
+    telemetry_category: str,
+    pipeline_dir: Path | None,
+    now: datetime | None,
+) -> dict[str, Any]:
+    if _idempotence_already_persisted(state, idempotence_key):
+        return dict(state)
+    try:
+        return workflow.enforce_front_door_budget(
+            project_id,
+            operation="run-kernel:start",
+            pipeline_dir=pipeline_dir,
+            now=now,
+            operation_evidence={
+                "phase": phase,
+                "job_id": job_id,
+                "idempotence_key": idempotence_key,
+                "telemetry_category": telemetry_category,
+                "command_sha256": durable_command_sha256(argv),
+            },
+        )
+    except workflow.PersianVideoWorkflowError as exc:
+        raise PersianRunKernelError(str(exc)) from exc
+
+
+def _enforce_execution_checkpoint(
+    project_id: str,
+    *,
+    operation: str,
+    phase: str,
+    job_id: str,
+    pipeline_dir: Path | None,
+    now: datetime | None = None,
+) -> None:
+    """Stop a live parent at a safe control boundary without discarding its durable child."""
+    try:
+        state = workflow.enforce_front_door_budget(
+            project_id,
+            operation=operation,
+            pipeline_dir=pipeline_dir,
+            now=now,
+            operation_evidence={"phase": phase, "job_id": job_id},
+        )
+    except workflow.PersianVideoWorkflowError as exc:
+        raise PersianRunKernelError(str(exc)) from exc
+    stop = state.get("budget_stop")
+    if (
+        state.get("status") == "failed"
+        and isinstance(stop, Mapping)
+        and stop.get("reason") in {"wall_budget_exceeded", "phase_budget_exceeded"}
+    ):
+        raise PersianRunKernelError(
+            f"{stop.get('reason')}: workflow budget already stopped durable job {job_id!r}; "
+            "reconcile/status remains available until an explicit resume decision"
+        )
+
+
 def _artifact_identity(evidence: Mapping[str, Any]) -> dict[str, Any]:
     """Keep only durable identity fields, not the whole phase evidence payload."""
     identity: dict[str, Any] = {}
@@ -576,6 +657,17 @@ def _start_phase_job_unlocked(
         raise PersianRunKernelError(
             f"cannot start {phase!r}; next phase is {state.get('next_phase')!r}"
         )
+    state = _enforce_new_execution_budget(
+        state,
+        project_id=project_id,
+        phase=phase,
+        job_id=job_id,
+        argv=argv,
+        idempotence_key=idempotence_key,
+        telemetry_category=telemetry_category,
+        pipeline_dir=pipeline_dir,
+        now=now,
+    )
     phase_attempt = _open_phase_attempt(state, phase)
     created_attempt = phase_attempt is None
     if created_attempt:
@@ -615,7 +707,7 @@ def _start_phase_job_unlocked(
             # is the expected recovery path after a caller crash: reconcile the
             # durable identity instead of rerunning externally billed/download work.
             return reconcile_phase_job(
-                project_id, actual_job_id, pipeline_dir=pipeline_dir
+                project_id, actual_job_id, pipeline_dir=pipeline_dir, now=now
             )
         try:
             workflow.record_phase_failure(
@@ -721,6 +813,7 @@ def _close_failed_attempt_if_current(
     job: Mapping[str, Any],
     *,
     pipeline_dir: Path | None,
+    now: datetime | None = None,
 ) -> None:
     state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     phase = str(envelope["phase"])
@@ -733,6 +826,7 @@ def _close_failed_attempt_if_current(
         phase,
         reason=_job_error_reason(job),
         pipeline_dir=pipeline_dir,
+        now=now,
     )
 
 
@@ -741,6 +835,7 @@ def reconcile_phase_job(
     job_id: str,
     *,
     pipeline_dir: Path | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Reconcile durable execution without inferring workflow completion from exit code."""
     envelope = load_execution_envelope(project_id, job_id, pipeline_dir=pipeline_dir)
@@ -772,6 +867,9 @@ def reconcile_phase_job(
             "process exit code alone is not success"
         )
 
+    # Durable child timestamps come from the real runtime clock. Keep telemetry
+    # reconciliation on that same clock even when tests inject a workflow/budget
+    # clock through ``now`` for deterministic phase accounting.
     _reconcile_job_telemetry(
         project_id,
         envelope,
@@ -782,7 +880,7 @@ def reconcile_phase_job(
 
     if envelope.get("executionOutcome") in {"failed", "interrupted"}:
         _close_failed_attempt_if_current(
-            project_id, envelope, effective_job, pipeline_dir=pipeline_dir
+            project_id, envelope, effective_job, pipeline_dir=pipeline_dir, now=now
         )
         envelope["workflowTransitionOutcome"] = "blocked"
         envelope["workflowTransitionError"] = _job_error_reason(effective_job)
@@ -878,6 +976,7 @@ def commit_phase_job(
     *,
     evidence: Mapping[str, Any] | None = None,
     pipeline_dir: Path | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Advance workflow state from one successful durable execution, idempotently."""
     envelope = load_execution_envelope(project_id, job_id, pipeline_dir=pipeline_dir)
@@ -887,7 +986,7 @@ def commit_phase_job(
     if envelope.get("workflowTransitionOutcome") == "succeeded":
         return state
 
-    reconcile_phase_job(project_id, job_id, pipeline_dir=pipeline_dir)
+    reconcile_phase_job(project_id, job_id, pipeline_dir=pipeline_dir, now=now)
     envelope = load_execution_envelope(project_id, job_id, pipeline_dir=pipeline_dir)
     if envelope.get("executionOutcome") != "succeeded":
         raise PersianRunKernelError(
@@ -932,6 +1031,7 @@ def commit_phase_job(
             phase,
             evidence=phase_evidence,
             pipeline_dir=pipeline_dir,
+            now=now,
         )
     except Exception as exc:
         _persist_transition_causal_span(
@@ -1054,6 +1154,7 @@ def run_phase_job(
     pipeline_dir: Path | None = None,
     poll_interval_seconds: float = 0.5,
     timeout_seconds: float = 1800.0,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Run one durable phase to terminal state and commit it without caller polling.
 
@@ -1075,11 +1176,22 @@ def run_phase_job(
         idempotence_key=idempotence_key,
         telemetry_category=telemetry_category,
         pipeline_dir=pipeline_dir,
+        now=now,
+    )
+    _enforce_execution_checkpoint(
+        project_id, operation="run-kernel:after-start", phase=phase, job_id=job_id,
+        pipeline_dir=pipeline_dir,
+        now=now,
     )
     deadline = time.monotonic() + timeout
     while str(result.get("executionOutcome") or "pending") not in {
         "succeeded", "failed", "interrupted"
     }:
+        _enforce_execution_checkpoint(
+            project_id, operation="run-kernel:wait", phase=phase, job_id=job_id,
+            pipeline_dir=pipeline_dir,
+            now=now,
+        )
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise PersianRunKernelError(
@@ -1087,7 +1199,14 @@ def run_phase_job(
                 "the job was preserved. Retry status/commit with the same identity."
             )
         time.sleep(min(poll_interval, remaining))
-        result = reconcile_phase_job(project_id, job_id, pipeline_dir=pipeline_dir)
+        result = reconcile_phase_job(
+            project_id, job_id, pipeline_dir=pipeline_dir, now=now
+        )
+        _enforce_execution_checkpoint(
+            project_id, operation="run-kernel:after-reconcile", phase=phase, job_id=job_id,
+            pipeline_dir=pipeline_dir,
+            now=now,
+        )
 
     outcome = str(result.get("executionOutcome") or "pending")
     if outcome != "succeeded":
@@ -1100,6 +1219,7 @@ def run_phase_job(
         job_id,
         evidence=evidence,
         pipeline_dir=pipeline_dir,
+        now=now,
     )
 
 

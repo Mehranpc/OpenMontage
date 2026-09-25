@@ -43,9 +43,9 @@ def test_durable_render_commit_binds_measured_output_bytes(tmp_path: Path):
     )
     kernel.start_phase_job('run', job_id='measured-opening', phase='render_opening_candidate',
                            argv=[sys.executable, '-c', child], idempotence_key='opening-v1',
-                           telemetry_category='browser_render_execution', pipeline_dir=tmp_path)
+                           telemetry_category='browser_render_execution', pipeline_dir=tmp_path, now=BASE)
     for _ in range(100):
-        result = kernel.reconcile_phase_job('run', 'measured-opening', pipeline_dir=tmp_path)
+        result = kernel.reconcile_phase_job('run', 'measured-opening', pipeline_dir=tmp_path, now=BASE)
         if result['status'] in {'succeeded', 'failed', 'interrupted'}:
             break
         time.sleep(0.05)
@@ -80,9 +80,9 @@ def test_durable_render_refuses_different_output_evidence(tmp_path: Path):
     )
     kernel.start_phase_job('run', job_id='digest-check', phase='render_opening_candidate',
                            argv=[sys.executable, '-c', child], idempotence_key='digest-v1',
-                           pipeline_dir=tmp_path)
+                           pipeline_dir=tmp_path, now=BASE)
     for _ in range(100):
-        result = kernel.reconcile_phase_job('run', 'digest-check', pipeline_dir=tmp_path)
+        result = kernel.reconcile_phase_job('run', 'digest-check', pipeline_dir=tmp_path, now=BASE)
         if result['status'] in {'succeeded', 'failed', 'interrupted'}:
             break
         time.sleep(0.05)
@@ -120,6 +120,7 @@ def test_only_one_media_execution_can_run_or_wait_for_commit(tmp_path: Path):
         'run', job_id='render-owner', phase='render_opening_candidate',
         argv=[sys.executable, '-c', child], idempotence_key='render-owner-v1',
         telemetry_category='browser_render_execution', pipeline_dir=tmp_path,
+        now=BASE,
     )
 
     with pytest.raises(kernel.PersianRunKernelError, match='media execution.*render-owner|render-owner.*media execution'):
@@ -127,11 +128,12 @@ def test_only_one_media_execution_can_run_or_wait_for_commit(tmp_path: Path):
             'run', job_id='render-duplicate', phase='render_opening_candidate',
             argv=[sys.executable, '-c', child], idempotence_key='render-duplicate-v1',
             telemetry_category='browser_render_execution', pipeline_dir=tmp_path,
+            now=BASE,
         )
 
     result = None
     for _ in range(100):
-        result = kernel.reconcile_phase_job('run', 'render-owner', pipeline_dir=tmp_path)
+        result = kernel.reconcile_phase_job('run', 'render-owner', pipeline_dir=tmp_path, now=BASE)
         if result['executionOutcome'] == 'succeeded':
             break
         time.sleep(0.05)
@@ -144,6 +146,7 @@ def test_only_one_media_execution_can_run_or_wait_for_commit(tmp_path: Path):
         'run', job_id='render-restarted-client', phase='render_opening_candidate',
         argv=[sys.executable, '-c', child], idempotence_key='render-owner-v1',
         telemetry_category='browser_render_execution', pipeline_dir=tmp_path,
+        now=BASE,
     )
     assert replay['jobId'] == 'render-owner'
     assert replay['executionOutcome'] == 'succeeded'
@@ -156,6 +159,7 @@ def test_only_one_media_execution_can_run_or_wait_for_commit(tmp_path: Path):
             'run', job_id='render-after-exit', phase='render_opening_candidate',
             argv=[sys.executable, '-c', child], idempotence_key='render-after-exit-v1',
             telemetry_category='browser_render_execution', pipeline_dir=tmp_path,
+            now=BASE,
         )
 
     digest = hashlib.sha256(output.read_bytes()).hexdigest()
@@ -185,10 +189,11 @@ def test_failed_media_execution_releases_slot_after_reconcile(tmp_path: Path):
         'run', job_id='render-failed', phase='render_opening_candidate',
         argv=[sys.executable, '-c', failed_child], idempotence_key='render-failed-v1',
         telemetry_category='browser_render_execution', pipeline_dir=tmp_path,
+        now=BASE,
     )
     failed = None
     for _ in range(100):
-        failed = kernel.reconcile_phase_job('run', 'render-failed', pipeline_dir=tmp_path)
+        failed = kernel.reconcile_phase_job('run', 'render-failed', pipeline_dir=tmp_path, now=BASE)
         if failed['executionOutcome'] == 'failed':
             break
         time.sleep(0.05)
@@ -198,7 +203,7 @@ def test_failed_media_execution_releases_slot_after_reconcile(tmp_path: Path):
         'run', job_id='render-retry', phase='render_opening_candidate',
         argv=[sys.executable, '-c', failed_child], idempotence_key='render-retry-v1',
         telemetry_category='browser_render_execution', pipeline_dir=tmp_path,
-        launch=False,
+        launch=False, now=BASE,
     )
     assert replacement['jobId'] == 'render-retry'
     assert replacement['phaseAttempt'] == 2

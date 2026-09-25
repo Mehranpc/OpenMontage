@@ -526,6 +526,7 @@ def test_one_shot_run_reconciles_and_commits_without_manual_status_round_trip(tm
         pipeline_dir=projects_root,
         poll_interval_seconds=0.01,
         timeout_seconds=5.0,
+        now=BASE + timedelta(seconds=5),
     )
 
     assert committed["next_phase"] == "align_script_timing"
@@ -557,6 +558,7 @@ def test_one_shot_run_timeout_preserves_durable_job_for_later_reconciliation(tmp
             pipeline_dir=projects_root,
             poll_interval_seconds=0.01,
             timeout_seconds=0.02,
+            now=BASE + timedelta(seconds=5),
         )
 
     state = workflow.load_workflow_state("run", pipeline_dir=projects_root)
@@ -596,6 +598,7 @@ def test_one_shot_run_is_idempotent_after_successful_commit(tmp_path: Path) -> N
         pipeline_dir=projects_root,
         poll_interval_seconds=0.01,
         timeout_seconds=5.0,
+        now=BASE + timedelta(seconds=5),
     )
 
     first = kernel.run_phase_job("run", **kwargs)
@@ -883,6 +886,7 @@ def test_failed_transition_retry_does_not_claim_intervening_explicit_work(
         idempotence_key="transition-retry-v1",
         telemetry_category="machine_local_execution",
         pipeline_dir=projects_root,
+        now=BASE + timedelta(seconds=5),
     )
     _wait(projects_root, "transition-retry")
 
@@ -935,6 +939,7 @@ def test_first_transition_starts_after_intervening_explicit_work(
         idempotence_key="first-transition-after-work-v1",
         telemetry_category="machine_local_execution",
         pipeline_dir=projects_root,
+        now=BASE + timedelta(seconds=5),
     )
     _wait(projects_root, "first-transition-after-work")
 
