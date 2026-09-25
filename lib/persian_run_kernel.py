@@ -424,6 +424,19 @@ def _persist_job_causal_span(
     terminal = str(envelope.get("executionOutcome") or job.get("executionOutcome") or "")
     finished = job.get("finishedAt") if terminal in {"succeeded", "failed", "interrupted"} else None
     category = str(envelope.get("telemetryCategory") or "machine_local_execution")
+    # Durable jobs may legitimately overlap: the kernel serializes only media
+    # phases (see start_phase_job), so one attempt can run more than one non-media
+    # job, and a job is not reconciled until the terminal awaiting_human seam, so
+    # its reconciliation-lag span runs from finishedAt to terminal observation and
+    # legitimately crosses later phases' windows. Declaring one shared concurrency
+    # group for the whole durable-job family lets causal accounting dedupe that
+    # genuine overlap (surfaced as explicit_concurrency_seconds) instead of failing
+    # the second job's telemetry with "overlap requires an explicit shared
+    # concurrency_group". Do not narrow this to a per-phase/attempt key — deferred
+    # reconciliation makes cross-phase overlap reachable — and do not drop it: an
+    # empty group makes overlapping jobs unaccountable. The spans still carry
+    # phase/attempt/job_id in their fields, so no identity is lost.
+    job_concurrency_group = "durable_jobs"
     record_causal_interval(
         state,
         span_id=f"job:{job_id}",
@@ -435,6 +448,7 @@ def _persist_job_causal_span(
         outcome=(terminal if finished else "running"),
         kind="durable_job",
         count_toward_wall=True,
+        concurrency_group=job_concurrency_group,
         fields={"job_id": job_id, "phase": phase, "attempt": attempt},
     )
     if finished:
@@ -470,6 +484,7 @@ def _persist_job_causal_span(
                     outcome="succeeded",
                     kind="reconciliation",
                     count_toward_wall=True,
+                    concurrency_group=job_concurrency_group,
                     fields={
                         "job_id": job_id,
                         "phase": phase,
