@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 import tempfile
-from typing import Any
+from typing import Any, Mapping
 from tools.video.persian_compose_script_aligned import ScriptAlignedPersianCompose
 from tools.video.persian_compose import (
     persian_validation_ladder,
@@ -25,12 +25,13 @@ from lib.persian_edit_contract import (
     PersianEditContractError, collect_persian_edit_diagnostics, validate_persian_edit_contract,
 )
 from lib.persian_film_type import FilmTypePreflightError
+from lib.persian_geometric_precheck import geometric_hard_region_precheck
 from lib.persian_project_workspace import active_scratch_root, scoped_scratch_root
 from lib.persian_recovery_policy import (
     recovery_class_for_code, recovery_policy_for_issue,
 )
 
-PREFLIGHT_POLICY_VERSION = "2.3"
+PREFLIGHT_POLICY_VERSION = "2.4"
 _DIAGNOSTIC_PREFIX_RE = re.compile(r"^\[([A-Z0-9_]+)\]\s*")
 
 
@@ -540,6 +541,15 @@ def aggregate_preflight_edit_decisions(
         "subjectGeometryAgnostic": True,
         "collisionInputs": ["subtitle", "editorial_text"],
     }
+
+    if not blocking:
+        geometry = geometric_hard_region_precheck(edit, repo_root=root)
+        evidence["geometricPrecheck"] = geometry
+        geometry_blockers = geometry.get("blockingIssues")
+        if isinstance(geometry_blockers, list) and geometry_blockers:
+            layers.append("geometric_precheck")
+            blocking.extend(dict(item) for item in geometry_blockers if isinstance(item, Mapping))
+            actions.append("Repair the reviewed asset/subject geometry; do not weaken hard regions or approved copy.")
 
     if blocking:
         return _report(

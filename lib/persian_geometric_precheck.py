@@ -209,7 +209,7 @@ def prove_mandatory_strip_infeasible(
 def geometric_hard_region_precheck(
     edit: Mapping[str, Any],
     *,
-    film_type_profile_version: str | None,
+    film_type_profile_version: str | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Return blockers proven without browser measurement.
@@ -217,14 +217,19 @@ def geometric_hard_region_precheck(
     Missing font/profile evidence returns ``status=unknown`` and zero blockers.
     That is deliberately not a pass: downstream Chromium remains authoritative.
     """
+    persian = edit.get("persian")
+    if not isinstance(persian, Mapping):
+        return {"status": "unknown", "blockingIssues": [], "reason": "missing_persian"}
+    if film_type_profile_version is None:
+        design = persian.get("design")
+        if isinstance(design, Mapping):
+            raw_version = str(design.get("profileVersion") or "").strip()
+            film_type_profile_version = raw_version or None
     if film_type_profile_version != _SUPPORTED_PROFILE:
         return {"status": "unknown", "blockingIssues": [], "reason": "unsupported_profile"}
     profile = _profile(repo_root, film_type_profile_version)
     if profile is None:
         return {"status": "unknown", "blockingIssues": [], "reason": "profile_unavailable"}
-    persian = edit.get("persian")
-    if not isinstance(persian, Mapping):
-        return {"status": "unknown", "blockingIssues": [], "reason": "missing_persian"}
     fmt = str(persian.get("format") or "vertical")
     dims = FORMAT_DIMENSIONS.get(fmt)
     formats = profile.get("formats")
