@@ -305,6 +305,25 @@ def test_late_authoritative_hook_reaches_awaiting_human_without_faking_prompt_pa
     ).hexdigest()
 
 
+def test_late_authoritative_advisory_still_requires_independent_visual_voice_alignment(tmp_path):
+    """The late-payoff exception never waives the other independent rendered checks.
+
+    ``visualVoiceAlignment`` is enforced by ``validate_rendered_hook_review`` for a
+    passing review (``require_pass``), so a valid authoritative late advisory paired
+    with a weak alignment must still refuse to advance the phase.
+    """
+    _, review_path = _review_with_late_advisory(tmp_path)
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["metadata"]["hookQualityReview"]["visualVoiceAlignment"] = "weak"
+    review_path.write_text(json.dumps(review), encoding="utf-8")
+
+    with pytest.raises(PersianVideoWorkflowError, match="visual/voice alignment"):
+        complete_phase(
+            "run", "final_review", evidence={"final_review_path": str(review_path)},
+            pipeline_dir=tmp_path, now=BASE,
+        )
+
+
 def test_late_payoff_is_blocked_when_durable_authority_is_automatic(tmp_path):
     _, candidate, review_path, report = _review_ready_project(tmp_path)
     selection = workflow.load_workflow_state("run", pipeline_dir=tmp_path)["hook_selection"]
