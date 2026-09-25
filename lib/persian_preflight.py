@@ -28,8 +28,9 @@ from lib.persian_film_type import FilmTypePreflightError
 from lib.persian_geometric_precheck import geometric_hard_region_precheck
 from lib.persian_project_workspace import active_scratch_root, scoped_scratch_root
 from lib.persian_recovery_policy import (
-    recovery_class_for_code, recovery_policy_for_issue,
+    recovery_class_for_code, recovery_policy_for_issue, shot_local_recovery_plan,
 )
+from lib.persian_asset_workspace import asset_workspace_status
 
 PREFLIGHT_POLICY_VERSION = "2.4"
 _DIAGNOSTIC_PREFIX_RE = re.compile(r"^\[([A-Z0-9_]+)\]\s*")
@@ -573,7 +574,32 @@ def aggregate_preflight_edit_decisions(
         )
     except FilmTypePreflightError as exc:
         asset_collision = exc.code == "ASSET_SELECTION_HARD_REGION_COLLISION"
-        actions = ([
+        asset_recovery: list[str] = []
+        if asset_collision:
+            # Name the bounded repair when same-phase options are exhausted for the
+            # affected shots. Without this the refusal lists a generic instruction and
+            # the operator cannot tell an exhausted shot from a reusable one, which is
+            # how two L3 runs dead-ended on a repair that was already computable (#152).
+            try:
+                scoped = shot_local_recovery_plan(
+                    {"code": exc.code, "details": exc.diagnostics or {}},
+                    edit,
+                    asset_workspace_status(root),
+                )
+                if scoped.get("decision") == "scoped_asset_reacquisition":
+                    shots = ", ".join(str(s) for s in (scoped.get("reacquireShotIds") or []))
+                    events = ", ".join(
+                        str(e) for e in (scoped.get("reacquireVisualEventIds") or [])
+                    )
+                    asset_recovery = [
+                        "bounded repair: same-phase asset options are exhausted for "
+                        f"shot(s) {shots} (visual event(s) {events}); scoped "
+                        "re-acquisition is allowed - send back to acquire_assets with "
+                        "this code and those shot ids."
+                    ]
+            except (ValueError, OSError):
+                asset_recovery = []
+        actions = (asset_recovery + [
             "Stay in no_copy_preflight and first reuse a reviewed alternate crop/window (same source first), then another reviewed existing candidate. Send back to acquire_assets only for named shots whose existing reviewed options are exhausted; preserve approved copy and hard regions.",
         ] if asset_collision else [
             "Use watermarkDiagnostics to choose another approved fixed anchor or suppress only the colliding watermark interval.",

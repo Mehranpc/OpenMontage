@@ -118,6 +118,12 @@ END_TO_END_SLO_SECONDS = 45 * 60
 # for a session that has genuinely gone idle, never for one still being driven.
 IDLE_STALL_SECONDS = 15 * 60
 
+# Bounded extra candidate allowance carried by one sanctioned scoped re-acquisition,
+# so the authored queries for the events being repaired can actually run. Capped well
+# below the whole-run ceiling: a repair re-sources a few named events, it does not
+# reopen the search.
+_REACQUISITION_CANDIDATE_GRANT = 4
+
 PHASES = (
     "validate_input",
     "create_project",
@@ -1951,6 +1957,8 @@ def _complete_phase_impl(
     state["evidence"] = all_evidence
     if phase == "acquire_assets":
         state.pop("asset_reacquisition_scope", None)
+        # The grant is spent with the repair it was issued for.
+        state.pop("asset_reacquisition_grant", None)
 
     if phase == "awaiting_human":
         state["status"] = "awaiting_human"
@@ -2349,6 +2357,18 @@ def request_send_back(
             **({"editAttemptId": edit_attempt_id} if edit_attempt_id else {}),
         }
         state["asset_reacquisition_scope"] = scope
+        # A scoped repair has to be able to run the authored queries for the events it
+        # is repairing. Without a bounded grant the whole-run candidate ceiling is
+        # already spent, so the primary query consumes the remainder and the alternate
+        # query is refused outright -- which made every sanctioned scoped
+        # re-acquisition fail and left the placement collision unrepairable (#152).
+        state["asset_reacquisition_grant"] = {
+            "candidates": min(
+                _REACQUISITION_CANDIDATE_GRANT, 2 * len(scope["visualEventIds"])
+            ),
+            "visualEventIds": list(scope["visualEventIds"]),
+            "grantedAt": effective_now.isoformat(),
+        }
         usage = dict(state.get("asset_usage") or {})
         usage["completed_passes"] = []
         usage["acquisition_cycle"] = int(usage.get("acquisition_cycle") or 0) + 1
@@ -2357,6 +2377,7 @@ def request_send_back(
         state["asset_usage"] = usage
     elif target_phase != "acquire_assets" or user_directed_revision:
         state.pop("asset_reacquisition_scope", None)
+        state.pop("asset_reacquisition_grant", None)
 
     state["status"] = "active"
     state["next_phase"] = target_phase
@@ -2548,7 +2569,20 @@ def bounded_asset_search_request(
         usage.get("semantic_candidates_reviewed", usage.get("candidates_considered", 0))
     )
     used_bytes = int(usage.get("bytes_downloaded", 0))
-    remaining_candidates = policy["max_candidates_total"] - used_semantic_candidates
+    # A sanctioned scoped re-acquisition carries a bounded candidate grant so the
+    # authored queries for the events it is repairing can actually run. Without it the
+    # whole-run ceiling is already spent and the repair is refused before it starts
+    # (#152).
+    granted_candidates = 0
+    grant = state.get("asset_reacquisition_grant")
+    if isinstance(grant, Mapping) and grant.get("candidates"):
+        try:
+            granted_candidates = max(0, int(grant["candidates"]))
+        except (TypeError, ValueError):
+            granted_candidates = 0
+    remaining_candidates = (
+        policy["max_candidates_total"] + granted_candidates - used_semantic_candidates
+    )
     remaining_bytes = policy["max_total_download_bytes"] - used_bytes
     if remaining_candidates <= 0 or remaining_bytes <= 0:
         raise PersianVideoWorkflowError("shared asset download/candidate budget is exhausted")
