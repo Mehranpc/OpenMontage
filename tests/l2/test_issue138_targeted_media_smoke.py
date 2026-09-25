@@ -133,9 +133,23 @@ def test_real_browser_and_ffmpeg_targeted_slice(tmp_path: Path) -> None:
         ).stdout.strip()
     )
 
-    prepared = prepare_film_type_props(
-        _targeted_props(source), ROOT / "remotion-composer", scratch_dir=tmp_path
-    )
+    _write_evidence({
+        "layer": "L2", "trackingIssue": 138,
+        "fixture": "one-second-generated-source", "status": "browser_pending",
+        "ffmpeg": {"sourceBytes": source.stat().st_size, "durationSeconds": duration},
+    })
+    try:
+        prepared = prepare_film_type_props(
+            _targeted_props(source), ROOT / "remotion-composer", scratch_dir=tmp_path
+        )
+    except Exception as exc:
+        _write_evidence({
+            "layer": "L2", "trackingIssue": 138,
+            "fixture": "one-second-generated-source", "status": "browser_failed",
+            "ffmpeg": {"sourceBytes": source.stat().st_size, "durationSeconds": duration},
+            "browser": {"errorType": type(exc).__name__, "error": str(exc)},
+        })
+        raise
     layout = prepared["filmType"]["moments"]["moment-l2"]
     hard_region = prepared["shots"][0]["avoidRegions"][0]
     rect = layout["rect"]
@@ -150,6 +164,7 @@ def test_real_browser_and_ffmpeg_targeted_slice(tmp_path: Path) -> None:
         "layer": "L2",
         "trackingIssue": 138,
         "fixture": "one-second-generated-source",
+        "status": "measured",
         "ffmpeg": {"sourceBytes": source.stat().st_size, "durationSeconds": duration},
         "browser": {
             "inputHash": prepared["filmType"]["inputHash"],
@@ -167,3 +182,5 @@ def test_real_browser_and_ffmpeg_targeted_slice(tmp_path: Path) -> None:
     assert prepared["watermarkPlanMeasured"] is True
     assert layout["subjectSafety"] == "checked-against-supplied-regions"
     assert overlaps is False
+    evidence["status"] = "passed"
+    _write_evidence(evidence)
