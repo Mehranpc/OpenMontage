@@ -12,6 +12,7 @@ import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Mapping, Sequence
 
 from lib.paths import REPO_ROOT
@@ -1154,6 +1155,45 @@ def stage_edit_draft(
         "disposition": "staged",
         **continuity,
     }
+
+def probe_edit_draft(
+    project_dir: Path,
+    attempt_id: str,
+    *,
+    hook_authority: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run the canonical aggregate preflight without durable workspace writes."""
+    draft, _, _ = _paths(project_dir, attempt_id)
+    if not draft.is_file():
+        raise PersianEditWorkspaceError(f"edit draft does not exist: {draft}")
+    payload = json.loads(draft.read_text(encoding="utf-8"))
+    digest = artifact_sha256(payload)
+    dependency_digests = (
+        _dependency_digests(payload, hook_authority=hook_authority)
+        if hook_authority is not None
+        else _dependency_digests(payload)
+    )
+    aggregate_kwargs: dict[str, Any] = {"base_dir": REPO_ROOT}
+    if hook_authority is not None:
+        aggregate_kwargs["hook_authority"] = hook_authority
+    # Browser/layout helpers may need scratch bytes, but a diagnostic probe must
+    # leave no durable project state. This temporary directory is deleted before
+    # return and is never candidate/cache authority.
+    with TemporaryDirectory(prefix="openmontage-edit-probe-") as scratch:
+        aggregate_kwargs["scratch_dir"] = Path(scratch)
+        report = aggregate_preflight_edit_decisions(payload, **aggregate_kwargs)
+    if report.get("artifactSha256") != digest:
+        raise PersianEditWorkspaceError(
+            "probe report digest does not match the staged edit bytes"
+        )
+    result = dict(report)
+    result["attemptId"] = attempt_id
+    result["draftPath"] = str(draft)
+    result["dependencyDigests"] = dependency_digests
+    result["readOnly"] = True
+    result["durableSideEffects"] = False
+    return result
+
 
 def preflight_edit_draft(
     project_dir: Path, attempt_id: str, *,
