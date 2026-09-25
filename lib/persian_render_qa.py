@@ -80,6 +80,12 @@ def find_dark_runs(
     `per_second` is `(second_start, mean_yavg)` pairs in any order. A run's end
     is its last sample plus the series' own median spacing, so 30fps-frame
     input and 1s-bin input both measure duration correctly.
+
+    Callers protecting intentional typography plate pass bins measured over
+    *unprotected frames only*: a plate then lifts its own bin above `below` and
+    the bin is simply not dark. Duration deliberately stays at bin resolution —
+    excusing sub-bin intervals would sever a real dark stretch into fragments
+    that individually fall under `min_seconds` and let dead footage ship.
     """
     ordered = sorted(per_second, key=lambda sample: sample[0])
     if not ordered:
@@ -200,16 +206,10 @@ def _parse_signalstats(output: str) -> list[tuple[float, float]]:
     return samples
 
 
-def measure_per_second_luma(
+def _measure_luma_frames(
     video_path: Path, *, timeout: int = 600
 ) -> tuple[list[tuple[float, float]], float]:
-    """One ffmpeg `signalstats` pass; returns 1s-bin `(second, mean YAVG)` pairs.
-
-    Returns the bins plus the pass's own wall-clock seconds, so the gate's
-    cost is visible to the caller. Raises RuntimeError when ffmpeg is absent
-    or the pass fails — a render that cannot be measured cannot be reported
-    as successful.
-    """
+    """Run one ffmpeg signalstats pass and return frame-level luma samples."""
     started = time.perf_counter()
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
@@ -246,14 +246,39 @@ def measure_per_second_luma(
             "the luminance pass produced no signalstats samples — the output "
             "file may not be a readable video."
         )
+    return frames, elapsed
+
+
+def _per_second_luma(
+    frames: Sequence[tuple[float, float]],
+    *,
+    exclude_windows: Sequence[tuple[float, float]] = (),
+) -> list[tuple[float, float]]:
+    """Average frame luma into absolute seconds, optionally excluding windows."""
     bins: dict[int, list[float]] = {}
     for stamp, yavg in frames:
-        bins.setdefault(int(stamp), []).append(yavg)
-    per_second = [
+        if any(start <= stamp < end for start, end in exclude_windows):
+            continue
+        bins.setdefault(int(stamp), []).append(float(yavg))
+    return [
         (float(second), sum(values) / len(values))
         for second, values in sorted(bins.items())
+        if values
     ]
-    return per_second, elapsed
+
+
+def measure_per_second_luma(
+    video_path: Path, *, timeout: int = 600
+) -> tuple[list[tuple[float, float]], float]:
+    """One ffmpeg `signalstats` pass; returns 1s-bin `(second, mean YAVG)` pairs.
+
+    Returns the bins plus the pass's own wall-clock seconds, so the gate's
+    cost is visible to the caller. Raises RuntimeError when ffmpeg is absent
+    or the pass fails — a render that cannot be measured cannot be reported
+    as successful.
+    """
+    frames, elapsed = _measure_luma_frames(video_path, timeout=timeout)
+    return _per_second_luma(frames), elapsed
 
 
 @dataclass
@@ -285,8 +310,6 @@ def audit_render_luminance(
     timeout: int = 600,
 ) -> RenderQa:
     """Measure the render and refuse dead darkness, not intentional painted type plates."""
-    per_second, elapsed = measure_per_second_luma(video_path, timeout=timeout)
-
     protected: list[tuple[float, float]] = []
     for beat in beat_windows:
         b0, b1 = float(beat.get("startSeconds", 0.0)), float(beat.get("endSeconds", 0.0))
@@ -296,16 +319,11 @@ def audit_render_luminance(
             if end > start:
                 protected.append((start, end))
 
-    # One-second bins fully covered by both a typographic beat and actual moment
-    # text are not "dead plate" seconds. Keep their original values for beatLuma,
-    # but lift them only for dead/warn run detection. Footage and empty plate
-    # seconds retain the calibrated 22/30 thresholds unchanged.
-    detection = []
-    for stamp, yavg in per_second:
-        painted = any(stamp >= start - 1e-6 and stamp + 1.0 <= end + 1e-6 for start, end in protected)
-        detection.append((stamp, max(yavg, DEAD_LUMA_WARN) if painted else yavg))
-    dead = find_dark_runs(detection, below=DEAD_LUMA_FAIL)
-    warned = find_dark_runs(detection, below=DEAD_LUMA_WARN)
+    frames, elapsed = _measure_luma_frames(video_path, timeout=timeout)
+    per_second = _per_second_luma(frames)
+    unprotected = _per_second_luma(frames, exclude_windows=protected)
+    dead = find_dark_runs(unprotected, below=DEAD_LUMA_FAIL)
+    warned = find_dark_runs(unprotected, below=DEAD_LUMA_WARN)
     beats = []
     for beat in beat_windows:
         start = float(beat.get("startSeconds", 0.0))
