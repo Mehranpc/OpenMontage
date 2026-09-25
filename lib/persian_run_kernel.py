@@ -867,12 +867,15 @@ def reconcile_phase_job(
             "process exit code alone is not success"
         )
 
+    # Durable child timestamps come from the real runtime clock. Keep telemetry
+    # reconciliation on that same clock even when tests inject a workflow/budget
+    # clock through ``now`` for deterministic phase accounting.
     _reconcile_job_telemetry(
         project_id,
         envelope,
         effective_job,
         pipeline_dir=pipeline_dir,
-        reconciled_at=now or datetime.now(timezone.utc),
+        reconciled_at=datetime.now(timezone.utc),
     )
 
     if envelope.get("executionOutcome") in {"failed", "interrupted"}:
