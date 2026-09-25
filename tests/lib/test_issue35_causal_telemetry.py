@@ -973,3 +973,41 @@ def test_first_transition_starts_after_intervening_explicit_work(
     )
     assert transition["outcome"] == "succeeded"
     assert transition["started_at"] >= work["finished_at"]
+
+
+def test_terminal_performance_summary_carries_measured_causal_coverage(
+    tmp_path: Path,
+) -> None:
+    """The frozen performance summary carries its measured causal coverage.
+
+    ``causal_coverage_percent`` is spread in from ``phase_time_accounting``; this
+    pins it as persisted presentation evidence alongside a non-zero measured
+    coverage total. It deliberately does not assert ``covered + unattributed ==
+    wall``: that is an arithmetic identity of the accounting function
+    (``unattributed = max(0, wall - covered)`` with ``covered <= wall``) and can
+    never fail, so it would be false confidence rather than coverage evidence.
+    """
+    from tests.lib.test_persian_video_workflow import _review_ready_project
+
+    state, _, review_path, _ = _review_ready_project(tmp_path)
+    current = datetime.now(timezone.utc).isoformat()
+    state["budget_window_started_at"] = current
+    state["phase_telemetry"]["final_review"][-1]["started_at"] = current
+    workflow._write_state(tmp_path / "run", state)
+
+    # A durable job gives the frozen summary real measured coverage to report.
+    kernel.start_phase_job(
+        "run", job_id="coverage-job", phase="final_review",
+        argv=["python", "-c", _semantic_child()],
+        idempotence_key="coverage-job-v1", pipeline_dir=tmp_path,
+    )
+    _wait(tmp_path, "coverage-job")
+    workflow.complete_phase(
+        "run", "final_review", evidence={"final_review_path": str(review_path)},
+        pipeline_dir=tmp_path,
+    )
+    presented = workflow.complete_phase("run", "awaiting_human", pipeline_dir=tmp_path)
+
+    summary = presented["performance_summary"]
+    assert "causal_coverage_percent" in summary
+    assert summary["causal_covered_seconds"] > 0.0
