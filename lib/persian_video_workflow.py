@@ -1076,10 +1076,10 @@ def _parse_timestamp(value: str) -> datetime:
 def assert_within_wall_time(
     state: Mapping[str, Any], *, now: datetime | None = None
 ) -> None:
-    """Validate budget timing metadata.
+    """Validate budget timing metadata against the caller's effective clock.
 
-    Enforcement happens only after a phase finishes, so in-flight work is never
-    killed. The next phase cannot start after a persisted budget stop.
+    Phase-boundary and front-door checkpoints evaluate policy separately; this
+    helper only verifies that the active timing window is coherent.
     """
     started = _parse_timestamp(
         str(state.get("budget_window_started_at") or state.get("created_at") or "")
