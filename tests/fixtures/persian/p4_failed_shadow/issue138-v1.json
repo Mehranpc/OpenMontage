@@ -1,0 +1,214 @@
+{
+  "authority": {
+    "approvedScriptSha256": "3414c9244da45d820574d7c46d78c278e545fd20d3e47a0f60ec901178663a2a",
+    "assetManifest": {
+      "event-2": {
+        "candidateId": "asset-779b554c170bc0295783df16",
+        "candidateIdentitySha256": "779b554c170bc0295783df16a5dbc8c74fcd90242795cccc8966bd2839db8013",
+        "cropTransformIdentity": {
+          "mode": "cover"
+        },
+        "reviewSha256": "91953a932f0f28aafff70cad737d60baccd5213aab32d614868cb531ec446b88",
+        "sourceId": "6115070",
+        "sourceWindow": {
+          "endSeconds": 8.14,
+          "startSeconds": 0.0
+        }
+      }
+    },
+    "assetWorkspace": {
+      "event-2": {
+        "candidateId": "asset-779b554c170bc0295783df16",
+        "candidateIdentitySha256": "779b554c170bc0295783df16a5dbc8c74fcd90242795cccc8966bd2839db8013",
+        "cropTransformIdentity": {
+          "mode": "cover"
+        },
+        "reviewSha256": "91953a932f0f28aafff70cad737d60baccd5213aab32d614868cb531ec446b88",
+        "reviewedWindow": {
+          "endSeconds": 8.14,
+          "startSeconds": 0.0
+        },
+        "sourceId": "6115070"
+      }
+    },
+    "hookSelection": {
+      "authoritative": true,
+      "mayBeReplacedAutomatically": false,
+      "mode": "user_supplied",
+      "selectionPolicy": "retention-first-v1",
+      "sha256": "a39e77d889e96d359e1a7c3918818f6f79ce207363bc9fc855cfb369ed7ba460",
+      "text": "بعد از یه قرار خوب، اولین پیام رو کی باید بفرستی؟"
+    },
+    "policyPin": {
+      "filmTypeProfileVersion": "2.16.0",
+      "hookSelectionPolicy": "retention-first-v1"
+    },
+    "reviewedHardRegions": {
+      "shot-2": [
+        {
+          "endSeconds": 7.405,
+          "h": 0.68,
+          "priority": "hard",
+          "startSeconds": 5.22,
+          "w": 0.58,
+          "x": 0.25,
+          "y": 0.1
+        },
+        {
+          "endSeconds": 11.175,
+          "h": 0.8,
+          "priority": "hard",
+          "startSeconds": 7.405,
+          "w": 0.67,
+          "x": 0.18,
+          "y": 0.08
+        },
+        {
+          "endSeconds": 13.36,
+          "h": 0.6,
+          "priority": "hard",
+          "startSeconds": 11.175,
+          "w": 0.69,
+          "x": 0.27,
+          "y": 0.1
+        }
+      ]
+    }
+  },
+  "cases": {
+    "F1": {
+      "expected": {
+        "diagnosticCode": "ASSET_SELECTION_HARD_REGION_COLLISION",
+        "mustRejectBefore": [
+          "chromium",
+          "candidate_counter_increment"
+        ],
+        "stage": "geometric_precheck"
+      },
+      "failureClass": "hard_region_infeasibility",
+      "input": {
+        "formatAuthority": {
+          "filmTypeProfileVersion": "2.16.0",
+          "targetPlatform": "instagram-reels"
+        },
+        "moment": {
+          "displayCopy": {
+            "mode": "adaptable",
+            "text": "پژوهشگرا آزمایش کردند"
+          },
+          "endSeconds": 9.2,
+          "id": "moment-2",
+          "startSeconds": 5.67
+        },
+        "shot": {
+          "hardRegionAuthority": "authority.reviewedHardRegions.shot-2",
+          "id": "shot-2",
+          "sourceId": "6115070",
+          "visualEventId": "event-2"
+        }
+      },
+      "layer": "L0/L1",
+      "observed": {
+        "browserDiscovered": true,
+        "candidateBudgetWasConsumed": true,
+        "diagnosticCode": "ASSET_SELECTION_HARD_REGION_COLLISION"
+      }
+    },
+    "F2": {
+      "expected": {
+        "blockingSetParity": true,
+        "durableSideEffects": false,
+        "readOnly": true
+      },
+      "failureClass": "probe_authority_divergence",
+      "input": {
+        "draftEvidence": {
+          "approvedScriptSha256": "3414c9244da45d820574d7c46d78c278e545fd20d3e47a0f60ec901178663a2a",
+          "firstProofAtSeconds": 14.78,
+          "firstProofEvidence": "در این مطالعه، ۵۴۳ نفر سه زمان متفاوت برای دریافت پیام را ارزیابی کردند"
+        },
+        "hookAuthority": "authority.hookSelection",
+        "policyPin": "authority.policyPin"
+      },
+      "layer": "L1",
+      "observed": {
+        "divergenceCause": "standalone probe omitted workflow user_supplied hook authority",
+        "officialSameFactTreatment": "advisory",
+        "standaloneExtraBlockingCode": "HOOK_QUALITY_GATE",
+        "standaloneReason": "first concrete proof/payoff arrives at 14.78s"
+      }
+    },
+    "F3": {
+      "expected": {
+        "beforeCandidateConsumption": true,
+        "diagnosticCode": null,
+        "diagnosticCodeAuthority": "not_defined_by_issue138",
+        "recoveryRoute": "send_back:acquire_assets",
+        "stage": "edit-stage"
+      },
+      "failureClass": "unreviewed_source_window_reuse",
+      "input": {
+        "attemptedEditIdentity": {
+          "cropTransformAuthority": "missing_in_failed_edit_candidate",
+          "cropTransformIdentity": null,
+          "sourceId": "6115070",
+          "sourceWindow": {
+            "endSeconds": 21.5,
+            "startSeconds": 13.36
+          },
+          "visualEventId": "event-2"
+        },
+        "manifestAuthority": "authority.assetManifest.event-2",
+        "selectedAuthority": "authority.assetWorkspace.event-2",
+        "strategy": "reuse_reviewed_non_overlapping_source_window"
+      },
+      "layer": "L0/L1",
+      "observed": {
+        "attemptedWindowWasReviewed": false,
+        "manifestWasRebound": false,
+        "workspaceReviewedWindow": {
+          "endSeconds": 8.14,
+          "startSeconds": 0.0
+        }
+      }
+    },
+    "F4": {
+      "expected": {
+        "nextExecutionBoundaryStops": true,
+        "reason": "wall_budget_exceeded",
+        "startsNewExpensiveWork": false,
+        "status": "needs_decision"
+      },
+      "failureClass": "in_phase_wall_overrun",
+      "input": {
+        "activePhase": "no_copy_preflight",
+        "budgetWindowStartedAt": "2026-09-25T01:49:58.254105+00:00",
+        "phaseAttempt": 1,
+        "wallBudgetSeconds": 2700.0
+      },
+      "layer": "L0/L1",
+      "observed": {
+        "budgetStop": null,
+        "silentOverrun": true,
+        "wallSeconds": 32286.909
+      }
+    }
+  },
+  "fixtureDigestSha256": "8221ae2dd96116e46a23a20c57ef3668bfcd33650e4ded50664e38454281aec6",
+  "fixtureId": "issue138-p4-shadow-20260925-v1",
+  "schemaVersion": "1.0",
+  "sourceEvidence": {
+    "immutableSource": true,
+    "issueNumber": 138,
+    "projectId": "p4-shadow-first-date-first-text-2cc3664-20260925-000753",
+    "sourceArtifacts": [
+      "persian-video-workflow.json",
+      ".drafts/edit/revision-1-attempt-4/edit_decisions.json",
+      ".asset-workspace/selections.json",
+      "artifacts/asset_manifest.json",
+      ".convergence/edit/unresolved.json"
+    ],
+    "sourceMainSha": "4fa3bb17bad7f45a12cadf4faae9e750aec8554e",
+    "traceId": "43ee9544c2834bd2a38811bcc516f717"
+  }
+}
