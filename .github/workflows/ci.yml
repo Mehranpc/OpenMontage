@@ -71,3 +71,71 @@ jobs:
 
       - name: Run test suite
         run: make test
+
+  issue138-targeted-media-smoke:
+    name: P4 stabilization L2 (Chromium + FFmpeg)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: remotion-composer/package-lock.json
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Configure system Chrome
+        shell: bash
+        run: |
+          CHROME_PATH="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)"
+          test -n "$CHROME_PATH"
+          echo "REMOTION_BROWSER_EXECUTABLE=$CHROME_PATH" >> "$GITHUB_ENV"
+          "$CHROME_PATH" --version
+
+      - name: Install targeted test dependencies
+        run: |
+          make install-dev
+          npm ci --prefix remotion-composer
+
+      - name: Install licensed Film Type font
+        shell: bash
+        env:
+          KAHROBA_FONT_WOFF2_BASE64: ${{ secrets.KAHROBA_FONT_WOFF2_BASE64 }}
+        run: |
+          test -n "$KAHROBA_FONT_WOFF2_BASE64"
+          umask 077
+          font_source="$(mktemp)"
+          trap 'rm -f "$font_source"' EXIT
+          printf '%s' "$KAHROBA_FONT_WOFF2_BASE64" | base64 --decode > "$font_source"
+          .venv/bin/python scripts/install_kahroba_font.py "$font_source"
+
+      - name: Run targeted media smoke
+        env:
+          OPENMONTAGE_L2_MEDIA_TESTS: "1"
+          OPENMONTAGE_L2_EVIDENCE_PATH: test-artifacts/issue138-l2/evidence.json
+        run: .venv/bin/python -m pytest tests/l2/test_issue138_targeted_media_smoke.py -v
+
+      - name: Upload targeted smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue138-l2-evidence
+          path: test-artifacts/issue138-l2/
+          if-no-files-found: warn
+          retention-days: 14
