@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import math
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -160,6 +161,18 @@ def _intersects(a: Mapping[str, float], b: Mapping[str, float]) -> bool:
     )
 
 
+def _normalized_rect(value: Mapping[str, float]) -> bool:
+    try:
+        x, y, w, h = (float(value[key]) for key in ("x", "y", "w", "h"))
+    except (KeyError, TypeError, ValueError):
+        return False
+    return (
+        all(math.isfinite(item) for item in (x, y, w, h))
+        and x >= 0.0 and y >= 0.0 and w > 0.0 and h > 0.0
+        and x + w <= 1.0 + 1e-9 and y + h <= 1.0 + 1e-9
+    )
+
+
 def _can_place_strip(
     *,
     safe: Mapping[str, float],
@@ -198,9 +211,18 @@ def prove_mandatory_strip_infeasible(
     height_fraction: float,
 ) -> bool:
     """Pure reject-only rectangle proof used by the F1 fixture regression."""
+    if (
+        not _normalized_rect(safe_area)
+        or not math.isfinite(width_fraction)
+        or not math.isfinite(height_fraction)
+        or width_fraction <= 0
+        or height_fraction <= 0
+    ):
+        return False
+    valid_regions = [region for region in hard_regions if _normalized_rect(region)]
     return not _can_place_strip(
         safe=safe_area,
-        obstacles=hard_regions,
+        obstacles=valid_regions,
         width=width_fraction,
         height=height_fraction,
     )
@@ -245,7 +267,7 @@ def geometric_hard_region_precheck(
     except (KeyError, TypeError, ValueError):
         return {"status": "unknown", "blockingIssues": [], "reason": "safe_area_unavailable"}
     safe = {"x": left, "y": top, "w": 1.0 - left - right, "h": 1.0 - top - bottom}
-    if safe["w"] <= 0 or safe["h"] <= 0:
+    if not _normalized_rect(safe):
         return {"status": "unknown", "blockingIssues": [], "reason": "invalid_safe_area"}
 
     shots = [shot for shot in (persian.get("shots") or []) if isinstance(shot, Mapping)]
@@ -259,6 +281,8 @@ def geometric_hard_region_precheck(
             continue
         measured += 1
         width_px, token_sha, font_sha = measurement
+        if not math.isfinite(width_px) or width_px <= 0:
+            continue
         width_norm = width_px / dims[0]
         # One pixel is smaller than any rendered Film Type row. Using it, the
         # raw platform safe area, and no collision/motion margin makes the search
@@ -270,6 +294,8 @@ def geometric_hard_region_precheck(
             moment_end = float(moment["endSeconds"])
         except (KeyError, TypeError, ValueError):
             continue
+        if not all(math.isfinite(item) for item in (moment_start, moment_end)) or moment_end <= moment_start:
+            continue
         obstacles: list[dict[str, float]] = []
         shot_ids: set[str] = set()
         for shot in shots:
@@ -278,7 +304,12 @@ def geometric_hard_region_precheck(
                 shot_end = float(shot.get("endSeconds", 0.0))
             except (TypeError, ValueError):
                 continue
-            if shot_start >= moment_end or shot_end <= moment_start:
+            if (
+                not all(math.isfinite(item) for item in (shot_start, shot_end))
+                or shot_end <= shot_start
+                or shot_start >= moment_end
+                or shot_end <= moment_start
+            ):
                 continue
             for region in shot.get("avoidRegions") or []:
                 if not isinstance(region, Mapping) or str(region.get("priority") or "hard") == "soft":
@@ -294,9 +325,15 @@ def geometric_hard_region_precheck(
                     }
                 except (KeyError, TypeError, ValueError):
                     continue
-                if start >= moment_end or end <= moment_start:
-                    continue
-                if obstacle["w"] <= 0 or obstacle["h"] <= 0:
+                if (
+                    not all(math.isfinite(item) for item in (start, end))
+                    or end <= start
+                    or start < shot_start - 1e-9
+                    or end > shot_end + 1e-9
+                    or start >= moment_end
+                    or end <= moment_start
+                    or not _normalized_rect(obstacle)
+                ):
                     continue
                 obstacles.append(obstacle)
                 shot_ids.add(str(shot.get("id") or ""))
