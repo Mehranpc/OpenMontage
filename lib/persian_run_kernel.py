@@ -322,6 +322,7 @@ def _enforce_execution_checkpoint(
     phase: str,
     job_id: str,
     pipeline_dir: Path | None,
+    now: datetime | None = None,
 ) -> None:
     """Stop a live parent at a safe control boundary without discarding its durable child."""
     try:
@@ -329,6 +330,7 @@ def _enforce_execution_checkpoint(
             project_id,
             operation=operation,
             pipeline_dir=pipeline_dir,
+            now=now,
             operation_evidence={"phase": phase, "job_id": job_id},
         )
     except workflow.PersianVideoWorkflowError as exc:
@@ -1144,6 +1146,7 @@ def run_phase_job(
     pipeline_dir: Path | None = None,
     poll_interval_seconds: float = 0.5,
     timeout_seconds: float = 1800.0,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Run one durable phase to terminal state and commit it without caller polling.
 
@@ -1165,10 +1168,12 @@ def run_phase_job(
         idempotence_key=idempotence_key,
         telemetry_category=telemetry_category,
         pipeline_dir=pipeline_dir,
+        now=now,
     )
     _enforce_execution_checkpoint(
         project_id, operation="run-kernel:after-start", phase=phase, job_id=job_id,
         pipeline_dir=pipeline_dir,
+        now=now,
     )
     deadline = time.monotonic() + timeout
     while str(result.get("executionOutcome") or "pending") not in {
@@ -1177,6 +1182,7 @@ def run_phase_job(
         _enforce_execution_checkpoint(
             project_id, operation="run-kernel:wait", phase=phase, job_id=job_id,
             pipeline_dir=pipeline_dir,
+            now=now,
         )
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -1189,6 +1195,7 @@ def run_phase_job(
         _enforce_execution_checkpoint(
             project_id, operation="run-kernel:after-reconcile", phase=phase, job_id=job_id,
             pipeline_dir=pipeline_dir,
+            now=now,
         )
 
     outcome = str(result.get("executionOutcome") or "pending")
