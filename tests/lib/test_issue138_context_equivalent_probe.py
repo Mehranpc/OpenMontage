@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import copy
 import hashlib
-import json
 from pathlib import Path
 
 import lib.persian_edit_workspace as edit_workspace
@@ -37,11 +35,6 @@ def test_issue138_edit_probe_matches_official_context_and_is_read_only(
     workflow._write_state(project, state)
 
     edit = _cutless_persian_edit("issue138-f2")
-    canonical_path = project / "artifacts" / "edit_decisions.json"
-    canonical = json.loads(canonical_path.read_text(encoding="utf-8"))
-    canonical_design = (canonical.get("persian") or {}).get("design")
-    assert isinstance(canonical_design, dict)
-    edit["persian"]["design"] = copy.deepcopy(canonical_design)
     edit_workspace.stage_edit_draft(
         project, "f2-context", edit, hook_authority=authority
     )

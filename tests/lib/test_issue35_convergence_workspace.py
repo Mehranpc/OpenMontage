@@ -740,6 +740,7 @@ def test_front_door_preflight_terminalizes_when_last_allowed_candidate_is_blocke
         "project_id": "run",
         "status": "active",
         "next_phase": "no_copy_preflight",
+        "film_type_profile_version": workflow.active_film_type_version(repo_root=workflow.REPO_ROOT),
         "budgets": {"max_revisions_per_stage": 1},
         "user_revision_cycles": 0,
         "hook_selection": {"authority": "test"},

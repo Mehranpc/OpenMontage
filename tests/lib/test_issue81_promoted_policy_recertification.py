@@ -152,6 +152,7 @@ def test_front_door_exposes_promoted_policy_recertification_as_an_explicit_opt_i
     state = {
         "project_id": "run",
         "next_phase": "no_copy_preflight",
+        "film_type_profile_version": workflow.active_film_type_version(repo_root=workflow.REPO_ROOT),
         "hook_selection": {"mode": "user_supplied"},
         "read_allowlist": {"project_root": str(project)},
     }
@@ -175,7 +176,8 @@ def test_front_door_exposes_promoted_policy_recertification_as_an_explicit_opt_i
     result = workflow.preflight_workflow_edit_draft(
         "run", "base", pipeline_dir=tmp_path, recertify_promoted=True
     )
-    assert result == {"ok": True}
+    assert result["ok"] is True
+    assert result["workflowAuthorityContext"]["policyPin"]["filmTypeProfileVersion"] == state["film_type_profile_version"]
     assert captured["attempt_id"] == "base"
     assert captured["recertify_promoted"] is True
 
@@ -193,6 +195,7 @@ def test_front_door_exposes_staged_policy_recertification_as_an_explicit_opt_in(
     state = {
         "project_id": "run",
         "next_phase": "no_copy_preflight",
+        "film_type_profile_version": workflow.active_film_type_version(repo_root=workflow.REPO_ROOT),
         "hook_selection": {"mode": "user_supplied"},
         "read_allowlist": {"project_root": str(project)},
     }
@@ -216,6 +219,7 @@ def test_front_door_exposes_staged_policy_recertification_as_an_explicit_opt_in(
     result = workflow.preflight_workflow_edit_draft(
         "run", "base", pipeline_dir=tmp_path, recertify_staged=True
     )
-    assert result == {"ok": True}
+    assert result["ok"] is True
+    assert result["workflowAuthorityContext"]["policyPin"]["filmTypeProfileVersion"] == state["film_type_profile_version"]
     assert captured["attempt_id"] == "base"
     assert captured["recertify_staged"] is True
