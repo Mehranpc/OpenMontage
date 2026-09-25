@@ -444,6 +444,7 @@ def _scene_payload(edit: Mapping[str, Any]) -> list[dict[str, Any]]:
     keys = {
         "id", "visualEventId", "changeType", "narrativeRole", "humanPresence",
         "semanticRole", "semanticDirection", "selectionReason", "openingSemanticMatch",
+        "camera", "showsSubject",
     }
     for raw in persian.get("shots") or []:
         if isinstance(raw, Mapping):
@@ -516,7 +517,7 @@ def _unclassified_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
     known_shot = {
         "id", "startSeconds", "endSeconds", "visualEventId", "changeType",
         "narrativeRole", "humanPresence", "semanticRole", "semanticDirection",
-        "selectionReason", "openingSemanticMatch", "avoidRegions",
+        "selectionReason", "openingSemanticMatch", "avoidRegions", "camera", "showsSubject",
     }
     shot_unknown: list[dict[str, Any]] = []
     for raw in persian.get("shots") or []:
@@ -624,6 +625,8 @@ def _allowed_scopes(mutation_surface: list[str]) -> set[str]:
             allowed.update({"typography", "timeline"})
         elif value.startswith("assets."):
             allowed.add("assets")
+        elif value.startswith("scenes."):
+            allowed.add("scenes")
         elif value.startswith("subject_regions."):
             allowed.add("subject_regions")
         elif value.startswith("runtime."):
