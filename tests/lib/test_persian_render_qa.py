@@ -129,12 +129,16 @@ class TestWindowMeanBinWidth:
 
 
 class TestTypographicPlateLuminance:
-    def test_dark_plate_with_real_moment_text_is_not_dead_black(self, monkeypatch, tmp_path) -> None:
-        samples = [(float(i), 20.0 if 19 <= i < 25 else 80.0) for i in range(0, 51)]
+    @staticmethod
+    def _patch_frames(monkeypatch, samples: list[tuple[float, float]]) -> None:
         monkeypatch.setattr(
-            "lib.persian_render_qa.measure_per_second_luma",
+            "lib.persian_render_qa._measure_luma_frames",
             lambda *a, **k: (samples, 0.1),
         )
+
+    def test_dark_plate_with_real_moment_text_is_not_dead_black(self, monkeypatch, tmp_path) -> None:
+        samples = [(float(i), 20.0 if 19 <= i < 25 else 80.0) for i in range(0, 51)]
+        self._patch_frames(monkeypatch, samples)
         qa = audit_render_luminance(
             tmp_path / "render.mp4",
             beat_windows=[{"id": "beat-5", "startSeconds": 18.9, "endSeconds": 25.58}],
@@ -145,26 +149,63 @@ class TestTypographicPlateLuminance:
         assert qa.beat_luma[0]["meanYavg"] == pytest.approx(35.0)
 
     def test_partial_second_plate_boundary_is_not_a_dead_stretch(self, monkeypatch, tmp_path) -> None:
-        """#147: the L3 plate began at 38.11s, inside the 38-39s YAVG bin."""
-        samples = [(37.0, 80.0), (38.0, 21.4), (39.0, 20.0), (40.0, 20.0), (41.0, 80.0)]
-        monkeypatch.setattr(
-            "lib.persian_render_qa.measure_per_second_luma",
-            lambda *a, **k: (samples, 0.1),
-        )
+        """#147: reproduce the L3 38-39s raw-bin YAVG of exactly 21.4."""
+        samples = [(37.0, 80.0)]
+        samples += [
+            (38.0 + index / 100.0, 57.0 if index < 11 else 17.0)
+            for index in range(100)
+        ]
+        samples += [(39.0 + index / 100.0, 17.0) for index in range(100)]
+        samples += [
+            (40.0 + index / 100.0, 17.0 if index < 97 else 80.0)
+            for index in range(100)
+        ]
+        samples += [(41.0, 80.0)]
+        self._patch_frames(monkeypatch, samples)
         qa = audit_render_luminance(
             tmp_path / "render.mp4",
             beat_windows=[{"id": "beat-10", "startSeconds": 38.11, "endSeconds": 40.97}],
             moment_windows=[{"id": "m-card", "startSeconds": 38.11, "endSeconds": 40.97}],
         )
+        assert dict(qa.per_second)[38.0] == pytest.approx(21.4)
         assert qa.passed is True
         assert qa.dead_runs == []
 
+    @pytest.mark.parametrize("unprotected_yavg, expected_pass", [(23.0, True), (20.0, False)])
+    def test_protected_endcaps_preserve_real_unprotected_run_verdict(
+        self, monkeypatch, tmp_path, unprotected_yavg, expected_pass
+    ) -> None:
+        """Protection must neither darken safe footage nor hide a real 1.2s run."""
+        samples = []
+        for index in range(200):
+            stamp = index / 100.0
+            protected = stamp < 0.4 or stamp >= 1.6
+            samples.append((stamp, 17.0 if protected else unprotected_yavg))
+        self._patch_frames(monkeypatch, samples)
+        beat_windows = [
+            {"id": "lead", "startSeconds": 0.0, "endSeconds": 0.4},
+            {"id": "tail", "startSeconds": 1.6, "endSeconds": 2.0},
+        ]
+        moment_windows = [
+            {"id": "lead-text", "startSeconds": 0.0, "endSeconds": 0.4},
+            {"id": "tail-text", "startSeconds": 1.6, "endSeconds": 2.0},
+        ]
+        qa = audit_render_luminance(
+            tmp_path / "render.mp4",
+            beat_windows=beat_windows,
+            moment_windows=moment_windows,
+        )
+        assert qa.passed is expected_pass
+        if expected_pass:
+            assert qa.dead_runs == []
+        else:
+            assert len(qa.dead_runs) == 1
+            assert qa.dead_runs[0].start_seconds == pytest.approx(0.4)
+            assert qa.dead_runs[0].end_seconds == pytest.approx(1.6)
+
     def test_dark_plate_without_moment_text_still_fails(self, monkeypatch, tmp_path) -> None:
         samples = [(float(i), 20.0 if 19 <= i < 25 else 80.0) for i in range(0, 51)]
-        monkeypatch.setattr(
-            "lib.persian_render_qa.measure_per_second_luma",
-            lambda *a, **k: (samples, 0.1),
-        )
+        self._patch_frames(monkeypatch, samples)
         qa = audit_render_luminance(
             tmp_path / "render.mp4",
             beat_windows=[{"id": "beat-5", "startSeconds": 18.9, "endSeconds": 25.58}],
