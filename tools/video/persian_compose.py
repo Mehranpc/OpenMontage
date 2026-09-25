@@ -1133,7 +1133,7 @@ class PersianCompose(BaseTool):
         # is spoken; a moment set that disagrees with them by more than a viewer
         # forgives is a fault with exactly one honest remedy — re-derive, not nudge.
         audio = persian.get("audio") or {}
-        word_timings = audio.get("_syncWordTimings") or audio.get("wordTimings")
+        word_timings = audio.get("wordTimings")
         if word_timings:
             timed = TimedWord.from_dicts(word_timings)
             sync = audit_sync(built, timed)
