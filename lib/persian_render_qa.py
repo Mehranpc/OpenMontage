@@ -296,13 +296,17 @@ def audit_render_luminance(
             if end > start:
                 protected.append((start, end))
 
-    # One-second bins fully covered by both a typographic beat and actual moment
-    # text are not "dead plate" seconds. Keep their original values for beatLuma,
-    # but lift them only for dead/warn run detection. Footage and empty plate
-    # seconds retain the calibrated 22/30 thresholds unchanged.
+    # A protected interval interrupts a contiguous dead run even when it begins or
+    # ends inside an absolute one-second YAVG bin. Because an unprotected remainder
+    # of such a partially overlapping bin is necessarily <1s, it cannot by itself
+    # satisfy DEAD_RUN_MIN_SECONDS. Lift any overlapping bin for dead/warn detection;
+    # untouched footage/empty-plate bins keep the calibrated 22/30 thresholds.
     detection = []
     for stamp, yavg in per_second:
-        painted = any(stamp >= start - 1e-6 and stamp + 1.0 <= end + 1e-6 for start, end in protected)
+        painted = any(
+            stamp < end - 1e-6 and stamp + 1.0 > start + 1e-6
+            for start, end in protected
+        )
         detection.append((stamp, max(yavg, DEAD_LUMA_WARN) if painted else yavg))
     dead = find_dark_runs(detection, below=DEAD_LUMA_FAIL)
     warned = find_dark_runs(detection, below=DEAD_LUMA_WARN)
