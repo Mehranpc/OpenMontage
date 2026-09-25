@@ -9,6 +9,7 @@ import lib.persian_edit_workspace as edit_workspace
 import lib.persian_geometric_precheck as geometry
 import lib.persian_preflight as preflight
 from lib.persian_edit_workspace import PersianEditWorkspaceError
+from lib.persian_film_type import FilmTypePreflightError
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "tests" / "fixtures" / "persian" / "p4_failed_shadow" / "issue138-v1.json"
@@ -203,6 +204,110 @@ def test_placement_refusal_stays_plain_without_a_scoped_repair(
         edit_workspace.stage_edit_draft(project, "placement", _minimal_edit())
 
     assert "bounded repair" not in str(excinfo.value)
+
+
+def test_preflight_names_the_bounded_repair_for_exhausted_placement_shots(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A browser-measured placement refusal must name the bounded re-acquisition when
+    no same-phase option remains.
+
+    This is the refusal shape both L3 runs actually hit, and it arrives from the
+    browser-prepass path -- not from the edit-stage geometric precheck. A generic
+    instruction left the operator unable to tell an exhausted shot from a reusable
+    one, so the repair stayed invisible and the runs dead-ended (#152).
+    """
+    project = tmp_path / "project"
+    project.mkdir(parents=True)
+    edit = _minimal_edit()
+    edit["persian"]["shots"] = [
+        {
+            "id": "shot-4",
+            "visualEventId": "beat-4-event-1",
+            "startSeconds": 0.0,
+            "endSeconds": 6.0,
+            "narrativeRole": "hook",
+            "avoidRegions": [],
+        }
+    ]
+    edit["persian"]["moments"] = [
+        {
+            "id": "m-sample",
+            "kind": "figure",
+            "startSeconds": 0.0,
+            "endSeconds": 3.0,
+            "segments": [{"role": "hero", "text": "۵۴۳ نفر"}],
+        }
+    ]
+
+    def refuse(*args, **kwargs):
+        raise FilmTypePreflightError(
+            "Moment m-sample: no safe measured placement remains",
+            code="ASSET_SELECTION_HARD_REGION_COLLISION",
+            diagnostics={"momentId": "m-sample", "shotIds": ["shot-4"]},
+        )
+
+    monkeypatch.setattr(preflight, "collect_persian_edit_diagnostics", lambda *a, **k: [])
+    monkeypatch.setattr(preflight, "audit_persian_retention", lambda *a, **k: {"problems": []})
+    monkeypatch.setattr(
+        preflight, "audit_persian_hook_quality",
+        lambda *a, **k: {
+            "problems": [],
+            "timingPolicy": {"version": preflight.HOOK_TIMING_POLICY_VERSION},
+        },
+    )
+    monkeypatch.setattr(preflight, "render_independent_review_issues", lambda **k: [])
+    monkeypatch.setattr(
+        preflight, "geometric_hard_region_precheck",
+        lambda *a, **k: {"status": "not_provable", "blockingIssues": []},
+    )
+    monkeypatch.setattr(preflight, "browser_preflight_edit_decisions", refuse)
+
+    report = preflight.aggregate_preflight_edit_decisions(edit, base_dir=project)
+
+    assert report["ok"] is False
+    assert report["blockingIssues"][0]["code"] == "ASSET_SELECTION_HARD_REGION_COLLISION"
+    named = [action for action in report["nextActions"] if "bounded repair" in action]
+    assert named, report["nextActions"]
+    assert "shot-4" in named[0]
+    assert "beat-4-event-1" in named[0]
+
+
+def test_preflight_keeps_the_generic_action_when_no_repair_is_bounded(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The named repair must not be invented: with no shot identity to re-acquire,
+    the refusal keeps exactly its existing instruction."""
+    project = tmp_path / "project"
+    project.mkdir(parents=True)
+
+    def refuse(*args, **kwargs):
+        raise FilmTypePreflightError(
+            "Moment m-sample: no safe measured placement remains",
+            code="ASSET_SELECTION_HARD_REGION_COLLISION",
+            diagnostics={"momentId": "m-sample"},
+        )
+
+    monkeypatch.setattr(preflight, "collect_persian_edit_diagnostics", lambda *a, **k: [])
+    monkeypatch.setattr(preflight, "audit_persian_retention", lambda *a, **k: {"problems": []})
+    monkeypatch.setattr(
+        preflight, "audit_persian_hook_quality",
+        lambda *a, **k: {
+            "problems": [],
+            "timingPolicy": {"version": preflight.HOOK_TIMING_POLICY_VERSION},
+        },
+    )
+    monkeypatch.setattr(preflight, "render_independent_review_issues", lambda **k: [])
+    monkeypatch.setattr(
+        preflight, "geometric_hard_region_precheck",
+        lambda *a, **k: {"status": "not_provable", "blockingIssues": []},
+    )
+    monkeypatch.setattr(preflight, "browser_preflight_edit_decisions", refuse)
+
+    report = preflight.aggregate_preflight_edit_decisions(_minimal_edit(), base_dir=project)
+
+    assert report["ok"] is False
+    assert not [a for a in report["nextActions"] if "bounded repair" in a]
 
 
 def test_invalid_priority_never_contributes_to_reject_proof(monkeypatch: pytest.MonkeyPatch) -> None:
