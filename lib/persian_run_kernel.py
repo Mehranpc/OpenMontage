@@ -266,6 +266,55 @@ def _open_phase_attempt(state: Mapping[str, Any], phase: str) -> int | None:
         return None
 
 
+def _idempotence_already_persisted(
+    state: Mapping[str, Any], idempotence_key: str
+) -> bool:
+    index_path = _project_root(state) / ".jobs" / "idempotence.json"
+    if not index_path.is_file():
+        return False
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PersianRunKernelError(
+            f"durable idempotence index is unreadable: {index_path}"
+        ) from exc
+    if not isinstance(index, Mapping):
+        raise PersianRunKernelError("durable idempotence index must be a JSON object")
+    return bool(index.get(idempotence_key))
+
+
+def _enforce_new_execution_budget(
+    state: Mapping[str, Any],
+    *,
+    project_id: str,
+    phase: str,
+    job_id: str,
+    argv: Sequence[str],
+    idempotence_key: str,
+    telemetry_category: str,
+    pipeline_dir: Path | None,
+    now: datetime | None,
+) -> dict[str, Any]:
+    if _idempotence_already_persisted(state, idempotence_key):
+        return dict(state)
+    try:
+        return workflow.enforce_front_door_budget(
+            project_id,
+            operation="run-kernel:start",
+            pipeline_dir=pipeline_dir,
+            now=now,
+            operation_evidence={
+                "phase": phase,
+                "job_id": job_id,
+                "idempotence_key": idempotence_key,
+                "telemetry_category": telemetry_category,
+                "command_sha256": durable_command_sha256(argv),
+            },
+        )
+    except workflow.PersianVideoWorkflowError as exc:
+        raise PersianRunKernelError(str(exc)) from exc
+
+
 def _artifact_identity(evidence: Mapping[str, Any]) -> dict[str, Any]:
     """Keep only durable identity fields, not the whole phase evidence payload."""
     identity: dict[str, Any] = {}
@@ -576,6 +625,17 @@ def _start_phase_job_unlocked(
         raise PersianRunKernelError(
             f"cannot start {phase!r}; next phase is {state.get('next_phase')!r}"
         )
+    state = _enforce_new_execution_budget(
+        state,
+        project_id=project_id,
+        phase=phase,
+        job_id=job_id,
+        argv=argv,
+        idempotence_key=idempotence_key,
+        telemetry_category=telemetry_category,
+        pipeline_dir=pipeline_dir,
+        now=now,
+    )
     phase_attempt = _open_phase_attempt(state, phase)
     created_attempt = phase_attempt is None
     if created_attempt:
