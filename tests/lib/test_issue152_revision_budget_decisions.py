@@ -34,32 +34,49 @@ PHASE_LIMIT = 2 * PHASE_SLO_SECONDS[PHASE]  # 600s
 OVERRUN = float(PHASE_LIMIT + 1600)
 
 
+def _write_attempt_state(
+    tmp_path: Path,
+    *,
+    current_cycle: int,
+    attempt_cycle: int,
+    duration_seconds: float,
+    tag: bool = True,
+) -> None:
+    """Persist one recorded phase attempt of the given duration on an existing project."""
+    state = load_workflow_state(PROJECT, pipeline_dir=tmp_path)
+    state["next_phase"] = PHASE
+    state["user_revision_cycles"] = current_cycle
+    entry = {
+        "attempt": 1,
+        "started_at": BASE.isoformat(),
+        "finished_at": (BASE + timedelta(seconds=duration_seconds)).isoformat(),
+        "duration_seconds": duration_seconds,
+        "execution_class": "editorial",
+        "outcome": "superseded",
+    }
+    if tag:
+        entry["revision_cycle"] = attempt_cycle
+    state["phase_telemetry"] = {PHASE: [entry]}
+    workflow._write_state(tmp_path / PROJECT, state)
+
+
 def _record_attempt(
     tmp_path: Path,
     *,
     current_cycle: int,
     attempt_cycle: int,
     duration_seconds: float,
+    tag: bool = True,
 ) -> None:
     """Bootstrap, then persist one recorded phase attempt of the given duration."""
     _bootstrap(tmp_path)
-    state = load_workflow_state(PROJECT, pipeline_dir=tmp_path)
-    state["next_phase"] = PHASE
-    state["user_revision_cycles"] = current_cycle
-    state["phase_telemetry"] = {
-        PHASE: [
-            {
-                "attempt": 1,
-                "started_at": BASE.isoformat(),
-                "finished_at": (BASE + timedelta(seconds=duration_seconds)).isoformat(),
-                "duration_seconds": duration_seconds,
-                "execution_class": "editorial",
-                "outcome": "superseded",
-                "revision_cycle": attempt_cycle,
-            }
-        ]
-    }
-    workflow._write_state(tmp_path / PROJECT, state)
+    _write_attempt_state(
+        tmp_path,
+        current_cycle=current_cycle,
+        attempt_cycle=attempt_cycle,
+        duration_seconds=duration_seconds,
+        tag=tag,
+    )
 
 
 def test_previous_revision_cycle_attempt_does_not_consume_the_new_phase_budget(
@@ -350,4 +367,172 @@ def test_cli_exposes_the_budget_decision_command() -> None:
         parser.parse_args(
             ["budget-decision", "abc-1", "--decision", "continue_forever"]
         )
+
+
+def test_budget_decision_is_exempt_from_the_front_door_guard() -> None:
+    """The command that exists to satisfy a stop must not itself be blocked by it.
+
+    The CLI runs the front-door budget guard before every command, so without this
+    exemption the first ``budget-decision`` is refused with the very message it
+    exists to satisfy (#152 review F2).
+    """
+    assert "budget-decision" in workflow._BUDGET_GUARD_EXEMPT_COMMANDS
+
+
+def test_revision_from_a_terminal_stop_leaves_the_phase_attemptable(
+    tmp_path: Path,
+) -> None:
+    """A terminal stop never closes the attempt it interrupted, so the revision it
+    invites must not then treat that abandoned attempt as the live one — otherwise
+    the front door skips recording a new attempt and the phase can never complete
+    (#152 review F1)."""
+    _bootstrap(tmp_path)
+    state = load_workflow_state(PROJECT, pipeline_dir=tmp_path)
+    state["status"] = "needs_revision"
+    state["next_phase"] = None
+    state["user_revision_cycles"] = 0
+    state["phase_telemetry"] = {
+        PHASE: [
+            {
+                "attempt": 1,
+                "started_at": BASE.isoformat(),
+                "finished_at": None,
+                "duration_seconds": None,
+                "execution_class": "editorial",
+                "outcome": "running",
+            }
+        ]
+    }
+    workflow._write_state(tmp_path / PROJECT, state)
+
+    workflow.request_send_back(
+        PROJECT,
+        PHASE,
+        reason="user-directed revision after a terminal stop",
+        user_directed_revision=True,
+        pipeline_dir=tmp_path,
+        now=BASE + timedelta(seconds=60),
+    )
+    revised = load_workflow_state(PROJECT, pipeline_dir=tmp_path)
+    assert revised["phase_telemetry"][PHASE][-1]["outcome"] == "superseded"
+
+    workflow.start_explicit_work_span(
+        PROJECT,
+        category="agent_editorial_work",
+        name="revision work",
+        pipeline_dir=tmp_path,
+        now=BASE + timedelta(seconds=90),
+    )
+    after = load_workflow_state(PROJECT, pipeline_dir=tmp_path)
+
+    assert after["attempts"].get(PHASE) == 1
+    assert after["phase_telemetry"][PHASE][-1]["revision_cycle"] == 1
+    assert after["phase_telemetry"][PHASE][-1]["outcome"] == "running"
+
+
+def test_untagged_attempts_belong_to_the_first_cycle(tmp_path: Path) -> None:
+    """Attempts recorded before cycle tagging must default to the first cycle, in
+    both directions: the observed project's stale attempt is excluded, while a run
+    that has never been revised still counts its own attempt."""
+    _bootstrap(tmp_path)
+    # The observed project: revised, so an untagged attempt belongs to the cycle the
+    # revision replaced.
+    _write_attempt_state(
+        tmp_path, current_cycle=1, attempt_cycle=0, duration_seconds=OVERRUN, tag=False
+    )
+    assert enforce_front_door_budget(
+        PROJECT,
+        operation="workflow:work-start",
+        pipeline_dir=tmp_path,
+        now=BASE + timedelta(seconds=30),
+    )["status"] == "active"
+
+    # A run that has never been revised still counts it.
+    _write_attempt_state(
+        tmp_path, current_cycle=0, attempt_cycle=0, duration_seconds=OVERRUN, tag=False
+    )
+    with pytest.raises(PersianVideoWorkflowError, match="phase_budget_exceeded"):
+        enforce_front_door_budget(
+            PROJECT,
+            operation="workflow:work-start",
+            pipeline_dir=tmp_path,
+            now=BASE + timedelta(seconds=30),
+        )
+
+
+def test_extension_is_scoped_to_the_window_it_was_granted_in(tmp_path: Path) -> None:
+    """A grant belongs to its window: it must not inflate the budget a later,
+    freshly-opened window believes it has (#152 review F3)."""
+    limit = _wall_stopped_run(tmp_path)
+    resolve_budget_stop(
+        PROJECT,
+        decision="continue_with_extension",
+        pipeline_dir=tmp_path,
+        now=BASE + timedelta(seconds=limit + 300),
+    )
+    state = load_workflow_state(PROJECT, pipeline_dir=tmp_path)
+    decided_at = workflow._parse_timestamp(
+        state["budget_decisions"][-1]["decided_at"]
+    )
+    assert workflow._granted_extension_seconds(
+        state, reason="wall_budget_exceeded", since=decided_at
+    ) > 0
+
+    # A fresh window opened afterwards must not inherit the old grant.
+    state["budget_window_started_at"] = (decided_at + timedelta(days=7)).isoformat()
+    workflow._write_state(tmp_path / PROJECT, state)
+    reloaded = load_workflow_state(PROJECT, pipeline_dir=tmp_path)
+    later_window = workflow._parse_timestamp(reloaded["budget_window_started_at"])
+    assert workflow._granted_extension_seconds(
+        reloaded, reason="wall_budget_exceeded", since=later_window
+    ) == 0.0
+
+
+def test_continue_to_preview_records_the_skipped_phases(tmp_path: Path) -> None:
+    """Previewing skips forward; the abandoned phases must be recorded rather than
+    left implied by a pointer the run never earned (#152 review F5)."""
+    _stopped_run(tmp_path)
+    state = resolve_budget_stop(
+        PROJECT,
+        decision="continue_to_preview",
+        pipeline_dir=tmp_path,
+        now=BASE + timedelta(seconds=120),
+    )
+
+    assert state["next_phase"] == "render_opening_candidate"
+    assert state["budget_decisions"][-1]["skipped_phases"] == [PHASE]
+    assert PHASE not in (state.get("completed_phases") or [])
+
+
+def test_a_decision_that_leaves_another_budget_outstanding_surfaces_it(
+    tmp_path: Path,
+) -> None:
+    """A run can be over more than one budget. Releasing one must show the operator
+    whatever is still outstanding, instead of letting their next command fail on a
+    stop they were never shown (#152 review F6)."""
+    _record_attempt(
+        tmp_path, current_cycle=0, attempt_cycle=0, duration_seconds=OVERRUN
+    )
+    state = load_workflow_state(PROJECT, pipeline_dir=tmp_path)
+    state["budget_window_started_at"] = BASE.isoformat()
+    workflow._write_state(tmp_path / PROJECT, state)
+    limit = int(state["budgets"]["max_wall_time_minutes"]) * 60
+    late = BASE + timedelta(seconds=limit + 500)
+
+    with pytest.raises(PersianVideoWorkflowError, match="wall_budget_exceeded"):
+        enforce_front_door_budget(
+            PROJECT, operation="workflow:work-start", pipeline_dir=tmp_path, now=late
+        )
+
+    resolved = resolve_budget_stop(
+        PROJECT,
+        decision="continue_with_extension",
+        pipeline_dir=tmp_path,
+        now=late,
+    )
+
+    assert resolved["budget_decisions"][-1]["decision"] == "continue_with_extension"
+    assert resolved["status"] == "failed"
+    assert resolved["budget_stop"]["reason"] == "phase_budget_exceeded"
+
 

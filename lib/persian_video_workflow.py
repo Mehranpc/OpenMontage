@@ -1139,12 +1139,28 @@ def _phase_elapsed_seconds(state: Mapping[str, Any], phase: str, *, now: datetim
     return max(0.0, (now - _parse_timestamp(str(started_at))).total_seconds())
 
 
-def _granted_extension_seconds(state: Mapping[str, Any], *, reason: str) -> float:
-    """Seconds explicitly granted for one budget by resolved decisions (#152)."""
+def _granted_extension_seconds(
+    state: Mapping[str, Any], *, reason: str, since: datetime | None = None
+) -> float:
+    """Seconds explicitly granted for one budget, scoped to the live window (#152).
+
+    A grant belongs to the window it was made in. Without scoping, an extension
+    taken days ago kept inflating the threshold after ``resume`` had opened a fresh
+    window, so the budget a fresh session believed it had was not the budget it had.
+    """
     total = 0.0
     for record in state.get("budget_decisions") or []:
         if not isinstance(record, Mapping) or record.get("reason") != reason:
             continue
+        if since is not None:
+            decided_at = record.get("decided_at")
+            if not decided_at:
+                continue
+            try:
+                if _parse_timestamp(str(decided_at)) < since:
+                    continue
+            except PersianVideoWorkflowError:
+                continue
         try:
             total += float(record.get("extension_minutes") or 0.0) * 60.0
         except (TypeError, ValueError):
@@ -1163,12 +1179,12 @@ def _budget_stop_payload(
     # extension must never leak into the other budget.
     wall_limit_seconds = int((state.get("budgets") or {}).get("max_wall_time_minutes", 0)) * 60
     wall_threshold = wall_limit_seconds + _granted_extension_seconds(
-        state, reason="wall_budget_exceeded"
+        state, reason="wall_budget_exceeded", since=window_started
     )
     phase_seconds = _phase_elapsed_seconds(state, completed_phase, now=now)
     phase_limit = int(PHASE_SLO_SECONDS.get(completed_phase, 0))
     phase_threshold = 2 * phase_limit + _granted_extension_seconds(
-        state, reason="phase_budget_exceeded"
+        state, reason="phase_budget_exceeded", since=window_started
     )
 
     if wall_seconds > wall_threshold:
@@ -1284,10 +1300,14 @@ def resolve_budget_stop(
             raise PersianVideoWorkflowError(
                 f"budget stop advertises an unusable preview phase {target!r}"
             )
-        _invalidate_checkpoints_for_rewind(
-            state, target, reason="budget_decision:continue_to_preview"
-        )
+        # Previewing skips *forward* to the preview render; it is not a rewind, so
+        # nothing is invalidated and nothing may be claimed as completed. Recording
+        # the abandoned phases keeps the ledger honest rather than pointing at a
+        # phase the run never earned.
+        current = state.get("next_phase")
+        from_index = _phase_index(str(current)) if current in PHASES else 0
         record["preview_phase"] = target
+        record["skipped_phases"] = list(PHASES[from_index:_phase_index(target)])
         state["next_phase"] = target
         state["status"] = "active"
     else:
@@ -1301,6 +1321,12 @@ def resolve_budget_stop(
     decisions.append(record)
     state["budget_decisions"] = decisions
     state.pop("budget_stop", None)
+    # A run can be over more than one budget. Surface whatever is still outstanding
+    # in this same call, rather than releasing the operator to a command that fails
+    # on a stop they were never shown (#152).
+    current_phase = str(state.get("next_phase") or "")
+    if state.get("status") == "active" and current_phase in PHASES:
+        _enforce_phase_boundary_budget(state, current_phase, now=effective_now)
     _write_state(_project_root(state), state)
     return state
 
@@ -1315,9 +1341,23 @@ _EXPLICIT_WORK_CATEGORIES = frozenset({
 def _running_phase_attempt(state: Mapping[str, Any], phase: str) -> int | None:
     telemetry = state.get("phase_telemetry")
     entries = telemetry.get(phase) if isinstance(telemetry, Mapping) else None
-    if not isinstance(entries, list) or not entries or not isinstance(entries[-1], Mapping):
+    if not isinstance(entries, list) or not entries:
         return None
-    latest = entries[-1]
+    # Only an attempt belonging to the live revision cycle can be running. An
+    # attempt a revision superseded belongs to the replaced cycle, and reporting it
+    # as live suppresses the reopened phase's own attempt: the front door then skips
+    # recording it and ``complete`` refuses for a phase that was never attempted (#152).
+    cycle = _revision_cycle(state)
+    latest = next(
+        (
+            entry
+            for entry in reversed(entries)
+            if isinstance(entry, Mapping) and _entry_revision_cycle(entry) == cycle
+        ),
+        None,
+    )
+    if latest is None:
+        return None
     if latest.get("finished_at") or latest.get("outcome") != "running":
         return None
     try:
@@ -2263,6 +2303,16 @@ def request_send_back(
     if target_index >= current_index:
         raise PersianVideoWorkflowError(
             f"send-back must rewind the workflow; current={current!r}, target={target_phase!r}"
+        )
+
+    # Rewinding abandons every attempt at or after the target. A terminal stop can
+    # leave an attempt running in a phase the pointer has already passed (the
+    # convergence/recovery stops set ``next_phase=None``, so the close above never
+    # saw it). Left open, that zombie would be reported as the live attempt of the
+    # reopened phase and block its completion (#152).
+    for abandoned_phase in PHASES[target_index:]:
+        _finish_phase_telemetry(
+            state, abandoned_phase, outcome="superseded", now=effective_now
         )
 
     previous_send_backs = int(state.get("send_backs", 0))
@@ -4246,6 +4296,8 @@ _BUDGET_GUARD_EXEMPT_COMMANDS = frozenset({
     "complete",
     "alignment-commit",
     "reconcile-approval",
+    # The command that exists to satisfy the stop must not be blocked by it.
+    "budget-decision",
 })
 
 
