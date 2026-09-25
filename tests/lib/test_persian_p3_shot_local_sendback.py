@@ -32,7 +32,14 @@ def _edit() -> dict:
     }
 
 
-def _candidate(candidate_id: str, source_id: str, *, disposition: str = "reviewed") -> dict:
+def _candidate(
+    candidate_id: str,
+    source_id: str,
+    *,
+    disposition: str = "reviewed",
+    crop_width: float = 1.0,
+    window: tuple[float, float] = (0.0, 4.0),
+) -> dict:
     return {
         "candidateId": candidate_id,
         "reviewSha256": "a" * 64,
@@ -41,8 +48,10 @@ def _candidate(candidate_id: str, source_id: str, *, disposition: str = "reviewe
         "identity": {
             "provider": "pexels",
             "sourceId": source_id,
-            "sourceWindow": {"startSeconds": 0.0, "endSeconds": 4.0},
-            "intendedCrop": {"mode": "cover", "x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0},
+            "sourceWindow": {"startSeconds": window[0], "endSeconds": window[1]},
+            "intendedCrop": {
+                "mode": "cover", "x": 0.0, "y": 0.0, "w": crop_width, "h": 1.0,
+            },
         },
     }
 
@@ -55,7 +64,9 @@ def _workspace(*, event1_alt: bool, event2_alt: bool = False) -> dict:
     if event1_alt:
         reusable["event-1"].extend([
             _candidate("alt-other", "source-z"),
-            _candidate("alt-same-source", "source-a"),
+            # Same source but a *different* crop: this genuinely changes the frame
+            # geometry, so it can move a subject away from the type.
+            _candidate("alt-same-source", "source-a", crop_width=0.8),
         ])
     if event2_alt:
         reusable["event-2"].append(_candidate("alt-2", "source-b"))
@@ -106,6 +117,68 @@ def test_asset_collision_prefers_existing_reviewed_candidate_same_source_first()
     options = plan["existingOptions"]["shot-1"]
     assert options[0]["candidateId"] == "alt-same-source"
     assert options[0]["sameSourceAsSelected"] is True
+
+
+def test_geometry_equivalent_alternate_is_not_a_placement_repair() -> None:
+    """A placement collision is a property of the frame's geometry: a subject sits
+    where the type needs to be. An alternate sharing the selected source *and* crop
+    shows the same geometry, so reusing it cannot move that subject -- only
+    different footage or a different crop can.
+
+    Observed on the L3 run: the only reviewed "alternates" were the same clip with a
+    0.1s window shift. The plan promised a repair that could not possibly succeed, so
+    the run dead-ended on a reuse strategy instead of asking for usable footage.
+    """
+    workspace = {
+        "selectedCandidateIds": {"event-1": "sel-1"},
+        "reusableCandidatesByVisualEvent": {
+            "event-1": [
+                _candidate("sel-1", "source-a", disposition="selected"),
+                # Same source, same crop, window shifted by 0.1s.
+                _candidate("alt-shifted", "source-a", window=(0.1, 4.1)),
+            ]
+        },
+        "discoveryCandidateCount": 0,
+        "discoveryPassCount": 0,
+    }
+    plan = shot_local_recovery_plan(
+        {
+            "code": "ASSET_SELECTION_HARD_REGION_COLLISION",
+            "details": {"shotIds": ["shot-1"]},
+        },
+        _edit(),
+        workspace,
+    )
+
+    assert plan["decision"] == "scoped_asset_reacquisition"
+    assert plan["sendBackAllowed"] is True
+    assert plan["reacquireShotIds"] == ["shot-1"]
+    assert plan["reacquireVisualEventIds"] == ["event-1"]
+    assert plan["existingOptions"]["shot-1"] == []
+
+
+def test_geometry_equivalence_does_not_restrict_layout_recovery() -> None:
+    """Layout failures are repaired in no_copy_preflight, where a re-crop is a real
+    option: the geometry filter must not reach them."""
+    workspace = {
+        "selectedCandidateIds": {"event-1": "sel-1"},
+        "reusableCandidatesByVisualEvent": {
+            "event-1": [
+                _candidate("sel-1", "source-a", disposition="selected"),
+                _candidate("alt-shifted", "source-a", window=(0.1, 4.1)),
+            ]
+        },
+        "discoveryCandidateCount": 0,
+        "discoveryPassCount": 0,
+    }
+    plan = shot_local_recovery_plan(
+        {"code": "FILM_TYPE_LAYOUT_OVERFLOW", "details": {"shotIds": ["shot-1"]}},
+        _edit(),
+        workspace,
+    )
+
+    assert plan["decision"] == "same_phase_repair"
+    assert plan["localRepairShotIds"] == ["shot-1"]
 
 
 def test_asset_collision_reacquires_only_shots_with_exhausted_existing_options() -> None:
