@@ -312,7 +312,10 @@ def geometric_hard_region_precheck(
             ):
                 continue
             for region in shot.get("avoidRegions") or []:
-                if not isinstance(region, Mapping) or str(region.get("priority") or "hard") == "soft":
+                if not isinstance(region, Mapping):
+                    continue
+                priority = region.get("priority")
+                if priority is not None and str(priority) != "hard":
                     continue
                 try:
                     start = float(region.get("startSeconds", shot_start))

@@ -140,3 +140,22 @@ def test_edit_stage_rejects_before_candidate_consumption(monkeypatch: pytest.Mon
         edit_workspace.stage_edit_draft(project, "f1-impossible", _minimal_edit())
     assert not (project / ".convergence" / "edit" / "f1-impossible" / "candidate.json").exists()
     assert not (project / ".drafts" / "edit" / "f1-impossible" / "edit_decisions.json").exists()
+
+
+def test_invalid_priority_never_contributes_to_reject_proof(monkeypatch: pytest.MonkeyPatch) -> None:
+    edit = _minimal_edit()
+    edit["persian"]["shots"] = [{
+        "id": "shot-bad-priority", "startSeconds": 0.0, "endSeconds": 10.0,
+        "avoidRegions": [{
+            "x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0,
+            "startSeconds": 0.0, "endSeconds": 10.0, "priority": "mystery",
+        }],
+    }]
+    edit["persian"]["moments"] = [{
+        "id": "moment-bad-priority", "kind": "statement", "startSeconds": 1.0, "endSeconds": 3.0,
+        "segments": [{"role": "hero", "text": "نمونه"}],
+    }]
+    monkeypatch.setattr(geometry, "_mandatory_token_width", lambda *args, **kwargs: (300.0, "a" * 64, "b" * 64))
+    report = geometry.geometric_hard_region_precheck(edit, repo_root=ROOT)
+    assert report["blockingIssues"] == []
+    assert report["status"] == "not_provable"
