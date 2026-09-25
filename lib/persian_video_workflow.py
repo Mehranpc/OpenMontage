@@ -1097,12 +1097,39 @@ def assert_within_wall_time(
         raise PersianVideoWorkflowError("workflow max_wall_time_minutes must be positive")
 
 
+def _revision_cycle(state: Mapping[str, Any]) -> int:
+    try:
+        return int(state.get("user_revision_cycles") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _entry_revision_cycle(entry: Mapping[str, Any]) -> int:
+    # Attempts recorded before revision-cycle tagging belong to the first cycle.
+    try:
+        return int(entry.get("revision_cycle") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _phase_elapsed_seconds(state: Mapping[str, Any], phase: str, *, now: datetime) -> float:
     telemetry = state.get("phase_telemetry")
     entries = telemetry.get(phase) if isinstance(telemetry, Mapping) else None
-    if not isinstance(entries, list) or not entries or not isinstance(entries[-1], Mapping):
+    if not isinstance(entries, list) or not entries:
         return 0.0
-    latest = entries[-1]
+    # Phase accounting is scoped to the live revision cycle. An attempt that an
+    # explicit user-directed revision superseded belongs to the cycle that was
+    # replaced: letting it drive the fresh cycle's phase budget re-trips the stop
+    # the moment the revision opens a new window (#152).
+    cycle = _revision_cycle(state)
+    scoped = [
+        entry
+        for entry in entries
+        if isinstance(entry, Mapping) and _entry_revision_cycle(entry) == cycle
+    ]
+    if not scoped:
+        return 0.0
+    latest = scoped[-1]
     duration = latest.get("duration_seconds")
     if duration is not None:
         return max(0.0, float(duration))
@@ -1112,6 +1139,19 @@ def _phase_elapsed_seconds(state: Mapping[str, Any], phase: str, *, now: datetim
     return max(0.0, (now - _parse_timestamp(str(started_at))).total_seconds())
 
 
+def _granted_extension_seconds(state: Mapping[str, Any], *, reason: str) -> float:
+    """Seconds explicitly granted for one budget by resolved decisions (#152)."""
+    total = 0.0
+    for record in state.get("budget_decisions") or []:
+        if not isinstance(record, Mapping) or record.get("reason") != reason:
+            continue
+        try:
+            total += float(record.get("extension_minutes") or 0.0) * 60.0
+        except (TypeError, ValueError):
+            continue
+    return max(0.0, total)
+
+
 def _budget_stop_payload(
     state: Mapping[str, Any], completed_phase: str, *, now: datetime
 ) -> dict[str, Any] | None:
@@ -1119,17 +1159,25 @@ def _budget_stop_payload(
         str(state.get("budget_window_started_at") or state.get("created_at") or "")
     )
     wall_seconds = max(0.0, (now - window_started).total_seconds())
+    # A resolved decision extends only the budget it was granted for; an
+    # extension must never leak into the other budget.
     wall_limit_seconds = int((state.get("budgets") or {}).get("max_wall_time_minutes", 0)) * 60
+    wall_threshold = wall_limit_seconds + _granted_extension_seconds(
+        state, reason="wall_budget_exceeded"
+    )
     phase_seconds = _phase_elapsed_seconds(state, completed_phase, now=now)
     phase_limit = int(PHASE_SLO_SECONDS.get(completed_phase, 0))
+    phase_threshold = 2 * phase_limit + _granted_extension_seconds(
+        state, reason="phase_budget_exceeded"
+    )
 
-    if wall_seconds > wall_limit_seconds:
+    if wall_seconds > wall_threshold:
         reason = "wall_budget_exceeded"
-        threshold_seconds = wall_limit_seconds
+        threshold_seconds = wall_threshold
         observed_seconds = wall_seconds
-    elif phase_limit and phase_seconds > 2 * phase_limit:
+    elif phase_limit and phase_seconds > phase_threshold:
         reason = "phase_budget_exceeded"
-        threshold_seconds = 2 * phase_limit
+        threshold_seconds = phase_threshold
         observed_seconds = phase_seconds
     else:
         return None
@@ -1147,7 +1195,7 @@ def _budget_stop_payload(
         "next_phase": next_phase,
         "remaining_phases": remaining,
         "observed_seconds": round(observed_seconds, 3),
-        "threshold_seconds": threshold_seconds,
+        "threshold_seconds": int(threshold_seconds),
         "options": [
             {"action": "continue_with_extension", "minimum_extra_minutes": minimum_extra_minutes},
             {"action": "continue_to_preview", "preview_phase": "render_opening_candidate"},
@@ -1170,6 +1218,91 @@ def _enforce_phase_boundary_budget(
             state, str(trace["run_span_id"]), finished_at=now, outcome="needs_decision"
         )
     return True
+
+
+_BUDGET_DECISIONS = ("continue_with_extension", "continue_to_preview", "stop")
+
+
+def resolve_budget_stop(
+    project_id: str,
+    *,
+    decision: str,
+    extension_minutes: int | None = None,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Enact an explicit budget decision for a stopped run (#152).
+
+    A stop tells the operator to "resume with an explicit budget decision"; this
+    is the command that makes that instruction true. Every option the stop
+    advertises is actionable, the decision is durably recorded, and the persisted
+    stop is cleared so the run is reachable again. ``status`` never mutates state,
+    so only an explicit decision can release a stopped run.
+    """
+    choice = str(decision or "").strip()
+    if choice not in _BUDGET_DECISIONS:
+        raise PersianVideoWorkflowError(
+            f"unknown budget decision {choice!r}; expected one of {list(_BUDGET_DECISIONS)}"
+        )
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    stop = state.get("budget_stop")
+    if not isinstance(stop, Mapping) or not stop:
+        decisions = state.get("budget_decisions") or []
+        last = decisions[-1] if decisions and isinstance(decisions[-1], Mapping) else None
+        if last is not None and last.get("decision") == choice:
+            # Replaying a decision already applied is a no-op, not an error.
+            return state
+        raise PersianVideoWorkflowError(
+            "no budget stop is pending an explicit decision"
+        )
+
+    advertised = [o for o in (stop.get("options") or []) if isinstance(o, Mapping)]
+    matched = next((o for o in advertised if o.get("action") == choice), None)
+    if matched is None:
+        raise PersianVideoWorkflowError(
+            f"budget decision {choice!r} is not offered by the current stop"
+        )
+
+    effective_now = now or datetime.now(timezone.utc)
+    record: dict[str, Any] = {
+        "decision": choice,
+        "reason": str(stop.get("reason") or ""),
+        "observed_seconds": stop.get("observed_seconds"),
+        "threshold_seconds": stop.get("threshold_seconds"),
+        "phase": stop.get("phase"),
+        "decided_at": effective_now.isoformat(),
+    }
+
+    if choice == "continue_with_extension":
+        minimum = int(matched.get("minimum_extra_minutes") or 1)
+        granted = max(int(extension_minutes or 0), minimum)
+        record["extension_minutes"] = granted
+        state["status"] = "active"
+    elif choice == "continue_to_preview":
+        target = str(matched.get("preview_phase") or "")
+        if target not in PHASES:
+            raise PersianVideoWorkflowError(
+                f"budget stop advertises an unusable preview phase {target!r}"
+            )
+        _invalidate_checkpoints_for_rewind(
+            state, target, reason="budget_decision:continue_to_preview"
+        )
+        record["preview_phase"] = target
+        state["next_phase"] = target
+        state["status"] = "active"
+    else:
+        # A deliberate abandonment is a truthful terminal state, never a
+        # deliverable, and admits no further work.
+        state["status"] = "failed"
+        state["next_phase"] = None
+        record["terminal"] = True
+
+    decisions = list(state.get("budget_decisions") or [])
+    decisions.append(record)
+    state["budget_decisions"] = decisions
+    state.pop("budget_stop", None)
+    _write_state(_project_root(state), state)
+    return state
 
 
 _EXPLICIT_WORK_CATEGORIES = frozenset({
@@ -1496,6 +1629,10 @@ def record_phase_attempt(
         "duration_seconds": None,
         "execution_class": _execution_class_for_phase(phase),
         "outcome": "running",
+        # Which revision cycle this attempt belongs to. Phase budget accrual is
+        # scoped to the live cycle so a superseded attempt cannot consume the
+        # budget of the cycle that replaced it (#152).
+        "revision_cycle": _revision_cycle(state),
     })
     telemetry[phase] = entries
     state["phase_telemetry"] = telemetry
@@ -3922,6 +4059,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="start a fresh bounded revision cycle after explicit new user feedback",
     )
 
+    budget_decision = sub.add_parser(
+        "budget-decision",
+        help="enact one advertised decision for a stopped run and release the stop",
+    )
+    budget_decision.add_argument("project_id")
+    budget_decision.add_argument(
+        "--decision", required=True,
+        choices=list(_BUDGET_DECISIONS),
+        help="the option advertised by the persisted budget stop",
+    )
+    budget_decision.add_argument(
+        "--extension-minutes", type=int, default=None,
+        help="continue_with_extension: at least the stop's advertised minimum",
+    )
+
     hook_override = sub.add_parser(
         "hook-override",
         help="bind explicit user hook feedback as authoritative copy in a revision cycle",
@@ -4196,6 +4348,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     edit_attempt_id=args.edit_attempt_id,
                 )
             )
+        elif args.command == "budget-decision":
+            _print_json(resolve_budget_stop(
+                args.project_id,
+                decision=args.decision,
+                extension_minutes=args.extension_minutes,
+            ))
         elif args.command == "hook-override":
             _print_json(record_user_hook_override(
                 args.project_id, selected_text=args.text, reason=args.reason,
