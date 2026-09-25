@@ -249,6 +249,120 @@ def test_acquire_assets_sendback_is_refused_while_local_reviewed_option_remains(
     assert load_workflow_state("run", pipeline_dir=tmp_path)["send_backs"] == 0
 
 
+def _exhaust_candidate_ceiling(tmp_path: Path) -> int:
+    """Spend the whole-run candidate ceiling and return it."""
+    ceiling = int(workflow.get_workflow_budgets().max_candidates_total)
+    state = load_workflow_state("run", pipeline_dir=tmp_path)
+    usage = dict(state.get("asset_usage") or {})
+    usage["semantic_candidates_reviewed"] = ceiling
+    usage["bytes_downloaded"] = 0
+    for key in ("pending_pass", "pending_output_dir", "pending_limits"):
+        usage.pop(key, None)
+    state["asset_usage"] = usage
+    workflow._write_state(tmp_path / "run", state)
+    return ceiling
+
+
+def test_scoped_reacquisition_carries_a_bounded_candidate_grant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sanctioned scoped repair must be able to run the authored queries for the
+    events it repairs.
+
+    Observed on the L3 run: the whole-run candidate ceiling was already spent, so the
+    repair's primary query consumed the single remaining candidate and its authored
+    alternate query was refused with "shared asset download/candidate budget is
+    exhausted". Every sanctioned scoped re-acquisition failed that way, which left the
+    placement collision unrepairable (#152).
+    """
+    _bootstrap_to_preflight(tmp_path)
+    monkeypatch.setattr(
+        workflow, "asset_workspace_status",
+        lambda _: _workspace(event1_alt=True, event2_alt=False),
+    )
+    monkeypatch.setattr(
+        workflow, "read_checkpoint",
+        lambda *_args, **_kwargs: _scene_checkpoint("event-2", "replacement event two"),
+    )
+    _exhaust_candidate_ceiling(tmp_path)
+
+    rewound = request_send_back(
+        "run", "acquire_assets",
+        reason="shot-2 has no reviewed fitting option",
+        diagnostic_code="ASSET_SELECTION_HARD_REGION_COLLISION",
+        affected_shot_ids=["shot-1", "shot-2"],
+        pipeline_dir=tmp_path,
+        now=BASE,
+    )
+
+    grant = rewound["asset_reacquisition_grant"]
+    assert grant["visualEventIds"] == ["event-2"]
+    assert 0 < grant["candidates"] <= workflow._REACQUISITION_CANDIDATE_GRANT
+
+    # With the grant, the repair can run its authored query...
+    issued = bounded_asset_search_request(
+        "run",
+        {
+            "queries": [{"query": "replacement event two", "slot_id": "event-2", "kind": "video"}],
+            "sources": ["pexels", "pixabay_video"],
+        },
+        retry_pass=0,
+        pipeline_dir=tmp_path,
+        now=BASE,
+    )
+    assert issued["max_candidates_total"] == grant["candidates"]
+
+    # ...and without it the very same request is refused, because the whole-run
+    # ceiling was already spent when the repair was authorised.
+    state = load_workflow_state("run", pipeline_dir=tmp_path)
+    state.pop("asset_reacquisition_grant", None)
+    usage = dict(state.get("asset_usage") or {})
+    for key in ("pending_pass", "pending_output_dir", "pending_limits"):
+        usage.pop(key, None)
+    state["asset_usage"] = usage
+    workflow._write_state(tmp_path / "run", state)
+
+    with pytest.raises(PersianVideoWorkflowError, match="budget is exhausted"):
+        bounded_asset_search_request(
+            "run",
+            {
+                "queries": [{"query": "replacement event two", "slot_id": "event-2", "kind": "video"}],
+                "sources": ["pexels", "pixabay_video"],
+            },
+            retry_pass=0,
+            pipeline_dir=tmp_path,
+            now=BASE,
+        )
+
+
+def test_scoped_candidate_grant_never_exceeds_the_whole_run_ceiling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The grant re-sources a few named events; it does not reopen the search."""
+    _bootstrap_to_preflight(tmp_path)
+    monkeypatch.setattr(
+        workflow, "asset_workspace_status",
+        lambda _: _workspace(event1_alt=False, event2_alt=False),
+    )
+    monkeypatch.setattr(
+        workflow, "read_checkpoint",
+        lambda *_args, **_kwargs: _scene_checkpoint("event-1", "one", "two"),
+    )
+    state = load_workflow_state("run", pipeline_dir=tmp_path)
+    ceiling = int(workflow.get_workflow_budgets().max_candidates_total)
+
+    rewound = request_send_back(
+        "run", "acquire_assets",
+        reason="both shots exhausted",
+        diagnostic_code="ASSET_SELECTION_HARD_REGION_COLLISION",
+        affected_shot_ids=["shot-1", "shot-2"],
+        pipeline_dir=tmp_path,
+        now=BASE,
+    )
+
+    assert rewound["asset_reacquisition_grant"]["candidates"] <= ceiling
+
+
 def test_scoped_asset_sendback_consumes_budget_and_search_cannot_escape_scope(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
