@@ -1,0 +1,55 @@
+name: Temporary F1 priority hardening
+
+on:
+  push:
+    branches:
+      - fix/p4-geometric-hard-region-precheck
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Tighten reject-only priority handling
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          helper = Path("lib/persian_geometric_precheck.py")
+          text = helper.read_text(encoding="utf-8")
+          old = '''            for region in shot.get("avoidRegions") or []:\n                if not isinstance(region, Mapping) or str(region.get("priority") or "hard") == "soft":\n                    continue\n'''
+          new = '''            for region in shot.get("avoidRegions") or []:\n                if not isinstance(region, Mapping):\n                    continue\n                priority = region.get("priority")\n                if priority is not None and str(priority) != "hard":\n                    continue\n'''
+          if text.count(old) != 1:
+              raise SystemExit("priority anchor mismatch")
+          helper.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          tests = Path("tests/lib/test_persian_geometric_precheck.py")
+          body = tests.read_text(encoding="utf-8")
+          addition = '''\n\ndef test_invalid_priority_never_contributes_to_reject_proof(monkeypatch: pytest.MonkeyPatch) -> None:\n    edit = _minimal_edit()\n    edit["persian"]["shots"] = [{\n        "id": "shot-bad-priority", "startSeconds": 0.0, "endSeconds": 10.0,\n        "avoidRegions": [{\n            "x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0,\n            "startSeconds": 0.0, "endSeconds": 10.0, "priority": "mystery",\n        }],\n    }]\n    edit["persian"]["moments"] = [{\n        "id": "moment-bad-priority", "kind": "statement", "startSeconds": 1.0, "endSeconds": 3.0,\n        "segments": [{"role": "hero", "text": "نمونه"}],\n    }]\n    monkeypatch.setattr(geometry, "_mandatory_token_width", lambda *args, **kwargs: (300.0, "a" * 64, "b" * 64))\n    report = geometry.geometric_hard_region_precheck(edit, repo_root=ROOT)\n    assert report["blockingIssues"] == []\n    assert report["status"] == "not_provable"\n'''
+          if "test_invalid_priority_never_contributes_to_reject_proof" not in body:
+              tests.write_text(body + addition, encoding="utf-8")
+          PY
+      - name: Install dependencies
+        run: python -m pip install -q -r requirements.txt pytest
+      - name: Verify focused suite
+        run: |
+          python -m pytest tests/lib/test_persian_geometric_precheck.py -q
+          python -m py_compile lib/persian_geometric_precheck.py
+      - name: Commit verified hardening and remove scaffold
+        shell: bash
+        run: |
+          rm .github/workflows/tmp-f1-priority-hardening.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: reject only validated hard-region priority"
+          git push origin HEAD:${GITHUB_REF_NAME}
