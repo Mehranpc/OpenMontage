@@ -357,3 +357,27 @@ def test_persisted_decision_rejects_execution_duration_drift() -> None:
     decision = {**result["provider_decision"], "executionDurationSeconds": 99.0}
     with pytest.raises(AlignmentProviderError, match="execution duration"):
         validate_alignment_provider_decision(decision, _policy())
+
+
+def test_approved_script_authority_survives_provider_routing_and_is_validated() -> None:
+    """Approved-script authority is carried through fallback and enforced on read."""
+    primary = _tool("transcriber", "whisperx", ToolStatus.UNAVAILABLE)
+    mlx = _tool("mlx_whisper_transcriber", "mlx_whisper")
+    registry = FakeRegistry([primary, mlx])
+
+    plan = build_alignment_provider_plan(_policy(), registry=registry)
+    assert plan["selectedTool"] == "mlx_whisper_transcriber"
+    assert plan["fallbackReason"] == "primary_unavailable:transcriber"
+    assert plan["scriptAuthority"] == "approved_script"
+
+    result = execute_alignment_with_fallback(
+        plan, input_path="narration.wav", output_dir="artifacts/transcription", registry=registry
+    )
+    decision = result["provider_decision"]
+    assert decision["selectedTool"] == "mlx_whisper_transcriber"
+    assert decision["scriptAuthority"] == "approved_script"
+    validate_alignment_provider_decision(decision, _policy())
+
+    drifted = {**decision, "scriptAuthority": "spoken_narration"}
+    with pytest.raises(AlignmentProviderError, match="script authority"):
+        validate_alignment_provider_decision(drifted, _policy())

@@ -171,3 +171,113 @@ def test_bootstrap_can_read_approved_script_from_stdin_without_temp_file(
 
     assert narration is None
     assert approved_script == "متن تأییدشده"
+
+
+def test_bounded_recovery_cycle_leaves_the_repository_root_clean(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A public-seam recovery cycle adds no repository-root entry or helper script.
+
+    The bounded Persian workflow replaced ad-hoc helper Python with front-door
+    seams; driving a recovery cycle through those seams (edit staging, workspace
+    preflight, asset select/replace, send-back) must leave the repository root and
+    ``scripts/`` untouched, including no new ``*.py``.
+    """
+    from lib import persian_asset_workspace as assets
+    from lib import persian_edit_workspace as edit_workspace
+    from lib import persian_preflight as preflight
+    from lib import persian_video_workflow as workflow
+    from lib.paths import REPO_ROOT
+    from tests.lib.test_issue35_asset_candidate_workspace import _discovered, _review
+    from tests.lib.test_issue35_convergence_workspace import _edit
+    from tests.lib.test_persian_video_workflow import BASE, _advance_to, _bootstrap
+
+    roots = (REPO_ROOT, REPO_ROOT / "scripts")
+    before_entries = {root: repository_root_snapshot(root) for root in roots}
+    before_py = {root: frozenset(path.name for path in root.glob("*.py")) for root in roots}
+
+    _bootstrap(tmp_path)
+    _advance_to(tmp_path, "no_copy_preflight")
+    project = tmp_path / "run"
+    hook_text = "بازی‌های ویدیویی"
+    workflow.record_hook_selection(
+        "run", selected_text=hook_text, hook_family="fixture",
+        candidates=[{"text": hook_text}, {"text": "گزینهٔ دوم"}],
+        score=8.0, content_match_score=2, evidence_checked=True,
+        unsupported_claims_rejected=True,
+        rationale="Repository-cleanliness recovery-cycle fixture.",
+        pipeline_dir=tmp_path,
+    )
+
+    def _draft(attempt_id: str, recipe: str, **kwargs) -> dict:
+        payload = _edit(recipe=recipe)
+        payload["persian"]["moments"][0]["segments"][0]["text"] = hook_text
+        path = project / "artifacts" / f"edit-{attempt_id}.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return workflow.stage_workflow_edit_draft(
+            "run", attempt_id, path, pipeline_dir=tmp_path, **kwargs
+        )
+
+    base = _draft("base", "recipe-a")
+    recovery = _draft(
+        "recovery-1", "recipe-b", parent_attempt_id="base",
+        diagnostic_code="FILM_TYPE_LAYOUT_OVERFLOW",
+        recovery_class="FILM_TYPE_LAYOUT",
+        strategy="select_curated_typography_recipe",
+        changed_fields=["typography.recipe"],
+    )
+    assert base["artifactSha256"] != recovery["artifactSha256"]
+
+    def fake_aggregate(
+        edit, *, base_dir=None, precomputed_components=None, scratch_dir=None,
+        hook_authority=None,
+    ):
+        return {
+            "version": 1, "policyVersion": preflight.PREFLIGHT_POLICY_VERSION,
+            "ok": True, "status": "passed",
+            "artifactSha256": edit_workspace.artifact_sha256(edit),
+            "blockingIssues": [], "recoveryBudgets": {}, "warnings": [],
+            "watermarkDiagnostics": None, "nextActions": [],
+            "diagnosticLayers": [], "mediaCopies": 0, "evidence": {},
+        }
+
+    monkeypatch.setattr(edit_workspace, "aggregate_preflight_edit_decisions", fake_aggregate)
+    report = workflow.preflight_workflow_edit_draft("run", "recovery-1", pipeline_dir=tmp_path)
+    assert report["ok"] is True
+
+    discovery_id = assets.record_discovery_pass(
+        project, 0, [_discovered(project)]
+    )["candidateIds"][0]
+    first = assets.stage_asset_candidate(
+        project, discovery_id=discovery_id, visual_event_id="event-1",
+        semantic_beat_id="beat-1", source_in_seconds=0.0, duration_seconds=4.0,
+        intended_crop={"mode": "cover", "x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0},
+        candidate_rank=1, query="person thinking at desk", narration_span="جملهٔ نمونه",
+    )
+    assets.record_candidate_review(project, first["candidateId"], _review())
+    assets.select_asset_candidate(
+        project, "event-1", first["candidateId"], rejected_alternatives={}
+    )
+    second = assets.stage_asset_candidate(
+        project, discovery_id=discovery_id, visual_event_id="event-1",
+        semantic_beat_id="beat-1", source_in_seconds=5.0, duration_seconds=4.0,
+        intended_crop={"mode": "cover", "x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0},
+        candidate_rank=2, query="person thinking at desk", narration_span="جملهٔ نمونه",
+    )
+    assets.record_candidate_review(project, second["candidateId"], _review())
+    replaced = assets.select_asset_candidate(
+        project, "event-1", second["candidateId"], replace_existing=True,
+        rejected_alternatives={first["candidateId"]: "replaced with a reviewed window"},
+    )
+    assert replaced["selected"] is True
+
+    rewound = workflow.request_send_back(
+        "run", "acquire_assets", reason="user approved a bounded recovery cycle",
+        user_directed_revision=True, pipeline_dir=tmp_path, now=BASE,
+    )
+    assert rewound["status"] == "active"
+    assert rewound["next_phase"] == "acquire_assets"
+
+    for root in roots:
+        assert_repository_root_unchanged(root, before_entries[root])
+        assert frozenset(path.name for path in root.glob("*.py")) == before_py[root]

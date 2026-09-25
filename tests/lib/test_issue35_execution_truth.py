@@ -388,3 +388,33 @@ def test_reconcile_after_client_crash_reuses_external_execution_once(tmp_path: P
     )
     assert resumed["next_phase"] == "align_script_timing"
     assert side_effect.read_text() == "1"
+
+
+def test_terminal_seam_terminalizes_every_phase_attempt(tmp_path: Path) -> None:
+    """Every phase attempt has a terminal outcome once the run reaches awaiting_human.
+
+    ``reconcile_phase_telemetry`` is wired into ``_complete_phase_impl`` to close
+    stale running attempts at the terminal seam; this drives that wiring through
+    the public ``complete_phase`` rather than calling the helper directly.
+    """
+    from lib.persian_workflow_telemetry import TERMINAL_ATTEMPT_OUTCOMES
+    from tests.lib.test_persian_video_workflow import BASE, _terminal_project
+
+    state, _ = _terminal_project(tmp_path)
+    # An earlier attempt was interrupted and left running with no terminal outcome.
+    state["phase_telemetry"]["align_script_timing"].append({
+        "started_at": BASE.isoformat(),
+        "attempt": 99,
+        "outcome": "running",
+        "finished_at": None,
+    })
+    workflow._write_state(tmp_path / "run", state)
+
+    presented = workflow.complete_phase(
+        "run", "awaiting_human", pipeline_dir=tmp_path, now=BASE
+    )
+
+    entries = [item for group in presented["phase_telemetry"].values() for item in group]
+    assert entries
+    assert all(item.get("finished_at") for item in entries)
+    assert all(str(item.get("outcome") or "") in TERMINAL_ATTEMPT_OUTCOMES for item in entries)
