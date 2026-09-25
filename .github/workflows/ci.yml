@@ -117,7 +117,7 @@ jobs:
         env:
           OPENMONTAGE_L2_MEDIA_TESTS: "1"
           OPENMONTAGE_L2_EVIDENCE_PATH: test-artifacts/issue138-l2/evidence.json
-        run: python -m pytest tests/l2/test_issue138_targeted_media_smoke.py -v
+        run: .venv/bin/python -m pytest tests/l2/test_issue138_targeted_media_smoke.py -v
 
       - name: Upload targeted smoke evidence
         if: always()
