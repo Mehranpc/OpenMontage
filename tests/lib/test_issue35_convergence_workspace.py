@@ -344,6 +344,45 @@ def test_asset_selection_recovery_accepts_reviewed_non_overlapping_source_window
     assert staged["changedScopes"] == ["assets", "subject_regions"]
 
 
+def test_asset_selection_window_reuse_can_refresh_dependent_hook_visual_evidence(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    base = _edit()
+    base["metadata"]["hookQuality"] = {
+        "perceptualChanges": [
+            {"kind": "subject_motion", "atSeconds": 1.4, "evidence": "Reviewed source-A motion."}
+        ]
+    }
+    shot = base["persian"]["shots"][0]
+    shot.pop("src", None)
+    shot["source"] = "/tmp/source.mp4"
+    shot["attribution"] = "Video by A on Pexels"
+    shot["sourceInSeconds"] = 0.0
+    shot["sourceWindowEndSeconds"] = 3.0
+    shot["avoidRegions"] = [{"x": 0.1, "y": 0.2, "w": 0.4, "h": 0.3, "priority": "hard"}]
+    workspace.stage_edit_draft(project, "base", base, max_candidates=10)
+
+    child = deepcopy(base)
+    child_shot = child["persian"]["shots"][0]
+    child_shot["sourceInSeconds"] = 3.0
+    child_shot["sourceWindowEndSeconds"] = 6.0
+    child_shot["avoidRegions"] = [{"x": 0.25, "y": 0.2, "w": 0.35, "h": 0.3, "priority": "hard"}]
+    child["metadata"]["hookQuality"]["perceptualChanges"][0]["evidence"] = "Reviewed source-B motion."
+    staged = workspace.stage_edit_draft(
+        project,
+        "window-reuse-with-hook-evidence",
+        child,
+        parent_attempt_id="base",
+        diagnostic_issue={"code": "ASSET_SELECTION_RETRY", "recoveryClass": "ASSET_SELECTION"},
+        strategy="reuse_reviewed_non_overlapping_source_window",
+        changed_fields=["assets.selection", "subject_regions.review", "hook.visual_evidence"],
+        max_candidates=10,
+        revision_cycle=0,
+    )
+    assert staged["changedScopes"] == ["assets", "hook", "subject_regions"]
+    manifest = workspace.load_convergence_candidate(project, "window-reuse-with-hook-evidence")
+    assert "hook.visual_evidence" in manifest["mutationSurface"]
+
+
 def test_recovery_mutation_surface_rejects_unrelated_edit_changes(tmp_path: Path) -> None:
     project = tmp_path / "project"
     workspace.stage_edit_draft(project, "base", _edit(), max_candidates=10)

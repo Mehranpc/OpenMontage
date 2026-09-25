@@ -121,7 +121,10 @@ _CLASS_POLICIES: dict[str, dict[str, Any]] = {
             "use_authored_alternate_query",
             "stop_for_editorial_revision",
         ],
-        "mutationSurface": ["assets.selection", "assets.query", "subject_regions.review"],
+        "mutationSurface": [
+            "assets.selection", "assets.query", "subject_regions.review",
+            "hook.visual_evidence",
+        ],
         "preserve": ["approved_script", "narration", "audio_mix", "copy"],
     },
     "PREFLIGHT_RUNTIME": {
