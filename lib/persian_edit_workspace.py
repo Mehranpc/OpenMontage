@@ -521,6 +521,10 @@ def _unclassified_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
         for key, value in metadata.items()
         if key not in {
             "hookQuality", "targetPlatform", "target_platform", "semanticPosterStack",
+            # The hook/caption handoff is caption semantics, not an unowned field.
+            # Leaving it here put the one repair CAPTION_CONTINUITY exists to make
+            # outside every scope that class is allowed to change (#152).
+            "hookCaptionHandoff",
         }
     }
     known_persian = {
@@ -594,7 +598,14 @@ def _scope_digests(edit: Mapping[str, Any]) -> dict[str, str]:
     persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
     scope_payloads: dict[str, Any] = {
         "hook": _hook_scope_payload(edit),
-        "captions": persian.get("captions") or [],
+        "captions": {
+            "cues": persian.get("captions") or [],
+            # Owned here so a handoff repair registers as a caption change rather
+            # than as an unclassified one (#152).
+            "handoff": (edit.get("metadata") or {}).get("hookCaptionHandoff")
+            if isinstance(edit.get("metadata"), Mapping)
+            else None,
+        },
         "timeline": _timeline_payload(edit),
         "watermark": persian.get("watermark") or {},
         "typography": _typography_payload(edit),
@@ -618,6 +629,37 @@ def _changed_scopes(base_edit: Mapping[str, Any] | None, edit: Mapping[str, Any]
     before = _scope_digests(base_edit)
     after = _scope_digests(edit)
     return sorted(name for name in after if before.get(name) != after.get(name))
+
+
+_NAMED_FIELD_KEYS = ("field", "path", "jsonPointer", "json_pointer", "contractField")
+
+
+def _named_contract_field(issue: Mapping[str, Any]) -> str:
+    """The contract field a diagnostic reports as the thing to repair."""
+    details = issue.get("details") if isinstance(issue.get("details"), Mapping) else {}
+    for source in (issue, details):
+        for key in _NAMED_FIELD_KEYS:
+            value = str(source.get(key) or "").strip()
+            if value:
+                return value
+    return ""
+
+
+def _field_within_named(declared: str, named: str) -> bool:
+    """Whether a declared field names the same contract field the diagnostic reports.
+
+    Accepts the same field, or a dotted/slashed path into it, so a diagnostic that
+    reports a nested location still matches a candidate declaring its parent field.
+    """
+    left = str(declared or "").strip().strip("/")
+    right = str(named or "").strip().strip("/")
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    return left.startswith(f"{right}.") or left.startswith(f"{right}/") or (
+        right.startswith(f"{left}.") or right.startswith(f"{left}/")
+    )
 
 
 def _allowed_scopes(mutation_surface: list[str]) -> set[str]:
@@ -1033,7 +1075,24 @@ def stage_edit_draft(
             raise PersianEditWorkspaceError(
                 f"recovery candidate {attempt_id!r} must declare changed_fields"
             )
-        if "diagnostic.named_contract_field" not in mutation_surface:
+        if "diagnostic.named_contract_field" in mutation_surface:
+            # The wildcard means "the contract field this diagnostic names" -- not
+            # "any field". When the diagnostic does name one, a candidate must report
+            # that field rather than an unrelated one (#152). Some classes legitimately
+            # carry diagnostics with no field (the strategy implies it), so this only
+            # binds when a field is actually named.
+            named_field = _named_contract_field(issue)
+            if named_field:
+                mismatched = [
+                    item for item in clean_changed_fields
+                    if not _field_within_named(item, named_field)
+                ]
+                if mismatched:
+                    raise PersianEditWorkspaceError(
+                        "declared changed_fields do not name the field the diagnostic reports: "
+                        f"{mismatched}; diagnostic names {named_field!r}"
+                    )
+        else:
             undeclared = [item for item in clean_changed_fields if item not in mutation_surface]
             if undeclared:
                 raise PersianEditWorkspaceError(
