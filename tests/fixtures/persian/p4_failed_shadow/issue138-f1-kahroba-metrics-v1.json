@@ -1,0 +1,28 @@
+{
+  "version": "1.0",
+  "sourceIssue": 138,
+  "profileVersion": "2.16.0",
+  "fontAssetSha256": "354d3f6fd8f3a330a766d403beac0a37d3d7378a754067265d766ee1a1cae14d",
+  "fontSizePx": 64,
+  "measurementMethod": "harfbuzz-sfnt-shape plus Chrome canvas parity on the hash-matched licensed font",
+  "lowerBoundPolicy": "shapedAdvancePx-4",
+  "tokens": [
+    {
+      "sha256": "934ffea09a8316ac3c94e5271e82a073513273ca5760a38e9d8dcfcd84bdd133",
+      "harfbuzzAdvancePx": 272.8125,
+      "chromeCanvasRulePx": 274.8125
+    },
+    {
+      "sha256": "b9802bffe7aeba1bdbad7fb960c1d1a6f41ec8487856dfe003e2cf2d00246876",
+      "harfbuzzAdvancePx": 205.28125,
+      "chromeCanvasRulePx": 208.84375
+    },
+    {
+      "sha256": "26fdb0c57de6b26f7f9649365aa38f49e5f2072415c666ec82a9dfdb66c7303d",
+      "harfbuzzAdvancePx": 156.40625,
+      "chromeCanvasRulePx": 159.65625
+    }
+  ],
+  "minimumMandatoryTokenWidthPx": 268.8125,
+  "notes": "Derived metadata only; licensed font bytes are intentionally not stored in GitHub. The lower bound is four pixels below the widest shaped advance and therefore below the browser-measured width."
+}

@@ -22,6 +22,7 @@ from lib.persian_dependency_cache import (
     edit_visual_dependency_payload,
 )
 from lib.persian_hook_quality import HOOK_TIMING_POLICY_VERSION
+from lib.persian_geometric_precheck import geometric_hard_region_precheck
 from lib.persian_preflight import (
     PREFLIGHT_POLICY_VERSION, aggregate_preflight_edit_decisions, extract_edit_decisions,
 )
@@ -220,6 +221,7 @@ _COMPONENT_IMPLEMENTATION_PATHS: dict[str, tuple[str, ...]] = {
         "lib/persian_edit_contract.py",
         "lib/persian_sync.py",
         "lib/persian_film_type.py",
+        "lib/persian_geometric_precheck.py",
         "lib/persian_captions.py",
         "lib/persian_srt.py",
         "lib/persian_text.py",
@@ -1087,6 +1089,18 @@ def stage_edit_draft(
             "asset selection recovery requires exact reviewed asset-workspace bindings "
             "before edit-stage candidate consumption; send back to acquire_assets when "
             "no exact reviewed candidate exists"
+        )
+
+    geometry = geometric_hard_region_precheck(edit, repo_root=REPO_ROOT)
+    geometry_blockers = geometry.get("blockingIssues")
+    if isinstance(geometry_blockers, list) and geometry_blockers:
+        blocker = next((dict(item) for item in geometry_blockers if isinstance(item, Mapping)), {})
+        code = str(blocker.get("code") or "ASSET_SELECTION_HARD_REGION_COLLISION")
+        details = blocker.get("details") if isinstance(blocker.get("details"), Mapping) else {}
+        raise PersianEditWorkspaceError(
+            f"[{code}] geometric precheck refused before candidate consumption; "
+            f"details.stage={details.get('stage', 'geometric_precheck')}; "
+            f"{blocker.get('message', 'provably infeasible reviewed hard-region geometry')}"
         )
 
     diagnostic_cause = dict(issue) if issue else None
