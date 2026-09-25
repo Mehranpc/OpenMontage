@@ -44,7 +44,7 @@ def _write_evidence(payload: dict) -> None:
 def _targeted_props(source: Path) -> dict:
     return {
         "format": "vertical",
-        "durationSeconds": 1.0,
+        "durationSeconds": 3.0,
         "design": resolve_design(
             {"version": 2, "profile": "film-type", "seed": "issue138-l2"}
         ),
@@ -57,7 +57,7 @@ def _targeted_props(source: Path) -> dict:
                 "id": "shot-l2",
                 "source": str(source),
                 "startSeconds": 0.0,
-                "endSeconds": 1.0,
+                "endSeconds": 3.0,
                 "avoidRegions": [
                     {
                         "x": 0.0,
@@ -66,7 +66,7 @@ def _targeted_props(source: Path) -> dict:
                         "h": 0.22,
                         "priority": "hard",
                         "startSeconds": 0.0,
-                        "endSeconds": 1.0,
+                        "endSeconds": 3.0,
                     }
                 ],
             }
@@ -76,7 +76,7 @@ def _targeted_props(source: Path) -> dict:
                 "id": "moment-l2",
                 "kind": "statement",
                 "startSeconds": 0.0,
-                "endSeconds": 1.0,
+                "endSeconds": 3.0,
                 "presentation": {"placement": "auto"},
                 "segments": [{"role": "hero", "text": "نیاز به توجه"}],
             }
@@ -90,7 +90,7 @@ def test_real_browser_and_ffmpeg_targeted_slice(tmp_path: Path) -> None:
     assert ffmpeg, "L2 requires a real ffmpeg executable"
     assert ffprobe, "L2 requires a real ffprobe executable"
 
-    source = tmp_path / "one-second-source.mp4"
+    source = tmp_path / "three-second-source.mp4"
     subprocess.run(
         [
             ffmpeg,
@@ -101,7 +101,7 @@ def test_real_browser_and_ffmpeg_targeted_slice(tmp_path: Path) -> None:
             "-f",
             "lavfi",
             "-i",
-            "color=c=0x20242b:s=1080x1920:r=25:d=1",
+            "color=c=0x20242b:s=1080x1920:r=25:d=3",
             "-an",
             "-c:v",
             "libx264",
@@ -135,7 +135,7 @@ def test_real_browser_and_ffmpeg_targeted_slice(tmp_path: Path) -> None:
 
     _write_evidence({
         "layer": "L2", "trackingIssue": 138,
-        "fixture": "one-second-generated-source", "status": "browser_pending",
+        "fixture": "three-second-generated-source", "status": "browser_pending",
         "ffmpeg": {"sourceBytes": source.stat().st_size, "durationSeconds": duration},
     })
     try:
@@ -145,7 +145,7 @@ def test_real_browser_and_ffmpeg_targeted_slice(tmp_path: Path) -> None:
     except Exception as exc:
         _write_evidence({
             "layer": "L2", "trackingIssue": 138,
-            "fixture": "one-second-generated-source", "status": "browser_failed",
+            "fixture": "three-second-generated-source", "status": "browser_failed",
             "ffmpeg": {"sourceBytes": source.stat().st_size, "durationSeconds": duration},
             "browser": {"errorType": type(exc).__name__, "error": str(exc)},
         })
@@ -163,7 +163,7 @@ def test_real_browser_and_ffmpeg_targeted_slice(tmp_path: Path) -> None:
     evidence = {
         "layer": "L2",
         "trackingIssue": 138,
-        "fixture": "one-second-generated-source",
+        "fixture": "three-second-generated-source",
         "status": "measured",
         "ffmpeg": {"sourceBytes": source.stat().st_size, "durationSeconds": duration},
         "browser": {
@@ -178,7 +178,7 @@ def test_real_browser_and_ffmpeg_targeted_slice(tmp_path: Path) -> None:
     _write_evidence(evidence)
 
     assert source.stat().st_size > 0
-    assert duration == pytest.approx(1.0, abs=0.08)
+    assert duration == pytest.approx(3.0, abs=0.08)
     assert prepared["watermarkPlanMeasured"] is True
     assert layout["subjectSafety"] == "checked-against-supplied-regions"
     assert overlaps is False
