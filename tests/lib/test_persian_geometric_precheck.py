@@ -142,6 +142,69 @@ def test_edit_stage_rejects_before_candidate_consumption(monkeypatch: pytest.Mon
     assert not (project / ".drafts" / "edit" / "f1-impossible" / "edit_decisions.json").exists()
 
 
+def test_placement_refusal_names_the_bounded_repair_when_no_option_remains(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A placement refusal whose affected shot has no reusable reviewed candidate is
+    a footage problem, not an editorial one. The scoped re-acquisition path exists in
+    the workflow, but nothing surfaced it, so the refusal read as a dead end and the
+    run stopped for a human (#152)."""
+    project = tmp_path / "project"
+    project.mkdir(parents=True)
+    edit = _minimal_edit()
+    edit["persian"]["shots"] = [
+        {
+            "id": "shot-1",
+            "visualEventId": "ve-01",
+            "startSeconds": 0.0,
+            "endSeconds": 6.0,
+            "narrativeRole": "hook",
+            "avoidRegions": [],
+        }
+    ]
+    edit["persian"]["moments"] = [
+        {
+            "id": "moment-01",
+            "kind": "hook",
+            "startSeconds": 0.0,
+            "endSeconds": 5.0,
+            "segments": [{"role": "hero", "text": "نمونه"}],
+        }
+    ]
+    blocker = _blocker()
+    blocker["details"] = {"stage": "browser", "shotIds": ["shot-1"]}
+    monkeypatch.setattr(
+        edit_workspace,
+        "geometric_hard_region_precheck",
+        lambda *args, **kwargs: {"status": "refused", "blockingIssues": [blocker]},
+    )
+
+    with pytest.raises(
+        PersianEditWorkspaceError, match=r"bounded repair.*shot\(s\) shot-1"
+    ):
+        edit_workspace.stage_edit_draft(project, "placement", edit)
+
+
+def test_placement_refusal_stays_plain_without_a_scoped_repair(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The hint must not be invented: with no shot identity to re-acquire, the
+    refusal stays exactly as it was."""
+    project = tmp_path / "project"
+    monkeypatch.setattr(
+        edit_workspace,
+        "geometric_hard_region_precheck",
+        lambda *args, **kwargs: {"status": "refused", "blockingIssues": [_blocker()]},
+    )
+
+    with pytest.raises(
+        PersianEditWorkspaceError, match=r"details\.stage=geometric_precheck"
+    ) as excinfo:
+        edit_workspace.stage_edit_draft(project, "placement", _minimal_edit())
+
+    assert "bounded repair" not in str(excinfo.value)
+
+
 def test_invalid_priority_never_contributes_to_reject_proof(monkeypatch: pytest.MonkeyPatch) -> None:
     edit = _minimal_edit()
     edit["persian"]["shots"] = [{

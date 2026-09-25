@@ -26,9 +26,10 @@ from lib.persian_geometric_precheck import geometric_hard_region_precheck
 from lib.persian_preflight import (
     PREFLIGHT_POLICY_VERSION, aggregate_preflight_edit_decisions, extract_edit_decisions,
 )
-from lib.persian_recovery_policy import recovery_policy_for_issue
+from lib.persian_recovery_policy import recovery_policy_for_issue, shot_local_recovery_plan
 from lib.persian_asset_workspace import (
     PersianAssetWorkspaceError,
+    asset_workspace_status,
     validate_edit_asset_bindings,
     validate_edit_asset_bindings_against_manifest,
 )
@@ -631,6 +632,38 @@ def _changed_scopes(base_edit: Mapping[str, Any] | None, edit: Mapping[str, Any]
     return sorted(name for name in after if before.get(name) != after.get(name))
 
 
+def _scoped_reacquisition_hint(
+    project_dir: Path, edit: Mapping[str, Any], code: str, details: Mapping[str, Any]
+) -> str:
+    """Name the bounded repair when same-phase asset options are exhausted (#152).
+
+    A placement refusal whose affected shots have no reusable reviewed candidate is
+    a footage problem, not an editorial one. The scoped re-acquisition path already
+    exists in the workflow, but nothing surfaced it here, so the refusal read as a
+    dead end and the run stopped for a human. Naming the bounded repair makes the
+    next step mechanical.
+    """
+    if not code:
+        return ""
+    try:
+        plan = shot_local_recovery_plan(
+            {"code": code, "details": dict(details)},
+            edit,
+            asset_workspace_status(project_dir),
+        )
+    except (ValueError, PersianAssetWorkspaceError, OSError):
+        return ""
+    if plan.get("decision") != "scoped_asset_reacquisition":
+        return ""
+    shots = ", ".join(str(item) for item in (plan.get("reacquireShotIds") or []))
+    events = ", ".join(str(item) for item in (plan.get("reacquireVisualEventIds") or []))
+    return (
+        "\n  bounded repair: same-phase asset options are exhausted for "
+        f"shot(s) {shots} (visual event(s) {events}); scoped re-acquisition is "
+        "allowed - send back to acquire_assets with this code and those shot ids"
+    )
+
+
 _NAMED_FIELD_KEYS = ("field", "path", "jsonPointer", "json_pointer", "contractField")
 
 
@@ -1160,6 +1193,7 @@ def stage_edit_draft(
             f"[{code}] geometric precheck refused before candidate consumption; "
             f"details.stage={details.get('stage', 'geometric_precheck')}; "
             f"{blocker.get('message', 'provably infeasible reviewed hard-region geometry')}"
+            + _scoped_reacquisition_hint(project_dir, edit, code, details)
         )
 
     diagnostic_cause = dict(issue) if issue else None
