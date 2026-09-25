@@ -85,6 +85,11 @@ jobs:
 
           replace_once(
               "lib/persian_preflight.py",
+              "from typing import Any\n",
+              "from typing import Any, Mapping\n",
+          )
+          replace_once(
+              "lib/persian_preflight.py",
               "from lib.persian_film_type import FilmTypePreflightError\n",
               "from lib.persian_film_type import FilmTypePreflightError\nfrom lib.persian_geometric_precheck import geometric_hard_region_precheck\n",
           )
