@@ -72,3 +72,53 @@ def test_cli_front_door_stops_before_new_work_span(tmp_path: Path, monkeypatch):
         span.get("kind") == "explicit_work"
         for span in (state.get("causal_telemetry") or {}).get("spans", [])
     )
+
+
+def test_run_kernel_rechecks_budget_at_live_child_boundaries(monkeypatch):
+    operations = []
+
+    monkeypatch.setattr(
+        kernel, "start_phase_job",
+        lambda *args, **kwargs: {"executionOutcome": "pending"},
+    )
+    monkeypatch.setattr(
+        kernel, "reconcile_phase_job",
+        lambda *args, **kwargs: {"executionOutcome": "pending"},
+    )
+    monkeypatch.setattr(kernel.time, "sleep", lambda _seconds: None)
+
+    def fake_budget_guard(_project_id, *, operation, **_kwargs):
+        operations.append(operation)
+        if operation == "run-kernel:after-reconcile":
+            raise workflow.PersianVideoWorkflowError(
+                "wall_budget_exceeded: simulated live-child overrun"
+            )
+        return {}
+
+    monkeypatch.setattr(workflow, "enforce_front_door_budget", fake_budget_guard)
+
+    with pytest.raises(kernel.PersianRunKernelError, match="wall_budget_exceeded"):
+        kernel.run_phase_job(
+            "run",
+            job_id="live-child",
+            phase="prepare_inputs",
+            argv=["fixture"],
+            idempotence_key="live-child-v1",
+            poll_interval_seconds=0.001,
+            timeout_seconds=1.0,
+        )
+
+    assert operations == [
+        "run-kernel:after-start",
+        "run-kernel:wait",
+        "run-kernel:after-reconcile",
+    ]
+
+
+def test_asset_result_remains_available_as_external_settlement(monkeypatch):
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("asset-result must not be blocked before settlement")
+
+    monkeypatch.setattr(workflow, "enforce_front_door_budget", fail_if_called)
+    args = type("Args", (), {"command": "asset-result", "project_id": "run"})()
+    workflow._enforce_cli_front_door_budget(args)

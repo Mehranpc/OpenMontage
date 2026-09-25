@@ -315,6 +315,36 @@ def _enforce_new_execution_budget(
         raise PersianRunKernelError(str(exc)) from exc
 
 
+def _enforce_execution_checkpoint(
+    project_id: str,
+    *,
+    operation: str,
+    phase: str,
+    job_id: str,
+    pipeline_dir: Path | None,
+) -> None:
+    """Stop a live parent at a safe control boundary without discarding its durable child."""
+    try:
+        state = workflow.enforce_front_door_budget(
+            project_id,
+            operation=operation,
+            pipeline_dir=pipeline_dir,
+            operation_evidence={"phase": phase, "job_id": job_id},
+        )
+    except workflow.PersianVideoWorkflowError as exc:
+        raise PersianRunKernelError(str(exc)) from exc
+    stop = state.get("budget_stop")
+    if (
+        state.get("status") == "failed"
+        and isinstance(stop, Mapping)
+        and stop.get("reason") in {"wall_budget_exceeded", "phase_budget_exceeded"}
+    ):
+        raise PersianRunKernelError(
+            f"{stop.get('reason')}: workflow budget already stopped durable job {job_id!r}; "
+            "reconcile/status remains available until an explicit resume decision"
+        )
+
+
 def _artifact_identity(evidence: Mapping[str, Any]) -> dict[str, Any]:
     """Keep only durable identity fields, not the whole phase evidence payload."""
     identity: dict[str, Any] = {}
@@ -1136,10 +1166,18 @@ def run_phase_job(
         telemetry_category=telemetry_category,
         pipeline_dir=pipeline_dir,
     )
+    _enforce_execution_checkpoint(
+        project_id, operation="run-kernel:after-start", phase=phase, job_id=job_id,
+        pipeline_dir=pipeline_dir,
+    )
     deadline = time.monotonic() + timeout
     while str(result.get("executionOutcome") or "pending") not in {
         "succeeded", "failed", "interrupted"
     }:
+        _enforce_execution_checkpoint(
+            project_id, operation="run-kernel:wait", phase=phase, job_id=job_id,
+            pipeline_dir=pipeline_dir,
+        )
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise PersianRunKernelError(
@@ -1148,6 +1186,10 @@ def run_phase_job(
             )
         time.sleep(min(poll_interval, remaining))
         result = reconcile_phase_job(project_id, job_id, pipeline_dir=pipeline_dir)
+        _enforce_execution_checkpoint(
+            project_id, operation="run-kernel:after-reconcile", phase=phase, job_id=job_id,
+            pipeline_dir=pipeline_dir,
+        )
 
     outcome = str(result.get("executionOutcome") or "pending")
     if outcome != "succeeded":

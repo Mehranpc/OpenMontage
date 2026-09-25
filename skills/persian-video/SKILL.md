@@ -55,11 +55,13 @@ python -m lib.persian_video_workflow status <project-id> --json
 phase, phase elapsed time, wall time versus budget, last written file, and
 `progressing`/`idle` (`idle` means no project write for 15 minutes). Use `--json`
 when routing by `next_phase` or inspecting telemetry. Before a supported front-door
-command admits new active work, and before a new durable run-kernel execution starts,
-the same wall/SLO policy is enforced. An overrun persists `status=failed`,
+command admits new active work, before a new durable run-kernel execution starts, and
+at safe checkpoints while a durable child is running, the same wall/SLO policy is
+enforced. An overrun persists `status=failed`,
 `quality_disposition=needs_decision`, stable budget evidence, current phase/work
-identity, and the blocked operation before new expensive work begins. Existing
-status/reconciliation/settlement paths stay usable so durable evidence is not lost.
+identity, and the blocked operation before new expensive work continues. Existing
+status/reconciliation paths and external asset-result settlement stay usable so
+durable evidence is not lost.
 Phase completion keeps the same boundary stop policy. Resume only after an explicit
 budget decision; never bypass the persisted stop.
 

@@ -3998,6 +3998,7 @@ _BUDGET_GUARD_EXEMPT_COMMANDS = frozenset({
     "status",
     "guard-read",
     "edit-compare",
+    "asset-result",
     "job-status",
     "alignment-status",
     "resume",
