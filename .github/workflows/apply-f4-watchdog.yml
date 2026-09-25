@@ -1,0 +1,55 @@
+name: Apply F4 watchdog patch
+
+on:
+  push:
+    branches:
+      - fix/p4-in-phase-watchdog
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    name: Apply and verify F4 watchdog
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/p4-in-phase-watchdog
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Apply focused patch
+        run: python scripts/apply_f4_watchdog.py
+
+      - name: Install Python dependencies
+        run: make install-dev
+
+      - name: Run targeted watchdog regressions
+        run: |
+          python -m pytest -q \
+            tests/lib/test_issue138_in_phase_watchdog.py \
+            tests/lib/test_persian_video_workflow.py::test_wall_budget_stops_at_next_phase_boundary
+
+      - name: Validate Python syntax and patch whitespace
+        run: |
+          python -m py_compile lib/persian_video_workflow.py lib/persian_run_kernel.py
+          git diff --check
+
+      - name: Commit implementation and remove patch scaffold
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-f4-watchdog.yml scripts/apply_f4_watchdog.py
+          git add lib/persian_video_workflow.py lib/persian_run_kernel.py \
+            skills/persian-video/SKILL.md tests/lib/test_issue138_in_phase_watchdog.py
+          git diff --cached --check
+          git commit -m "fix: enforce in-phase budget watchdog [f4-applied]"
+          git push origin HEAD:fix/p4-in-phase-watchdog
