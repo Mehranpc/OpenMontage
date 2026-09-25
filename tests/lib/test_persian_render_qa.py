@@ -200,8 +200,59 @@ class TestTypographicPlateLuminance:
             assert qa.dead_runs == []
         else:
             assert len(qa.dead_runs) == 1
-            assert qa.dead_runs[0].start_seconds == pytest.approx(0.4)
-            assert qa.dead_runs[0].end_seconds == pytest.approx(1.6)
+            # Bins 0.0-1.0 and 1.0-2.0 are both unprotected-dark, so the run is
+            # reported at the measurement's own 1s resolution. The gate decides
+            # on unprotected bin means; it cannot honestly claim sub-second
+            # boundaries it never measured.
+            assert qa.dead_runs[0].start_seconds == pytest.approx(0.0)
+            assert qa.dead_runs[0].end_seconds == pytest.approx(2.0)
+
+    @pytest.mark.parametrize(
+        "label, dark, protected, expected_fail",
+        [
+            ("interior 0.02s blip inside a fully dark second", (4.0, 5.0), [(4.0, 4.02)], True),
+            ("interior 0.04s blip inside a 2.0s dark stretch", (4.0, 6.0), [(4.98, 5.02)], True),
+            ("typography over 1.0s of a 2.5s plate leaves a textless tail", (4.0, 6.5), [(4.2, 5.2)], True),
+            ("a fully protected plate is not dead content", (4.0, 6.5), [(4.0, 6.5)], False),
+            ("protection elsewhere does not excuse darkness", (4.0, 6.0), [(7.0, 8.0)], True),
+        ],
+    )
+    def test_interior_protection_cannot_hide_a_dead_stretch(
+        self, monkeypatch, tmp_path, label, dark, protected, expected_fail
+    ) -> None:
+        """A protected window overlapping a dark region must not sever it below
+        `min_seconds`: the unprotected remainder is still dead footage.
+
+        Regression for the interval-splitting approach, which returned
+        `passed=True` for a 2.5s plate with a 1.3s textless tail.
+        """
+        dark_start, dark_end = dark
+        samples = []
+        for index in range(700):
+            stamp = round(index / 100.0, 2)
+            if not dark_start <= stamp < dark_end:
+                yavg = 80.0
+            elif any(start <= stamp < end for start, end in protected):
+                yavg = 90.0
+            else:
+                yavg = 17.0
+            samples.append((stamp, yavg))
+        self._patch_frames(monkeypatch, samples)
+        beat_windows = [
+            {"id": f"beat-{i}", "startSeconds": start, "endSeconds": end}
+            for i, (start, end) in enumerate(protected)
+        ]
+        moment_windows = [
+            {"id": f"moment-{i}", "startSeconds": start, "endSeconds": end}
+            for i, (start, end) in enumerate(protected)
+        ]
+        qa = audit_render_luminance(
+            tmp_path / "render.mp4",
+            beat_windows=beat_windows,
+            moment_windows=moment_windows,
+        )
+        assert qa.passed is not expected_fail, label
+        assert bool(qa.dead_runs) is expected_fail, label
 
     def test_dark_plate_without_moment_text_still_fails(self, monkeypatch, tmp_path) -> None:
         samples = [(float(i), 20.0 if 19 <= i < 25 else 80.0) for i in range(0, 51)]

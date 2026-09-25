@@ -80,6 +80,12 @@ def find_dark_runs(
     `per_second` is `(second_start, mean_yavg)` pairs in any order. A run's end
     is its last sample plus the series' own median spacing, so 30fps-frame
     input and 1s-bin input both measure duration correctly.
+
+    Callers protecting intentional typography plate pass bins measured over
+    *unprotected frames only*: a plate then lifts its own bin above `below` and
+    the bin is simply not dark. Duration deliberately stays at bin resolution —
+    excusing sub-bin intervals would sever a real dark stretch into fragments
+    that individually fall under `min_seconds` and let dead footage ship.
     """
     ordered = sorted(per_second, key=lambda sample: sample[0])
     if not ordered:
@@ -122,83 +128,6 @@ def find_dark_runs(
 
     if run_start is not None:
         close(ordered[-1][0])
-    return runs
-
-
-def find_unprotected_dark_runs(
-    per_second: Sequence[tuple[float, float]],
-    protected_windows: Sequence[tuple[float, float]],
-    *,
-    below: float,
-    min_seconds: float = DEAD_RUN_MIN_SECONDS,
-) -> list[DarkRun]:
-    """Find dark runs after removing intentional typography intervals.
-
-    `per_second` contains the mean luma of *unprotected frames* in each absolute
-    one-second bin. A dark bin is therefore split around any protected windows
-    before run duration is measured. This preserves a genuine >=1s dark run
-    that straddles an integer-second boundary while preventing a partial dark
-    typography plate from poisoning the whole absolute bin.
-    """
-    pieces: list[tuple[float, float, float]] = []
-    protected = sorted(
-        (float(start), float(end))
-        for start, end in protected_windows
-        if float(end) > float(start)
-    )
-    for stamp, yavg in sorted(per_second, key=lambda sample: sample[0]):
-        if yavg >= below:
-            continue
-        residual = [(float(stamp), float(stamp) + 1.0)]
-        for protected_start, protected_end in protected:
-            remaining: list[tuple[float, float]] = []
-            for start, end in residual:
-                if protected_end <= start + 1e-6 or protected_start >= end - 1e-6:
-                    remaining.append((start, end))
-                    continue
-                if protected_start > start + 1e-6:
-                    remaining.append((start, min(protected_start, end)))
-                if protected_end < end - 1e-6:
-                    remaining.append((max(protected_end, start), end))
-            residual = remaining
-            if not residual:
-                break
-        pieces.extend(
-            (start, end, float(yavg))
-            for start, end in residual
-            if end - start > 1e-6
-        )
-
-    if not pieces:
-        return []
-    runs: list[DarkRun] = []
-    current_start, current_end, first_yavg = pieces[0]
-    weighted_yavg = first_yavg * (current_end - current_start)
-    weighted_seconds = current_end - current_start
-
-    def close() -> None:
-        if current_end - current_start + 1e-6 < min_seconds:
-            return
-        runs.append(
-            DarkRun(
-                start_seconds=current_start,
-                end_seconds=current_end,
-                mean_yavg=weighted_yavg / weighted_seconds,
-            )
-        )
-
-    for start, end, yavg in pieces[1:]:
-        duration = end - start
-        if start <= current_end + 1e-6:
-            current_end = max(current_end, end)
-            weighted_yavg += yavg * duration
-            weighted_seconds += duration
-            continue
-        close()
-        current_start, current_end = start, end
-        weighted_yavg = yavg * duration
-        weighted_seconds = duration
-    close()
     return runs
 
 
@@ -393,12 +322,8 @@ def audit_render_luminance(
     frames, elapsed = _measure_luma_frames(video_path, timeout=timeout)
     per_second = _per_second_luma(frames)
     unprotected = _per_second_luma(frames, exclude_windows=protected)
-    dead = find_unprotected_dark_runs(
-        unprotected, protected, below=DEAD_LUMA_FAIL
-    )
-    warned = find_unprotected_dark_runs(
-        unprotected, protected, below=DEAD_LUMA_WARN
-    )
+    dead = find_dark_runs(unprotected, below=DEAD_LUMA_FAIL)
+    warned = find_dark_runs(unprotected, below=DEAD_LUMA_WARN)
     beats = []
     for beat in beat_windows:
         start = float(beat.get("startSeconds", 0.0))
