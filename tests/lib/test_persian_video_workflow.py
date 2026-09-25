@@ -349,6 +349,12 @@ def test_send_back_budget_and_resume_preserve_durable_counters(tmp_path):
     revised["send_backs"] = 2
     revised["attempts"]["prepare_inputs"] = 3
     workflow._write_state(tmp_path / "run", revised)
+    # A genuine resume follows an idle session: freeze the project's last write at
+    # BASE so the 4-hour gap is a real idle window. A resume of a still-active
+    # window must NOT refresh it — see test_issue138_resume_wall_budget.py.
+    for path in (tmp_path / "run").rglob("*"):
+        if path.is_file():
+            os.utime(path, (BASE.timestamp(), BASE.timestamp()))
     calls = []
     resumed = resume_workflow(
         "run", pipeline_dir=tmp_path, backlot_opener=lambda pid: calls.append(pid) or 0,

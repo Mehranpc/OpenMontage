@@ -174,6 +174,8 @@ The stop must not consume a new edit candidate merely to record the timeout.
 
 Read-only status may diagnose stale/over-budget state, but status polling is not a substitute for enforcement at execution boundaries.
 
+The active wall-time window is itself an invariant: `resume` may start a fresh window only when the session has genuinely gone idle. Resuming a workflow that is still being actively driven must preserve the consumed budget, so repeated resumes inside one wall-budget horizon cannot extend the window. A legitimate fresh window never resets durable attempt/send-back/recovery/revision counters.
+
 ### 5.7 Verification pyramid
 
 #### L0 — unit / schema / policy / invariant

@@ -113,6 +113,10 @@ PHASE_SLO_SECONDS = {
     "final_review": 3 * 60,
 }
 END_TO_END_SLO_SECONDS = 45 * 60
+# #107 P2: a workflow whose project files have not moved for this long is
+# reported as idle/stalled. Reused so a resume only refreshes the wall window
+# for a session that has genuinely gone idle, never for one still being driven.
+IDLE_STALL_SECONDS = 15 * 60
 
 PHASES = (
     "validate_input",
@@ -3345,6 +3349,13 @@ def _last_project_write(project_root: Path) -> tuple[str | None, datetime | None
     )
 
 
+def _idle_seconds_since(last_at: datetime | None, *, now: datetime) -> float | None:
+    """Seconds since the newest project write, or None when nothing was written."""
+    if last_at is None:
+        return None
+    return max(0.0, (now - last_at).total_seconds())
+
+
 def workflow_status(
     project_id: str, *, pipeline_dir: Path | None = None, now: datetime | None = None
 ) -> dict[str, Any]:
@@ -3365,8 +3376,8 @@ def workflow_status(
     )
     budget_seconds = int((state.get("budgets") or {}).get("max_wall_time_minutes", 0)) * 60
     last_path, last_at = _last_project_write(_project_root(state))
-    idle_seconds = None if last_at is None else max(0.0, (current - last_at).total_seconds())
-    activity = "idle" if idle_seconds is None or idle_seconds >= 15 * 60 else "progressing"
+    idle_seconds = _idle_seconds_since(last_at, now=current)
+    activity = "idle" if idle_seconds is None or idle_seconds >= IDLE_STALL_SECONDS else "progressing"
     return {
         "project_id": state["project_id"],
         "status": state["status"],
@@ -3461,10 +3472,23 @@ def resume_workflow(
     backlot_opener: Callable[[str | None], int] = open_backlot,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Start a fresh wall-time window without resetting durable workflow budgets."""
-    state = reconcile_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    """Reopen a workflow, refreshing the wall window only when it has gone idle.
+
+    A genuine resume follows a session that stopped moving; only then may it start
+    a fresh wall-time window. Resuming a workflow that is still being actively
+    driven preserves the consumed wall budget, so repeated ``resume`` calls inside
+    one wall-budget horizon cannot extend the window past enforcement. Durable
+    attempt/send-back/recovery/revision counters are never reset here.
+    """
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     stamp = now or datetime.now(timezone.utc)
-    state["budget_window_started_at"] = stamp.isoformat()
+    # Measure idleness from the last project write *before* reconciliation, which
+    # itself rewrites the state file and would otherwise mask genuine idleness.
+    _, last_write = _last_project_write(_project_root(state))
+    idle_seconds = _idle_seconds_since(last_write, now=stamp)
+    state = reconcile_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    if idle_seconds is None or idle_seconds >= IDLE_STALL_SECONDS:
+        state["budget_window_started_at"] = stamp.isoformat()
     state["resumed_at"] = stamp.isoformat()
     try:
         code = int(backlot_opener(project_id))
