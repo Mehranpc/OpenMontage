@@ -707,7 +707,7 @@ def _start_phase_job_unlocked(
             # is the expected recovery path after a caller crash: reconcile the
             # durable identity instead of rerunning externally billed/download work.
             return reconcile_phase_job(
-                project_id, actual_job_id, pipeline_dir=pipeline_dir
+                project_id, actual_job_id, pipeline_dir=pipeline_dir, now=now
             )
         try:
             workflow.record_phase_failure(
@@ -813,6 +813,7 @@ def _close_failed_attempt_if_current(
     job: Mapping[str, Any],
     *,
     pipeline_dir: Path | None,
+    now: datetime | None = None,
 ) -> None:
     state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     phase = str(envelope["phase"])
@@ -825,6 +826,7 @@ def _close_failed_attempt_if_current(
         phase,
         reason=_job_error_reason(job),
         pipeline_dir=pipeline_dir,
+        now=now,
     )
 
 
@@ -833,6 +835,7 @@ def reconcile_phase_job(
     job_id: str,
     *,
     pipeline_dir: Path | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Reconcile durable execution without inferring workflow completion from exit code."""
     envelope = load_execution_envelope(project_id, job_id, pipeline_dir=pipeline_dir)
@@ -869,12 +872,12 @@ def reconcile_phase_job(
         envelope,
         effective_job,
         pipeline_dir=pipeline_dir,
-        reconciled_at=datetime.now(timezone.utc),
+        reconciled_at=now or datetime.now(timezone.utc),
     )
 
     if envelope.get("executionOutcome") in {"failed", "interrupted"}:
         _close_failed_attempt_if_current(
-            project_id, envelope, effective_job, pipeline_dir=pipeline_dir
+            project_id, envelope, effective_job, pipeline_dir=pipeline_dir, now=now
         )
         envelope["workflowTransitionOutcome"] = "blocked"
         envelope["workflowTransitionError"] = _job_error_reason(effective_job)
@@ -970,6 +973,7 @@ def commit_phase_job(
     *,
     evidence: Mapping[str, Any] | None = None,
     pipeline_dir: Path | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Advance workflow state from one successful durable execution, idempotently."""
     envelope = load_execution_envelope(project_id, job_id, pipeline_dir=pipeline_dir)
@@ -979,7 +983,7 @@ def commit_phase_job(
     if envelope.get("workflowTransitionOutcome") == "succeeded":
         return state
 
-    reconcile_phase_job(project_id, job_id, pipeline_dir=pipeline_dir)
+    reconcile_phase_job(project_id, job_id, pipeline_dir=pipeline_dir, now=now)
     envelope = load_execution_envelope(project_id, job_id, pipeline_dir=pipeline_dir)
     if envelope.get("executionOutcome") != "succeeded":
         raise PersianRunKernelError(
@@ -1024,6 +1028,7 @@ def commit_phase_job(
             phase,
             evidence=phase_evidence,
             pipeline_dir=pipeline_dir,
+            now=now,
         )
     except Exception as exc:
         _persist_transition_causal_span(
@@ -1191,7 +1196,9 @@ def run_phase_job(
                 "the job was preserved. Retry status/commit with the same identity."
             )
         time.sleep(min(poll_interval, remaining))
-        result = reconcile_phase_job(project_id, job_id, pipeline_dir=pipeline_dir)
+        result = reconcile_phase_job(
+            project_id, job_id, pipeline_dir=pipeline_dir, now=now
+        )
         _enforce_execution_checkpoint(
             project_id, operation="run-kernel:after-reconcile", phase=phase, job_id=job_id,
             pipeline_dir=pipeline_dir,
@@ -1209,6 +1216,7 @@ def run_phase_job(
         job_id,
         evidence=evidence,
         pipeline_dir=pipeline_dir,
+        now=now,
     )
 
 

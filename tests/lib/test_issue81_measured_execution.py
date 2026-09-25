@@ -45,7 +45,7 @@ def test_durable_render_commit_binds_measured_output_bytes(tmp_path: Path):
                            argv=[sys.executable, '-c', child], idempotence_key='opening-v1',
                            telemetry_category='browser_render_execution', pipeline_dir=tmp_path, now=BASE)
     for _ in range(100):
-        result = kernel.reconcile_phase_job('run', 'measured-opening', pipeline_dir=tmp_path)
+        result = kernel.reconcile_phase_job('run', 'measured-opening', pipeline_dir=tmp_path, now=BASE)
         if result['status'] in {'succeeded', 'failed', 'interrupted'}:
             break
         time.sleep(0.05)
@@ -82,7 +82,7 @@ def test_durable_render_refuses_different_output_evidence(tmp_path: Path):
                            argv=[sys.executable, '-c', child], idempotence_key='digest-v1',
                            pipeline_dir=tmp_path, now=BASE)
     for _ in range(100):
-        result = kernel.reconcile_phase_job('run', 'digest-check', pipeline_dir=tmp_path)
+        result = kernel.reconcile_phase_job('run', 'digest-check', pipeline_dir=tmp_path, now=BASE)
         if result['status'] in {'succeeded', 'failed', 'interrupted'}:
             break
         time.sleep(0.05)
@@ -133,7 +133,7 @@ def test_only_one_media_execution_can_run_or_wait_for_commit(tmp_path: Path):
 
     result = None
     for _ in range(100):
-        result = kernel.reconcile_phase_job('run', 'render-owner', pipeline_dir=tmp_path)
+        result = kernel.reconcile_phase_job('run', 'render-owner', pipeline_dir=tmp_path, now=BASE)
         if result['executionOutcome'] == 'succeeded':
             break
         time.sleep(0.05)
@@ -193,7 +193,7 @@ def test_failed_media_execution_releases_slot_after_reconcile(tmp_path: Path):
     )
     failed = None
     for _ in range(100):
-        failed = kernel.reconcile_phase_job('run', 'render-failed', pipeline_dir=tmp_path)
+        failed = kernel.reconcile_phase_job('run', 'render-failed', pipeline_dir=tmp_path, now=BASE)
         if failed['executionOutcome'] == 'failed':
             break
         time.sleep(0.05)
