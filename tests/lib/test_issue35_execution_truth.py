@@ -418,3 +418,9 @@ def test_terminal_seam_terminalizes_every_phase_attempt(tmp_path: Path) -> None:
     assert entries
     assert all(item.get("finished_at") for item in entries)
     assert all(str(item.get("outcome") or "") in TERMINAL_ATTEMPT_OUTCOMES for item in entries)
+
+    # The interrupted attempt must be terminalized, not silently dropped.
+    stale = [item for item in entries if item.get("attempt") == 99]
+    assert stale
+    assert all(item.get("finished_at") for item in stale)
+    assert all(str(item.get("outcome") or "") in TERMINAL_ATTEMPT_OUTCOMES for item in stale)

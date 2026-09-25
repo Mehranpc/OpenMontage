@@ -397,4 +397,7 @@ def test_alignment_commit_normalizes_provider_fallback_reason_into_workflow_evid
     committed = alignment_job.commit_alignment_job("run", "alignment-job", pipeline_dir=tmp_path)
 
     assert committed["next_phase"] == "plan_scenes_moments"
+    # The canonical persisted provider evidence carries the fallback reason.
+    persisted = committed["evidence"]["align_script_timing"]
+    assert persisted["provider_decision"]["fallbackReason"] == "primary_unavailable:transcriber"
     assert captured["provider_fallback_reason"] == "primary_unavailable:transcriber"

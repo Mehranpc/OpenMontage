@@ -975,14 +975,17 @@ def test_first_transition_starts_after_intervening_explicit_work(
     assert transition["started_at"] >= work["finished_at"]
 
 
-def test_terminal_performance_summary_carries_conserved_causal_coverage(
+def test_terminal_performance_summary_carries_measured_causal_coverage(
     tmp_path: Path,
 ) -> None:
-    """The frozen performance summary carries its causal coverage, conservatively.
+    """The frozen performance summary carries its measured causal coverage.
 
     ``causal_coverage_percent`` is spread in from ``phase_time_accounting``; this
-    pins it as persisted presentation evidence and checks the conservation the
-    metric depends on (covered + unattributed == whole wall time).
+    pins it as persisted presentation evidence alongside a non-zero measured
+    coverage total. It deliberately does not assert ``covered + unattributed ==
+    wall``: that is an arithmetic identity of the accounting function
+    (``unattributed = max(0, wall - covered)`` with ``covered <= wall``) and can
+    never fail, so it would be false confidence rather than coverage evidence.
     """
     from tests.lib.test_persian_video_workflow import _review_ready_project
 
@@ -1008,7 +1011,3 @@ def test_terminal_performance_summary_carries_conserved_causal_coverage(
     summary = presented["performance_summary"]
     assert "causal_coverage_percent" in summary
     assert summary["causal_covered_seconds"] > 0.0
-    # Conservation: every wall second is either covered or explicitly unattributed.
-    assert summary["causal_covered_seconds"] + summary["unattributed_wall_seconds"] == pytest.approx(
-        summary["workflow_wall_seconds"]
-    )
