@@ -366,6 +366,9 @@ def test_asset_selection_window_reuse_can_refresh_dependent_hook_visual_evidence
     child_shot["sourceInSeconds"] = 3.0
     child_shot["sourceWindowEndSeconds"] = 6.0
     child_shot["avoidRegions"] = [{"x": 0.25, "y": 0.2, "w": 0.35, "h": 0.3, "priority": "hard"}]
+    child_shot["camera"] = "pan-right"
+    child_shot["showsSubject"] = False
+    child_shot["selectionReason"] = "Reviewed replacement window shows phone action."
     child["metadata"]["hookQuality"]["perceptualChanges"][0]["evidence"] = "Reviewed source-B motion."
     staged = workspace.stage_edit_draft(
         project,
@@ -374,11 +377,14 @@ def test_asset_selection_window_reuse_can_refresh_dependent_hook_visual_evidence
         parent_attempt_id="base",
         diagnostic_issue={"code": "ASSET_SELECTION_RETRY", "recoveryClass": "ASSET_SELECTION"},
         strategy="reuse_reviewed_non_overlapping_source_window",
-        changed_fields=["assets.selection", "subject_regions.review", "hook.visual_evidence"],
+        changed_fields=[
+            "assets.selection", "subject_regions.review", "hook.visual_evidence",
+            "scenes.asset_dependent_metadata",
+        ],
         max_candidates=10,
         revision_cycle=0,
     )
-    assert staged["changedScopes"] == ["assets", "hook", "subject_regions"]
+    assert staged["changedScopes"] == ["assets", "hook", "scenes", "subject_regions"]
     manifest = workspace.load_convergence_candidate(project, "window-reuse-with-hook-evidence")
     assert "hook.visual_evidence" in manifest["mutationSurface"]
 

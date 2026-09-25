@@ -123,7 +123,7 @@ _CLASS_POLICIES: dict[str, dict[str, Any]] = {
         ],
         "mutationSurface": [
             "assets.selection", "assets.query", "subject_regions.review",
-            "hook.visual_evidence",
+            "hook.visual_evidence", "scenes.asset_dependent_metadata",
         ],
         "preserve": ["approved_script", "narration", "audio_mix", "copy"],
     },
