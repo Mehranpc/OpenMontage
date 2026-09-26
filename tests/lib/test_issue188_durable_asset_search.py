@@ -191,6 +191,9 @@ def test_a_request_changed_after_the_pass_started_is_refused(
 def test_a_failed_search_is_reported_and_leaves_the_pass_recoverable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """This name used to promise more than the body checked: it asserted only that the
+    failure was reported, while the pass stayed pending and the run stayed stuck. The
+    recoverability it claims is asserted here now (#193)."""
     import hashlib
 
     _bootstrap_to_assets(tmp_path)
@@ -213,6 +216,9 @@ def test_a_failed_search_is_reported_and_leaves_the_pass_recoverable(
     # exit code.
     assert exit_code == 0
     assert json.loads(semantic_path.read_text())["success"] is False
+    # ...and "recoverable" means the pass is released, not left latched.
+    usage = workflow.load_workflow_state("run", pipeline_dir=tmp_path)["asset_usage"]
+    assert usage.get("pending_pass") is None
 
 
 def test_the_job_binds_one_pass_to_one_provider_bound_identity(tmp_path: Path) -> None:

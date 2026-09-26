@@ -40,8 +40,14 @@ _PHASE = "acquire_assets"
 _SEMANTIC_RESULT_ENV = "OPENMONTAGE_DURABLE_RESULT_PATH"
 
 
-class AssetJobError(RuntimeError):
-    """Raised when durable acquisition identity or lifecycle truth is inconsistent."""
+class AssetJobError(workflow.PersianVideoWorkflowError):
+    """Raised when durable acquisition identity or lifecycle truth is inconsistent.
+
+    Derives from the front door's own error so every `asset-search` failure exits
+    through the same clean `parser.error` contract as the other commands instead of a
+    traceback. The import cannot run the other way -- this module reads the workflow
+    module -- so this is the direction that works without a cycle (#193).
+    """
 
 
 def _sha(path: Path) -> str:
@@ -99,6 +105,7 @@ def run_asset_search_job(
     *,
     request_path: Path,
     retry_pass: int,
+    attempt: int = 0,
     pipeline_dir: Path | None = None,
     job_id: str | None = None,
     registry=default_registry,
@@ -111,6 +118,12 @@ def run_asset_search_job(
     ``launch=False`` starts the job and returns without waiting, for callers that must
     stay asynchronous; the same identity is then reconciled with
     ``persian_run_kernel status <project> <job-id>``.
+
+    ``attempt`` exists because idempotence protects against *duplicate success*, not
+    against retrying a *failure*: a released pass (see
+    ``workflow.release_asset_search_pass``) is re-issued under the next attempt, where
+    the same (pass, request bytes) identity would otherwise reconcile the failed
+    envelope forever (#193).
     """
     state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     if state.get("next_phase") != _PHASE:
@@ -133,12 +146,19 @@ def run_asset_search_job(
             f"asset retry pass {retry_pass} exceeds max {policy['max_retry_passes']}"
         )
 
-    result_path = root / "artifacts" / "acquisition" / f"search-pass-{retry_pass}-{request_sha[:16]}.json"
-    effective_job_id = job_id or f"asset-search-{retry_pass}-{request_sha[:16]}"
-    # The logical identity of the pass is (retry pass, exact request bytes): the same
-    # pass resumed after a crash reconciles instead of re-issuing the search, and a
-    # changed request is a different search rather than a re-run of this one.
-    idempotence_key = f"asset-search-{retry_pass}-{request_sha[:32]}"
+    attempt = int(attempt)
+    if attempt < 0:
+        raise AssetJobError("asset search attempt must not be negative")
+    result_path = (
+        root / "artifacts" / "acquisition"
+        / f"search-pass-{retry_pass}-{request_sha[:16]}-a{attempt}.json"
+    )
+    effective_job_id = job_id or f"asset-search-{retry_pass}-{request_sha[:16]}-a{attempt}"
+    # The logical identity of the pass is (retry pass, exact request bytes, attempt): the
+    # same pass resumed after a crash reconciles instead of re-issuing the search, a
+    # changed request is a different search rather than a re-run of this one, and a
+    # released failed pass is retried under the next attempt.
+    idempotence_key = f"asset-search-{retry_pass}-{request_sha[:32]}-a{attempt}"
     argv = [
         sys.executable,
         "-m",
@@ -197,7 +217,36 @@ def run_asset_search_job(
             "assetSearchResultPath": str(result_path),
         }
     except kernel.PersianRunKernelError as exc:
-        raise AssetJobError(str(exc)) from exc
+        raise AssetJobError(
+            _failure_detail(project_id, effective_job_id, exc, pipeline_dir)
+        ) from exc
+
+
+def _failure_detail(
+    project_id: str,
+    job_id: str,
+    exc: Exception,
+    pipeline_dir: Path | None,
+) -> str:
+    """Append the job's semantic error, which is where the real reason lives.
+
+    The kernel's own message is generic ("finished with execution outcome 'failed'"), so
+    without this the provider's reason -- the only thing that says what to do next --
+    would be reachable only by inspecting the envelope by hand (#193).
+    """
+    try:
+        envelope = kernel.load_execution_envelope(
+            project_id, job_id, pipeline_dir=pipeline_dir
+        )
+    except (kernel.PersianRunKernelError, OSError, ValueError, KeyError):
+        return str(exc)
+    # A reported `success: false` carries its reason inside the semantic result;
+    # `semanticError` is reserved for a result that could not be read at all.
+    semantic = envelope.get("semanticResult")
+    detail = str(semantic.get("error") or "").strip() if isinstance(semantic, Mapping) else ""
+    if not detail:
+        detail = str(envelope.get("semanticError") or "").strip()
+    return f"{exc} — {detail}" if detail else str(exc)
 
 
 def _write_semantic_result(payload: Mapping[str, Any]) -> None:
@@ -231,6 +280,7 @@ def run_asset_search_worker(
     request_path = request_path.expanduser().resolve()
     result_path = result_path.expanduser().resolve()
     expected_sha = _require_digest(request_sha256, "asset request sha256")
+    issued = False
     try:
         state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
         root = _project_root(state)
@@ -245,6 +295,10 @@ def run_asset_search_worker(
         bounded = workflow.bounded_asset_search_request(
             project_id, request, retry_pass=retry_pass, pipeline_dir=pipeline_dir
         )
+        # From here the pass exists in workflow state and must be closed on every
+        # outcome -- settling it on success, releasing it on failure -- or the run is
+        # left unable to complete or re-search (#193).
+        issued = True
         tool = registry.get(SEARCH_TOOL)
         data = dict(_tool_data(tool.execute(bounded)))
         # Accounting stays where it already lives: this only settles the pass the
@@ -275,23 +329,60 @@ def run_asset_search_worker(
         })
         return 0
     except (AssetJobError, workflow.PersianVideoWorkflowError, OSError, ValueError) as exc:
-        result_path.unlink(missing_ok=True)
-        _write_semantic_result({
-            "success": False,
-            "error": str(exc),
-            "data": {"retryPass": retry_pass, "assetRequestSha256": expected_sha},
-        })
-        # Semantic failure intentionally exits zero. The production run kernel must
-        # consume the semantic result envelope rather than treating exit code as truth.
-        return 0
+        return _fail_worker(
+            exc, project_id=project_id, retry_pass=retry_pass, expected_sha=expected_sha,
+            result_path=result_path, issued=issued, pipeline_dir=pipeline_dir, exit_code=0,
+        )
     except Exception as exc:
-        result_path.unlink(missing_ok=True)
-        _write_semantic_result({
-            "success": False,
-            "error": f"unexpected asset search worker failure: {exc}",
-            "data": {"retryPass": retry_pass, "assetRequestSha256": expected_sha},
-        })
-        return 1
+        return _fail_worker(
+            exc, project_id=project_id, retry_pass=retry_pass, expected_sha=expected_sha,
+            result_path=result_path, issued=issued, pipeline_dir=pipeline_dir, exit_code=1,
+        )
+
+
+def _fail_worker(
+    exc: Exception,
+    *,
+    project_id: str,
+    retry_pass: int,
+    expected_sha: str,
+    result_path: Path,
+    issued: bool,
+    pipeline_dir: Path | None,
+    exit_code: int,
+) -> int:
+    """Report semantic failure and release the pass this execution issued.
+
+    The pass is released, not settled: a provider outage did not discover anything, so
+    recording it as a completed pass would spend the retry budget on a failure and put
+    invented counters into the download ceiling.
+    """
+    result_path.unlink(missing_ok=True)
+    error = str(exc) if exit_code == 0 else f"unexpected asset search worker failure: {exc}"
+    released = False
+    if issued:
+        try:
+            workflow.release_asset_search_pass(
+                project_id, retry_pass=retry_pass, reason=error, pipeline_dir=pipeline_dir
+            )
+            released = True
+        except (workflow.PersianVideoWorkflowError, OSError, ValueError):
+            # Best effort: reporting the failure matters more than the release, and the
+            # operator still has `asset-search-release` for a worker that died outright.
+            released = False
+    _write_semantic_result({
+        "success": False,
+        "error": error,
+        "data": {
+            "retryPass": retry_pass,
+            "assetRequestSha256": expected_sha,
+            "passReleased": released,
+        },
+    })
+    # Semantic failure intentionally exits zero for a handled failure. The production run
+    # kernel must consume the semantic result envelope rather than treating exit code as
+    # truth.
+    return exit_code
 
 
 def build_parser() -> argparse.ArgumentParser:
