@@ -415,6 +415,92 @@ def _declared_target_duration(scene_plan: dict[str, Any]) -> Any:
     return declared
 
 
+def _film_motion() -> dict[str, Any]:
+    from lib.paths import REPO_ROOT
+
+    profile = json.loads(
+        (REPO_ROOT / "styles" / "persian-footage" / "film-type.json").read_text(encoding="utf-8")
+    )
+    return dict(profile.get("motion") or {})
+
+
+def moment_copy_feasibility_problems(
+    beats: list[dict[str, Any]], duration_seconds: float,
+    *, film_motion: dict[str, Any] | None = None,
+) -> list[str]:
+    """Plan-time reading and coverage check for events that declare `moment_copy`.
+
+    Each event's window is its `duration_seconds`: a moment cannot outlive the shot it
+    sits on (the edit refuses a moment that crosses into a neighbouring shot's footage).
+    The floor per moment is the Film Type reading model. The sum of those floors must
+    fit `MAX_TEXT_COVERAGE` of the film, since no honest timing can go below the floor.
+    Events without `moment_copy` are not charged: the plan has not stated copy yet.
+    """
+    from lib.persian_moments import (
+        MAX_TEXT_COVERAGE, PersianMoment, PersianSegment, SEGMENT_ROLES,
+    )
+
+    motion = film_motion if film_motion is not None else _film_motion()
+    problems: list[str] = []
+    floors: list[tuple[str, float]] = []
+    for beat in beats:
+        for event in beat.get("visual_events") or []:
+            if not isinstance(event, dict) or not event.get("carries_moment"):
+                continue
+            raw = event.get("moment_copy")
+            if raw is None:
+                continue
+            label = f'{beat.get("id")}/{event.get("id")}'
+            if not isinstance(raw, list) or not raw:
+                problems.append(f"{label}: moment_copy must be a non-empty segment list")
+                continue
+            segments: list[PersianSegment] = []
+            for index, item in enumerate(raw):
+                role = str((item or {}).get("role") or "") if isinstance(item, dict) else ""
+                text = str((item or {}).get("text") or "").strip() if isinstance(item, dict) else ""
+                if role not in SEGMENT_ROLES or not text:
+                    problems.append(
+                        f"{label}: moment_copy[{index}] needs a role in "
+                        f"{sorted(SEGMENT_ROLES)} and non-empty text"
+                    )
+                    segments = []
+                    break
+                segments.append(PersianSegment(
+                    role=role, text=text,
+                    reveal_after_seconds=float(item.get("revealAfterSeconds") or 0.0),
+                ))
+            if not segments:
+                continue
+            try:
+                window = float(event.get("duration_seconds") or 0.0)
+            except (TypeError, ValueError):
+                window = 0.0
+            probe = PersianMoment(
+                id=str(event.get("id") or label), kind="statement",
+                start_seconds=0.0, end_seconds=max(window, 0.0), segments=segments,
+            )
+            floor = probe.film_min_read_seconds(motion)
+            floors.append((label, floor))
+            if window + 1e-9 < floor:
+                problems.append(
+                    f"{label}: moment_copy needs {floor:.2f}s on screen (Film Type reading "
+                    f"model: entrance + reading + blocks + exit) but the event is "
+                    f"{window:.2f}s. Shorten the copy or give the event a longer span now; "
+                    "the edit stage would refuse it after acquisition."
+                )
+    if floors and duration_seconds > 0:
+        total = sum(floor for _, floor in floors)
+        ceiling = MAX_TEXT_COVERAGE * duration_seconds
+        if total > ceiling + 1e-9:
+            problems.append(
+                f"the declared moment_copy needs at least {total:.1f}s of text across "
+                f"{len(floors)} moment(s), over the {MAX_TEXT_COVERAGE:.0%} coverage "
+                f"ceiling ({ceiling:.1f}s of {duration_seconds:.1f}s). No honest timing "
+                "fits under it; carry fewer or shorter moments."
+            )
+    return problems
+
+
 def audit_scene_plan(
     scene_plan: dict[str, Any],
     *,
@@ -744,6 +830,14 @@ def audit_scene_plan(
                 "field, and a missing value counts as false — which fails the quota "
                 "rather than passing it, so this is a hard problem, not an advisory."
             )
+
+    # --- Moment copy must fit its window, and the set must fit the coverage ceiling ----
+    # The reading model and MAX_TEXT_COVERAGE were enforced only by `audit_moments` at the
+    # edit stage, after acquisition and region review had been spent on a plan whose copy
+    # could never fit (#213: seven sentences needing 37.1s against a 34.4s ceiling). When a
+    # carries_moment event names its intended `moment_copy`, charge it here with the Film
+    # Type model the render uses (#216), so the plan is refused where the fix is free.
+    problems.extend(moment_copy_feasibility_problems(beats, duration))
 
     # --- Typographic budget ------------------------------------------------------------
     typographic = [beat for beat in beats if beat.get("typographic")]
