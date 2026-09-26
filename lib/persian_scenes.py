@@ -98,6 +98,32 @@ _MIN_SERVICEABLE_REGION_AREA = 0.02
 #: given phrase needs is content-dependent and stays the renderer's business.
 _MIN_RECIPE_COLUMN_FRACTION = 0.56
 
+#: Words that ask a stock search for the empty surface a typographic moment needs.
+#:
+#: A moment-carrying event must spend one of its two queries on framing, because a query
+#: that describes only the action returns footage whose subject fills the band: the plan
+#: declared 8 moments on successive runs and footage reality cut them to 6, 5, then 3
+#: (#183, #206). Matched as substrings against the lowercased query, deliberately blunt
+#: like `BANNED_QUERY_TERMS`: the check proves the query *asks* for space, while the
+#: frame review and the measured placement check still decide whether it got any.
+FRAMING_QUERY_TERMS = (
+    "copy space",
+    "negative space",
+    "empty",
+    "plain",
+    "blank",
+    "minimal",
+    "isolated",
+    "lone",
+    "wide shot",
+    "clean background",
+    "background",
+    "sky",
+    "wall",
+    "surface",
+)
+
+
 #: Queries per beat. Two, because the third was always a paraphrase of the second — the
 #: first run wrote three per beat and downloaded 36 clips to use 12.
 QUERIES_PER_BEAT = 2
@@ -520,6 +546,19 @@ def audit_scene_plan(
                     f"{sorted(NEGATIVE_SPACE_REGIONS)}; the placement check cannot use it."
                 )
             else:
+                queries = [str(query).lower() for query in event.get("queries") or []]
+                if queries and not any(
+                    term in query for query in queries for term in FRAMING_QUERY_TERMS
+                ):
+                    problems.append(
+                        f"{label}: carries a typographic moment, but none of its queries "
+                        "asks for the clear space the moment needs, so the search selects "
+                        "on the action alone and returns footage whose subject fills "
+                        f"{declared!r}. Spend one query on the framing: name the empty "
+                        "surface (a lone object on a plain surface, a wide shot with plain "
+                        "wall or sky filling the band) using one of "
+                        f"{list(FRAMING_QUERY_TERMS)}."
+                    )
                 safe = _editorial_safe_area(str(scene_plan.get("format") or "vertical"))
                 if safe is not None:
                     usable_w, usable_h = _region_serviceable_span(
