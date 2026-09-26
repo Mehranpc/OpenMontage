@@ -292,8 +292,16 @@ def _production_input_mode(*, has_script: bool, has_narration: bool) -> str:
     )
 
 
+# Phases whose work runs as a durable kernel job (provider, machine or browser).
+# `align_script_timing` belongs here: it starts through `start_phase_job`
+# (`lib/persian_alignment_job.py`) and `_PHASE_CHECKPOINT` already treats it as
+# durable, so classing it editorial contradicted its own causal span (#200).
 _EXTERNAL_DURABLE_PHASES = frozenset({
-    "acquire_assets", "render_opening_candidate", "render_final_candidate", "master_final_candidate"
+    "align_script_timing",
+    "acquire_assets",
+    "render_opening_candidate",
+    "render_final_candidate",
+    "master_final_candidate",
 })
 
 
