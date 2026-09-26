@@ -37,6 +37,7 @@ from lib.persian_alignment_provider import (
     validate_alignment_provider_decision,
 )
 from lib.persian_assets import scene_asset_requirements
+from lib.persian_scenes import scene_plan_duration_tolerance_seconds
 from lib.persian_asset_commands import (
     PersianAssetCommandError,
     build_manifest as build_asset_manifest_command,
@@ -499,7 +500,11 @@ def validate_scene_plan_budget(
 def validate_scene_plan_duration(
     scene_plan: Mapping[str, Any], *, narration_duration_seconds: float, fps: float = 30.0
 ) -> dict[str, Any]:
-    """Bind the scene-plan tail to authoritative narration within one frame."""
+    """Bind the scene-plan tail to authoritative narration within one frame.
+
+    The one-frame tolerance comes from `lib.persian_scenes`, so this binding and
+    `audit_scene_plan` enforce the same number rather than two.
+    """
     if narration_duration_seconds <= 0 or fps <= 0:
         raise PersianVideoWorkflowError("authoritative narration duration and fps must be positive")
     scenes = scene_plan.get("scenes") if isinstance(scene_plan, Mapping) else None
@@ -539,7 +544,7 @@ def validate_scene_plan_duration(
             durations.append(duration)
         plan_end = sum(durations)
     delta = abs(plan_end - float(narration_duration_seconds))
-    tolerance = 1.0 / float(fps)
+    tolerance = scene_plan_duration_tolerance_seconds(float(fps))
     if delta > tolerance + 1e-9:
         raise PersianVideoWorkflowError(
             "scene-plan end time does not match authoritative narration duration: "
@@ -553,6 +558,68 @@ def validate_scene_plan_duration(
         "deltaSeconds": round(delta, 6),
         "frameToleranceSeconds": round(tolerance, 6),
         "withinFrameTolerance": True,
+    }
+
+
+def _positive_float_or_none(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _authoritative_narration_duration(
+    state: Mapping[str, Any], scene_plan: Mapping[str, Any]
+) -> float | None:
+    """The narration duration a plan must cover: the script checkpoint's, else the plan's.
+
+    The completed `script` checkpoint records the aligned narration's
+    `total_duration_seconds` -- the authoritative number the workflow already holds. A
+    plan's own `target_duration_seconds` is used only when no script checkpoint exists
+    (a legacy plan or a bypassed fixture), so the binding never invents a target when the
+    authoritative one is available.
+    """
+    projects_root = Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve()
+    try:
+        script_checkpoint = read_checkpoint(projects_root, str(state["project_id"]), "script")
+    except (CheckpointValidationError, OSError, json.JSONDecodeError):
+        script_checkpoint = None
+    if isinstance(script_checkpoint, Mapping):
+        script = (script_checkpoint.get("artifacts") or {}).get("script")
+        if isinstance(script, Mapping):
+            duration = _positive_float_or_none(script.get("total_duration_seconds"))
+            if duration is not None:
+                return duration
+    for container in (scene_plan, scene_plan.get("metadata")):
+        if isinstance(container, Mapping):
+            duration = _positive_float_or_none(container.get("target_duration_seconds"))
+            if duration is not None:
+                return duration
+    return None
+
+
+def _validate_scene_plan_duration_binding(
+    state: Mapping[str, Any], scene_checkpoint: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    """Refuse a plan mistimed against the authoritative narration before advancing.
+
+    `validate_scene_plan_duration` is the one implementation of the rule; this supplies
+    the narration duration the workflow already holds and records its evidence. A plan
+    with no resolvable narration duration (no script checkpoint and no declared target)
+    makes no claim to contradict and advances unchanged.
+    """
+    artifacts = scene_checkpoint.get("artifacts") if isinstance(scene_checkpoint, Mapping) else None
+    scene_plan = artifacts.get("scene_plan") if isinstance(artifacts, Mapping) else None
+    if not isinstance(scene_plan, Mapping):
+        return {}
+    narration = _authoritative_narration_duration(state, scene_plan)
+    if narration is None:
+        return {}
+    return {
+        "durationBinding": validate_scene_plan_duration(
+            scene_plan, narration_duration_seconds=narration
+        )
     }
 
 
@@ -1959,6 +2026,10 @@ def _complete_phase_impl(
                 "plan_scenes_moments sourcing_order requires unique non-empty visual-event ids"
             )
         phase_evidence["sourcing_order"] = sourcing_order
+    if phase == "plan_scenes_moments":
+        # The declared duration-coverage rule, enforced: the plan's beats must cover the
+        # authoritative narration within one frame, or the phase refuses to advance.
+        phase_evidence.update(_validate_scene_plan_duration_binding(state, checkpoint))
     if phase == "no_copy_preflight":
         phase_evidence.update(_validate_no_copy_preflight_completion(state, phase_evidence))
     if phase == "final_review":

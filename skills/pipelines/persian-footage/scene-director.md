@@ -35,13 +35,17 @@ The opening visibly establishes subject/conflict/hook semantics; the closing eve
 ```python
 from lib.persian_scenes import audit_scene_plan
 
-report = audit_scene_plan(scene_plan, typographic_budget=brief_budget)
+report = audit_scene_plan(
+    scene_plan,
+    target_duration_seconds=script["total_duration_seconds"],
+    typographic_budget=brief_budget,
+)
 assert not report["problems"], report["problems"]
 for advisory in report["advisories"]:
     print("advisory:", advisory)
 ```
 
-The gate owns identity, duration coverage, event metadata, subject quota, banned terms, query count, camera/variety, affect/human policy, importance/fallback, and typography budget. `sourcing_order` is the only retry priority.
+The gate owns identity, duration coverage, event metadata, subject quota, banned terms, query count, camera/variety, affect/human policy, importance/fallback, and typography budget. Duration coverage is enforced against the authoritative narration, to one frame: pass `target_duration_seconds` and a plan whose beats do not cover it is refused at `plan_scenes_moments` completion. `sourcing_order` is the only retry priority.
 
 Human review still owns query concreteness, honesty of `shows_subject`, semantic direction, and whether approved Persian text remains normalized. Stop rather than invent footage when the plan has no honest visual strategy or exceeds typography budget.
 

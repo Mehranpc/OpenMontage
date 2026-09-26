@@ -185,8 +185,8 @@ stages:
       - "IMPORTANCE WEIGHTS RETRIES, NOT BUDGET: audit_scene_plan.sourcing_order gives importance-3 events first use of the one bounded alternate-query pass. Candidate and byte ceilings do not increase."
       - "No two adjacent visual events share BOTH shot_scale and environment. Variety comes from how the subject is shot, not from replacing it — the old rule forbade repeating the subject, which is incompatible with the anchor quota."
       - Beats that no honest footage can serve are marked typographic, within the declared budget
-      - Sum of beat durations is within 10% of the target duration
-      - "RUN THE GATE, do not self-assess: lib.persian_scenes.audit_scene_plan(scene_plan, typographic_budget=N) enforces every rule above. It exists because the rewritten prose was read and a banned query still shipped — the beat felt like the exception the rule allows for."
+      - "Sum of beat durations lands on the target duration within one frame at 30fps — the same binding validate_scene_plan_duration enforces. The beats partition the aligned script, so the plan tail carries no uncertainty and a percentage slack would be slack for a measured number."
+      - "RUN THE GATE, do not self-assess: lib.persian_scenes.audit_scene_plan(scene_plan, target_duration_seconds=script.total_duration_seconds, typographic_budget=N) enforces every rule above. It exists because the rewritten prose was read and a banned query still shipped — the beat felt like the exception the rule allows for."
     success_criteria:
       - Schema-valid scene_plan artifact
       - metadata.subject present, matching brief.metadata.visual_subject
