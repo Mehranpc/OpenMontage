@@ -2068,6 +2068,8 @@ def _complete_phase_impl(
         # The declared duration-coverage rule, enforced: the plan's beats must cover the
         # authoritative narration within one frame, or the phase refuses to advance.
         phase_evidence.update(_validate_scene_plan_duration_binding(state, checkpoint))
+    if phase == "review_subject_regions":
+        _refuse_declared_negative_space_collisions(state)
     if phase == "no_copy_preflight":
         phase_evidence.update(_validate_no_copy_preflight_completion(state, phase_evidence))
     if phase == "final_review":
@@ -3186,6 +3188,36 @@ def fetch_workflow_music(
     return fetch_music_command(
         project_root.parent, project_root.name, search_id, _read_json(str(source)),
         output_path=output_path,
+    )
+
+
+def _refuse_declared_negative_space_collisions(state: Mapping[str, Any]) -> None:
+    """Stop at region review when reviewed subjects occupy a declared moment region (#214).
+
+    The same collision was previously first refused by `stage_edit_draft`, after the
+    run had spent edit candidates and send-backs on it, so the only exit was a hard
+    stop. Here every colliding event is named at once, before any edit candidate
+    exists, with the plan-level remedies.
+    """
+    from lib.persian_region_commands import pending_negative_space_collisions
+
+    collisions = pending_negative_space_collisions(_project_root(state))
+    if not collisions:
+        return
+    lines = [
+        f"{row.get('shotId')} ({row.get('visualEventId')}): declared "
+        f"{row.get('declaredRegion')!r} is occupied by {len(row.get('occupiedBy') or [])} "
+        f"reviewed hard region(s); clear alternatives: "
+        f"{', '.join(row.get('regionsClearOfTheseHardRegions') or []) or 'none'}"
+        for row in collisions
+    ]
+    raise PersianVideoWorkflowError(
+        "[DECLARED_NEGATIVE_SPACE_OCCUPIED] review_subject_regions cannot complete: "
+        f"{len(collisions)} carries_moment event(s) declare negative space the reviewed "
+        "subject occupies, which the edit stage would refuse after spending candidates. "
+        "Fix the plan now (send-back plan_scenes_moments to move the moment carrier or "
+        "re-declare the region), or correct the annotations if the review was wrong:\n  - "
+        + "\n  - ".join(lines)
     )
 
 

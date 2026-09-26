@@ -943,6 +943,82 @@ def _merge_timed_regions(regions: Sequence[Mapping[str, Any]]) -> list[dict[str,
     return merged
 
 
+def declared_negative_space_collisions(
+    scene_plan: Mapping[str, Any],
+    canonical_shots: Sequence[Mapping[str, Any]],
+    proposed_rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Every carries_moment event whose declared `negative_space` a reviewed hard region occupies.
+
+    This is the edit stage's `_declared_region_is_clear` rule (#164), run where the
+    reviewed geometry first exists. Found at the edit stage, a collision arrives after
+    candidates and send-backs are spent and becomes a hard stop. Found here, it costs
+    one plan-level choice. Every collision is reported in one pass (#214). Soft regions
+    never count, matching the edit rule, which ignores `priority: soft`.
+    """
+    from lib.persian_scenes import _NEGATIVE_SPACE_RECTS
+
+    declared: dict[str, str] = {}
+    for beat in scene_plan.get("beats") or []:
+        if not isinstance(beat, Mapping):
+            continue
+        for event in beat.get("visual_events") or []:
+            if isinstance(event, Mapping) and event.get("carries_moment"):
+                event_id = str(event.get("id") or "").strip()
+                region = str(event.get("negative_space") or "").strip()
+                if event_id and region:
+                    declared[event_id] = region
+
+    regions_by_shot = {
+        str(row.get("shot_id")): list(row.get("avoidRegions") or []) for row in proposed_rows
+    }
+    collisions: list[dict[str, Any]] = []
+    for shot in canonical_shots:
+        event_id = str(shot.get("visualEventId") or "").strip()
+        region = declared.get(event_id)
+        if not region or region not in _NEGATIVE_SPACE_RECTS:
+            continue
+        rx, ry, rw, rh = _NEGATIVE_SPACE_RECTS[region]
+        occupying: list[dict[str, Any]] = []
+        for index, hard in enumerate(regions_by_shot.get(str(shot["shotId"]), [])):
+            if not isinstance(hard, Mapping) or hard.get("priority") == "soft":
+                continue
+            hx, hy = float(hard.get("x", 0.0)), float(hard.get("y", 0.0))
+            hw, hh = float(hard.get("w", 0.0)), float(hard.get("h", 0.0))
+            if min(rx + rw, hx + hw) - max(rx, hx) <= 0 or min(ry + rh, hy + hh) - max(ry, hy) <= 0:
+                continue
+            occupying.append({
+                "regionIndex": index, "x": hx, "y": hy, "w": hw, "h": hh,
+                **({"startSeconds": hard["startSeconds"], "endSeconds": hard["endSeconds"]}
+                   if "startSeconds" in hard else {}),
+            })
+        if not occupying:
+            continue
+        free = sorted(
+            name for name, (fx, fy, fw, fh) in _NEGATIVE_SPACE_RECTS.items()
+            if name != region and not any(
+                min(fx + fw, o["x"] + o["w"]) - max(fx, o["x"]) > 0
+                and min(fy + fh, o["y"] + o["h"]) - max(fy, o["y"]) > 0
+                for o in occupying
+            )
+        )
+        collisions.append({
+            "shotId": str(shot["shotId"]),
+            "beatId": shot.get("beatId"),
+            "visualEventId": event_id,
+            "declaredRegion": region,
+            "occupiedBy": occupying,
+            "regionsClearOfTheseHardRegions": free,
+            "remedy": (
+                "move the moment to a carries_moment event whose declared region is clear, "
+                "re-declare this event's region against the footage (one of "
+                "regionsClearOfTheseHardRegions, still subject to the plan's safe-area rules), "
+                "or re-source the shot -- before edit, where it costs no candidate"
+            ),
+        })
+    return collisions
+
+
 def propose_regions(
     pipeline_dir: Path,
     project_id: str,
@@ -1051,6 +1127,10 @@ def propose_regions(
             },
         })
 
+    negative_space_collisions = declared_negative_space_collisions(
+        scene_plan, canonical_shots, proposed_rows
+    )
+
     evidence = {"shot_regions": proposed_rows}
     try:
         normalized = validate_subject_region_review_evidence(
@@ -1069,6 +1149,8 @@ def propose_regions(
             "annotationsSha256": _digest(dict(annotations)),
         },
         "proposedEvidence": normalized,
+        "negativeSpaceCollisions": negative_space_collisions,
+        "scenePlanSha256": input_record["scenePlanSha256"],
     }
     proposal_path = output_root / PROPOSAL_NAME
     changed = _atomic_stable_json(proposal_path, proposal)
@@ -1077,13 +1159,35 @@ def propose_regions(
         "status": "proposed",
         "confirmationRequired": True,
         "shotCount": len(proposed_rows),
+        "negativeSpaceCollisions": negative_space_collisions,
+        "negativeSpaceClear": not negative_space_collisions,
         "changed": changed,
         "idempotent": not changed,
     }
 
 
+def pending_negative_space_collisions(project: Path) -> list[dict[str, Any]]:
+    """Collisions recorded by the current region proposal, if it matches the current plan.
+
+    Read by `review_subject_regions` completion. A proposal built against an older scene
+    plan says nothing about this one, so it is not a finding. Its sheets are already
+    stale and `regions propose` refuses them.
+    """
+    proposal_path = project / SHEET_DIR / PROPOSAL_NAME
+    scene_path = project / "artifacts" / "scene_plan.json"
+    if not proposal_path.is_file() or not scene_path.is_file():
+        return []
+    proposal = _read_object(proposal_path, label="subject-region proposal")
+    if str(proposal.get("scenePlanSha256") or "") != _hash_file(scene_path):
+        return []
+    rows = proposal.get("negativeSpaceCollisions")
+    return [dict(row) for row in rows if isinstance(row, Mapping)] if isinstance(rows, list) else []
+
+
 __all__ = [
     "PersianRegionCommandError",
+    "declared_negative_space_collisions",
+    "pending_negative_space_collisions",
     "build_sheets",
     "propose_regions",
 ]
