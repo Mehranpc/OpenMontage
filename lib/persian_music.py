@@ -252,7 +252,15 @@ _DEFERRAL_MARKERS = (
 )
 
 
-def _defers_rather_than_decides(reason: str) -> bool:
+def defers_rather_than_decides(reason: str) -> bool:
+    """Whether a recorded omission reason promises the thing instead of deciding.
+
+    Shared by both music-omission gates -- the compose/edit audit here and the
+    rendered-review gate in ``lib.persian_rendered_review`` -- because they ask the
+    same question of two different fields and only the first was tightened (#186).
+    Coarse by design: this asks whether a reason *is* a reason, never whether it is
+    a good one.
+    """
     text = reason.strip().casefold()
     return any(marker in text for marker in _DEFERRAL_MARKERS)
 
@@ -268,11 +276,11 @@ def audit_music(
     audit = MusicAudit(track=track)
     if track is None:
         if narrated:
-            if omit_music_reason and _defers_rather_than_decides(omit_music_reason):
+            if omit_music_reason and defers_rather_than_decides(omit_music_reason):
                 audit.problems.append(
                     "the recorded omit_music_reason defers the decision rather than making "
                     f"one: {omit_music_reason!r}. This gate asks only that the reason be "
-                    "non-empty, so a placeholder passes here and then describes a film that "
+                    "non-empty, so a placeholder would pass here and then describe a film that "
                     "shipped without music. State why the film is deliberately without a bed, "
                     "or source one."
                 )

@@ -22,6 +22,7 @@ from lib.persian_hook_quality import (
 from lib.persian_music import (
     MAX_MUSIC_SEPARATION_LU,
     MIN_MUSIC_SEPARATION_LU,
+    defers_rather_than_decides,
     effective_music_loudness,
 )
 
@@ -608,8 +609,17 @@ def validate_rendered_audio_review(
             raise PersianRenderedReviewError(
                 f"music is too quiet: {reported_separation:.1f} LU separation is above {MAX_MUSIC_SEPARATION_LU:.1f} LU"
             )
-    elif not str(audio.get("musicOmittedReason") or "").strip():
-        raise PersianRenderedReviewError("music absence requires an explicit musicOmittedReason")
+    else:
+        omitted_reason = str(audio.get("musicOmittedReason") or "").strip()
+        if not omitted_reason:
+            raise PersianRenderedReviewError("music absence requires an explicit musicOmittedReason")
+        if defers_rather_than_decides(omitted_reason):
+            raise PersianRenderedReviewError(
+                "the recorded musicOmittedReason defers the decision rather than making "
+                f"one: {omitted_reason!r}. A reason that says the bed is pending, to be "
+                "attached later, or a placeholder describes a film that shipped with music "
+                "promised. State why the film is deliberately without a bed, or source one."
+            )
 
     if require_pass:
         if audio.get("mix_intelligible") is not True:
