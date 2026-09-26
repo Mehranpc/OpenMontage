@@ -12,6 +12,8 @@ Every event declares ID, duration, exact narration span, intent, concrete subjec
 
 Queries translate visual intent, not Persian words. Use concrete camera-visible nouns/actions, 3–6 English words, one useful qualifier, and shot type when material. Two queries must be genuinely different angles, not paraphrases.
 
+**When the event carries a typographic moment, one of its two queries must ask for the framing that leaves the declared `negative_space` band readable.** A shot where the subject fills the frame cannot carry type however well it matches the action, and this is the failure that has cost every run: the plan declares 8 moment-carrying events, acquisition returns footage whose subject occupies the band, and the moments collapse — measured at 8 → 6 → 5 → 3 across successive runs, each drop truthful and each one a beat the film lost. Name the empty surface in the query — a lone object on a plain surface, or a wide shot with plain wall/sky/table filling the band — rather than describing the action alone. "phone lying on table wide shot plain wall above" searches for something the moment can use; "man looking at phone at table" does not, and is what the pipeline selects when nobody asks for the space.
+
 The event contract precedes keywords: first state what the viewer should understand/feel and what must be visible; then author search terms.
 
 ## Subject continuity
