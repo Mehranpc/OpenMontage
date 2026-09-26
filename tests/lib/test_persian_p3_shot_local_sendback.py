@@ -581,6 +581,64 @@ def test_scoped_candidate_grant_never_exceeds_the_whole_run_ceiling(
     assert rewound["asset_reacquisition_grant"]["candidates"] <= ceiling
 
 
+def test_a_user_directed_rewind_into_acquisition_starts_a_fresh_cycle(
+    tmp_path: Path,
+) -> None:
+    """A rewind into acquisition by *any* path must reset the recorded passes.
+
+    Observed on the L3 run: a user-directed rewind into `acquire_assets` left
+    `completed_passes=[0,1]`, so `asset-request --retry-pass 0` refused with "asset search
+    pass 0 was already recorded" and a retry exceeded `max_retry_passes`. Only the scoped
+    path reset the cycle, and that path needs an edit artifact which only exists a phase
+    later -- so the run could neither re-acquire nor reach the state that would let it.
+    """
+    _bootstrap_to_preflight(tmp_path)
+    state = load_workflow_state("run", pipeline_dir=tmp_path)
+    usage = dict(state.get("asset_usage") or {})
+    usage["completed_passes"] = [0, 1]
+    usage["acquisition_cycle"] = 0
+    state["asset_usage"] = usage
+    workflow._write_state(tmp_path / "run", state)
+
+    rewound = request_send_back(
+        "run", "acquire_assets",
+        reason="re-source the blocked shots",
+        user_directed_revision=True,
+        pipeline_dir=tmp_path,
+        now=BASE,
+    )
+
+    assert rewound["next_phase"] == "acquire_assets"
+    assert rewound["asset_usage"]["completed_passes"] == []
+    assert rewound["asset_usage"]["acquisition_cycle"] == 1
+    assert rewound["asset_usage"].get("pending_pass") is None
+
+
+def test_a_user_directed_rewind_elsewhere_does_not_touch_acquisition(
+    tmp_path: Path,
+) -> None:
+    """The reset belongs to acquisition: a rewind to some other phase leaves the
+    acquisition ledger alone rather than silently reopening the search."""
+    _bootstrap_to_preflight(tmp_path)
+    state = load_workflow_state("run", pipeline_dir=tmp_path)
+    usage = dict(state.get("asset_usage") or {})
+    usage["completed_passes"] = [0, 1]
+    usage["acquisition_cycle"] = 2
+    state["asset_usage"] = usage
+    workflow._write_state(tmp_path / "run", state)
+
+    rewound = request_send_back(
+        "run", "review_subject_regions",
+        reason="region review correction",
+        user_directed_revision=True,
+        pipeline_dir=tmp_path,
+        now=BASE,
+    )
+
+    assert rewound["asset_usage"]["completed_passes"] == [0, 1]
+    assert rewound["asset_usage"]["acquisition_cycle"] == 2
+
+
 def test_scoped_asset_sendback_consumes_budget_and_search_cannot_escape_scope(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

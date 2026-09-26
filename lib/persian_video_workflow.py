@@ -2417,7 +2417,24 @@ def request_send_back(
         for key in ("pending_pass", "pending_output_dir", "pending_limits"):
             usage.pop(key, None)
         state["asset_usage"] = usage
-    elif target_phase != "acquire_assets" or user_directed_revision:
+    elif target_phase == "acquire_assets":
+        # A rewind into acquisition by *any* path starts a fresh acquisition cycle: the
+        # passes already recorded belong to the attempt being replaced.
+        #
+        # Without this a user-directed rewind is a dead end. Every pass is recorded, and a
+        # retry exceeds `max_retry_passes`, so `asset-request` refuses -- while the scoped
+        # path that *does* reset the cycle needs an edit artifact that only exists a phase
+        # later. The run cannot re-acquire and cannot reach the state that would let it
+        # (#175).
+        state.pop("asset_reacquisition_scope", None)
+        state.pop("asset_reacquisition_grant", None)
+        usage = dict(state.get("asset_usage") or {})
+        usage["completed_passes"] = []
+        usage["acquisition_cycle"] = int(usage.get("acquisition_cycle") or 0) + 1
+        for key in ("pending_pass", "pending_output_dir", "pending_limits"):
+            usage.pop(key, None)
+        state["asset_usage"] = usage
+    else:
         state.pop("asset_reacquisition_scope", None)
         state.pop("asset_reacquisition_grant", None)
 
