@@ -2079,6 +2079,36 @@ class TestSceneAudit:
         assert audit["subject_fraction"] == 1.0
         assert audit["footage_beats"] == 3
 
+    def test_the_contract_fields_are_legal_artifact_properties(self) -> None:
+        """An audit rule whose field the artifact schema forbids is inert.
+
+        The schemas set `additionalProperties: false`, so shipping the audit without
+        the schema change made the contract unsatisfiable in production: a compliant
+        scene plan was refused by the checkpoint writer, and a plan that persisted
+        silently skipped the rule. The audits were tested by calling them directly and
+        never through a schema, so the gap shipped (#164).
+        """
+        import json
+        from pathlib import Path as _Path
+
+        from lib.persian_scenes import NEGATIVE_SPACE_REGIONS
+
+        root = _Path(__file__).resolve().parents[2]
+        event = json.loads(
+            (root / "schemas/artifacts/scene_plan.schema.json").read_text(encoding="utf-8")
+        )["properties"]["beats"]["items"]["properties"]["visual_events"]["items"]
+        frame_review = json.loads(
+            (root / "schemas/artifacts/asset_manifest.schema.json").read_text(encoding="utf-8")
+        )["properties"]["assets"]["items"]["properties"]["frame_review"]
+
+        assert "carries_moment" in event["properties"]
+        assert "negative_space" in event["properties"]
+        assert "placement_space" in frame_review["properties"]
+        # The schema and the audit must agree on what a legal region is, or one can
+        # drift from the other silently.
+        assert set(event["properties"]["negative_space"]["enum"]) == set(NEGATIVE_SPACE_REGIONS)
+        assert set(frame_review["properties"]["placement_space"]["enum"]) == set(NEGATIVE_SPACE_REGIONS)
+
     def test_a_copy_bearing_event_must_declare_its_negative_space(self) -> None:
         """A moment can only be placed where the frame is empty, so the intent that
         carries one must say which part stays clear.
