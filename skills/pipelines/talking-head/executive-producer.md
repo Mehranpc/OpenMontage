@@ -358,7 +358,7 @@ Enhancement adjustments: {skip/add face_enhance, color_grade, etc.}
 | Max total budget | Configurable (default $0.50) | Hard stop on spending |
 | Max total wall-time | 10 minutes | Timeout for entire pipeline (shorter than explainer — less generation) |
 
-After any limit is hit: **proceed with warnings**, never block indefinitely.
+After any limit is hit: **STOP AUTOMATION** and record `metadata.quality_disposition=needs_decision`; unresolved critical findings forbid final delivery.
 
 ## Integration with Existing Skills
 

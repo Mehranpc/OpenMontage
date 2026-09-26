@@ -10,11 +10,28 @@ POLICY_FILES = [
     ROOT / "skills/pipelines/explainer/executive-producer.md",
     ROOT / "skills/pipelines/talking-head/executive-producer.md",
 ]
+POLICY_TREES = (ROOT / "docs", ROOT / "schemas")
+POLICY_SUFFIXES = {".md", ".json", ".yaml", ".yml"}
+
+
+def _review_policy_files():
+    yield from POLICY_FILES
+    for root in POLICY_TREES:
+        yield from (
+            path
+            for path in sorted(root.rglob("*"))
+            if path.is_file() and path.suffix.lower() in POLICY_SUFFIXES
+        )
 
 
 def test_review_exhaustion_never_permits_warning_pass():
-    forbidden = ("pass with warnings", "pass_with_warnings")
-    for path in POLICY_FILES:
+    forbidden = (
+        "pass with warnings",
+        "pass_with_warnings",
+        "proceed with warnings",
+        "two rounds then proceed",
+    )
+    for path in _review_policy_files():
         text = path.read_text().lower()
         assert not any(term in text for term in forbidden), path
 
