@@ -22,7 +22,9 @@ from lib.persian_dependency_cache import (
     edit_visual_dependency_payload,
 )
 from lib.persian_hook_quality import HOOK_TIMING_POLICY_VERSION
+from lib.checkpoint import read_checkpoint
 from lib.persian_geometric_precheck import geometric_hard_region_precheck
+from lib.persian_scenes import _NEGATIVE_SPACE_RECTS
 from lib.persian_preflight import (
     PREFLIGHT_POLICY_VERSION, aggregate_preflight_edit_decisions, extract_edit_decisions,
 )
@@ -977,6 +979,82 @@ def _editorial_moment_ids(edit: Mapping[str, Any]) -> list[str]:
     return ids
 
 
+def _declared_region_is_clear(edit: Mapping[str, Any], plan: Mapping[str, Any]) -> list[str]:
+    """Return complaints about declared negative space that the reviewed regions occupy.
+
+    The plan-time audit checks a declared region against the profile's safe area using a
+    *nominal* rect -- it cannot see the frame. The edit knows each shot's reviewed hard
+    regions, so this is where "clear" stops being asserted and starts being measured.
+    Without it a plan can declare `upper_band` for a shot whose subject occupies that
+    band, pass every plan gate, and only discover it at placement (#164).
+    """
+    problems: list[str] = []
+    persian = edit.get("persian") if isinstance(edit.get("persian"), Mapping) else {}
+    shots = persian.get("shots") if isinstance(persian, Mapping) else None
+    if not isinstance(shots, list):
+        return problems
+
+    declared: dict[str, str] = {}
+    for beat in plan.get("beats") or []:
+        for event in beat.get("visual_events") or []:
+            if isinstance(event, Mapping) and event.get("carries_moment"):
+                region = str(event.get("negative_space") or "").strip()
+                event_id = str(event.get("id") or "").strip()
+                if event_id and region:
+                    declared[event_id] = region
+
+    for shot in shots:
+        if not isinstance(shot, Mapping):
+            continue
+        event_id = str(shot.get("visualEventId") or "").strip()
+        region = declared.get(event_id)
+        if not region or region not in _NEGATIVE_SPACE_RECTS:
+            continue
+        rx, ry, rw, rh = _NEGATIVE_SPACE_RECTS[region]
+        for index, hard in enumerate(shot.get("avoidRegions") or []):
+            if not isinstance(hard, Mapping):
+                continue
+            try:
+                hx = float(hard.get("x", 0.0)); hy = float(hard.get("y", 0.0))
+                hw = float(hard.get("w", 0.0)); hh = float(hard.get("h", 0.0))
+            except (TypeError, ValueError):
+                continue
+            overlap_w = max(0.0, min(rx + rw, hx + hw) - max(rx, hx))
+            overlap_h = max(0.0, min(ry + rh, hy + hh) - max(ry, hy))
+            if overlap_w * overlap_h <= 0.0:
+                continue
+            problems.append(
+                f'{shot.get("id")} ({event_id}): the plan reserves {region!r} for the '
+                f"typographic moment, but reviewed hard region {index} occupies it "
+                f"(x{hx:g} y{hy:g} w{hw:g} h{hh:g}). A declared region has to be clear of "
+                "the subject it sits beside; either re-declare the region against what "
+                "the footage shows, or re-source the shot. Declaring it does not make "
+                "the space free."
+            )
+    return problems
+
+
+def _assert_declared_regions_are_clear(
+    project_dir: Path, edit: Mapping[str, Any]
+) -> None:
+    """Load the plan if it exists and require every declared region to be clear."""
+    # Deliberately *not* swallowed: a scene plan that exists but cannot be read or
+    # validated must not silently disable this check. An inert gate is worse than a
+    # noisy one -- it is the defect that shipped twice already in this work (#167).
+    checkpoint = read_checkpoint(project_dir.parent, project_dir.name, "scene_plan")
+    if not isinstance(checkpoint, Mapping):
+        return
+    plan = (checkpoint.get("artifacts") or {}).get("scene_plan")
+    if not isinstance(plan, Mapping):
+        return
+    problems = _declared_region_is_clear(edit, plan)
+    if problems:
+        raise PersianEditWorkspaceError(
+            "declared negative space is occupied by the reviewed subject:\n  - "
+            + "\n  - ".join(problems)
+        )
+
+
 def _editorial_baseline_path(project_dir: Path) -> Path:
     return project_dir.expanduser().resolve() / ".drafts" / "edit" / "editorial-baseline.json"
 
@@ -1182,6 +1260,8 @@ def stage_edit_draft(
             "before edit-stage candidate consumption; send back to acquire_assets when "
             "no exact reviewed candidate exists"
         )
+
+    _assert_declared_regions_are_clear(project_dir, edit)
 
     geometry = geometric_hard_region_precheck(edit, repo_root=REPO_ROOT)
     geometry_blockers = geometry.get("blockingIssues")
