@@ -135,3 +135,6 @@ META/
 !remotion-composer/public/fonts/kahroba/
 remotion-composer/public/fonts/kahroba/*.woff2
 !remotion-composer/public/fonts/kahroba/README.md
+
+# Agent worktrees: nested checkouts the desktop app creates for parallel sessions.
+.claude/worktrees/
