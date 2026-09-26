@@ -190,7 +190,12 @@
               "midpoint_before_1_5": { "type": "boolean" },
               "at_3_seconds": { "type": "boolean" },
               "end": { "type": "boolean" },
-              "observed": { "type": "string", "minLength": 1 }
+              "observed": { "type": "string", "minLength": 1 },
+              "placement_space": {
+                "type": "string",
+                "enum": ["left_column", "right_column", "upper_band", "lower_band", "centre_band", "full_frame"],
+                "description": "The region actually observed as clear when this clip was chosen. Required for a unit that carries a typographic moment, and it must equal the region the scene plan reserved."
+              }
             },
             "additionalProperties": false
           }

@@ -431,6 +431,15 @@
                 },
                 "names_banned_term": {
                   "type": "boolean"
+                },
+                "carries_moment": {
+                  "type": "boolean",
+                  "description": "Whether a typographic moment has to sit on this unit."
+                },
+                "negative_space": {
+                  "type": "string",
+                  "enum": ["left_column", "right_column", "upper_band", "lower_band", "centre_band", "full_frame"],
+                  "description": "The region the plan keeps clear for the moment this unit carries. Required when carries_moment is true; the asset review must record the same region it actually observed."
                 }
               },
               "additionalProperties": false
