@@ -94,6 +94,29 @@ def _quality_metadata_problems(
         if not str(entry.get(field) or "").strip():
             problems.append(f"{label}: missing {field}; selected footage needs inspectable reasoning")
 
+    # A unit that has to carry typography must be chosen with an eye to where that
+    # typography can go. Without this the reviewer judges subject match alone, and
+    # footage whose subject fills or crosses the frame is selected happily -- the
+    # collision then surfaces at preflight, one moment per repair cycle (#164).
+    if requirement.get("carries_moment"):
+        frame_review = entry.get("frame_review")
+        frame_review = frame_review if isinstance(frame_review, dict) else {}
+        observed = str(frame_review.get("placement_space") or "").strip()
+        planned = str(requirement.get("negative_space") or "").strip()
+        if not observed:
+            problems.append(
+                f"{label}: carries a typographic moment, so the frame review must record "
+                "where the frame is actually clear (`frame_review.placement_space`). "
+                "Choosing on subject match alone is how unusable footage reaches an "
+                "authored edit."
+            )
+        elif observed != planned:
+            problems.append(
+                f"{label}: frame_review.placement_space is {observed!r} but the plan "
+                f"reserved {planned!r}; the selected footage does not leave the room the "
+                "moment was planned against."
+            )
+
     if str(requirement.get("narrative_role") or "").strip() == "hook":
         expected_role = str(requirement.get("semantic_role") or "").strip()
         expected_direction = str(requirement.get("semantic_direction") or "").strip()
@@ -211,6 +234,10 @@ def _scene_asset_requirements(
                         "semantic_direction": event.get("semantic_direction"),
                         "fallback_level": event.get("fallback_level"),
                         "importance": event.get("importance"),
+                        # Whether a typographic moment has to sit on this unit, and
+                        # where the plan says the frame stays clear for it (#164).
+                        "carries_moment": bool(event.get("carries_moment")),
+                        "negative_space": str(event.get("negative_space") or ""),
                     }
                 )
         else:
