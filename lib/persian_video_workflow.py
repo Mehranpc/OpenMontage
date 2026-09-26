@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import sys
@@ -205,13 +206,42 @@ def get_workflow_budgets() -> WorkflowBudgets:
         ) from exc
 
 
+#: Operator override for a deliberate, bounded extra acquisition pass.
+#:
+#: The candidate ceiling is the one acquisition limit that cannot be widened by any
+#: in-policy path once a plan's event count equals it: `send-back` into acquisition
+#: resets the recorded passes but not the candidate counter, and the scoped-repair
+#: grant is capped at `_REACQUISITION_CANDIDATE_GRANT`. An operator who decides the
+#: pool is worth one more bounded pass therefore has to say so explicitly, and this
+#: env var is the whole surface for that: byte budgets, retry passes, sources and the
+#: search-cache policy are untouched. Unset means the manifest policy, so a normal run
+#: behaves exactly as before.
+_CANDIDATE_OVERRIDE_ENV = "OPENMONTAGE_PERSIAN_MAX_CANDIDATES"
+
+
+def _candidate_ceiling_override(default: int) -> int:
+    """The candidate ceiling in force: the policy default, or the operator's override."""
+    raw = str(os.environ.get(_CANDIDATE_OVERRIDE_ENV) or "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise PersianVideoWorkflowError(
+            f"{_CANDIDATE_OVERRIDE_ENV} must be an integer, got {raw!r}"
+        ) from exc
+    if value <= 0:
+        raise PersianVideoWorkflowError(f"{_CANDIDATE_OVERRIDE_ENV} must be positive")
+    return value
+
+
 def asset_search_policy() -> dict[str, Any]:
     """Return the only automatic stock-search budget for this workflow."""
     budget = get_workflow_budgets()
     return {
         "sources": ["pexels", "pixabay_video"],
         "clips_per_query": budget.clips_per_query,
-        "max_candidates_total": budget.max_candidates_total,
+        "max_candidates_total": _candidate_ceiling_override(budget.max_candidates_total),
         "max_bytes_per_clip": budget.max_bytes_per_clip,
         "max_total_download_bytes": budget.max_total_download_bytes,
         "max_retry_passes": budget.asset_retry_passes,
