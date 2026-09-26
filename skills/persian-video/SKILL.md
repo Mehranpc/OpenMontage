@@ -109,9 +109,7 @@ This preserves the span's original start and recovery time with an `abandoned_un
 For `acquire_assets`, use the bounded acquisition + durable candidate workspace instead of maintaining a separate selection ledger in chat or generated helper scripts. The normal lifecycle is:
 
 ```bash
-python -m lib.persian_video_workflow asset-request <project-id> --retry-pass <0-or-1> --json /project/request.json
-# Execute direct_clip_search with the bounded request; persist its normalized ToolResult data.
-python -m lib.persian_video_workflow asset-result <project-id> --retry-pass <0-or-1> --json /project/result.json
+python -m lib.persian_video_workflow asset-search <project-id> --retry-pass <0-or-1> --request /project/request.json
 python -m lib.persian_video_workflow asset-candidate-stage <project-id> --json /project/candidate.json
 python -m lib.persian_video_workflow asset-candidate-review <project-id> <candidate-id> --json /project/review.json
 python -m lib.persian_video_workflow asset-candidate-reject <project-id> <candidate-id> --category <technical|semantic|editorial> --reason "..."
@@ -119,6 +117,13 @@ python -m lib.persian_video_workflow asset-candidate-select <project-id> <visual
 ```
 
 `asset-result` imports provider/source discoveries into project-local durable state. Candidate identity is provider/source ID + exact source-time window + intended crop; review evidence is immutable for that identity. Overlapping reuse of the same source window is blocked, while distinct non-overlapping windows remain legal. Reviewed alternates remain reusable after send-back without reacquisition/re-review when identity is unchanged.
+
+`asset-search` runs the whole bounded pass — `asset-request` → `direct_clip_search` → `asset-result`, and no arithmetic of its own — as **one durable, measured execution** under the current phase attempt, charged to `provider_network_wait`. Two consequences matter to the operator:
+
+- The pass has a resume identity of *(retry pass, exact request bytes)*. A session that dies mid-download reconciles the same logical search with `python -m lib.persian_run_kernel status <project-id> <job-id>` instead of re-issuing and re-paying for it, and it leaves no `pending_pass` behind — the state the phase cannot complete from. Do not edit the request file after starting; a changed request is refused rather than searched.
+- The pass **does not advance the phase**. Staging, review, rejection, selection, `assets build-manifest` and `assets write-checkpoint` remain your work, and `complete --phase acquire_assets` is still what advances it. Use `--no-wait` when the session cannot block, then reconcile with `status` as above.
+
+`asset-request` and `asset-result` remain the underlying handshake, and remain correct to use directly only for a provider path `asset-search` cannot take.
 
 `asset-candidate-select` returns `manifestBinding` and `manifestEvidence`; use those exact fields in the canonical `asset_manifest` row. Once asset workspace state exists, `complete --phase acquire_assets` enforces that every workspace-bound visual event has exactly one selected row with matching identity and review evidence. `status.asset_workspace` is the durable source for candidate/reuse/rejection/weak-resolution state. `asset_manifest` remains the canonical selected artifact; the workspace is durable discovery/review history.
 

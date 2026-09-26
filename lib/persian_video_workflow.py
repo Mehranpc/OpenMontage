@@ -4293,6 +4293,21 @@ def build_parser() -> argparse.ArgumentParser:
     asset_result.add_argument("--retry-pass", type=int, required=True)
     asset_result.add_argument("--json", required=True, metavar="PATH")
 
+    asset_search = sub.add_parser(
+        "asset-search",
+        help="run one bounded provider pass as a durable, measured execution",
+    )
+    asset_search.add_argument("project_id")
+    asset_search.add_argument("--retry-pass", type=int, required=True)
+    asset_search.add_argument("--request", required=True, metavar="PATH")
+    asset_search.add_argument("--job-id")
+    asset_search.add_argument("--timeout-seconds", type=float, default=1800.0)
+    asset_search.add_argument(
+        "--no-wait",
+        action="store_true",
+        help="start the durable pass and return; reconcile it with persian_run_kernel status",
+    )
+
     asset_candidate_stage = sub.add_parser("asset-candidate-stage", help="stage one durable source-window/crop candidate")
     asset_candidate_stage.add_argument("project_id")
     asset_candidate_stage.add_argument("--json", required=True, metavar="PATH")
@@ -4565,6 +4580,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.project_id,
                     retry_pass=args.retry_pass,
                     result_data=_read_json(args.json),
+                )
+            )
+        elif args.command == "asset-search":
+            from lib.persian_asset_job import run_asset_search_job
+
+            _print_json(
+                run_asset_search_job(
+                    args.project_id,
+                    request_path=Path(args.request),
+                    retry_pass=args.retry_pass,
+                    job_id=args.job_id,
+                    timeout_seconds=args.timeout_seconds,
+                    launch=not args.no_wait,
                 )
             )
         elif args.command == "asset-candidate-stage":
