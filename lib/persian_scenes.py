@@ -355,12 +355,37 @@ def _region_serviceable_span(region: tuple[float, float, float, float],
     return width, height
 
 
+def scene_plan_duration_tolerance_seconds(fps: float = 30.0) -> float:
+    """One frame at `fps`: the tolerance that binds a plan's beats to its narration.
+
+    The plan's beats partition the aligned script, so the plan tail must land on the
+    authoritative narration duration, not near it. This is the one place the tolerance is
+    defined; `lib.persian_video_workflow.validate_scene_plan_duration` reads it so the
+    audit and the completion wiring cannot drift to two different numbers.
+    """
+    if fps <= 0:
+        raise ValueError("fps must be positive")
+    return 1.0 / fps
+
+
+def _declared_target_duration(scene_plan: dict[str, Any]) -> Any:
+    """The plan's target duration, top-level or under metadata, or None."""
+    declared = scene_plan.get("target_duration_seconds")
+    if declared is None:
+        metadata = scene_plan.get("metadata")
+        if isinstance(metadata, dict):
+            declared = metadata.get("target_duration_seconds")
+    return declared
+
+
 def audit_scene_plan(
     scene_plan: dict[str, Any],
     *,
     subject: str | None = None,
     script_text: str = "",
     typographic_budget: int | None = None,
+    target_duration_seconds: float | None = None,
+    fps: float = 30.0,
 ) -> dict[str, Any]:
     """Measure a scene plan against the footage rules. Empty `problems` means clean.
 
@@ -374,6 +399,12 @@ def audit_scene_plan(
             via `names_banned_term`, not on a translation this module would have to
             invent.
         typographic_budget: From `brief.metadata.typographic_beat_budget`.
+        target_duration_seconds: The authoritative narration duration — the number the
+            plan's beats must cover. Defaults to the plan's own declared
+            `target_duration_seconds` (the scene director's record of that narration).
+            When neither is present there is no claim to contradict and the check is
+            skipped, mirroring `moment_target`.
+        fps: The output frame rate, used only for the duration tolerance.
 
     Returns:
         `problems` (must be fixed), `advisories` (judgements deliberately not enforced),
@@ -525,6 +556,35 @@ def audit_scene_plan(
             duration += float(beat.get("duration_seconds") or 0.0)
         except (TypeError, ValueError):
             continue
+
+    # --- Duration coverage --------------------------------------------------------------
+    # The contract's own rule: the beats must sum to the target duration. The target is
+    # the authoritative narration duration -- passed in, or recorded on the plan by the
+    # scene director. A plan that does not cover the narration will not line up with the
+    # words, and every typographic moment anchored to those beats collapses. This is that
+    # rule made real; a plan that names no target makes no claim to contradict.
+    declared = (
+        target_duration_seconds
+        if target_duration_seconds is not None
+        else _declared_target_duration(scene_plan)
+    )
+    if declared is not None:
+        try:
+            target_duration = float(declared)
+        except (TypeError, ValueError):
+            target_duration = 0.0
+        if target_duration > 0 and duration > 0:
+            delta = abs(duration - target_duration)
+            tolerance = scene_plan_duration_tolerance_seconds(fps)
+            if delta > tolerance + 1e-9:
+                problems.append(
+                    f"beats sum to {duration:.3f}s against a target duration of "
+                    f"{target_duration:.3f}s ({delta:.3f}s off, more than one frame at "
+                    f"{fps:g}fps = {tolerance:.3f}s). The beats partition the aligned "
+                    "narration; a plan that does not cover it will not line up with the "
+                    "words and its moments will collapse."
+                )
+
     if duration > 0:
         carrying = sum(
             1
