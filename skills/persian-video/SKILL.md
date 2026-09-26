@@ -90,7 +90,13 @@ being worked, and leaving it uncovered is what makes measured causal coverage co
 The measured run that exposed this recorded 18 spans covering 559s of a 3993s wall while
 its own editorial categories summed to 1194s — the work was real, it simply was not
 spanned. Close the span when you stop working (durable execution, user wait, phase
-completion), not after each command. The lower-level `attempt` command remains available for phases whose measurable work is entirely represented by durable jobs.
+completion), not after each command. **This includes the interval between phase attempts.**
+A `complete` ends a span because the phase is done — it does not end the work: reading the
+next phase's contracts, re-deriving state and preparing its first command is measured agent
+work too, and it belongs in an `agent_interphase` span. Leaving it uncovered is the single
+largest source of unattributed wall time in an agent-driven run: the L3 run that reached
+`awaiting_human` closed one span per phase and still measured **53.8%** coverage over an
+8784s wall, because every between-phase interval was unspanned while the work was real. The lower-level `attempt` command remains available for phases whose measurable work is entirely represented by durable jobs.
 
 If a session stops without `work-finish` and the actual stop time is unknown, recover the open span before resuming work:
 
