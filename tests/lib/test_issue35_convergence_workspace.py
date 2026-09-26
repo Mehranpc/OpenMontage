@@ -50,6 +50,31 @@ def _edit(*, recipe: str = "recipe-a", watermark: str = "طریقت", note: str 
     }
 
 
+_CURATED_RECIPES = {
+    "recipe-a": "editorial-hero-balanced",
+    "recipe-b": "editorial-hero-compact",
+    "recipe-c": "editorial-callout-balanced",
+}
+
+
+def _schema_valid_edit(*, recipe: str = "recipe-a") -> dict:
+    """`_edit` in the shape the edit_decisions schema accepts.
+
+    The front door refuses a schema-breaking draft before it becomes a candidate
+    (#212), so tests that stage through `stage_workflow_edit_draft` use this.
+    """
+    payload = _edit()
+    persian = payload["persian"]
+    persian.pop("captions", None)
+    hook = persian["moments"][0]
+    hook.pop("recipe", None)
+    hook["presentation"] = {"recipeId": _CURATED_RECIPES[recipe]}
+    shot = persian["shots"][0]
+    shot["source"] = shot.pop("src")
+    shot["attribution"] = "Test footage"
+    return payload
+
+
 def _layout_issue() -> dict:
     return {"code": "FILM_TYPE_LAYOUT_OVERFLOW", "recoveryClass": "FILM_TYPE_LAYOUT"}
 
@@ -671,10 +696,10 @@ def test_front_door_global_convergence_exhaustion_stops_workflow(tmp_path: Path,
     monkeypatch.setattr(workflow, "load_workflow_state", lambda *args, **kwargs: state)
     monkeypatch.setattr(workflow, "validate_edit_hook_authority", lambda *args, **kwargs: {"valid": True})
 
-    source.write_text(json.dumps(_edit()), encoding="utf-8")
+    source.write_text(json.dumps(_schema_valid_edit()), encoding="utf-8")
     workflow.stage_workflow_edit_draft("run", "base", source, pipeline_dir=tmp_path)
 
-    source.write_text(json.dumps(_edit(recipe="recipe-b")), encoding="utf-8")
+    source.write_text(json.dumps(_schema_valid_edit(recipe="recipe-b")), encoding="utf-8")
     workflow.stage_workflow_edit_draft(
         "run",
         "layout-1",
@@ -687,7 +712,7 @@ def test_front_door_global_convergence_exhaustion_stops_workflow(tmp_path: Path,
         pipeline_dir=tmp_path,
     )
 
-    source.write_text(json.dumps(_edit(recipe="recipe-c")), encoding="utf-8")
+    source.write_text(json.dumps(_schema_valid_edit(recipe="recipe-c")), encoding="utf-8")
     with pytest.raises(PersianEditWorkspaceError, match="global candidate budget exhausted"):
         workflow.stage_workflow_edit_draft(
             "run",

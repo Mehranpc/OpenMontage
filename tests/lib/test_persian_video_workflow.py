@@ -1086,7 +1086,15 @@ def test_front_door_edit_stage_obeys_project_read_isolation(tmp_path):
     )
     candidate.write_text(json.dumps({"persian": {
         "format": "vertical",
-        "moments": [{"id": "hook", "kind": "hook", "segments": [{"role": "hero", "text": selected_hook}]}],
+        "durationSeconds": 3.0,
+        "shots": [{
+            "id": "shot-1", "source": "clip.mp4", "attribution": "fixture",
+            "startSeconds": 0.0, "endSeconds": 3.0,
+        }],
+        "moments": [{
+            "id": "hook", "kind": "hook", "startSeconds": 0.0, "endSeconds": 2.5,
+            "segments": [{"role": "hero", "text": selected_hook}],
+        }],
     }}), encoding="utf-8")
     result = workflow.stage_workflow_edit_draft("run", "a1", candidate, pipeline_dir=tmp_path)
     assert Path(result["draftPath"]).is_file()
