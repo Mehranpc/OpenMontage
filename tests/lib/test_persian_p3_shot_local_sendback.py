@@ -581,6 +581,61 @@ def test_scoped_candidate_grant_never_exceeds_the_whole_run_ceiling(
     assert rewound["asset_reacquisition_grant"]["candidates"] <= ceiling
 
 
+def test_a_scoped_repair_can_read_a_pending_draft_without_a_staged_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Break the circle between staging and repairing.
+
+    `stage_edit_draft` refuses a draft whose declared region the reviewed subject
+    occupies -- correctly -- and that refusal leaves no edit attempt for the scoped
+    repair to read, while the pass that would fix the footage needs the repair. Observed
+    on an L3 run that had five of eight declared regions genuinely free and had to stop.
+
+    Supplying the pending draft directly authorises the repair without weakening any
+    gate: the draft is still refused, it is simply readable.
+    """
+    _bootstrap_to_preflight(tmp_path)
+    monkeypatch.setattr(
+        workflow, "asset_workspace_status",
+        lambda _: _workspace(event1_alt=True, event2_alt=False),
+    )
+    monkeypatch.setattr(
+        workflow, "read_checkpoint",
+        lambda *_args, **_kwargs: _scene_checkpoint("event-2", "replacement event two"),
+    )
+    draft = tmp_path / "run" / ".workspace" / "tmp" / "edit_draft.json"
+    draft.parent.mkdir(parents=True, exist_ok=True)
+    draft.write_text(json.dumps(_edit()), encoding="utf-8")
+
+    # Without a staged attempt or a supplied draft, the repair cannot be computed at all
+    # -- which is the state the run was stuck in.
+    canonical = tmp_path / "run" / "artifacts" / "edit_decisions.json"
+    if canonical.exists():
+        canonical.unlink()
+    with pytest.raises(PersianVideoWorkflowError, match="requires edit decisions"):
+        request_send_back(
+            "run", "acquire_assets",
+            reason="declared region is occupied; re-source the shot",
+            diagnostic_code="ASSET_SELECTION_HARD_REGION_COLLISION",
+            affected_shot_ids=["shot-2"],
+            pipeline_dir=tmp_path,
+            now=BASE,
+        )
+
+    rewound = request_send_back(
+        "run", "acquire_assets",
+        reason="declared region is occupied; re-source the shot",
+        diagnostic_code="ASSET_SELECTION_HARD_REGION_COLLISION",
+        affected_shot_ids=["shot-2"],
+        edit_draft_json=str(draft),
+        pipeline_dir=tmp_path,
+        now=BASE,
+    )
+
+    assert rewound["next_phase"] == "acquire_assets"
+    assert rewound["asset_reacquisition_scope"]["shotIds"] == ["shot-2"]
+
+
 def test_a_user_directed_rewind_into_acquisition_starts_a_fresh_cycle(
     tmp_path: Path,
 ) -> None:

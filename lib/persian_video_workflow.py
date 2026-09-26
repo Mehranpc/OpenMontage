@@ -2236,10 +2236,22 @@ def record_recovery_attempt(
 
 
 def _recovery_edit_decisions(
-    state: Mapping[str, Any], *, edit_attempt_id: str | None = None
+    state: Mapping[str, Any],
+    *,
+    edit_attempt_id: str | None = None,
+    edit_draft_json: str | None = None,
 ) -> dict[str, Any]:
     project_root = _project_root(state)
-    if edit_attempt_id is None:
+    if edit_draft_json:
+        # A scoped repair has to be authorisable before a *successful* stage exists.
+        # `stage_edit_draft` refuses a draft whose declared region the reviewed subject
+        # occupies -- correctly -- and that refusal leaves no attempt for the repair to
+        # read, while the pass that would fix the footage needs the repair. Supplying the
+        # pending draft directly breaks that circle without weakening any gate (#178).
+        path = Path(assert_read_allowed(state, str(edit_draft_json)))
+        if not _is_within(path.resolve(), project_root):
+            raise PersianVideoWorkflowError("scoped recovery draft escaped its project")
+    elif edit_attempt_id is None:
         path = project_root / "artifacts" / "edit_decisions.json"
     else:
         attempt = str(edit_attempt_id or "").strip()
@@ -2281,6 +2293,7 @@ def request_send_back(
     diagnostic_code: str | None = None,
     affected_shot_ids: Sequence[str] | None = None,
     edit_attempt_id: str | None = None,
+    edit_draft_json: str | None = None,
 ) -> dict[str, Any]:
     """Rewind a bounded production; explicit user feedback may open one fresh cycle."""
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
@@ -2314,7 +2327,11 @@ def request_send_back(
         try:
             scoped_plan = shot_local_recovery_plan(
                 {"code": code, "details": {"shotIds": shots}},
-                _recovery_edit_decisions(state, edit_attempt_id=edit_attempt_id),
+                _recovery_edit_decisions(
+                    state,
+                    edit_attempt_id=edit_attempt_id,
+                    edit_draft_json=edit_draft_json,
+                ),
                 asset_workspace_status(_project_root(state)),
             )
         except ValueError as exc:
@@ -4197,6 +4214,10 @@ def build_parser() -> argparse.ArgumentParser:
     send_back.add_argument("--shot-id", dest="shot_ids", action="append", default=[])
     send_back.add_argument("--edit-attempt-id")
     send_back.add_argument(
+        "--edit-draft-json",
+        help="pending edit draft a scoped asset repair reads when no attempt exists yet",
+    )
+    send_back.add_argument(
         "--user-directed-revision", action="store_true",
         help="start a fresh bounded revision cycle after explicit new user feedback",
     )
@@ -4490,6 +4511,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     diagnostic_code=args.diagnostic_code,
                     affected_shot_ids=args.shot_ids,
                     edit_attempt_id=args.edit_attempt_id,
+                    edit_draft_json=getattr(args, "edit_draft_json", None),
                 )
             )
         elif args.command == "budget-decision":
