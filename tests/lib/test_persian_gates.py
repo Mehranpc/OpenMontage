@@ -2109,6 +2109,40 @@ class TestSceneAudit:
         assert set(event["properties"]["negative_space"]["enum"]) == set(NEGATIVE_SPACE_REGIONS)
         assert set(frame_review["properties"]["placement_space"]["enum"]) == set(NEGATIVE_SPACE_REGIONS)
 
+    def test_a_plan_declaring_a_moment_target_must_carry_that_many(self) -> None:
+        """Declaring fewer copy-bearing events makes every placement gate easier to
+        satisfy, and nothing else names the cost: `audit_moments` treats its
+        moments-per-minute floor as an advisory, so a plan carrying one moment passes the
+        edit stage and ships a video with almost no typography. Run 6 did exactly that --
+        one moment, and not a single refusal.
+
+        Scoped to plans that state a target: this is a consistency check between the
+        plan's own declared intent and what it says it can carry.
+        """
+        plan = self._plan([{
+            "id": "beat-1",
+            "duration_seconds": 2.5,
+            "typographic": False,
+            "visual_events": [
+                self._event(1, carries_moment=True, negative_space="upper_band"),
+            ],
+        }])
+        plan["metadata"]["moment_target"] = 8
+
+        problems = audit_scene_plan(plan)["problems"]
+
+        assert any("carry a typographic moment" in problem for problem in problems), problems
+
+    def test_a_plan_without_a_moment_target_is_not_second_guessed(self) -> None:
+        beat = {
+            "id": "beat-1",
+            "duration_seconds": 2.5,
+            "typographic": False,
+            "visual_events": [self._event(1)],
+        }
+
+        assert audit_scene_plan(self._plan([beat]))["problems"] == []
+
     def test_a_copy_bearing_event_must_declare_its_negative_space(self) -> None:
         """A moment can only be placed where the frame is empty, so the intent that
         carries one must say which part stays clear.
