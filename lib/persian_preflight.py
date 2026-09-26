@@ -15,6 +15,7 @@ from tools.video.persian_compose import (
 from lib.persian_retention import audit_persian_retention
 from lib.persian_hook_quality import (
     HOOK_TIMING_POLICY_VERSION,
+    SEMANTIC_INTEGRITY_POLICY_VERSION,
     audit_persian_hook_quality,
 )
 from lib.persian_captions import caption_band_rect
@@ -32,7 +33,7 @@ from lib.persian_recovery_policy import (
 )
 from lib.persian_asset_workspace import asset_workspace_status
 
-PREFLIGHT_POLICY_VERSION = "2.4"
+PREFLIGHT_POLICY_VERSION = "2.5"
 _DIAGNOSTIC_PREFIX_RE = re.compile(r"^\[([A-Z0-9_]+)\]\s*")
 
 
@@ -485,15 +486,23 @@ def aggregate_preflight_edit_decisions(
 
     hook_quality: dict[str, Any] | None = None
     cached_hook = precomputed.get("hookQualityAudit")
-    # Hook-quality evidence is policy-dependent. A cached audit computed under a
-    # different timing policy cannot be reused: it may encode an exception that
-    # the current policy no longer grants (or vice versa).
-    cached_hook_policy = (
+    # Hook-quality evidence is policy-dependent. A cached audit is reusable only
+    # when both timing and semantic-integrity policy identities still match.
+    cached_hook_timing_policy = (
         ((cached_hook.get("timingPolicy") or {}).get("version"))
         if isinstance(cached_hook, dict)
         else None
     )
-    if isinstance(cached_hook, dict) and cached_hook_policy == HOOK_TIMING_POLICY_VERSION:
+    cached_hook_semantic_policy = (
+        ((cached_hook.get("semanticIntegrity") or {}).get("policyVersion"))
+        if isinstance(cached_hook, dict)
+        else None
+    )
+    if (
+        isinstance(cached_hook, dict)
+        and cached_hook_timing_policy == HOOK_TIMING_POLICY_VERSION
+        and cached_hook_semantic_policy == SEMANTIC_INTEGRITY_POLICY_VERSION
+    ):
         hook_quality = dict(cached_hook)
     else:
         try:

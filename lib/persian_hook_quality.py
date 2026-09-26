@@ -20,7 +20,7 @@ HOOK_QUALITY_VERSION = "2.0"
 # authored edits or persisted reports unreadable; it changes which late payoff is
 # eligible for an exception.
 HOOK_TIMING_POLICY_VERSION = "2.1"
-SEMANTIC_INTEGRITY_POLICY_VERSION = "1.0"
+SEMANTIC_INTEGRITY_POLICY_VERSION = "1.1"
 SHORT_FORM_TARGETS = frozenset({"instagram-reels", "tiktok", "youtube-shorts"})
 OPENING_WINDOW_SECONDS = 3.0
 VALUE_WARNING_SECONDS = 2.0
@@ -501,22 +501,15 @@ def _semantic_integrity(
         )
 
     text_missing = [anchor for anchor in anchors if _normalize_semantic_text(anchor) not in normalized_display]
-    opening_shots = [
-        shot for shot in (persian.get("shots") or [])
-        if isinstance(shot, Mapping)
-        and str(shot.get("narrativeRole") or "") == "hook"
-        and float(shot.get("startSeconds") or 0.0) < OPENING_WINDOW_SECONDS
-        and shot.get("openingSemanticMatch") is True
-    ]
-    visual_evidence = bool(opening_shots) and bool(str(raw.get("visualAnchorEvidence") or "").strip())
 
+    # Semantic-integrity policy 1.1 deliberately does not let authored visual
+    # self-reports clear a viewer-visible topic-anchor blocker. In particular,
+    # openingSemanticMatch plus semanticIntegrity.visualAnchorEvidence is planning
+    # metadata, not independent evidence about rendered pixels (#196).
     missing = list(text_missing)
     satisfied_by: str | None = None
     if not text_missing:
         satisfied_by = "text"
-        missing = []
-    elif delivery in {"visual", "text_or_visual"} and visual_evidence and not typographic_only:
-        satisfied_by = "visual"
         missing = []
 
     if missing:
