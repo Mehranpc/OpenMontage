@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-RECOVERY_POLICY_VERSION = "2.3"
+RECOVERY_POLICY_VERSION = "2.4"
 
 _CLASS_POLICIES: dict[str, dict[str, Any]] = {
     "HOOK_SEMANTIC": {
@@ -93,10 +93,28 @@ _CLASS_POLICIES: dict[str, dict[str, Any]] = {
             "typography.line_plan",
             "typography.duration",
             "timeline.reveal_schedule",
+            # A moment's wording length is a layout input: when a phrase cannot hold
+            # inside the shots it spans, tightening it is the layout repair. Without
+            # this the edit is refused by every class -- CAPTION_CONTINUITY carries the
+            # `copy` scope but not `typography`, and this class carried `typography`
+            # but not `copy` (#180). The approved narration stays preserved below.
         ],
         "preserve": [
             "approved_script", "narration", "assets", "audio_mix", "scenes",
             "subject_regions", "watermark",
+        ],
+    },
+    "EDITORIAL_MOMENT_COPY": {
+        # A moment's phrase has to fit the shots it spans. When it cannot, tightening
+        # the wording is the repair -- and it is neither a caption change (the caption
+        # pipeline is separate) nor a layout change (a layout recovery must not rewrite
+        # copy). A phrase edit touches both scopes, so it needs its own owner (#180).
+        "maxAttempts": 2,
+        "strategies": ["tighten_editorial_moment_wording", "stop_for_editorial_revision"],
+        "mutationSurface": ["copy.moment_text", "typography.moment_copy"],
+        "preserve": [
+            "approved_script", "narration", "assets", "audio_mix", "scenes",
+            "subject_regions", "watermark", "captions", "hook",
         ],
     },
     "SUBJECT_REGION_REVIEW": {
@@ -151,6 +169,7 @@ _CODE_PREFIX_CLASS = (
     ("WATERMARK_", "WATERMARK_TIMING"),
     ("SUBJECT_REGION_", "SUBJECT_REGION_REVIEW"),
     ("ASSET_SELECTION_", "ASSET_SELECTION"),
+    ("MOMENT_COPY_", "EDITORIAL_MOMENT_COPY"),
     ("FILM_TYPE_", "FILM_TYPE_LAYOUT"),
 )
 
