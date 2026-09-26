@@ -1161,8 +1161,20 @@ def _candidate_ceiling(state: Mapping[str, Any], policy_total: int) -> int:
         granted = max(0, int(grant["candidates"]))
     except (TypeError, ValueError):
         return policy_total
+    baseline = grant.get("candidateBaseline")
+    if baseline is None:
+        # A grant recorded before baselines existed (or one written by hand) still
+        # means "this repair gets `granted` candidates from here". Falling back to 0
+        # would instead re-anchor it to the original cap, which is the very bug this
+        # anchoring fixes -- so a pre-existing grant would be refused rather than
+        # honoured (#152).
+        usage = state.get("asset_usage")
+        usage = usage if isinstance(usage, Mapping) else {}
+        baseline = usage.get(
+            "semantic_candidates_reviewed", usage.get("candidates_considered", 0)
+        )
     try:
-        baseline = max(0, int(grant.get("candidateBaseline") or 0))
+        baseline = max(0, int(baseline or 0))
     except (TypeError, ValueError):
         baseline = 0
     return max(policy_total, baseline + granted)
