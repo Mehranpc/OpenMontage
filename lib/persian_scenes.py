@@ -21,6 +21,9 @@ something to smooth over.
 from __future__ import annotations
 
 import json
+import math
+
+from lib.persian_moments import MIN_MOMENTS_PER_MINUTE
 from typing import Any
 
 #: Stock-library shorthand for "health", forbidden unless the script names the thing.
@@ -509,6 +512,42 @@ def audit_scene_plan(
                             "laid out there at all, so declaring it guarantees a placement "
                             "refusal later. Use a band or the full frame instead."
                         )
+
+    # --- Enough moments to be the product ---------------------------------------------
+    # Declaring fewer copy-bearing events is the cheapest way to satisfy every placement
+    # gate, and nothing else names the cost: `audit_moments` treats its moments-per-minute
+    # floor as an advisory, so a plan carrying one moment passes the edit stage and ships a
+    # video with almost no typography. Run 6 did exactly that -- one moment, no refusals.
+    # The film is *defined* by its moments, so this is a problem, not an advisory.
+    duration = 0.0
+    for beat in beats:
+        try:
+            duration += float(beat.get("duration_seconds") or 0.0)
+        except (TypeError, ValueError):
+            continue
+    if duration > 0:
+        carrying = sum(
+            1
+            for beat in beats
+            for event in (beat.get("visual_events") or [])
+            if isinstance(event, dict) and event.get("carries_moment")
+        )
+        target = (scene_plan.get("metadata") or {}).get("moment_target")
+        try:
+            required = int(target) if target is not None else 0
+        except (TypeError, ValueError):
+            required = 0
+        # Only when the plan states a target. This is a consistency check between the
+        # plan's own declared intent and what it declares it can carry, not a new global
+        # floor -- a plan that names no target is not making a claim to contradict.
+        if required > 0 and carrying < required:
+            problems.append(
+                f"only {carrying} event(s) carry a typographic moment, against "
+                f"{required} for a {duration:.1f}s film. Declaring fewer moments makes "
+                "every placement gate easier to satisfy, which is exactly why it cannot be "
+                "left to the author's judgement: the moments are the product, and a plan "
+                "that carries one ships a video with almost no typography."
+            )
 
     # --- Banned vocabulary ------------------------------------------------------------
     for beat in footage:
