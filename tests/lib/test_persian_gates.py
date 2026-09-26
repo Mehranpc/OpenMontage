@@ -2012,6 +2012,63 @@ class TestSceneAudit:
         assert audit["subject_fraction"] == 1.0
         assert audit["footage_beats"] == 3
 
+    def test_a_copy_bearing_event_must_declare_its_negative_space(self) -> None:
+        """A moment can only be placed where the frame is empty, so the intent that
+        carries one must say which part stays clear.
+
+        Left undeclared, the search is free to pick footage whose subject fills or
+        crosses the frame, and the collision is discovered at preflight -- one moment
+        per repair cycle. Observed across four consecutive L3 placement collisions
+        (#164).
+        """
+        beat = {
+            "id": "beat-1",
+            "duration_seconds": 2.5,
+            "typographic": False,
+            "visual_events": [self._event(1, carries_moment=True)],
+        }
+
+        problems = audit_scene_plan(self._plan([beat]))["problems"]
+
+        assert any("negative_space" in problem for problem in problems), problems
+
+    def test_a_declared_negative_space_region_audits_clean(self) -> None:
+        beat = {
+            "id": "beat-1",
+            "duration_seconds": 2.5,
+            "typographic": False,
+            "visual_events": [
+                self._event(1, carries_moment=True, negative_space="lower_band"),
+            ],
+        }
+
+        assert audit_scene_plan(self._plan([beat]))["problems"] == []
+
+    def test_an_unusable_negative_space_region_is_refused(self) -> None:
+        beat = {
+            "id": "beat-1",
+            "duration_seconds": 2.5,
+            "typographic": False,
+            "visual_events": [
+                self._event(1, carries_moment=True, negative_space="somewhere nice"),
+            ],
+        }
+
+        problems = audit_scene_plan(self._plan([beat]))["problems"]
+
+        assert any("is not one of" in problem for problem in problems), problems
+
+    def test_an_event_without_a_moment_need_not_declare_negative_space(self) -> None:
+        """The contract binds copy-bearing events only: footage-only beats are free."""
+        beat = {
+            "id": "beat-1",
+            "duration_seconds": 2.5,
+            "typographic": False,
+            "visual_events": [self._event(1)],
+        }
+
+        assert audit_scene_plan(self._plan([beat]))["problems"] == []
+
     def test_one_semantic_beat_can_expand_to_multiple_visual_events(self) -> None:
         beat = {
             "id": "beat-1",
