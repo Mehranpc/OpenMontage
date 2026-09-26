@@ -70,7 +70,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import re
-from typing import Any, Iterable, Literal
+from typing import Any, Iterable, Literal, Mapping
 
 from lib.persian_brand import validate_exact_text_record
 from lib.persian_text import (
@@ -406,6 +406,69 @@ class PersianMoment:
             for reveal_at, step in zip(reveal_times, steps, strict=True)
         ]
         return max(MIN_SECONDS, *completions)
+
+    def film_step_requirements(
+        self, motion: Mapping[str, Any]
+    ) -> list[tuple[float, float, float]]:
+        """Per reveal step `(reveal_at, needed, available)` exactly as Film Type charges it.
+
+        Mirrors `assertFilmTiming` in `remotion-composer/src/persian/filmType/layout.ts`.
+        The plain model (`min_read_seconds`) charges fixation + reading + blocks only.
+        The browser also charges the row stagger (`filmRowDelay`), the entrance when it
+        outlasts fixation (`enterSeconds` / `cutInSeconds`), and the exit on the last
+        step. Leaving those out made the Python gate ~15% looser than the render, so a
+        moment set could pass `audit_moments` and then be refused in the browser (#216).
+        Grouping follows the browser: segments that share `revealAfterSeconds`,
+        including a `source`, form one step.
+        """
+        line_delay = float(motion.get("lineDelaySeconds") or 0.0)
+        enter_key = (
+            "cutInSeconds"
+            if (self.presentation or {}).get("motion") == "cut-in"
+            else "enterSeconds"
+        )
+        enter = float(motion.get(enter_key) or 0.0)
+        exit_seconds = float(motion.get("exitSeconds") or 0.0)
+        starts = sorted({segment.reveal_after_seconds for segment in self.segments})
+        rows: list[tuple[float, float, float]] = []
+        for index, start in enumerate(starts):
+            group = [
+                (seg_index, segment)
+                for seg_index, segment in enumerate(self.segments)
+                if segment.reveal_after_seconds == start
+            ]
+            delay = max(
+                0.0
+                if start > 0 or segment.role == "source"
+                else min(seg_index * line_delay, 0.18)
+                for seg_index, segment in group
+            )
+            chars = sum(
+                segment.visible_chars
+                * (SOURCE_READ_WEIGHT if segment.role == "source" else 1.0)
+                for _, segment in group
+            )
+            blocks = sum(1 for _, segment in group if segment.role != "source")
+            last = index == len(starts) - 1
+            needed = (
+                delay
+                + max(FIXATION_SECONDS, enter)
+                + chars / READ_CPS
+                + max(0, blocks - 1) * BLOCK_SECONDS
+                + (exit_seconds if last else 0.0)
+            )
+            available = (starts[index + 1] if not last else self.duration) - start
+            rows.append((start, needed, available))
+        return rows
+
+    def film_min_read_seconds(self, motion: Mapping[str, Any]) -> float:
+        """Screen time Film Type requires for this moment (see `film_step_requirements`)."""
+        completions = [start + needed for start, needed, _ in self.film_step_requirements(motion)]
+        return max(MIN_SECONDS, *completions) if completions else MIN_SECONDS
+
+    def required_read_seconds(self, motion: Mapping[str, Any] | None = None) -> float:
+        """The reading floor in force: Film Type's when its motion tokens are known."""
+        return self.film_min_read_seconds(motion) if motion else self.min_read_seconds
 
     def to_props(self) -> dict[str, Any]:
         """The JSON shape `PersianMoment` expects in the renderer.
@@ -979,6 +1042,7 @@ def _enumerated_anchor_integrity_violations(moment: PersianMoment) -> list[str]:
 def _audit_one(
     moment: PersianMoment, *, adaptive_pixel_typography: bool = False,
     simultaneous_hook_typography: bool = False,
+    film_motion: Mapping[str, Any] | None = None,
 ) -> list[str]:
     """Faults internal to a single moment."""
     problems: list[str] = []
@@ -1184,7 +1248,16 @@ def _audit_one(
     # Their complete copy is pixel-fitted and then judged from the rendered opening;
     # the legacy sequential-reading estimate must not veto a hook the browser can
     # actually present. Body callouts and older profiles retain the timing gate.
-    if not (simultaneous_hook_typography and moment.kind == "hook"):
+    if film_motion and not (simultaneous_hook_typography and moment.kind == "hook"):
+        # Film Type: the browser's own per-step model, so what passes here renders (#216).
+        for reveal_at, needed, available in moment.film_step_requirements(film_motion):
+            if available + TIMING_EPSILON_SECONDS < needed:
+                problems.append(
+                    f"{moment.id}: reveal at +{reveal_at:.2f}s needs {needed:.3f}s "
+                    f"(row stagger + entrance + reading + blocks + exit, as Film Type "
+                    f"charges it) but has {available:.3f}s. Re-time or shorten the copy."
+                )
+    elif not (simultaneous_hook_typography and moment.kind == "hook"):
         required = moment.min_read_seconds
         if moment.duration + 1e-9 < required:
             problems.append(
@@ -1194,7 +1267,7 @@ def _audit_one(
                 "the «بیش از حد سریع رد میشن» complaint, measured."
             )
 
-    if len(moment.reveal_steps()) >= 2:
+    if not film_motion and len(moment.reveal_steps()) >= 2:
         content_steps = moment.reveal_steps()
         reveal_times = sorted({
             segment.reveal_after_seconds
@@ -1234,6 +1307,7 @@ def audit_moments(
     moments: list[PersianMoment], *, duration_seconds: float, v2: bool = False,
     adaptive_pixel_typography: bool = False,
     simultaneous_hook_typography: bool = False,
+    film_motion: Mapping[str, Any] | None = None,
 ) -> MomentAudit:
     """Audit a moment set against every rule that can be checked without rendering.
 
@@ -1258,6 +1332,7 @@ def audit_moments(
         audit.problems.extend(_audit_one(
             moment, adaptive_pixel_typography=adaptive_pixel_typography,
             simultaneous_hook_typography=simultaneous_hook_typography,
+            film_motion=film_motion,
         ))
 
     ordered = sorted(moments, key=lambda moment: moment.start_seconds)

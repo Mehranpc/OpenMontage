@@ -875,10 +875,15 @@ class PersianCompose(BaseTool):
         simultaneous_hook_typography = bool(
             film_type and profile_version == "2.16.0"
         )
+        film_motion = (
+            dict(((design_snapshot or {}).get("resolved") or {}).get("motion") or {})
+            if film_type else None
+        )
         moments = (self._build_moments(
             resolved_persian, duration_seconds, v2=True, measure_layout=False,
             adaptive_pixel_typography=adaptive_pixel_typography,
             simultaneous_hook_typography=simultaneous_hook_typography,
+            film_motion=film_motion or None,
         ) if film_type else self._build_moments(
             resolved_persian, duration_seconds, v2=design_snapshot is not None
         ))
@@ -1056,6 +1061,7 @@ class PersianCompose(BaseTool):
         persian: dict[str, Any], duration_seconds: float, *, v2: bool = False,
         measure_layout: bool = True, adaptive_pixel_typography: bool = False,
         simultaneous_hook_typography: bool = False,
+        film_motion: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Normalize, audit, and return the typographic moments.
 
@@ -1122,6 +1128,7 @@ class PersianCompose(BaseTool):
             built, duration_seconds=duration_seconds, v2=v2,
             adaptive_pixel_typography=adaptive_pixel_typography,
             simultaneous_hook_typography=simultaneous_hook_typography,
+            film_motion=film_motion,
         )
         if not audit.passed:
             raise ValueError(
