@@ -1340,4 +1340,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # `python -m lib.persian_run_kernel` loads this file twice: once as __main__ and,
+    # when the workflow imports it, again as lib.persian_run_kernel. Module-level state
+    # exists in both copies -- including _COMMIT_JOB, the ContextVar carrying the
+    # in-flight job identity -- so a commit made here would be invisible to the
+    # workflow's commit guard and every media phase commit would fail with "must
+    # complete through the run kernel" (#169).
+    #
+    # Delegate to the package instance so exactly one copy does the work.
+    import lib.persian_run_kernel as _package_kernel
+
+    raise SystemExit(_package_kernel.main())
