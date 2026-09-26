@@ -1,4 +1,5 @@
 import { diffuseRadii, diffuseAt } from "./diffuse27";
+import { placementFailureMessage } from "./placementFailures";
 import { assertCaptionsFit, captionBandRect } from "../captionLayout";
 /** Opt-in Film Type: full shaped runs, real ink baselines, one frozen layout.
  * No imports from the Legacy fitter: its sizing, word spans and silhouette are
@@ -1143,13 +1144,23 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
     watermark:props.watermark??DEFAULT_WATERMARK};
   const inputHash=await sha256(input);
   if(!Number.isFinite(props.durationSeconds)||props.durationSeconds<=0) throw new Error("Film Type duration must be positive.");
-  const avoid=timedAvoidRegions(props),layouts: Record<string,FilmMomentLayout>=Object.create(null),warnings:string[]=[];
+  const avoid=timedAvoidRegions(props),layouts: Record<string,FilmMomentLayout>=Object.create(null),warnings:string[]=[],placementFailures:{id:string,error:unknown}[]=[];
   const contrastReviewMoments: string[]=[], unreviewedMoments: string[]=[];
   for(const moment of props.moments){
     if(typeof moment.id!=="string"||!moment.id.trim()) throw new Error("Film Type moment id must be a non-empty string.");
     if(moment.startSeconds<0||moment.endSeconds>props.durationSeconds) throw new Error(`Moment ${moment.id}: timing is outside the video.`);
     if(Object.prototype.hasOwnProperty.call(layouts,moment.id)) throw new Error(`Duplicate moment id ${moment.id}`);
-    layouts[moment.id]=placeMoment(moment,props,profile,avoid);
+    // Collect every refusal instead of stopping at the first: a placement collision is a
+    // property of one moment's frame geometry, so several can fail independently, and
+    // reporting one per round turns convergence into one repair cycle per latent defect.
+    // The message for a single failure is unchanged, so existing diagnostics parsing and
+    // recovery routing see exactly what they saw before (#164).
+    try {
+      layouts[moment.id]=placeMoment(moment,props,profile,avoid);
+    } catch (error) {
+      placementFailures.push({id: moment.id, error});
+      continue;
+    }
     if((profile.profileVersion === "2.6.0" || (profile.profileVersion === "2.7.0" || profile.profileVersion === "2.8.0" || profile.profileVersion === "2.9.0" || profile.profileVersion === "2.10.0" || (profile.profileVersion === "2.11.0" || profile.profileVersion === "2.12.0" || (profile.profileVersion === "2.13.0" || profile.profileVersion === "2.14.0" || (profile.profileVersion === "2.15.0" || profile.profileVersion === "2.16.0")))))) {
       const heroRows = layouts[moment.id].rows.filter(row => row.role === "hero");
       if(heroRows.length > 2) warnings.push(`${moment.id}: editorial-review-required: hero exceeds two lines; shorten or author timed beats against narration. Text/timing were preserved.`);
@@ -1163,6 +1174,9 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
     }
     if(layouts[moment.id].subjectSafety==="not-checked") unreviewedMoments.push(moment.id);
   }
+  // Every refusal is reported together, after the pass, so one repair cycle can address
+  // all of them. A single failure keeps its own message, diagnostics payload included.
+  if(placementFailures.length) throw new Error(placementFailureMessage(placementFailures));
   // Aggregated once per film, not once per moment: same content, no repetition.
   if(contrastReviewMoments.length) warnings.push(`contrast-review-required: bounded field is not a measured footage-contrast guarantee; review all shots and transitions. (moments: ${contrastReviewMoments.join(", ")})`);
   if(unreviewedMoments.length) warnings.push(`explicit placement without reviewed avoid regions; subject collision is not-checked. (moments: ${unreviewedMoments.join(", ")})`);
