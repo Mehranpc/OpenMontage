@@ -406,6 +406,9 @@ def test_scoped_candidate_grant_is_honoured_when_accounting_the_result(
         "candidates": granted,
         "visualEventIds": ["event-2"],
         "grantedAt": BASE.isoformat(),
+        "candidateBaseline": int(
+            (state.get("asset_usage") or {}).get("semantic_candidates_reviewed") or 0
+        ),
     }
     workflow._write_state(tmp_path / "run", state)
 
@@ -413,6 +416,93 @@ def test_scoped_candidate_grant_is_honoured_when_accounting_the_result(
         "run", retry_pass=0, pipeline_dir=tmp_path, result_data=result_data, now=BASE,
     )
     assert accounted is not None
+
+
+def test_successive_scoped_grants_do_not_consume_each_other(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each sanctioned repair gets its own headroom.
+
+    Observed on the L3 run: the first scoped re-acquisition worked
+    (`16 + 4 - 16 = 4`) and the second was refused before it started
+    (`16 + 2 - 18 = 0`), because the grant was measured against the fixed whole-run
+    cap rather than the usage at grant time. A run could therefore only ever repair
+    once (#152).
+    """
+    _bootstrap_to_preflight(tmp_path)
+    monkeypatch.setattr(
+        workflow, "asset_workspace_status",
+        lambda _: _workspace(event1_alt=True, event2_alt=False),
+    )
+    monkeypatch.setattr(
+        workflow, "read_checkpoint",
+        lambda *_args, **_kwargs: _scene_checkpoint("event-2", "replacement event two"),
+    )
+    _exhaust_candidate_ceiling(tmp_path)
+
+    first = request_send_back(
+        "run", "acquire_assets",
+        reason="first scoped repair",
+        diagnostic_code="ASSET_SELECTION_HARD_REGION_COLLISION",
+        affected_shot_ids=["shot-1", "shot-2"],
+        pipeline_dir=tmp_path,
+        now=BASE,
+    )
+    first_granted = int(first["asset_reacquisition_grant"]["candidates"])
+    issued = bounded_asset_search_request(
+        "run",
+        {
+            "queries": [{"query": "replacement event two", "slot_id": "event-2", "kind": "video"}],
+            "sources": ["pexels", "pixabay_video"],
+        },
+        retry_pass=0,
+        pipeline_dir=tmp_path,
+        now=BASE,
+    )
+    # Spend the first repair's whole allowance, as the run did.
+    workflow.record_asset_search_result(
+        "run", retry_pass=0, pipeline_dir=tmp_path,
+        result_data={
+            "output_dir": issued["output_dir"],
+            "resolved_sources": issued["sources"],
+            "max_candidates_total": issued["max_candidates_total"],
+            "max_bytes_per_clip": issued["max_bytes_per_clip"],
+            "max_total_download_bytes": issued["max_total_download_bytes"],
+            "candidates_considered": first_granted,
+            "semantic_candidates_reviewed": first_granted,
+            "technical_rejects": 0,
+            "bytes_downloaded": 0,
+            "clips": [],
+        },
+        now=BASE,
+    )
+
+    # A second sanctioned repair must still have headroom of its own. The run had
+    # advanced past acquire_assets before it discovered the next collision.
+    state = load_workflow_state("run", pipeline_dir=tmp_path)
+    state["next_phase"] = "no_copy_preflight"
+    state.pop("asset_reacquisition_grant", None)
+    workflow._write_state(tmp_path / "run", state)
+
+    request_send_back(
+        "run", "acquire_assets",
+        reason="second scoped repair",
+        diagnostic_code="ASSET_SELECTION_HARD_REGION_COLLISION",
+        affected_shot_ids=["shot-1", "shot-2"],
+        pipeline_dir=tmp_path,
+        now=BASE,
+    )
+    second = bounded_asset_search_request(
+        "run",
+        {
+            "queries": [{"query": "replacement event two", "slot_id": "event-2", "kind": "video"}],
+            "sources": ["pexels", "pixabay_video"],
+        },
+        retry_pass=0,
+        pipeline_dir=tmp_path,
+        now=BASE,
+    )
+    assert second["max_candidates_total"] >= 1
 
 
 def test_scoped_candidate_grant_never_exceeds_the_whole_run_ceiling(
