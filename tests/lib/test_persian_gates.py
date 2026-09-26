@@ -511,6 +511,73 @@ class TestAssetAudit:
         ]}
         assert audit_asset_manifest(manifest, scene_plan) == []
 
+    def _moment_scene_plan(self) -> dict:
+        return {
+            "beats": [{
+                "id": "b1",
+                "duration_seconds": 5.0,
+                "visual_events": [{
+                    "id": "b1-e1", "duration_seconds": 5.0,
+                    "narration_span": "هر روز صبح قهوه",
+                    "queries": ["coffee pour close up"],
+                    "desired_affect": "curiosity", "human_presence": True,
+                    "shows_subject": True, "fallback_level": "exact_literal",
+                    "importance": 2,
+                    "carries_moment": True, "negative_space": "lower_band",
+                }],
+            }]
+        }
+
+    def test_a_copy_bearing_event_requires_recorded_clear_space(self) -> None:
+        """Choosing on subject match alone is how unusable footage reaches an authored
+        edit: the reviewer must record where the frame is actually clear (#164)."""
+        manifest = {"assets": [
+            self._asset(beat_id="b1", semantic_beat_id="b1", visual_event_id="b1-e1"),
+        ]}
+
+        problems = audit_asset_manifest(manifest, self._moment_scene_plan())
+
+        assert any("placement_space" in problem for problem in problems), problems
+
+    def test_recorded_clear_space_matching_the_plan_audits_clean(self) -> None:
+        manifest = {"assets": [
+            self._asset(
+                beat_id="b1", semantic_beat_id="b1", visual_event_id="b1-e1",
+                frame_review={
+                    "start": True, "middle": True, "end": True,
+                    "observed": "قهوه و دست در کل پنجرهٔ انتخابی در قاب می‌مانند",
+                    "placement_space": "lower_band",
+                },
+            ),
+        ]}
+
+        assert audit_asset_manifest(manifest, self._moment_scene_plan()) == []
+
+    def test_clear_space_that_contradicts_the_plan_is_refused(self) -> None:
+        manifest = {"assets": [
+            self._asset(
+                beat_id="b1", semantic_beat_id="b1", visual_event_id="b1-e1",
+                frame_review={
+                    "start": True, "middle": True, "end": True,
+                    "observed": "قهوه و دست در کل پنجرهٔ انتخابی در قاب می‌مانند",
+                    "placement_space": "left_column",
+                },
+            ),
+        ]}
+
+        problems = audit_asset_manifest(manifest, self._moment_scene_plan())
+
+        assert any("does not leave the room" in problem for problem in problems), problems
+
+    def test_an_event_without_a_moment_needs_no_placement_space(self) -> None:
+        plan = self._moment_scene_plan()
+        del plan["beats"][0]["visual_events"][0]["carries_moment"]
+        manifest = {"assets": [
+            self._asset(beat_id="b1", semantic_beat_id="b1", visual_event_id="b1-e1"),
+        ]}
+
+        assert audit_asset_manifest(manifest, plan) == []
+
     def test_explicit_visual_event_assets_must_name_the_event(self) -> None:
         scene_plan = {
             "beats": [{
