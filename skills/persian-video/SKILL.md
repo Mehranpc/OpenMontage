@@ -82,7 +82,15 @@ python -m lib.persian_video_workflow work-finish <project-id> <span-id>
 python -m lib.persian_video_workflow complete <project-id> --evidence-json /abs/evidence.json
 ```
 
-Do not start an explicit work span retrospectively and do not leave one open while waiting. `complete` refuses an open explicit work span. The lower-level `attempt` command remains available for phases whose measurable work is entirely represented by durable jobs.
+Do not start an explicit work span retrospectively and do not leave one open while waiting. `complete` refuses an open explicit work span.
+
+An agent working **continuously** holds **one** span across that working interval. Do not
+open and close a span per tool call: the reasoning between calls is part of the interval
+being worked, and leaving it uncovered is what makes measured causal coverage collapse.
+The measured run that exposed this recorded 18 spans covering 559s of a 3993s wall while
+its own editorial categories summed to 1194s — the work was real, it simply was not
+spanned. Close the span when you stop working (durable execution, user wait, phase
+completion), not after each command. The lower-level `attempt` command remains available for phases whose measurable work is entirely represented by durable jobs.
 
 If a session stops without `work-finish` and the actual stop time is unknown, recover the open span before resuming work:
 
