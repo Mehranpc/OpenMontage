@@ -721,6 +721,11 @@ def _allowed_scopes(mutation_surface: list[str]) -> set[str]:
             allowed.add("typography")
         elif value.startswith("typography."):
             allowed.update({"typography", "timeline"})
+        elif value.startswith("copy."):
+            # A named editorial-moment copy field. The authoring class that owns a
+            # moment's wording owns this scope; the approved narration stays frozen
+            # separately via `approved_script`/`narration` in `preserve` (#180).
+            allowed.add("copy")
         elif value.startswith("assets."):
             allowed.add("assets")
         elif value.startswith("scenes."):
