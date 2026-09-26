@@ -436,6 +436,21 @@
                   "type": "boolean",
                   "description": "Whether a typographic moment has to sit on this unit."
                 },
+                "moment_copy": {
+                  "type": "array",
+                  "minItems": 1,
+                  "description": "The copy this unit's moment is intended to carry, as ordered lead/hero/tail/source segments (the same shape the edit stage authors). When present, audit_scene_plan charges it to the Film Type reading model and the text-coverage ceiling at plan time, so copy that cannot fit is refused before acquisition (#213).",
+                  "items": {
+                    "type": "object",
+                    "required": ["role", "text"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "role": {"type": "string", "enum": ["lead", "hero", "tail", "source"]},
+                      "text": {"type": "string", "minLength": 1},
+                      "revealAfterSeconds": {"type": "number", "minimum": 0}
+                    }
+                  }
+                },
                 "negative_space": {
                   "type": "string",
                   "enum": ["left_column", "right_column", "upper_band", "lower_band", "centre_band", "full_frame"],

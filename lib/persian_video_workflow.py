@@ -637,6 +637,34 @@ def _authoritative_narration_duration(
     return None
 
 
+def _refuse_infeasible_moment_copy(scene_checkpoint: Mapping[str, Any] | None) -> None:
+    """Refuse a plan whose declared moment copy cannot be read in its windows (#213).
+
+    Only events that state `moment_copy` are charged, so this binds a plan to its own
+    declared copy rather than inventing a floor for plans that have not stated any.
+    """
+    from lib.persian_scenes import moment_copy_feasibility_problems
+
+    artifacts = scene_checkpoint.get("artifacts") if isinstance(scene_checkpoint, Mapping) else None
+    scene_plan = artifacts.get("scene_plan") if isinstance(artifacts, Mapping) else None
+    if not isinstance(scene_plan, Mapping):
+        return
+    beats = [beat for beat in scene_plan.get("beats") or [] if isinstance(beat, dict)]
+    duration = 0.0
+    for beat in beats:
+        try:
+            duration += float(beat.get("duration_seconds") or 0.0)
+        except (TypeError, ValueError):
+            continue
+    problems = moment_copy_feasibility_problems(beats, duration)
+    if problems:
+        raise PersianVideoWorkflowError(
+            "[MOMENT_COPY_INFEASIBLE] plan_scenes_moments cannot complete: the declared "
+            "moment copy cannot be read in its windows under the Film Type model, which "
+            "the edit stage would refuse after acquisition:\n  - " + "\n  - ".join(problems)
+        )
+
+
 def _validate_scene_plan_duration_binding(
     state: Mapping[str, Any], scene_checkpoint: Mapping[str, Any] | None
 ) -> dict[str, Any]:
@@ -2065,6 +2093,7 @@ def _complete_phase_impl(
             )
         phase_evidence["sourcing_order"] = sourcing_order
     if phase == "plan_scenes_moments":
+        _refuse_infeasible_moment_copy(checkpoint)
         # The declared duration-coverage rule, enforced: the plan's beats must cover the
         # authoritative narration within one frame, or the phase refuses to advance.
         phase_evidence.update(_validate_scene_plan_duration_binding(state, checkpoint))
