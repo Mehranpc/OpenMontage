@@ -81,6 +81,21 @@ def test_an_undeclared_region_reports_the_region_problem_not_a_framing_one() -> 
     assert any("declares no" in p for p in problems), problems
 
 
+@pytest.mark.parametrize(
+    "query",
+    ["lonely woman on phone", "man opening wallet at cafe", "skyscraper office worker",
+     "plainly dressed man", "background actor texting"],
+)
+def test_a_framing_term_inside_another_word_does_not_count(query: str) -> None:
+    # Substring matching let `lonely`, `wallet` and `skyscraper` pass as framing.
+    problems = _audit(
+        carries_moment=True,
+        negative_space="upper_band",
+        queries=["man looking at phone", query],
+    )
+    assert len(_framing_problems(problems)) == 1, query
+
+
 @pytest.mark.parametrize("term", FRAMING_QUERY_TERMS)
 def test_every_framing_term_satisfies_the_gate(term: str) -> None:
     problems = _audit(
