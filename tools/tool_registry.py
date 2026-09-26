@@ -58,6 +58,9 @@ class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, BaseTool] = {}
         self._discovered_packages: set[str] = set()
+        # Packages whose discovery is in progress; guards get() -> discovery
+        # re-entrancy when a tool module looks a tool up at import time (#208).
+        self._discovering: set[str] = set()
 
     def register(self, tool: BaseTool) -> None:
         """Register a tool instance."""
@@ -69,6 +72,7 @@ class ToolRegistry:
         """Clear registered tools and discovery state."""
         self._tools.clear()
         self._discovered_packages.clear()
+        self._discovering.clear()
 
     def register_module(self, module: ModuleType) -> list[str]:
         """Register all concrete BaseTool subclasses defined in a module."""
@@ -135,12 +139,26 @@ class ToolRegistry:
 
     def ensure_discovered(self, package_name: str = "tools") -> None:
         """Load tool modules once before reporting capabilities."""
-        if package_name not in self._discovered_packages:
+        if package_name in self._discovered_packages or package_name in self._discovering:
+            return
+        self._discovering.add(package_name)
+        try:
             self.discover(package_name)
+        finally:
+            self._discovering.discard(package_name)
 
     def get(self, name: str) -> Optional[BaseTool]:
-        """Get a tool by name."""
-        return self._tools.get(name)
+        """Get a tool by name, loading tool modules on first miss.
+
+        A plain dict lookup returned None for real tools in any process where
+        nothing had run discovery yet, so lib callers such as the durable asset
+        search worker crashed on ``None.execute`` (#208).
+        """
+        tool = self._tools.get(name)
+        if tool is None:
+            self.ensure_discovered()
+            tool = self._tools.get(name)
+        return tool
 
     def list_all(self) -> list[str]:
         """List all registered tool names."""
