@@ -71,12 +71,14 @@ MIN_SUBJECT_FRACTION = 0.4
 # Film Type vertical reserves the bottom 35% for captions, so `lower_band` names space
 # where editorial type cannot go at all. That was declared on a real run and cost a
 # placement cycle to discover (#164).
+#: (x, y, width, height), normalized. The convention matters and was previously
+#: inconsistent with the reader, which silently clamped `right_column` past the frame.
 _NEGATIVE_SPACE_RECTS: dict[str, tuple[float, float, float, float]] = {
     "left_column": (0.0, 0.0, 0.33, 1.0),
-    "right_column": (0.67, 0.0, 1.0, 1.0),
+    "right_column": (0.67, 0.0, 0.33, 1.0),
     "upper_band": (0.0, 0.0, 1.0, 0.33),
-    "lower_band": (0.0, 0.67, 1.0, 1.0),
-    "centre_band": (0.2, 0.33, 0.8, 0.67),
+    "lower_band": (0.0, 0.67, 1.0, 0.33),
+    "centre_band": (0.2, 0.33, 0.6, 0.34),
     "full_frame": (0.0, 0.0, 1.0, 1.0),
 }
 
@@ -85,6 +87,13 @@ NEGATIVE_SPACE_REGIONS = frozenset(_NEGATIVE_SPACE_RECTS)
 # A region must overlap the profile's editorial safe area by at least this much of the
 # frame before it can be asked to hold type.
 _MIN_SERVICEABLE_REGION_AREA = 0.02
+
+#: A region must also be WIDE enough to hold a laid-out column. The profile's narrowest
+#: curated recipe column is `columnFractions` 0.56 of the safe width, so a column region
+#: 0.33 of the frame wide can never host type at all -- declaring one guarantees a
+#: placement refusal three phases later. Width is the profile-derived bound; the height a
+#: given phrase needs is content-dependent and stays the renderer's business.
+_MIN_RECIPE_COLUMN_FRACTION = 0.56
 
 #: Queries per beat. Two, because the third was always a paraphrase of the second — the
 #: first run wrote three per beat and downloaded 36 clips to use 12.
@@ -333,14 +342,14 @@ def _editorial_safe_area(fmt: str) -> tuple[float, float, float, float] | None:
     return (left, top, max(0.0, 1.0 - left - right), max(0.0, 1.0 - top - bottom))
 
 
-def _region_serviceable_area(region: tuple[float, float, float, float],
-                             safe: tuple[float, float, float, float]) -> float:
+def _region_serviceable_span(region: tuple[float, float, float, float],
+                            safe: tuple[float, float, float, float]) -> tuple[float, float]:
     """How much of a declared region the editorial safe area can actually host type in."""
     rx, ry, rw, rh = region
     sx, sy, sw, sh = safe
     width = max(0.0, min(rx + rw, sx + sw) - max(rx, sx))
     height = max(0.0, min(ry + rh, sy + sh) - max(ry, sy))
-    return width * height
+    return width, height
 
 
 def audit_scene_plan(
@@ -479,16 +488,26 @@ def audit_scene_plan(
             else:
                 safe = _editorial_safe_area(str(scene_plan.get("format") or "vertical"))
                 if safe is not None:
-                    serviceable = _region_serviceable_area(
+                    usable_w, usable_h = _region_serviceable_span(
                         _NEGATIVE_SPACE_RECTS[declared], safe
                     )
-                    if serviceable < _MIN_SERVICEABLE_REGION_AREA:
+                    if usable_w * usable_h < _MIN_SERVICEABLE_REGION_AREA:
                         problems.append(
                             f"{label}: `negative_space` {declared!r} lies outside the "
                             "profile's editorial safe area, so type cannot be placed there "
                             "at all -- a region can be clear and still be unusable. The "
                             "profile reserves that part of the frame; declare a region with "
                             "safe-area room instead."
+                        )
+                    elif usable_w < _MIN_RECIPE_COLUMN_FRACTION * safe[2]:
+                        problems.append(
+                            f"{label}: `negative_space` {declared!r} is only "
+                            f"{usable_w:.2f} of the frame wide inside the safe area, but the "
+                            "profile's narrowest curated column is "
+                            f"{_MIN_RECIPE_COLUMN_FRACTION} of the safe width "
+                            f"({_MIN_RECIPE_COLUMN_FRACTION * safe[2]:.2f}). Type cannot be "
+                            "laid out there at all, so declaring it guarantees a placement "
+                            "refusal later. Use a band or the full frame instead."
                         )
 
     # --- Banned vocabulary ------------------------------------------------------------

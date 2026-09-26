@@ -2162,8 +2162,29 @@ class TestSceneAudit:
 
         assert any("safe area" in problem for problem in problems), problems
 
+    def test_a_column_region_too_narrow_for_type_is_refused(self) -> None:
+        """A side column is 0.33 of the frame; the narrowest curated recipe column needs
+        0.56 of the *safe* width, about 0.47 of the frame. So a column region can never
+        host type, and declaring one guarantees a placement refusal three phases later.
+
+        Run 5 declared `right_column` on both of its region-placed moments and lost the
+        edit stage to it -- twice, at a cost of two repair cycles.
+        """
+        beat = {
+            "id": "beat-1",
+            "duration_seconds": 2.5,
+            "typographic": False,
+            "visual_events": [
+                self._event(1, carries_moment=True, negative_space="right_column"),
+            ],
+        }
+
+        problems = audit_scene_plan(self._plan([beat]))["problems"]
+
+        assert any("wide inside the safe area" in problem for problem in problems), problems
+
     def test_a_region_with_safe_area_room_is_accepted(self) -> None:
-        for region in ("upper_band", "right_column", "centre_band"):
+        for region in ("upper_band", "centre_band", "full_frame"):
             beat = {
                 "id": "beat-1",
                 "duration_seconds": 2.5,
