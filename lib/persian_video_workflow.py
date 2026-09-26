@@ -1145,6 +1145,29 @@ def _phase_elapsed_seconds(state: Mapping[str, Any], phase: str, *, now: datetim
     return max(0.0, (now - _parse_timestamp(str(started_at))).total_seconds())
 
 
+def _candidate_ceiling(state: Mapping[str, Any], policy_total: int) -> int:
+    """The candidate ceiling in force, including any sanctioned scoped grant (#152).
+
+    A grant is headroom from the moment it is issued, so it is anchored to the usage
+    recorded when it was granted -- not to the original whole-run cap. Anchoring to the
+    cap makes successive scoped repairs eat each other: the first worked
+    (`16 + 4 - 16 = 4`) and the second did not (`16 + 2 - 18 = 0`), so a run could only
+    ever repair once.
+    """
+    grant = state.get("asset_reacquisition_grant")
+    if not isinstance(grant, Mapping) or not grant.get("candidates"):
+        return policy_total
+    try:
+        granted = max(0, int(grant["candidates"]))
+    except (TypeError, ValueError):
+        return policy_total
+    try:
+        baseline = max(0, int(grant.get("candidateBaseline") or 0))
+    except (TypeError, ValueError):
+        baseline = 0
+    return max(policy_total, baseline + granted)
+
+
 def _granted_extension_seconds(
     state: Mapping[str, Any], *, reason: str, since: datetime | None = None
 ) -> float:
@@ -2362,14 +2385,21 @@ def request_send_back(
         # already spent, so the primary query consumes the remainder and the alternate
         # query is refused outright -- which made every sanctioned scoped
         # re-acquisition fail and left the placement collision unrepairable (#152).
+        usage = dict(state.get("asset_usage") or {})
         state["asset_reacquisition_grant"] = {
             "candidates": min(
                 _REACQUISITION_CANDIDATE_GRANT, 2 * len(scope["visualEventIds"])
             ),
             "visualEventIds": list(scope["visualEventIds"]),
             "grantedAt": effective_now.isoformat(),
+            # Headroom is measured from here, so successive scoped repairs each get
+            # their own allowance instead of consuming each other's (#152).
+            "candidateBaseline": int(
+                usage.get(
+                    "semantic_candidates_reviewed", usage.get("candidates_considered", 0)
+                )
+            ),
         }
-        usage = dict(state.get("asset_usage") or {})
         usage["completed_passes"] = []
         usage["acquisition_cycle"] = int(usage.get("acquisition_cycle") or 0) + 1
         for key in ("pending_pass", "pending_output_dir", "pending_limits"):
@@ -2573,15 +2603,9 @@ def bounded_asset_search_request(
     # authored queries for the events it is repairing can actually run. Without it the
     # whole-run ceiling is already spent and the repair is refused before it starts
     # (#152).
-    granted_candidates = 0
-    grant = state.get("asset_reacquisition_grant")
-    if isinstance(grant, Mapping) and grant.get("candidates"):
-        try:
-            granted_candidates = max(0, int(grant["candidates"]))
-        except (TypeError, ValueError):
-            granted_candidates = 0
     remaining_candidates = (
-        policy["max_candidates_total"] + granted_candidates - used_semantic_candidates
+        _candidate_ceiling(state, policy["max_candidates_total"])
+        - used_semantic_candidates
     )
     remaining_bytes = policy["max_total_download_bytes"] - used_bytes
     if remaining_candidates <= 0 or remaining_bytes <= 0:
@@ -2775,14 +2799,7 @@ def record_asset_search_result(
     # *accounted* once the whole-run ceiling is spent -- which is exactly how the
     # scoped re-acquisition failed in production after the request-side grant landed
     # (#152).
-    result_grant = 0
-    state_grant = state.get("asset_reacquisition_grant")
-    if isinstance(state_grant, Mapping) and state_grant.get("candidates"):
-        try:
-            result_grant = max(0, int(state_grant["candidates"]))
-        except (TypeError, ValueError):
-            result_grant = 0
-    if semantic_candidates > policy["max_candidates_total"] + result_grant:
+    if semantic_candidates > _candidate_ceiling(state, policy["max_candidates_total"]):
         raise PersianVideoWorkflowError("asset semantic candidate budget exceeded")
     if downloaded_bytes > policy["max_total_download_bytes"]:
         raise PersianVideoWorkflowError("asset download-byte budget exceeded")
