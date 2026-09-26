@@ -242,6 +242,21 @@ def build_music_track(raw: dict[str, Any]) -> MusicTrack:
     )
 
 
+
+# A recorded omission must decide, not defer. These markers catch a note-to-self
+# ("placeholder", "to be attached", "before promote") that would otherwise pass
+# the non-empty check and then describe a film that shipped without music (#184).
+_DEFERRAL_MARKERS = (
+    "placeholder", "pending", "to be attached", "to be added", "to be sourced",
+    "tbd", "todo", "will be", "before promote", "not yet", "for now",
+)
+
+
+def _defers_rather_than_decides(reason: str) -> bool:
+    text = reason.strip().casefold()
+    return any(marker in text for marker in _DEFERRAL_MARKERS)
+
+
 def audit_music(
     *,
     track: MusicTrack | None,
@@ -253,7 +268,15 @@ def audit_music(
     audit = MusicAudit(track=track)
     if track is None:
         if narrated:
-            if omit_music_reason:
+            if omit_music_reason and _defers_rather_than_decides(omit_music_reason):
+                audit.problems.append(
+                    "the recorded omit_music_reason defers the decision rather than making "
+                    f"one: {omit_music_reason!r}. This gate asks only that the reason be "
+                    "non-empty, so a placeholder passes here and then describes a film that "
+                    "shipped without music. State why the film is deliberately without a bed, "
+                    "or source one."
+                )
+            elif omit_music_reason:
                 audit.advisories.append(
                     "no music bed, by recorded decision: "
                     f"{omit_music_reason!r}. An explicit choice rather than a default silence."
