@@ -2135,11 +2135,44 @@ class TestSceneAudit:
             "duration_seconds": 2.5,
             "typographic": False,
             "visual_events": [
-                self._event(1, carries_moment=True, negative_space="lower_band"),
+                self._event(1, carries_moment=True, negative_space="upper_band"),
             ],
         }
 
         assert audit_scene_plan(self._plan([beat]))["problems"] == []
+
+    def test_a_region_outside_the_safe_area_is_refused(self) -> None:
+        """A region can be clear and still be unusable.
+
+        Film Type vertical reserves the bottom 35% for captions, so `lower_band` names
+        space where editorial type cannot go at all. A real run declared exactly that,
+        the region review dutifully left it open, and the placement still refused -- one
+        repair cycle to discover that "clear" and "usable" are not the same thing (#164).
+        """
+        beat = {
+            "id": "beat-1",
+            "duration_seconds": 2.5,
+            "typographic": False,
+            "visual_events": [
+                self._event(1, carries_moment=True, negative_space="lower_band"),
+            ],
+        }
+
+        problems = audit_scene_plan(self._plan([beat]))["problems"]
+
+        assert any("safe area" in problem for problem in problems), problems
+
+    def test_a_region_with_safe_area_room_is_accepted(self) -> None:
+        for region in ("upper_band", "right_column", "centre_band"):
+            beat = {
+                "id": "beat-1",
+                "duration_seconds": 2.5,
+                "typographic": False,
+                "visual_events": [
+                    self._event(1, carries_moment=True, negative_space=region),
+                ],
+            }
+            assert audit_scene_plan(self._plan([beat]))["problems"] == [], region
 
     def test_an_unusable_negative_space_region_is_refused(self) -> None:
         beat = {
