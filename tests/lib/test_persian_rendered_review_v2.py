@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from lib.persian_music import audit_music
 from lib.persian_rendered_review import (
     PersianRenderedReviewError,
     build_cold_viewer_review_input,
@@ -171,6 +172,73 @@ def test_audio_review_rejects_clipping_or_unsafe_output_loudness() -> None:
             candidate_sha256=DIGEST,
             require_pass=True,
         )
+
+
+def test_music_absence_requires_a_decision_not_a_promise() -> None:
+    """#186: this surface gates the delivered film, and #184 only tightened the
+    compose/edit one, so the string #184 refuses still cleared final review."""
+    placeholder = (
+        "Placeholder pending music acquisition; music bed to be attached before promote."
+    )
+    with pytest.raises(PersianRenderedReviewError, match="defers the decision"):
+        validate_rendered_audio_review(
+            _audio_review(music_present=False, musicOmittedReason=placeholder),
+            candidate_sha256=DIGEST,
+            require_pass=True,
+        )
+
+    for promise in ("TBD", "bed to be sourced", "music not yet chosen for now"):
+        with pytest.raises(PersianRenderedReviewError, match="defers the decision"):
+            validate_rendered_audio_review(
+                _audio_review(music_present=False, musicOmittedReason=promise),
+                candidate_sha256=DIGEST,
+                require_pass=True,
+            )
+
+    # A genuine omission is unchanged: the film may legitimately ship without music.
+    validate_rendered_audio_review(
+        _audio_review(
+            music_present=False,
+            musicOmittedReason=(
+                "Deliberate silence: the closing beat is a held close-up and a bed "
+                "would flatten it."
+            ),
+        ),
+        candidate_sha256=DIGEST,
+        require_pass=True,
+    )
+
+    with pytest.raises(PersianRenderedReviewError, match="explicit musicOmittedReason"):
+        validate_rendered_audio_review(
+            _audio_review(music_present=False), candidate_sha256=DIGEST, require_pass=True
+        )
+
+
+def test_both_music_omission_gates_agree_on_what_counts_as_a_decision() -> None:
+    """The compose/edit gate and this one judge two different fields with one
+    predicate. #186 existed because they had drifted, so pin the shared verdict
+    rather than the two checks' wording."""
+    for reason in (
+        "Placeholder pending music acquisition; music bed to be attached before promote.",
+        "TBD",
+        "the bed will be added later",
+        "",
+        "Deliberate silence: a bed would flatten the held closing beat.",
+    ):
+        compose_flags = bool(
+            audit_music(track=None, narrated=True, omit_music_reason=reason).problems
+        )
+        try:
+            validate_rendered_audio_review(
+                _audio_review(music_present=False, musicOmittedReason=reason),
+                candidate_sha256=DIGEST,
+                require_pass=True,
+            )
+            rendered_refuses = False
+        except PersianRenderedReviewError:
+            rendered_refuses = True
+
+        assert compose_flags == rendered_refuses, reason
 
 
 def test_measure_rendered_audio_output_reads_real_mp4_when_ffmpeg_available(tmp_path: Path) -> None:

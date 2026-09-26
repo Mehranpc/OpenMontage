@@ -57,7 +57,7 @@ Do not count setup/authority phrases such as “research shows” as payoff. Tim
 - `narration_present`, `unexpected_silence`, `clipping_detected`, `mix_intelligible`, and `issues`;
 - `music_present`.
 
-When music is present, also persist `separationMethod: "source_lufs_plus_render_gain"`, measured `narrationLufs`, measured `musicLufs`, the actual digest-bound `speechMusicGain`, and calculated `speechMusicSeparationLu`. The separation must remain inside the versioned loudness policy; both music that is too loud and music that is too quiet block presentation. When music is intentionally absent, persist a non-empty `musicOmittedReason` instead of inventing separation evidence. Output loudness and true peak/clipping remain final rendered gates even when separation passes.
+When music is present, also persist `separationMethod: "source_lufs_plus_render_gain"`, measured `narrationLufs`, measured `musicLufs`, the actual digest-bound `speechMusicGain`, and calculated `speechMusicSeparationLu`. The separation must remain inside the versioned loudness policy; both music that is too loud and music that is too quiet block presentation. When music is intentionally absent, persist a `musicOmittedReason` instead of inventing separation evidence. It must **record a decision, not defer one** — a reason that says the bed is pending, to be attached later, or a placeholder is refused, because the artifact would then certify a film as deliberately silent while the bed was only promised (#186). Output loudness and true peak/clipping remain final rendered gates even when separation passes.
 
 ## Lifecycle and presentation
 
