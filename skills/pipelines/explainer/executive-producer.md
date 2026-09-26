@@ -337,7 +337,7 @@ Actual: {what was produced}
 | Max total budget | Configurable (default $2) | Hard stop on spending |
 | Max total wall-time | 15 minutes | Timeout for entire pipeline |
 
-After any limit is hit: **proceed with warnings**, never block indefinitely.
+After any limit is hit: **STOP AUTOMATION** and record `metadata.quality_disposition=needs_decision`; unresolved critical findings forbid final delivery.
 
 ## Integration with Existing Skills
 
