@@ -62,6 +62,18 @@ BANNED_QUERY_TERMS = (
 #: the study, the consequence. It is a floor on recognisability, not a ceiling on variety.
 MIN_SUBJECT_FRACTION = 0.4
 
+# The parts of a frame a copy-bearing event may declare as staying clear. Deliberately
+# coarse: this is the intent the search steers by, not a geometry engine -- the measured
+# placement check remains authoritative and unchanged.
+NEGATIVE_SPACE_REGIONS = frozenset({
+    "left_column",
+    "right_column",
+    "upper_band",
+    "lower_band",
+    "centre_band",
+    "full_frame",
+})
+
 #: Queries per beat. Two, because the third was always a paraphrase of the second — the
 #: first run wrote three per beat and downloaded 36 clips to use 12.
 QUERIES_PER_BEAT = 2
@@ -396,6 +408,31 @@ def audit_scene_plan(
     else:
         fraction = 0.0
         problems.append("no footage beats — every beat is marked typographic")
+
+    # --- Negative space for copy-bearing events ---------------------------------------
+    # A moment can only be placed where the frame is empty. Left undeclared, the search
+    # is free to pick footage whose subject fills (or crosses) the frame, and the
+    # collision is discovered at preflight -- one moment per repair cycle. Naming the
+    # clear region at planning time is what lets the search prefer footage that leaves
+    # room (#164).
+    for beat in beats:
+        for event in beat.get("visual_events") or []:
+            if not isinstance(event, dict) or not event.get("carries_moment"):
+                continue
+            declared = str(event.get("negative_space") or "").strip()
+            label = f'{beat.get("id")}/{event.get("id")}'
+            if not declared:
+                problems.append(
+                    f"{label}: carries a typographic moment but declares no "
+                    "`negative_space`, so nothing constrains the search to footage the "
+                    "moment can actually sit on. Declare which part of the frame stays "
+                    f"clear: one of {sorted(NEGATIVE_SPACE_REGIONS)}."
+                )
+            elif declared not in NEGATIVE_SPACE_REGIONS:
+                problems.append(
+                    f"{label}: `negative_space` {declared!r} is not one of "
+                    f"{sorted(NEGATIVE_SPACE_REGIONS)}; the placement check cannot use it."
+                )
 
     # --- Banned vocabulary ------------------------------------------------------------
     for beat in footage:
