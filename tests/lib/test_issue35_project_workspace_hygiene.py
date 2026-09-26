@@ -189,7 +189,7 @@ def test_bounded_recovery_cycle_leaves_the_repository_root_clean(
     from lib import persian_video_workflow as workflow
     from lib.paths import REPO_ROOT
     from tests.lib.test_issue35_asset_candidate_workspace import _discovered, _review
-    from tests.lib.test_issue35_convergence_workspace import _edit
+    from tests.lib.test_issue35_convergence_workspace import _schema_valid_edit as _edit
     from tests.lib.test_persian_video_workflow import BASE, _advance_to, _bootstrap
 
     roots = (REPO_ROOT, REPO_ROOT / "scripts")

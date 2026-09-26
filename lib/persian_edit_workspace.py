@@ -29,6 +29,7 @@ from lib.persian_preflight import (
     PREFLIGHT_POLICY_VERSION, aggregate_preflight_edit_decisions, extract_edit_decisions,
 )
 from lib.persian_recovery_policy import recovery_policy_for_issue, shot_local_recovery_plan
+from lib.persian_edit_contract import _schema_diagnostics
 from lib.persian_asset_workspace import (
     PersianAssetWorkspaceError,
     asset_workspace_status,
@@ -1039,6 +1040,34 @@ def _declared_region_is_clear(edit: Mapping[str, Any], plan: Mapping[str, Any]) 
     return problems
 
 
+def _assert_edit_schema_before_candidate(edit: Mapping[str, Any]) -> None:
+    """Refuse an edit that breaks the edit-decisions schema before it becomes a candidate.
+
+    A schema defect (an invented key, a missing required field, an out-of-enum value)
+    has exactly one correct fix and is not an editorial attempt. It used to be
+    discovered only by the aggregate preflight, after `stage_edit_draft` had already
+    written the manifest, so the malformed draft consumed one of the bounded
+    recovery candidates and could exhaust the budget into
+    `needs_human_editorial_revision` (#212). Nothing is written when this refuses.
+    """
+    diagnostics = _schema_diagnostics(dict(edit))
+    if not diagnostics:
+        return
+    lines = []
+    for item in diagnostics[:12]:
+        line = f"{item.pointer}: {item.message}"
+        if item.hint:
+            line += f" ({item.hint})"
+        lines.append(line)
+    more = len(diagnostics) - len(lines)
+    raise PersianEditWorkspaceError(
+        "[EDIT_SCHEMA] edit draft breaks the edit_decisions schema; refused before "
+        "candidate consumption (no convergence budget spent). Fix and re-stage:\n  - "
+        + "\n  - ".join(lines)
+        + (f"\n  - ... and {more} more" if more > 0 else "")
+    )
+
+
 def _assert_declared_regions_are_clear(
     project_dir: Path, edit: Mapping[str, Any]
 ) -> None:
@@ -1139,6 +1168,7 @@ def stage_edit_draft(
     hook_authority: Mapping[str, Any] | None = None,
     asset_binding_request: Mapping[str, Any] | None = None,
     enforce_asset_bindings: bool = False,
+    enforce_edit_schema: bool = False,
 ) -> dict[str, Any]:
     draft, report, canonical = _paths(project_dir, attempt_id)
     edit = extract_edit_decisions(dict(payload))
@@ -1265,6 +1295,9 @@ def stage_edit_draft(
             "before edit-stage candidate consumption; send back to acquire_assets when "
             "no exact reviewed candidate exists"
         )
+
+    if enforce_edit_schema:
+        _assert_edit_schema_before_candidate(edit)
 
     _assert_declared_regions_are_clear(project_dir, edit)
 

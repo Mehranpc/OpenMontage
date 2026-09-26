@@ -4095,6 +4095,7 @@ def stage_workflow_edit_draft(
             hook_authority=decision,
             asset_binding_request=asset_binding_request,
             enforce_asset_bindings=True,
+            enforce_edit_schema=True,
         )
     except PersianEditWorkspaceError:
         stopped = convergence_status(_project_root(state), revision_cycle=revision_cycle)
