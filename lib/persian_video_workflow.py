@@ -2871,6 +2871,59 @@ def record_asset_search_result(
     return state
 
 
+def release_asset_search_pass(
+    project_id: str,
+    *,
+    retry_pass: int,
+    reason: str,
+    pipeline_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Release an issued asset-search request whose execution did not complete.
+
+    `bounded_asset_search_request` opens a pending request and `record_asset_search_result`
+    closes it, and `_complete_phase_impl` refuses every phase while one is open. A search
+    that fails between the two -- a provider outage, or a worker that dies outright --
+    would otherwise leave the run unable to complete `acquire_assets` *or* to issue
+    another pass (#193).
+
+    This is deliberately not a settlement with zeroed counters. Settlement means "the
+    pass discovered this", release means "the pass did not complete": a partially
+    downloaded pass has bytes nobody can account for, and recording it as completed would
+    spend the retry budget on an outage. `completed_passes` is left untouched, so the same
+    pass can be re-issued under a fresh durable identity.
+    """
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    if state.get("next_phase") != "acquire_assets":
+        raise PersianVideoWorkflowError(
+            "asset search release is allowed only during acquire_assets"
+        )
+    policy = asset_search_policy()
+    if retry_pass < 0 or retry_pass > policy["max_retry_passes"]:
+        raise PersianVideoWorkflowError(
+            f"asset retry pass {retry_pass} exceeds max {policy['max_retry_passes']}"
+        )
+    usage = dict(state.get("asset_usage") or {})
+    if usage.get("pending_pass") != retry_pass:
+        raise PersianVideoWorkflowError(
+            f"asset search pass {retry_pass} has no issued request to release"
+        )
+    reason_text = str(reason or "").strip() or "asset search pass did not complete"
+    usage.pop("pending_pass", None)
+    usage.pop("pending_output_dir", None)
+    usage.pop("pending_limits", None)
+    released = list(usage.get("released_passes") or [])
+    released.append({"retryPass": retry_pass, "reason": reason_text})
+    usage["released_passes"] = released
+    state["asset_usage"] = usage
+    _write_state(_project_root(state), state)
+    return {
+        "releasedPass": retry_pass,
+        "reason": reason_text,
+        "releasedPasses": released,
+        "completedPasses": list(usage.get("completed_passes") or []),
+    }
+
+
 def _scope_allows_candidate(state: Mapping[str, Any], candidate_id: str) -> None:
     scope = state.get("asset_reacquisition_scope")
     if not isinstance(scope, Mapping):
@@ -4301,12 +4354,29 @@ def build_parser() -> argparse.ArgumentParser:
     asset_search.add_argument("--retry-pass", type=int, required=True)
     asset_search.add_argument("--request", required=True, metavar="PATH")
     asset_search.add_argument("--job-id")
+    asset_search.add_argument(
+        "--attempt",
+        type=int,
+        default=0,
+        help=(
+            "retry a released pass under a fresh durable identity; idempotence protects "
+            "against duplicate success, not against retrying a failure"
+        ),
+    )
     asset_search.add_argument("--timeout-seconds", type=float, default=1800.0)
     asset_search.add_argument(
         "--no-wait",
         action="store_true",
         help="start the durable pass and return; reconcile it with persian_run_kernel status",
     )
+
+    asset_search_release = sub.add_parser(
+        "asset-search-release",
+        help="release an issued asset-search request whose execution did not complete",
+    )
+    asset_search_release.add_argument("project_id")
+    asset_search_release.add_argument("--retry-pass", type=int, required=True)
+    asset_search_release.add_argument("--reason", required=True)
 
     asset_candidate_stage = sub.add_parser("asset-candidate-stage", help="stage one durable source-window/crop candidate")
     asset_candidate_stage.add_argument("project_id")
@@ -4426,6 +4496,9 @@ _BUDGET_GUARD_EXEMPT_COMMANDS = frozenset({
     "reconcile-approval",
     # The command that exists to satisfy the stop must not be blocked by it.
     "budget-decision",
+    # Releasing a failed pass is what makes the run recoverable; blocking it on the very
+    # budget stop the run is stuck behind would recreate the dead end it exists to close.
+    "asset-search-release",
 })
 
 
@@ -4590,9 +4663,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.project_id,
                     request_path=Path(args.request),
                     retry_pass=args.retry_pass,
+                    attempt=args.attempt,
                     job_id=args.job_id,
                     timeout_seconds=args.timeout_seconds,
                     launch=not args.no_wait,
+                )
+            )
+        elif args.command == "asset-search-release":
+            _print_json(
+                release_asset_search_pass(
+                    args.project_id,
+                    retry_pass=args.retry_pass,
+                    reason=args.reason,
                 )
             )
         elif args.command == "asset-candidate-stage":

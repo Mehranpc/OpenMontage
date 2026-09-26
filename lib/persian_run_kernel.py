@@ -1019,6 +1019,17 @@ def commit_phase_job(
     state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     phase = str(envelope["phase"])
 
+    # A measured-only job does not own a workflow transition, so committing one is
+    # refused on both the fresh and the already-completed path. Without this the
+    # invariant held on `run` but not on `commit`: an operator could advance the phase
+    # from a job whose whole purpose is to be measured, and the envelope would then
+    # claim `succeeded` where reconcile records `not_applicable` (#188, #193).
+    if str(envelope.get("transitionMode") or "workflow") == "measured_only":
+        raise PersianRunKernelError(
+            f"job {job_id!r} is measured-only and does not own a workflow transition; "
+            f"{phase!r} advances through its own completion"
+        )
+
     if envelope.get("workflowTransitionOutcome") == "succeeded":
         return state
 

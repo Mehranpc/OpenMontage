@@ -120,7 +120,20 @@ python -m lib.persian_video_workflow asset-candidate-select <project-id> <visual
 
 `asset-search` runs the whole bounded pass — `asset-request` → `direct_clip_search` → `asset-result`, and no arithmetic of its own — as **one durable, measured execution** under the current phase attempt, charged to `provider_network_wait`. Two consequences matter to the operator:
 
-- The pass has a resume identity of *(retry pass, exact request bytes)*. A session that dies mid-download reconciles the same logical search with `python -m lib.persian_run_kernel status <project-id> <job-id>` instead of re-issuing and re-paying for it, and it leaves no `pending_pass` behind — the state the phase cannot complete from. Do not edit the request file after starting; a changed request is refused rather than searched.
+- The pass has a resume identity of *(retry pass, exact request bytes, attempt)*. A session that dies mid-download reconciles the same logical search with `python -m lib.persian_run_kernel status <project-id> <job-id>` instead of re-issuing and re-paying for it. Do not edit the request file after starting; a changed request is refused rather than searched.
+- **A pass that fails is released, not left latched.** The durable pass closes its own handshake on every outcome: it settles the request on success, and on a provider failure it releases it — clearing `pending_pass` while leaving `completed_passes` untouched, because an outage discovered nothing and must not spend the retry budget. Retry it with the same pass under a fresh identity:
+
+  ```bash
+  python -m lib.persian_video_workflow asset-search <project-id> --retry-pass 0 --request <project>/search-request-0.json --attempt 1
+  ```
+
+  If the worker was killed outright and could not release its own pass, release it as the operator — then re-issue with the next `--attempt`:
+
+  ```bash
+  python -m lib.persian_video_workflow asset-search-release <project-id> --retry-pass 0 --reason "worker killed mid-download"
+  ```
+
+  A busy `pending_pass` is refused by `complete`, so a latched pass is what makes a run unable to finish: neither command is optional when a pass fails.
 - The pass **does not advance the phase**. Staging, review, rejection, selection, `assets build-manifest` and `assets write-checkpoint` remain your work, and `complete --phase acquire_assets` is still what advances it. Use `--no-wait` when the session cannot block, then reconcile with `status` as above.
 
 `asset-request` and `asset-result` remain the underlying handshake, and remain correct to use directly only for a provider path `asset-search` cannot take.
