@@ -2770,7 +2770,19 @@ def record_asset_search_result(
     search_cache_hits += int(usage.get("search_cache_hits", 0))
     search_cache_misses += int(usage.get("search_cache_misses", 0))
     downloaded_bytes += int(usage.get("bytes_downloaded", 0))
-    if semantic_candidates > policy["max_candidates_total"]:
+    # The accounting ceiling must honour the same bounded grant the request side did,
+    # or a sanctioned repair can be *requested* but its result can never be
+    # *accounted* once the whole-run ceiling is spent -- which is exactly how the
+    # scoped re-acquisition failed in production after the request-side grant landed
+    # (#152).
+    result_grant = 0
+    state_grant = state.get("asset_reacquisition_grant")
+    if isinstance(state_grant, Mapping) and state_grant.get("candidates"):
+        try:
+            result_grant = max(0, int(state_grant["candidates"]))
+        except (TypeError, ValueError):
+            result_grant = 0
+    if semantic_candidates > policy["max_candidates_total"] + result_grant:
         raise PersianVideoWorkflowError("asset semantic candidate budget exceeded")
     if downloaded_bytes > policy["max_total_download_bytes"]:
         raise PersianVideoWorkflowError("asset download-byte budget exceeded")
