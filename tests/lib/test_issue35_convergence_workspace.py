@@ -8,7 +8,7 @@ import pytest
 from lib import persian_edit_workspace as workspace
 from lib import persian_preflight as preflight
 from lib.persian_edit_workspace import PersianEditWorkspaceError
-from lib.persian_hook_quality import HOOK_TIMING_POLICY_VERSION
+from lib.persian_hook_quality import HOOK_TIMING_POLICY_VERSION, SEMANTIC_INTEGRITY_POLICY_VERSION
 from lib.persian_recovery_policy import recovery_policy_for_issue
 
 
@@ -510,6 +510,7 @@ def test_layout_candidate_reuses_unrelated_retention_and_hook_checks(monkeypatch
             "advisories": [],
             "marker": calls["hook"],
             "timingPolicy": {"version": HOOK_TIMING_POLICY_VERSION},
+            "semanticIntegrity": {"policyVersion": SEMANTIC_INTEGRITY_POLICY_VERSION},
         }
 
     def fake_browser(edit, *, base_dir=None, scratch_dir=None):
