@@ -46,7 +46,7 @@ string equality, which fails on exactly the common words an anchor is made of.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from lib.persian_moments import PersianMoment
 from lib.persian_text import compare_key, normalize, split_words, visible_length
@@ -275,7 +275,8 @@ class AnchorBinding:
 
 
 def anchor_moments(
-    moments: Sequence[PersianMoment], words: Sequence[TimedWord]
+    moments: Sequence[PersianMoment], words: Sequence[TimedWord], *,
+    film_motion: Mapping[str, Any] | None = None,
 ) -> list[AnchorBinding]:
     """Derive each moment's timing from the narration words it names.
 
@@ -310,7 +311,9 @@ def anchor_moments(
         speech_end = words[last].end + ANCHOR_HOLD_SECONDS
         # The moment must remain readable for its own content even if the speaker
         # moves on: reading time extends past the speech, never shortens it.
-        end = max(speech_end, start + moment.min_read_seconds)
+        # Under Film Type the floor is the browser's own model (#216), so a retimed
+        # moment is long enough for the render, not merely for the plain estimate.
+        end = max(speech_end, start + moment.required_read_seconds(film_motion))
         bindings.append(
             AnchorBinding(
                 moment_id=moment.id,
@@ -421,6 +424,7 @@ def audit_sync(
 def retime_moments(
     moments: Sequence[PersianMoment], words: Sequence[TimedWord], *,
     simultaneous_hook_typography: bool = False,
+    film_motion: Mapping[str, Any] | None = None,
 ) -> list[PersianMoment]:
     """Return a *new* moment list with timings re-derived from the narration.
 
@@ -429,7 +433,7 @@ def retime_moments(
     caller still owns the inter-moment rules — run `audit_moments` on the result,
     which will catch any moment the voice pushed into its neighbour.
     """
-    bindings = anchor_moments(moments, words)
+    bindings = anchor_moments(moments, words, film_motion=film_motion)
     retimed: list[PersianMoment] = []
     for moment, binding in zip(moments, bindings):
         if not binding.located:
@@ -474,9 +478,11 @@ __all__ = [
 def retime_moments_from_dicts(
     moments: Sequence[PersianMoment], word_dicts: Iterable[dict[str, Any]], *,
     simultaneous_hook_typography: bool = False,
+    film_motion: Mapping[str, Any] | None = None,
 ) -> list[PersianMoment]:
     """`retime_moments` for callers holding raw transcriber rows."""
     return retime_moments(
         moments, TimedWord.from_dicts(word_dicts),
         simultaneous_hook_typography=simultaneous_hook_typography,
+        film_motion=film_motion,
     )

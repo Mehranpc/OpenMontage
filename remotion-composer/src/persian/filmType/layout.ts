@@ -1,5 +1,6 @@
 import { diffuseRadii, diffuseAt } from "./diffuse27";
 import { placementFailureMessage } from "./placementFailures";
+import { filmStepRequirements } from "./readingModel";
 import { assertCaptionsFit, captionBandRect } from "../captionLayout";
 /** Opt-in Film Type: full shaped runs, real ink baselines, one frozen layout.
  * No imports from the Legacy fitter: its sizing, word spans and silhouette are
@@ -9,7 +10,7 @@ import { planCoverageAwareBrand, planMovingBrand } from "./watermark24";
 import { estedadReady, ensureKahrobaReady, isEstedadLoaded, isKahrobaLoaded, ESTEDAD_FAMILY, KAHROBA_FAMILY } from "../fonts";
 import { breakClass, splitWords, visibleLength } from "../text";
 import { deriveListPhraseLocks, lockedBreakBoundaries } from "../semanticPhraseLocks";
-import { FORMAT_DIMENSIONS, MOMENT_READ_CPS, MOMENT_FIXATION_SECONDS, MOMENT_BLOCK_SECONDS, MOMENT_SOURCE_READ_WEIGHT, MOMENT_MIN_SECONDS, type PersianFormat } from "../tokens";
+import { FORMAT_DIMENSIONS, MOMENT_MIN_SECONDS, type PersianFormat } from "../tokens";
 import { assertMomentIsWellFormed, DEFAULT_WATERMARK, type PersianMoment, type PersianSemanticPosterRole,
   type PersianVideoProps, type PersianDesignSnapshot } from "../types";
 
@@ -600,9 +601,7 @@ export function timedAvoidRegions(props: PersianVideoProps): TimedRect[] {
 /** One timing rule is consumed by both preparation and paint. Authored delayed
  * segments and all sources start at their exact reveal time, without an added
  * decorative delay. Reject unreadable windows; never change approved timings. */
-export function filmRowDelay(row: Pick<FilmRow,"revealAfterSeconds"|"segmentIndex"|"role">, p: FilmProfile): number {
-  return row.revealAfterSeconds + (row.revealAfterSeconds > 0 || row.role === "source" ? 0 : Math.min(row.segmentIndex*p.motion.lineDelaySeconds,.18));
-}
+export { filmRowDelay } from "./readingModel";
 function assertFilmTiming(moment: PersianMoment, p: FilmProfile): void {
   const span=moment.endSeconds-moment.startSeconds;
   if (p.profileVersion === "2.16.0" && moment.kind === "hook") {
@@ -611,16 +610,7 @@ function assertFilmTiming(moment: PersianMoment, p: FilmProfile): void {
     return;
   }
   if(span<MOMENT_MIN_SECONDS) throw new Error(`Moment ${moment.id}: Film Type needs at least ${MOMENT_MIN_SECONDS}s; short flashes are not readable.`);
-  const starts=[...new Set(moment.segments.map(s=>s.revealAfterSeconds??0))].sort((a,b)=>a-b);
-  for(const [i,start] of starts.entries()){
-    const group=moment.segments.map((s,index)=>({s,index})).filter(({s})=>(s.revealAfterSeconds??0)===start);
-    const delay=Math.max(...group.map(({s,index})=>filmRowDelay({role:s.role,segmentIndex:index,revealAfterSeconds:start},p)-start));
-    const enter=moment.presentation?.motion==="cut-in"?p.motion.cutInSeconds:p.motion.enterSeconds;
-    const chars=group.reduce((sum,{s})=>sum+visibleLength(s.text)*(s.role==="source"?MOMENT_SOURCE_READ_WEIGHT:1),0);
-    const blocks=group.filter(({s})=>s.role!=="source").length;
-    const exit=i===starts.length-1?p.motion.exitSeconds:0;
-    const needed=delay+Math.max(MOMENT_FIXATION_SECONDS,enter)+chars/MOMENT_READ_CPS+Math.max(0,blocks-1)*MOMENT_BLOCK_SECONDS+exit;
-    const available=(starts[i+1]??span)-start;
+  for(const {start,needed,available} of filmStepRequirements(moment,p)){
     if(available+1e-6<needed) throw new Error(`Moment ${moment.id}: reveal at +${start}s (including any source) needs ${needed.toFixed(3)}s but has ${available.toFixed(3)}s. Re-edit/re-time explicitly; no source was hidden or rushed.`);
   }
 }

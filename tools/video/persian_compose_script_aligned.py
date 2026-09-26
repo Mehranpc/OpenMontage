@@ -245,6 +245,7 @@ class ScriptAlignedPersianCompose(PersianCompose):
         persian: dict[str, Any], duration_seconds: float, *, v2: bool = False,
         measure_layout: bool = True, adaptive_pixel_typography: bool = False,
         simultaneous_hook_typography: bool = False,
+        film_motion: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         moments = PersianCompose._build_moments(
             persian,
@@ -253,6 +254,7 @@ class ScriptAlignedPersianCompose(PersianCompose):
             measure_layout=measure_layout,
             adaptive_pixel_typography=adaptive_pixel_typography,
             simultaneous_hook_typography=simultaneous_hook_typography,
+            film_motion=film_motion,
         )
         semantic_plan = persian.get("_semanticPosterStack")
         if semantic_plan is None:
