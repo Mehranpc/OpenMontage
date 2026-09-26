@@ -89,7 +89,7 @@ For typographic-only hooks, `hookQuality.semanticIntegrity` is required. It reco
 
 Layout should adapt before meaning is deleted. If a true editorial rewrite is necessary, it must be explicit and evidence-backed rather than performed implicitly to make text fit.
 
-Typographic-only hook duration is also text-aware. Preflight derives a conservative reading-time ceiling from visible characters plus fixation/hold margin. A hold beyond that ceiling is `HOOK_TYPOGRAPHIC_DURATION_EXCESS` unless `typographicDurationJustification` records an intentional editorial reason. This prevents a short black-card hook from sitting static for several seconds merely because its scene span was long.
+Typographic-only hook duration is also text-aware. Preflight derives a conservative reading-time ceiling from visible characters plus fixation/hold margin. A hold beyond that ceiling is `HOOK_TYPOGRAPHIC_DURATION_EXCESS` unless `typographicDurationJustification` records an intentional editorial reason — which must **record a decision, not defer one**. A justification that says the hold is to be shortened later, or a placeholder, is refused: the field would otherwise certify as deliberate a hold nobody decided on (#191). This prevents a short black-card hook from sitting static for several seconds merely because its scene span was long.
 
 When a typographic hook overlaps the first spoken sentence, burned captions must use an explicit `hookCaptionHandoff`: `semantic_replacement` resumes at the next complete semantic unit, while `exact_continuation` may continue only if it does not expose a cue fragment that began under the hook. The sidecar SRT remains complete and authoritative in either mode.
 
