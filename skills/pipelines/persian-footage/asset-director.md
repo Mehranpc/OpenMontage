@@ -27,11 +27,19 @@ result = registry.get("direct_clip_search").execute({
 
 Provider-search metadata is cached under the project for 6 hours using source + query + filters as the key. An identical retry reuses the cached candidate list without another provider API search or cache rewrite; filter changes or expiry re-query the provider. Cached search metadata never becomes selection truth: media still passes validation and candidate review/selection remains in the durable asset workspace.
 
+Run the pass through the front door rather than calling the tool inline, so provider wait is measured and the pass has a resume identity:
+
+```bash
+python -m lib.persian_video_workflow asset-search <project-id> --retry-pass 0 --request <project>/search-request-0.json
+```
+
+Write the request to a project-local path and leave it unchanged once the pass starts: the pass's identity is *(retry pass, exact request bytes)*, so a crash mid-download reconciles the same logical search — `python -m lib.persian_run_kernel status <project-id> <job-id>` — instead of paying for it twice. `--no-wait` starts it and returns for sessions that cannot block.
+
 Follow the ordered fallback ladder: exact literal → emotional human → adjacent metaphor → abstract → beat-level typography. Record why each earlier level failed. Typography is last resort and must remain within budget.
 
 ## Durable candidate lifecycle
 
-Use `python -m lib.persian_video_workflow asset-request`, persist the bounded provider result with `asset-result`, then stage/review/reject/select candidates through the official candidate commands. Identity is provider/source + exact source window + intended crop. Review the actual crop/window at start, middle, and end; persist subject/human continuity, affect, semantics, crop safety, staged-stock risk, and resolution.
+Run the bounded pass with `asset-search` (which owns `asset-request` → `direct_clip_search` → `asset-result` as one durable execution), then stage/review/reject/select candidates through the official candidate commands. The durable pass is measured work, not phase advancement: the phase still completes through `complete --phase acquire_assets`. Identity is provider/source + exact source window + intended crop. Review the actual crop/window at start, middle, and end; persist subject/human continuity, affect, semantics, crop safety, staged-stock risk, and resolution.
 
 Selection must copy returned `manifestBinding` and `manifestEvidence` into the canonical row. Do not recreate the pool in chat, rename files to invent identity, or use `.workspace/*.py` as a ledger.
 

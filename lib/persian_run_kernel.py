@@ -635,6 +635,7 @@ def _start_phase_job_unlocked(
     telemetry_category: str = "machine_local_execution",
     pipeline_dir: Path | None = None,
     launch: bool = True,
+    owns_transition: bool = True,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Bind one current workflow attempt to one durable execution exactly once."""
@@ -659,6 +660,12 @@ def _start_phase_job_unlocked(
         if recorded_category != telemetry_category:
             raise PersianRunKernelError(
                 f"job {job_id!r} is already bound to telemetry category {recorded_category!r}"
+            )
+        recorded_mode = str(envelope.get("transitionMode") or "workflow")
+        requested_mode = "workflow" if owns_transition else "measured_only"
+        if recorded_mode != requested_mode:
+            raise PersianRunKernelError(
+                f"job {job_id!r} is already bound to transition mode {recorded_mode!r}"
             )
         requested_command_sha = durable_command_sha256(argv)
         recorded_command_sha = str(envelope.get("commandSha256") or "")
@@ -767,6 +774,10 @@ def _start_phase_job_unlocked(
         "artifactOutcome": "pending",
         "artifactIdentity": {},
         "checkpointOutcome": "pending",
+        # A measured-only job is bound to the phase attempt and owns its own causal
+        # span, but it does not own the workflow transition: the phase still advances
+        # through the front door's own completion (#188).
+        "transitionMode": "workflow" if owns_transition else "measured_only",
         "workflowTransitionOutcome": "pending",
         "workflowTransitionAttempts": 0,
         "nextPhase": phase,
@@ -794,6 +805,7 @@ def start_phase_job(
     telemetry_category: str = "machine_local_execution",
     pipeline_dir: Path | None = None,
     launch: bool = True,
+    owns_transition: bool = True,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Start one durable phase job with race-safe media execution admission."""
@@ -818,6 +830,7 @@ def start_phase_job(
             telemetry_category=telemetry_category,
             pipeline_dir=pipeline_dir,
             launch=launch,
+            owns_transition=owns_transition,
             now=now,
         )
 
@@ -899,6 +912,14 @@ def reconcile_phase_job(
         )
         envelope["workflowTransitionOutcome"] = "blocked"
         envelope["workflowTransitionError"] = _job_error_reason(effective_job)
+    elif envelope.get("transitionMode") == "measured_only":
+        # No phase advanced here, and none was meant to: the job contributed a measured
+        # span and its semantic result, and the phase still advances through its own
+        # completion. Recording the transition as succeeded would claim an advancement
+        # that did not happen; leaving it pending would describe a finished job as
+        # unresolved (#188).
+        envelope["workflowTransitionOutcome"] = "not_applicable"
+        envelope.pop("workflowTransitionError", None)
 
     state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     envelope["nextPhase"] = state.get("next_phase")
@@ -1169,9 +1190,14 @@ def run_phase_job(
     pipeline_dir: Path | None = None,
     poll_interval_seconds: float = 0.5,
     timeout_seconds: float = 1800.0,
+    owns_transition: bool = True,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Run one durable phase to terminal state and commit it without caller polling.
+
+    With ``owns_transition=False`` the job is measured only: it runs to terminal state
+    and is reconciled here, but it does not commit a workflow transition, because the
+    phase it belongs to advances through its own completion (#188).
 
     The durable job remains the source of execution truth. A timeout does not kill
     or replace the job; callers may later reconcile/commit the same identity.
@@ -1191,6 +1217,7 @@ def run_phase_job(
         idempotence_key=idempotence_key,
         telemetry_category=telemetry_category,
         pipeline_dir=pipeline_dir,
+        owns_transition=owns_transition,
         now=now,
     )
     _enforce_execution_checkpoint(
@@ -1229,6 +1256,10 @@ def run_phase_job(
             f"durable job {job_id!r} finished with execution outcome {outcome!r}; "
             "workflow commit was not attempted"
         )
+    if not owns_transition:
+        return reconcile_phase_job(
+            project_id, job_id, pipeline_dir=pipeline_dir, now=now
+        )
     return commit_phase_job(
         project_id,
         job_id,
@@ -1252,6 +1283,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="machine_local_execution",
         choices=sorted(CAUSAL_CATEGORIES - {"workflow_wall"}),
     )
+    start.add_argument(
+        "--measured-only",
+        action="store_true",
+        help="measure this execution without letting it own the phase's workflow transition",
+    )
     start.add_argument("argv", nargs="+")
 
     run = sub.add_parser(
@@ -1269,6 +1305,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--evidence-json")
     run.add_argument("--poll-interval-seconds", type=float, default=0.5)
     run.add_argument("--timeout-seconds", type=float, default=1800.0)
+    run.add_argument(
+        "--measured-only",
+        action="store_true",
+        help="measure this execution without letting it own the phase's workflow transition",
+    )
     run.add_argument("argv", nargs="+")
 
     status = sub.add_parser("status", help="reconcile one execution envelope")
@@ -1309,6 +1350,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 argv=command,
                 idempotence_key=args.idempotence_key,
                 telemetry_category=args.telemetry_category,
+                owns_transition=not args.measured_only,
             )
         elif args.command == "run":
             command = list(args.argv)
@@ -1323,6 +1365,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 evidence=_read_evidence(args.evidence_json),
                 poll_interval_seconds=args.poll_interval_seconds,
                 timeout_seconds=args.timeout_seconds,
+                owns_transition=not args.measured_only,
             )
         elif args.command == "status":
             result = reconcile_phase_job(args.project_id, args.job_id)
