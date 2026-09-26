@@ -20,6 +20,7 @@ something to smooth over.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 #: Stock-library shorthand for "health", forbidden unless the script names the thing.
@@ -65,14 +66,25 @@ MIN_SUBJECT_FRACTION = 0.4
 # The parts of a frame a copy-bearing event may declare as staying clear. Deliberately
 # coarse: this is the intent the search steers by, not a geometry engine -- the measured
 # placement check remains authoritative and unchanged.
-NEGATIVE_SPACE_REGIONS = frozenset({
-    "left_column",
-    "right_column",
-    "upper_band",
-    "lower_band",
-    "centre_band",
-    "full_frame",
-})
+#
+# Each region is a normalized rect, because a region can be clear and still be unusable:
+# Film Type vertical reserves the bottom 35% for captions, so `lower_band` names space
+# where editorial type cannot go at all. That was declared on a real run and cost a
+# placement cycle to discover (#164).
+_NEGATIVE_SPACE_RECTS: dict[str, tuple[float, float, float, float]] = {
+    "left_column": (0.0, 0.0, 0.33, 1.0),
+    "right_column": (0.67, 0.0, 1.0, 1.0),
+    "upper_band": (0.0, 0.0, 1.0, 0.33),
+    "lower_band": (0.0, 0.67, 1.0, 1.0),
+    "centre_band": (0.2, 0.33, 0.8, 0.67),
+    "full_frame": (0.0, 0.0, 1.0, 1.0),
+}
+
+NEGATIVE_SPACE_REGIONS = frozenset(_NEGATIVE_SPACE_RECTS)
+
+# A region must overlap the profile's editorial safe area by at least this much of the
+# frame before it can be asked to hold type.
+_MIN_SERVICEABLE_REGION_AREA = 0.02
 
 #: Queries per beat. Two, because the third was always a paraphrase of the second — the
 #: first run wrote three per beat and downloaded 36 clips to use 12.
@@ -300,6 +312,37 @@ def _footage_units(
     return units, problems, has_explicit_events
 
 
+def _editorial_safe_area(fmt: str) -> tuple[float, float, float, float] | None:
+    """The profile's editorial safe area as (x, y, w, h), or None when unavailable."""
+    try:
+        from lib.paths import REPO_ROOT
+
+        profile = json.loads(
+            (REPO_ROOT / "styles" / "persian-footage" / "film-type.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        formats = profile["formats"]
+        raw = formats[fmt if fmt in formats else "vertical"]["safeArea"]
+    except (OSError, KeyError, ValueError, TypeError, ImportError):
+        return None
+    left = float(raw.get("left", raw.get("side", 0.0)))
+    right = float(raw.get("right", raw.get("side", 0.0)))
+    top = float(raw.get("top", 0.0))
+    bottom = float(raw.get("bottom", 0.0))
+    return (left, top, max(0.0, 1.0 - left - right), max(0.0, 1.0 - top - bottom))
+
+
+def _region_serviceable_area(region: tuple[float, float, float, float],
+                             safe: tuple[float, float, float, float]) -> float:
+    """How much of a declared region the editorial safe area can actually host type in."""
+    rx, ry, rw, rh = region
+    sx, sy, sw, sh = safe
+    width = max(0.0, min(rx + rw, sx + sw) - max(rx, sx))
+    height = max(0.0, min(ry + rh, sy + sh) - max(ry, sy))
+    return width * height
+
+
 def audit_scene_plan(
     scene_plan: dict[str, Any],
     *,
@@ -433,6 +476,20 @@ def audit_scene_plan(
                     f"{label}: `negative_space` {declared!r} is not one of "
                     f"{sorted(NEGATIVE_SPACE_REGIONS)}; the placement check cannot use it."
                 )
+            else:
+                safe = _editorial_safe_area(str(scene_plan.get("format") or "vertical"))
+                if safe is not None:
+                    serviceable = _region_serviceable_area(
+                        _NEGATIVE_SPACE_RECTS[declared], safe
+                    )
+                    if serviceable < _MIN_SERVICEABLE_REGION_AREA:
+                        problems.append(
+                            f"{label}: `negative_space` {declared!r} lies outside the "
+                            "profile's editorial safe area, so type cannot be placed there "
+                            "at all -- a region can be clear and still be unusable. The "
+                            "profile reserves that part of the frame; declare a region with "
+                            "safe-area room instead."
+                        )
 
     # --- Banned vocabulary ------------------------------------------------------------
     for beat in footage:
