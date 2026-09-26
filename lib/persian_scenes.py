@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 
 from lib.persian_moments import MIN_MOMENTS_PER_MINUTE
 from typing import Any
@@ -97,6 +98,42 @@ _MIN_SERVICEABLE_REGION_AREA = 0.02
 #: placement refusal three phases later. Width is the profile-derived bound; the height a
 #: given phrase needs is content-dependent and stays the renderer's business.
 _MIN_RECIPE_COLUMN_FRACTION = 0.56
+
+#: Words that ask a stock search for the empty surface a typographic moment needs.
+#:
+#: A moment-carrying event must spend one of its two queries on framing, because a query
+#: that describes only the action returns footage whose subject fills the band: the plan
+#: declared 8 moments on successive runs and footage reality cut them to 6, 5, then 3
+#: (#183, #206). Matched as whole words against the lowercased query -- not substrings,
+#: because `lonely`, `wallet` and `skyscraper` would otherwise pass as framing. The check
+#: proves the query *asks* for space; the frame review and the measured placement check
+#: still decide whether it got any.
+FRAMING_QUERY_TERMS = (
+    "copy space",
+    "negative space",
+    "empty",
+    "plain",
+    "blank",
+    "minimal",
+    "isolated",
+    "lone",
+    "wide shot",
+    "clean background",
+    "sky",
+    "wall",
+    "surface",
+)
+
+
+_FRAMING_QUERY_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(term) for term in FRAMING_QUERY_TERMS) + r")\b"
+)
+
+
+def _asks_for_framing(query: str) -> bool:
+    """Whether a query names the empty surface a moment needs, as whole words."""
+    return _FRAMING_QUERY_RE.search(query.lower()) is not None
+
 
 #: Queries per beat. Two, because the third was always a paraphrase of the second — the
 #: first run wrote three per beat and downloaded 36 clips to use 12.
@@ -520,6 +557,17 @@ def audit_scene_plan(
                     f"{sorted(NEGATIVE_SPACE_REGIONS)}; the placement check cannot use it."
                 )
             else:
+                queries = [str(query) for query in event.get("queries") or []]
+                if queries and not any(_asks_for_framing(query) for query in queries):
+                    problems.append(
+                        f"{label}: carries a typographic moment, but none of its queries "
+                        "asks for the clear space the moment needs, so the search selects "
+                        "on the action alone and returns footage whose subject fills "
+                        f"{declared!r}. Spend one query on the framing: name the empty "
+                        "surface (a lone object on a plain surface, a wide shot with plain "
+                        "wall or sky filling the band) using one of "
+                        f"{list(FRAMING_QUERY_TERMS)}."
+                    )
                 safe = _editorial_safe_area(str(scene_plan.get("format") or "vertical"))
                 if safe is not None:
                     usable_w, usable_h = _region_serviceable_span(

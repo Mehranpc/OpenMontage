@@ -177,6 +177,7 @@ stages:
     review_focus:
       - Every footage visual event has 2 ENGLISH search queries (Pexels/Pixabay do not index Persian); semantic beats may contain multiple visual_events
       - Queries name concrete visual nouns, not the abstract idea they represent
+      - "A carries_moment event spends one of its two queries on framing: at least one query contains a lib.persian_scenes.FRAMING_QUERY_TERMS term (plain, empty, lone, wide shot, wall, sky, surface, ...). Enforced by audit_scene_plan (#206)."
       - "SUBJECT ANCHOR QUOTA: the first footage visual event, the last footage visual event, and at least 40% of footage visual events show the brief's visual_subject literally, each marked shows_subject: true. Legacy one-shot-per-beat plans are treated as one implicit event per beat."
       - "Beats about something else use CO-PRESENCE, not substitution: 'coffee cup beside blood sugar monitor', never 'glucose meter check'. Both things in one frame carries the beat AND keeps the subject on screen."
       - "No query uses stock-medical vocabulary the script does not name: doctor examining patient, blood test vials, DNA strand, laboratory researchers, test tubes, scientist microscope, hospital, medical chart, stethoscope, pills, capsules, measuring waist, measuring tape, weighing scale, blood pressure cuff, syringe, nurse, clinic. When the script genuinely names one, set names_banned_term: true on that visual event and pair the term with the subject in one frame."

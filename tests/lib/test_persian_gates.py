@@ -2169,7 +2169,10 @@ class TestSceneAudit:
             "duration_seconds": 2.5,
             "typographic": False,
             "visual_events": [
-                self._event(1, carries_moment=True, negative_space="upper_band"),
+                self._event(
+                    1, carries_moment=True, negative_space="upper_band",
+                    queries=["coffee pour close up", "coffee cup on plain table wide shot"],
+                ),
             ],
         }
 
@@ -2224,7 +2227,10 @@ class TestSceneAudit:
                 "duration_seconds": 2.5,
                 "typographic": False,
                 "visual_events": [
-                    self._event(1, carries_moment=True, negative_space=region),
+                    self._event(
+                        1, carries_moment=True, negative_space=region,
+                        queries=["coffee pour close up", "coffee cup on plain table wide shot"],
+                    ),
                 ],
             }
             assert audit_scene_plan(self._plan([beat]))["problems"] == [], region
