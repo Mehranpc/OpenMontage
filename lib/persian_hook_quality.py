@@ -11,6 +11,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from lib.persian_music import defers_rather_than_decides
 from lib.persian_text import visible_length
 
 HOOK_QUALITY_VERSION = "2.0"
@@ -410,14 +411,27 @@ def _typographic_duration(
     )
     # A deliberate editorial hold may exceed the text-derived budget, but it must
     # be explicit so geometry/layout pressure cannot silently turn into dead air.
+    # "Explicit" means the justification makes a decision: a note-to-self would
+    # otherwise pass the non-empty check and certify a hold nobody decided on (#191).
     justification = str(hook.get("typographicDurationJustification") or "").strip()
-    justified = bool(justification)
-    if actual > recommended + 1e-6 and not justified:
-        problems.append(
-            "[HOOK_TYPOGRAPHIC_DURATION_EXCESS] typographic-only hook holds for "
-            f"{actual:.2f}s although its text-derived reading budget is {recommended:.2f}s; "
-            "shorten the hold or record an explicit editorial justification"
-        )
+    deferred = bool(justification) and defers_rather_than_decides(justification)
+    justified = bool(justification) and not deferred
+    if actual > recommended + 1e-6:
+        if deferred:
+            problems.append(
+                "[HOOK_TYPOGRAPHIC_DURATION_EXCESS] typographic-only hook holds for "
+                f"{actual:.2f}s although its text-derived reading budget is {recommended:.2f}s; "
+                "the recorded typographicDurationJustification defers the decision rather than "
+                f"making one: {justification!r}. This gate asks only that the justification be "
+                "non-empty, so a placeholder would pass here and then describe a deliberate hold "
+                "nobody decided on. State why the hold is deliberate, or shorten it."
+            )
+        elif not justified:
+            problems.append(
+                "[HOOK_TYPOGRAPHIC_DURATION_EXCESS] typographic-only hook holds for "
+                f"{actual:.2f}s although its text-derived reading budget is {recommended:.2f}s; "
+                "shorten the hold or record an explicit editorial justification"
+            )
     return {
         "required": True,
         "actualSeconds": round(actual, 3),
