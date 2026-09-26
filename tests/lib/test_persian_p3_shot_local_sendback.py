@@ -505,6 +505,54 @@ def test_successive_scoped_grants_do_not_consume_each_other(
     assert second["max_candidates_total"] >= 1
 
 
+def test_a_grant_without_a_recorded_baseline_still_provides_headroom(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A grant recorded before baselines existed still means "N candidates from here".
+
+    Observed on the L3 run: the live shot-9 grant predated the anchoring fix, so the
+    ceiling fell back to the original cap and refused a repair that had already been
+    authorised. Anchoring must not orphan grants issued under the previous commit.
+    """
+    _bootstrap_to_preflight(tmp_path)
+    monkeypatch.setattr(
+        workflow, "asset_workspace_status",
+        lambda _: _workspace(event1_alt=True, event2_alt=False),
+    )
+    monkeypatch.setattr(
+        workflow, "read_checkpoint",
+        lambda *_args, **_kwargs: _scene_checkpoint("event-2", "replacement event two"),
+    )
+    _exhaust_candidate_ceiling(tmp_path)
+
+    rewound = request_send_back(
+        "run", "acquire_assets",
+        reason="shot-2 has no reviewed fitting option",
+        diagnostic_code="ASSET_SELECTION_HARD_REGION_COLLISION",
+        affected_shot_ids=["shot-1", "shot-2"],
+        pipeline_dir=tmp_path,
+        now=BASE,
+    )
+    granted = int(rewound["asset_reacquisition_grant"]["candidates"])
+
+    # Simulate a grant written before the anchoring fix landed.
+    state = load_workflow_state("run", pipeline_dir=tmp_path)
+    state["asset_reacquisition_grant"].pop("candidateBaseline", None)
+    workflow._write_state(tmp_path / "run", state)
+
+    issued = bounded_asset_search_request(
+        "run",
+        {
+            "queries": [{"query": "replacement event two", "slot_id": "event-2", "kind": "video"}],
+            "sources": ["pexels", "pixabay_video"],
+        },
+        retry_pass=0,
+        pipeline_dir=tmp_path,
+        now=BASE,
+    )
+    assert issued["max_candidates_total"] == granted
+
+
 def test_scoped_candidate_grant_never_exceeds_the_whole_run_ceiling(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
