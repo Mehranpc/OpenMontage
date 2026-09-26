@@ -91,6 +91,7 @@ install-gpu: ensure-venv
 
 test: ensure-venv
 	$(RUN_PYTHON) -m pytest tests/ -v
+	$(MAKE) remotion-unit-test
 
 test-contracts: ensure-venv
 	$(RUN_PYTHON) -m pytest tests/contracts/ -v
@@ -124,6 +125,12 @@ lint: ensure-venv
 	$(RUN_PYTHON) -m py_compile tools/tool_registry.py
 	$(RUN_PYTHON) -m py_compile tools/cost_tracker.py
 	$(RUN_PYTHON) -m py_compile tools/analysis/composition_validator.py
+
+# Checks the pure decisions the Remotion render path calls, without a bundler or a test
+# framework: the module is dependency-free and node strips its types. Run here because
+# it is a check, and CI runs this target.
+remotion-unit-test:
+	cd remotion-composer && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/placement-failures.test.mjs
 
 clean:
 	$(BASE_PYTHON) -c "import pathlib, shutil; excluded=[pathlib.Path('$(VENV_DIR)'), pathlib.Path('venv')]; skip=lambda p: any(p == root or root in p.parents for root in excluded); roots=[p for p in pathlib.Path('.').rglob('__pycache__') if not skip(p)]; [shutil.rmtree(p) for p in roots]; files=[p for p in pathlib.Path('.').rglob('*.pyc') if not skip(p)]; [p.unlink() for p in files]"
