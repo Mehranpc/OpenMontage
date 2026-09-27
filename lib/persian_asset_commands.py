@@ -13,6 +13,7 @@ from lib.persian_asset_workspace import (
     validate_asset_manifest_against_workspace,
 )
 from lib.persian_assets import assert_video_only, audit_asset_manifest
+from lib.persian_scene_plan_source import materialize_scene_plan
 from schemas.artifacts import validate_artifact
 
 
@@ -50,10 +51,14 @@ def _atomic_stable_json(path: Path, value: Mapping[str, Any]) -> bool:
 
 
 def _validate_manifest(project_dir: Path, manifest: dict[str, Any]) -> dict[str, Any]:
-    scene_path = project_dir / "artifacts" / "scene_plan.json"
-    scene_plan = (
-        _read_object(scene_path, label="scene plan") if scene_path.is_file() else None
-    )
+    scene_path = materialize_scene_plan(project_dir)
+    if scene_path is None:
+        # Auditing without the plan skips every plan-dependent rule and reports a
+        # manifest that is missing whole events as clean (#238). Refuse instead.
+        raise PersianAssetCommandError(
+            "no completed scene plan: the asset manifest cannot be audited against the plan"
+        )
+    scene_plan = _read_object(scene_path, label="scene plan")
     try:
         validate_artifact("asset_manifest", manifest)
         assert_video_only(manifest)

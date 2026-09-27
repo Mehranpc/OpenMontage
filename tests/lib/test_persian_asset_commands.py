@@ -5,12 +5,13 @@ from pathlib import Path
 
 from lib import persian_asset_commands as commands
 from lib import persian_video_workflow as workflow
-from tests.lib.test_issue35_asset_candidate_workspace import _selected_candidate
+from tests.lib.test_issue35_asset_candidate_workspace import _selected_candidate, _write_matching_scene_plan
 
 
 def test_build_manifest_is_stable_sorted_utf8_and_idempotent(tmp_path: Path) -> None:
     project = tmp_path / "run"
     _selected_candidate(project)
+    _write_matching_scene_plan(project)
 
     first = commands.build_manifest(tmp_path, "run")
     manifest_path = project / "artifacts" / "asset_manifest.json"
@@ -40,6 +41,7 @@ def test_build_manifest_is_stable_sorted_utf8_and_idempotent(tmp_path: Path) -> 
 def test_build_manifest_applies_explicit_event_and_top_level_overrides(tmp_path: Path) -> None:
     project = tmp_path / "run"
     _selected_candidate(project)
+    _write_matching_scene_plan(project, fallback_level="emotional_human")
     result = commands.build_manifest(
         tmp_path,
         "run",
@@ -64,6 +66,7 @@ def test_write_checkpoint_is_idempotent_for_same_manifest_and_metadata(
 ) -> None:
     project = tmp_path / "run"
     _selected_candidate(project)
+    _write_matching_scene_plan(project)
     commands.build_manifest(tmp_path, "run")
     stored: dict = {}
 
@@ -128,6 +131,7 @@ def test_front_door_exposes_nested_assets_commands() -> None:
 def test_write_checkpoint_reaudits_canonical_manifest(tmp_path: Path) -> None:
     project = tmp_path / "run"
     _selected_candidate(project)
+    _write_matching_scene_plan(project)
     commands.build_manifest(tmp_path, "run")
     path = project / "artifacts" / "asset_manifest.json"
     manifest = json.loads(path.read_text(encoding="utf-8"))
