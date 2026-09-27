@@ -1054,6 +1054,13 @@ def build_asset_manifest_from_workspace(
     for key in ("music", "musicTrack", "word_timings", "total_cost_usd"):
         if key in options:
             manifest[key] = options[key]
+    if "total_cost_usd" not in manifest:
+        # The delivery-quality producer reads spend from the assets checkpoint. Without
+        # a total here, cost was always "missing" and every report blocked, although
+        # stock footage and Pixabay music cost nothing. Derive it from the rows (#234).
+        manifest["total_cost_usd"] = round(sum(
+            float(row.get("cost_usd") or 0.0) for row in assets if isinstance(row, Mapping)
+        ), 6)
     if "metadata" in options:
         if not isinstance(options["metadata"], Mapping):
             raise PersianAssetWorkspaceError("manifest overrides.metadata must be an object")
