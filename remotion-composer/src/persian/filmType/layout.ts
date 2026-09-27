@@ -905,7 +905,7 @@ function mergeDiagnosticIntervals(intervals:Array<{startSeconds:number;endSecond
 function buildWatermarkDiagnostics(
   props:PersianVideoProps,p:FilmProfile,plan:NonNullable<PersianVideoProps["watermarkPlan"]>,sink:WatermarkDiagnosticSink,
 ):WatermarkDiagnostics{
-  const cfg=p.watermark,duration=props.durationSeconds,intro=Math.min(duration,cfg.introDelaySeconds??0);
+  const cfg=brandCoveragePolicy(p),duration=props.durationSeconds,intro=Math.min(duration,cfg.introDelaySeconds??0);
   const covered=watermarkCoveredSeconds(plan),coverage=duration>0?covered/duration:0,eligible=Math.max(0,duration-intro);
   const possibleRatio=duration>0?eligible/duration:0;
   const floor=duration<20?Math.min(cfg.minCoverageRatio??0,possibleRatio):(cfg.minCoverageRatio??0);
@@ -947,6 +947,16 @@ export function paintedCaptionIntervals(start:number,end:number,moments:readonly
   return paintable>0&&paintable<1?[]:spans;
 }
 
+/** 2.16 brand presence range (#230, Mehran Shabani 2026-09-27): 92% crowded the frame.
+ * The brand should be visible 55-75% of the runtime. Applied in code so the pinned
+ * 2.16 token hash, and every frozen 2.16 snapshot, stays valid. Older pins are unchanged. */
+export const FILM_TYPE_216_BRAND_COVERAGE={min:0.55,target:0.65,max:0.75};
+function brandCoveragePolicy(p: FilmProfile): FilmProfile["watermark"] & {maxCoverageRatio?: number} {
+  if(p.profileVersion!=="2.16.0")return p.watermark;
+  return {...p.watermark,minCoverageRatio:FILM_TYPE_216_BRAND_COVERAGE.min,
+    targetCoverageRatio:FILM_TYPE_216_BRAND_COVERAGE.target,maxCoverageRatio:FILM_TYPE_216_BRAND_COVERAGE.max};
+}
+
 function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record<string,FilmMomentLayout>, lockup: FilmLockup | null, avoid: TimedRect[], diagnosticSink?: WatermarkDiagnosticSink): NonNullable<PersianVideoProps["watermarkPlan"]> {
   if (!lockup) return [];
   const dims=FORMAT_DIMENSIONS[props.format],safe=watermarkSafeArea(p,props.format),l=p.layout,cfg=p.watermark;
@@ -964,7 +974,7 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
   const left=safe.left+(l.edgeInsetPx+padPx)/dims.width,right=1-safe.right-(l.edgeInsetPx+padPx)/dims.width-w;
   const top=safe.top+(l.edgeInsetPx+padPx)/dims.height,bottom=1-safe.bottom-(l.edgeInsetPx+padPx)/dims.height-h;
   const captionTop=(props.captionMode === "burned_captions" || props.captionMode === "hybrid")&&p.profileVersion==="2.16.0"
-    ? captionBandRect(props.format, props.design).y-(Math.max(cfg.minTextClearancePx??0,lockup.heightPx)+2)/dims.height-h : bottom;
+    ? captionBandRect(props.format, props.design).y-(2*Math.max(cfg.minTextClearancePx??0,lockup.heightPx)+2)/dims.height-h : bottom;
   const lowerY=Math.min(bottom,captionTop);
   const rects: Record<string,Rect> = {
     "lower-left":{x:left,y:lowerY,w,h},"lower-right":{x:right,y:lowerY,w,h},
@@ -1074,11 +1084,67 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
     if(!inWatermarkSafe(r,safe)){noteBlocker(r,start,end,"safe area",undefined,"safe-area",0);return false;}
     return clearText(r,start,end,l.collisionMarginPx) && clearSubject(r,start,end);
   };
-  const preferredClear=(r:Rect,start:number,end:number)=>hardClear(r,start,end)
+  // 2.16 (#230): stacked in the same column as live text or a painting caption, the
+  // brand reads as part of that block even past the pixel clearance (screenshots 2-3).
+  // Require a full stacking gap in that case; otherwise the brand moves or is absent.
+  const stackGapPx=Math.max(cfg.minTextClearancePx??0,64)*5;
+  // Moments only: the caption strip spans nearly the full width, so "same column" would
+  // close both lower anchors for every cue. Captions keep the doubled pixel gap instead.
+  const paintedText=()=>props.moments.map(m=>({...layouts[m.id].rect,startSeconds:m.startSeconds,endSeconds:m.endSeconds,id:`moment ${m.id}`}));
+  const clearStack=(r:Rect,start:number,end:number)=>{
+    if(p.profileVersion!=="2.16.0")return true;
+    for(const t of paintedText()){
+      if(t.startSeconds>=end||t.endSeconds<=start)continue;
+      // Stacked means the brand's centre sits under/over the text block, not a sliver
+      // of shared width: a left anchor beside a wide right-aligned block is a separate side.
+      const cx=r.x+r.w/2;
+      if(cx<t.x||cx>t.x+t.w)continue;
+      const dy=Math.max(0,t.y-(r.y+r.h),r.y-(t.y+t.h))*dims.height;
+      if(dy<stackGapPx){noteBlocker(r,start,end,`stacked with ${t.id}`,t as TimedRect,"text-clearance",stackGapPx);return false;}
+    }
+    return true;
+  };
+  const baseClear=(r:Rect,start:number,end:number)=>hardClear(r,start,end)
     && clearText(r,start,end,visualClearancePx,true);
+  const preferredClear=(r:Rect,start:number,end:number)=>baseClear(r,start,end) && clearStack(r,start,end);
   const clear=(p.profileVersion==="2.12.0" || p.profileVersion==="2.13.0" || p.profileVersion==="2.14.0" || (p.profileVersion==="2.15.0" || p.profileVersion==="2.16.0"))?preferredClear:hardClear;
   const timelineBoundaries=[...props.shots.flatMap(s=>[s.startSeconds,s.endSeconds]),...props.moments.flatMap(m=>[m.startSeconds,m.endSeconds]),...(captionActive?(props.captions ?? []).flatMap(c=>[c.startSeconds,c.endSeconds]):[]),...subjectAvoid.flatMap(r=>[r.startSeconds,r.endSeconds])];
-  if(p.profileVersion==="2.13.0" || p.profileVersion==="2.14.0" || (p.profileVersion==="2.15.0" || p.profileVersion==="2.16.0")) return planCoverageAwareBrand(props.durationSeconds,timelineBoundaries,order,rects,preferredClear,cfg,cfg.introDelaySeconds??0,()=>blockers.join("; "));
+  // Distance cost: time-weighted closeness of the brand to every text/caption rect it
+  // overlaps in time, falling to zero beyond a comfortable reading distance.
+  const comfortPx=Math.max(cfg.minTextClearancePx??0,64)*4;
+  const proximity=p.profileVersion==="2.16.0"?(r:Rect,start:number,end:number)=>{
+    let cost=0;
+    // Measure against the text as painted: moment rects in `textRects` are widened to
+    // the full band for clearance, which would make every anchor look "same column".
+    const painted=[
+      ...props.moments.map(m=>({...layouts[m.id].rect,startSeconds:m.startSeconds,endSeconds:m.endSeconds})),
+      ...textRects.filter(t=>t.ownerType!=="moment"),
+    ];
+    for(const t of painted){
+      const overlap=Math.min(end,t.endSeconds)-Math.max(start,t.startSeconds);
+      if(overlap<=0)continue;
+      const dx=Math.max(0,t.x-(r.x+r.w),r.x-(t.x+t.w))*dims.width;
+      const dy=Math.max(0,t.y-(r.y+r.h),r.y-(t.y+t.h))*dims.height;
+      const gap=Math.hypot(dx,dy);
+      // Same column as the text (stacked under or over it) reads as one crowded block
+      // however many pixels apart: the screenshot-3 case. Penalize it outright.
+      const cx=r.x+r.w/2,sameColumn=cx>=t.x&&cx<=t.x+t.w;
+      if(sameColumn)cost+=overlap*1.5;
+      else if(gap<comfortPx)cost+=(1-gap/comfortPx)*overlap*.35;
+    }
+    return cost;
+  }:undefined;
+  if(p.profileVersion==="2.13.0" || p.profileVersion==="2.14.0" || (p.profileVersion==="2.15.0" || p.profileVersion==="2.16.0")) {
+    const policy=brandCoveragePolicy(p);
+    const plan=(fn:(r:Rect,a:number,b:number)=>boolean)=>planCoverageAwareBrand(props.durationSeconds,timelineBoundaries,order,rects,fn,policy,cfg.introDelaySeconds??0,()=>blockers.join("; "),proximity);
+    let stacked: ReturnType<typeof plan>|undefined;
+    try{stacked=plan(preferredClear);}catch{stacked=undefined;}
+    // The stacking gap is a preference: when honouring it would drop the brand below its
+    // floor (text on screen most of the runtime), keep the pixel clearance and the
+    // far-corner preference, and drop only the stacking rule.
+    if(stacked && watermarkCoveredSeconds(stacked)+1e-6>=props.durationSeconds*(policy.minCoverageRatio??0)) return stacked;
+    return plan(baseClear);
+  }
   if(p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0")))) {
     const run=(clearance:(r:Rect,start:number,end:number)=>boolean)=>planMovingBrand(props.durationSeconds,
       props.shots.flatMap(s=>[s.startSeconds,s.endSeconds]),
@@ -1229,7 +1295,7 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
     }
   }
   if((profile.profileVersion==="2.13.0" || profile.profileVersion==="2.14.0" || (profile.profileVersion==="2.15.0" || profile.profileVersion==="2.16.0"))&&lockup){
-    const cfg=profile.watermark,intro=Math.min(props.durationSeconds,cfg.introDelaySeconds??0);
+    const cfg=brandCoveragePolicy(profile),intro=Math.min(props.durationSeconds,cfg.introDelaySeconds??0);
     const coverage=watermarkDiagnostics?.coverageRatio??(watermarkCoveredSeconds(watermarkPlan)/props.durationSeconds);
     const minimum=watermarkDiagnostics?.coverageFloor??cfg.minCoverageRatio!;
     const target=watermarkDiagnostics?.coverageTarget??cfg.targetCoverageRatio!;

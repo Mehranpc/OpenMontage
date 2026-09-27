@@ -590,6 +590,7 @@ def _build_shot_plan(project: Path, manifest: Mapping[str, Any], scene_plan: Map
             },
             "width": int(row.get("width") or 0),
             "height": int(row.get("height") or 0),
+            "humanPresence": bool(row.get("human_presence")),
         })
     if len(plan) != len(rows):
         expected = {
@@ -883,6 +884,37 @@ def _grid_region(raw: object, *, label: str) -> dict[str, float]:
     }
 
 
+def _require_face_marked_hard(
+    shot: Mapping[str, Any], frames: Mapping[str, Mapping[str, Any]]
+) -> None:
+    """A shot with a person must mark the face as a hard region in every non-clear frame.
+
+    A real render put the opening hook straight across a woman's face. The review had
+    marked only her body as hard and the lower half as soft, so placement avoided the
+    body and settled on the one unmarked area: her face. Faces are the one region
+    typography must never cover, and nothing required them to be annotated (#230).
+
+    Each frame of a human-presence shot declares `face` as a grid rectangle (it is
+    merged in as a hard region), or `face_visible: false` when the face is off frame
+    or turned away. Frames marked `clear` need neither.
+    """
+    if not shot.get("humanPresence"):
+        return
+    shot_id = str(shot.get("shotId"))
+    for position, raw in frames.items():
+        if raw.get("clear") is True:
+            continue
+        if raw.get("face_visible") is False:
+            continue
+        if not isinstance(raw.get("face"), Mapping):
+            raise PersianRegionCommandError(
+                f"{shot_id}.{position}: this shot shows a person, so the frame must mark the "
+                "face as `face: {x1,y1,x2,y2}` on the sheet grid (it becomes a hard region), "
+                "or state `face_visible: false`. Typography placement avoids hard regions "
+                "only, and an unmarked face is where text lands."
+            )
+
+
 def _annotation_regions(raw_frame: Mapping[str, Any], *, label: str) -> list[dict[str, Any]]:
     if raw_frame.get("clear") is True:
         if any(key in raw_frame for key in ("grid", "priority", "regions")):
@@ -892,8 +924,15 @@ def _annotation_regions(raw_frame: Mapping[str, Any], *, label: str) -> list[dic
         return []
     raw_regions = raw_frame.get("regions")
     if raw_regions is None:
-        raw_regions = [{"priority": raw_frame.get("priority"), "grid": raw_frame.get("grid")}]
-    if not isinstance(raw_regions, list) or not raw_regions:
+        raw_regions = (
+            [{"priority": raw_frame.get("priority"), "grid": raw_frame.get("grid")}]
+            if raw_frame.get("grid") is not None else []
+        )
+    if not isinstance(raw_regions, list):
+        raise PersianRegionCommandError(f"{label}.regions must be a list")
+    if isinstance(raw_frame.get("face"), Mapping):
+        raw_regions = [*raw_regions, {"priority": "hard", "grid": raw_frame["face"]}]
+    if not raw_regions:
         raise PersianRegionCommandError(f"{label}.regions must be non-empty or set clear=true")
     result: list[dict[str, Any]] = []
     for index, raw in enumerate(raw_regions):
@@ -1107,6 +1146,8 @@ def propose_regions(
             raise PersianRegionCommandError(
                 f"{shot_id} missing frame annotations: {', '.join(missing_positions)}"
             )
+
+        _require_face_marked_hard(shot, annotation_frames)
 
         timed: list[dict[str, Any]] = []
         for frame_index, position in enumerate(FRAME_POSITIONS):

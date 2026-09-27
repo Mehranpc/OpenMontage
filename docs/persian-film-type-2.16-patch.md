@@ -57,3 +57,17 @@ runtime) and the brand may still be briefly absent where no anchor is clear. In 
 `WATERMARK_COVERAGE` stop) to 92%. The profile tokens are unchanged, so the pinned
 2.16 hash is unchanged. Older pins plan exactly as before.
 
+## Faces, brand distance and presence, «یا» phrases (#230)
+
+- Subject-region review must mark the face (`face` grid rect, merged as hard) in every non-clear
+  frame of a shot whose asset has `human_presence: true`, or state `face_visible: false`.
+  Placement avoids hard regions only; an unmarked face is where the hook landed.
+- Brand presence is 55-75% of runtime (was a 70% floor that planned 92%). Coverage beyond 75%
+  no longer scores; the planner leaves gaps, preferably while text is up. Applied in code, so
+  the pinned 2.16 token hash is unchanged.
+- The brand prefers the anchor farthest from live text, never stacks under a moment block
+  (centre within the block's column) without a 5x-clearance gap when coverage allows, and sits
+  2x clearance above the burned-caption strip.
+- «یا»-joined three-way choices lock each 2-4 word option like comma lists, so
+  «فردا صبح» never breaks across rows.
+

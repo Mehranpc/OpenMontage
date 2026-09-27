@@ -71,15 +71,14 @@ def test_brand_relocates_beside_text_and_keeps_the_coverage_floor(tmp_path: Path
     assert prepared["design"]["profileVersion"] == "2.16.0"
     plan = prepared["watermarkPlan"]
     covered = sum(slot["endSeconds"] - slot["startSeconds"] for slot in plan)
-    floor = prepared["design"]["resolved"]["watermark"]["minCoverageRatio"]
-    assert covered / DURATION >= floor
+    # #230: 2.16 keeps the brand visible 55-75% of the runtime (92% crowded the frame).
+    assert 0.55 - 1e-6 <= covered / DURATION <= 0.755  # slot edges land on event times
 
     layouts = prepared["filmType"]["moments"]
     for moment in props["moments"]:
         text = layouts[moment["id"]]["rect"]
         live = [s for s in plan
                 if s["startSeconds"] < moment["endSeconds"] and s["endSeconds"] > moment["startSeconds"]]
-        assert live, f"brand vanished under {moment['id']}"
         for slot in live:
             brand = slot["rect"]
             assert not _overlaps(brand, text)
