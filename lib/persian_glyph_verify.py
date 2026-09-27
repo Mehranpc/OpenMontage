@@ -70,7 +70,7 @@ def verification_props(props: dict[str, Any], clip_rel: str) -> dict[str, Any]:
     out = json.loads(json.dumps(props))
     for shot in out.get("shots") or []:
         shot["source"] = clip_rel
-        shot.pop("sourceInSeconds", None)
+        shot["sourceInSeconds"] = 0.0
     out["audio"] = {}
     # The shot source is part of the Film Type input hash, and a saved layout whose
     # inputs changed is refused as stale. Drop the saved measurement and let the still

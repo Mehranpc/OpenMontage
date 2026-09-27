@@ -28,6 +28,6 @@ def test_verification_props_keep_layout_and_timing_but_drop_media() -> None:
              "audio": {"narration": "n.wav"}, "filmType": {"inputHash": "h"}}
     out = verification_props(props, "persian/v/black.mp4")
     assert out["shots"][0]["source"] == "persian/v/black.mp4"
-    assert "sourceInSeconds" not in out["shots"][0]
+    assert out["shots"][0]["sourceInSeconds"] == 0.0
     assert out["shots"][0]["avoidRegions"] == [{"x": 0.1}] and "filmType" not in out
     assert out["audio"] == {} and props["shots"][0]["source"] == "clip.mp4"
