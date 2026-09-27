@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -157,6 +158,27 @@ def _candidate_id(identity: Mapping[str, Any]) -> str:
     return f"asset-{_sha256(identity)[:24]}"
 
 
+
+def _source_tags(value: object) -> list[str]:
+    """Provider tags as a list of phrases (#266).
+
+    Stock sources return one string (``Candidate.source_tags: str``); ``list()`` of
+    it stored every character as a tag. Split on commas/newlines, and keep a
+    phrase whole when there is no separator. Lists pass through, stripped.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        parts = re.split(r"[,\n;|]", value)
+        return [part.strip() for part in parts if part.strip()]
+    if isinstance(value, (list, tuple)):
+        items = [str(item) for item in value]
+        if items and all(len(item) <= 1 for item in items):
+            # A record written before this fix: the characters of one string.
+            return _source_tags("".join(items))
+        return [item.strip() for item in items if item.strip()]
+    return []
+
 def record_discovery_pass(
     project_dir: Path,
     retry_pass: int,
@@ -196,7 +218,7 @@ def record_discovery_pass(
             "height": int(raw.get("height") or 0),
             "creator": str(raw.get("creator") or ""),
             "license": raw.get("license"),
-            "sourceTags": list(raw.get("source_tags") or []),
+            "sourceTags": _source_tags(raw.get("source_tags")),
             "firstSeenPass": retry_pass,
             "updatedAt": now,
         }
@@ -318,7 +340,7 @@ def stage_asset_candidate(
             "originalUrl": discovery.get("originalUrl"),
             "creator": discovery.get("creator"),
             "license": discovery.get("license"),
-            "sourceTags": discovery.get("sourceTags") or [],
+            "sourceTags": _source_tags(discovery.get("sourceTags")),
         },
         "review": None,
         "reviewSha256": None,
