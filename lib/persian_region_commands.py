@@ -983,6 +983,48 @@ def _merge_timed_regions(regions: Sequence[Mapping[str, Any]]) -> list[dict[str,
     return merged
 
 
+
+def candidate_band_occupancy(
+    subject_grid: Mapping[str, Any], declared_region: str, *, label: str = "frame_review.subject_grid",
+) -> dict[str, Any]:
+    """Whether a candidate's reviewed hard regions occupy its event's declared band (#261).
+
+    `subject_grid` holds `start`, `middle`, `end` frames in the exact annotation format
+    `regions propose` takes. The overlap rule and band rectangles are the ones
+    `declared_negative_space_collisions` enforces at region review, so a candidate
+    that passes here cannot be refused there for the same geometry.
+    """
+    from lib.persian_scenes import _NEGATIVE_SPACE_RECTS
+
+    if declared_region not in _NEGATIVE_SPACE_RECTS:
+        raise PersianRegionCommandError(f"unknown declared negative_space {declared_region!r}")
+    if not isinstance(subject_grid, Mapping):
+        raise PersianRegionCommandError(f"{label} must be an object with start/middle/end frames")
+    hard: list[dict[str, Any]] = []
+    for position in FRAME_POSITIONS:
+        frame = subject_grid.get(position)
+        if not isinstance(frame, Mapping):
+            raise PersianRegionCommandError(f"{label}.{position} is required")
+        for region in _annotation_regions(frame, label=f"{label}.{position}"):
+            if region["priority"] == "hard":
+                hard.append({**region, "position": position})
+    rx, ry, rw, rh = _NEGATIVE_SPACE_RECTS[declared_region]
+
+    def overlaps(rect: tuple[float, float, float, float], box: Mapping[str, Any]) -> bool:
+        fx, fy, fw, fh = rect
+        return (
+            min(fx + fw, box["x"] + box["w"]) - max(fx, box["x"]) > 0
+            and min(fy + fh, box["y"] + box["h"]) - max(fy, box["y"]) > 0
+        )
+
+    occupying = [box for box in hard if overlaps((rx, ry, rw, rh), box)]
+    clear = sorted(
+        name for name, rect in _NEGATIVE_SPACE_RECTS.items()
+        if name not in {declared_region, "full_frame"} and not any(overlaps(rect, box) for box in hard)
+    )
+    return {"declared": declared_region, "occupied": bool(occupying),
+            "occupying": occupying, "clearRegions": clear}
+
 def declared_negative_space_collisions(
     scene_plan: Mapping[str, Any],
     canonical_shots: Sequence[Mapping[str, Any]],

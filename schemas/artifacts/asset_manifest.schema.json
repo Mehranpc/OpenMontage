@@ -195,6 +195,17 @@
                 "type": "string",
                 "enum": ["left_column", "right_column", "upper_band", "lower_band", "centre_band", "full_frame"],
                 "description": "The region actually observed as clear when this clip was chosen. Required for a unit that carries a typographic moment, and it must equal the region the scene plan reserved."
+              },
+              "subject_grid": {
+                "type": "object",
+                "description": "Reviewed start/middle/end 10x10 subject regions of the selected window, in the regions-propose annotation format. Required at candidate review for a moment-carrying event and judged against its declared negative_space (#261).",
+                "properties": {
+                  "start": { "type": "object" },
+                  "middle": { "type": "object" },
+                  "end": { "type": "object" }
+                },
+                "required": ["start", "middle", "end"],
+                "additionalProperties": false
               }
             },
             "additionalProperties": false

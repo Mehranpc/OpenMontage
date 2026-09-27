@@ -196,11 +196,32 @@ class Rehearsal:
         return candidate
 
     def acquire(self) -> None:
+        self._band_blocked = {
+            item["visual_event_id"]: item for item in self.decision("asset-band-blocked.json")
+        }
         self._search(0)
         # Pass 0 footage the recorded agent reviewed and turned down; the retry pass
         # may only run once every pass-0 candidate has a verdict.
         for pick in self.decision("asset-first-pass.json"):
-            candidate = self._stage_and_review(pick, "-pass0")
+            # The recorded agent turned these down; a rejection needs no band evidence,
+            # so they are staged and rejected directly (the retry gate accepts either).
+            staged = self.wf(
+                f"asset-candidate-stage {pick['visual_event_id']}-pass0", "asset-candidate-stage",
+                PROJECT_ID, "--json", self.write(f"stage-{pick['visual_event_id']}-pass0.json", pick["stage"]),
+            )
+            candidate = str(staged.get("candidateId"))
+            blocked = self._band_blocked.get(pick["visual_event_id"])
+            if blocked is not None:
+                # Scenario 2 (#261): the real run SELECTED this footage and region review
+                # refused it an hour later. Its band grid must now be refused at review.
+                refusal = self.wf(
+                    f"asset-candidate-review {pick['visual_event_id']} (expect BAND_OCCUPIED)",
+                    "asset-candidate-review", PROJECT_ID, candidate, "--json",
+                    self.write(f"review-{pick['visual_event_id']}-band.json", blocked["review"]),
+                    expect_fail=True,
+                )
+                if "[BAND_OCCUPIED:upper_band]" not in refusal:
+                    raise RehearsalFailure("band check", f"expected BAND_OCCUPIED: {refusal[-800:]}")
             self.wf(
                 f"asset-candidate-reject {pick['visual_event_id']}", "asset-candidate-reject",
                 PROJECT_ID, candidate, "--category", pick["reject"]["category"],
