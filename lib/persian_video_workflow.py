@@ -4269,6 +4269,47 @@ def _terminalize_from_convergence_stop(
     return True
 
 
+def _refuse_cheap_preflight_defects_before_candidate(
+    payload: Mapping[str, Any], hook_authority: Mapping[str, Any]
+) -> None:
+    """Run every deterministic preflight layer before a draft can become a candidate.
+
+    The bounded convergence budget exists for editorial attempts. In a run, three of
+    four candidates in one cycle went to defects the cheap layers would have named
+    before staging: the hook contract twice and the opening semantic fields once. So
+    the budget ran out and a human had to reopen the cycle. Contract, retention, hook
+    and geometric precheck are deterministic and need no browser, so they now refuse
+    here, with every blocker, and no candidate is written or spent. Only the browser
+    pass (real font measurement and placement) remains a candidate-consuming
+    discovery. This generalizes #212 from schema-only.
+    """
+    from lib.persian_preflight import aggregate_preflight_edit_decisions
+
+    report = aggregate_preflight_edit_decisions(
+        dict(payload), base_dir=REPO_ROOT, hook_authority=hook_authority, cheap_only=True,
+    )
+    if report.get("ok"):
+        return
+    # Schema shape is refused inside `stage_edit_draft` (#212) with alias hints, and media
+    # paths are proven by the asset binding. Leave those to their owners so each defect
+    # has one refusal path and one message.
+    issues = [
+        issue for issue in (report.get("blockingIssues") or [])
+        if not str(issue.get("code") or "").startswith(("schema.", "path."))
+    ]
+    if not issues:
+        return
+    lines = []
+    for issue in issues[:12]:
+        where = f" {issue['path']}" if issue.get("path") else ""
+        lines.append(f"{issue.get('code')}{where}: {issue.get('message')}")
+    raise PersianEditWorkspaceError(
+        "[EDIT_PRECHECK] the draft has deterministic defects; refused before candidate "
+        "consumption (no convergence budget spent). Fix and re-stage:\n  - "
+        + "\n  - ".join(lines)
+    )
+
+
 def stage_workflow_edit_draft(
     project_id: str,
     attempt_id: str,
@@ -4331,6 +4372,7 @@ def stage_workflow_edit_draft(
         raise PersianVideoWorkflowError(
             "convergence workspace requires human editorial revision before more candidates can be staged"
         )
+    _refuse_cheap_preflight_defects_before_candidate(payload, decision)
     current_ids = set(str(item) for item in current_convergence.get("candidateIds") or [])
     if parent_attempt_id is None and current_ids and attempt_id not in current_ids:
         raise PersianVideoWorkflowError(

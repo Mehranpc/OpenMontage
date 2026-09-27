@@ -72,6 +72,14 @@ def _schema_valid_edit(*, recipe: str = "recipe-a") -> dict:
     shot = persian["shots"][0]
     shot["source"] = shot.pop("src")
     shot["attribution"] = "Test footage"
+    # The front door also runs the deterministic preflight layers before staging, so the
+    # fixture must satisfy the retention grammar: hook opening, resolution in the last quarter.
+    shot["endSeconds"] = 3.0
+    persian["shots"].append({
+        **shot, "id": "shot-2", "startSeconds": 3.0, "endSeconds": 6.0,
+        "visualEventId": "event-2", "narrativeRole": "resolution", "changeType": "reaction",
+        "source": "/tmp/source-2.mp4",
+    })
     return payload
 
 

@@ -87,6 +87,11 @@ SIMULTANEOUS_HOOK_MAX_SECONDS = 5.0
 MIN_ANCHOR_CHARS = 3
 
 
+#: Headroom `anchor_moments` leaves over the reading floor so a retimed end survives
+#: millisecond serialization and the browser's own float arithmetic.
+READ_FLOOR_MARGIN_SECONDS = 0.002
+
+
 @dataclass
 class TimedWord:
     """One narration word with its measured span. Mirrors the transcriber output."""
@@ -313,7 +318,11 @@ def anchor_moments(
         # moves on: reading time extends past the speech, never shortens it.
         # Under Film Type the floor is the browser's own model (#216), so a retimed
         # moment is long enough for the render, not merely for the plain estimate.
-        end = max(speech_end, start + moment.required_read_seconds(film_motion))
+        # A 2ms margin over the floor: the edit carries times on a 1ms grid and the
+        # browser recomputes the floor in its own float order, so an end derived exactly
+        # at the floor lands a hair under it after transport ("needs 4.958s, has
+        # 4.958s"). That cost a bounded edit candidate on a real run.
+        end = max(speech_end, start + moment.required_read_seconds(film_motion) + READ_FLOOR_MARGIN_SECONDS)
         bindings.append(
             AnchorBinding(
                 moment_id=moment.id,
@@ -458,6 +467,7 @@ def retime_moments(
 
 
 __all__ = [
+    "READ_FLOOR_MARGIN_SECONDS",
     "ANCHOR_LEAD_IN_SECONDS",
     "ANCHOR_HOLD_SECONDS",
     "MAX_START_DRIFT_SECONDS",

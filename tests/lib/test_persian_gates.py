@@ -68,6 +68,7 @@ from lib.persian_srt import (
     render_srt,
 )
 from lib.persian_sync import (
+    READ_FLOOR_MARGIN_SECONDS,
     ANCHOR_HOLD_SECONDS,
     ANCHOR_LEAD_IN_SECONDS,
     TimedWord,
@@ -1804,7 +1805,7 @@ class TestSyncAudit:
         )
         bindings = audit_sync(moments, words).bindings
         assert bindings[0].derived_end == pytest.approx(
-            bindings[0].derived_start + moments[0].min_read_seconds
+            bindings[0].derived_start + moments[0].min_read_seconds + READ_FLOOR_MARGIN_SECONDS
         )
 
     def test_a_rescaled_timing_set_is_refused_as_drift(self, words) -> None:
@@ -1859,7 +1860,9 @@ class TestSyncAudit:
         moments = build_moments([self._anchored_figure(startSeconds=5.0, endSeconds=9.4)])
         retimed = retime_moments(moments, words)
         assert retimed[0].start_seconds == pytest.approx(0.75)
-        assert retimed[0].end_seconds == pytest.approx(0.75 + moments[0].min_read_seconds)
+        assert retimed[0].end_seconds == pytest.approx(
+            0.75 + moments[0].min_read_seconds + READ_FLOOR_MARGIN_SECONDS
+        )
         # And the retimed set now passes its own audit.
         assert audit_sync(retimed, words).problems == []
 

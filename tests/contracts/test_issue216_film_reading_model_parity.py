@@ -127,5 +127,9 @@ def test_retime_extends_to_the_film_floor() -> None:
     ]
     plain = retime_moments([moment], words)[0]
     film = retime_moments([moment], words, film_motion=PROFILE["motion"])[0]
-    assert film.duration == pytest.approx(moment.film_min_read_seconds(PROFILE["motion"]))
+    from lib.persian_sync import READ_FLOOR_MARGIN_SECONDS
+
+    assert film.duration == pytest.approx(
+        moment.film_min_read_seconds(PROFILE["motion"]) + READ_FLOOR_MARGIN_SECONDS
+    )
     assert film.duration > plain.duration
