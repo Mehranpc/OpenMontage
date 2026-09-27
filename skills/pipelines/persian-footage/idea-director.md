@@ -7,7 +7,7 @@ downstream reads these and none of them may be decided later by inference.
 
 1. **production_mode** — `narrated` or `silent`
 2. **format** — `vertical` or `landscape`
-3. **render_runtime** — `remotion` (see below; it is presented, not assumed)
+3. **render_runtime** — `remotion`, the Persian pipeline's fixed default (see below; do not ask)
 4. **target_duration_seconds**
 5. **The one idea**, as a single Persian sentence
 6. **The visual subject** — the thing the footage is *of*
@@ -46,21 +46,26 @@ then failing wastes the user's time.
 
 ## Choosing render_runtime
 
-Per AGENT_GUIDE.md → "Present Both Composition Runtimes (HARD RULE)", do not decide
-this silently. Both runtimes are installed and working on this machine, so this is a
-real choice with a real answer, not a formality.
+**Remotion is the Persian pipeline's default engine. Do not ask the user to choose.**
+Asking every run stalled production on a question with one real answer (Mehran Shabani,
+2026-09-27). This is the pipeline-locked case of AGENT_GUIDE.md → "Present Both
+Composition Runtimes (HARD RULE)": HyperFrames is not a viable alternative here, so there
+is nothing to present, only a constraint to state.
 
-Lock `render_runtime = "remotion"`, and say why in one sentence:
+Lock `render_runtime = "remotion"` and say so in one informational line in the idea summary,
+not as a question:
 
-> «HyperFrames هم روی این ماشین کار می‌کند، ولی لایهٔ متن فارسی این پایپ‌لاین — اندازه‌گیری
-> با فونت استعداد، شکستن خط با برنامه‌ریزی پویا، و کنترل جهت راست‌به‌چپ — به‌صورت
-> کامپوننت‌های Remotion نوشته شده. اجرای HyperFrames یعنی نوشتن دوبارهٔ همان لایه، بدون
-> این‌که خروجی بهتری بدهد. با Remotion پیش می‌روم — مشکلی نیست؟»
+> «موتور رندر: Remotion (پیش‌فرض پایپ‌لاین فارسی؛ لایهٔ متن فارسی فقط برای Remotion نوشته شده).»
 
-Record a `render_runtime_selection` decision in `decision_log` with both runtimes in
-`options_considered` and hyperframes `rejected_because: "the Persian text layer
-(Estedad measurement, DP line breaker, RTL containers) exists only as Remotion
-components; no HyperFrames skill provides bidi or ZWNJ-aware line breaking"`.
+Still record a `render_runtime_selection` decision in `decision_log` with both runtimes in
+`options_considered`, the user's approval source as `pipeline_default`, and hyperframes
+`rejected_because: "the Persian text layer (Estedad measurement, DP line breaker, RTL
+containers) exists only as Remotion components; no HyperFrames skill provides bidi or
+ZWNJ-aware line breaking"`. The audit trail keeps the alternative; the conversation does
+not repeat it.
+
+Switch only when the user explicitly asks for HyperFrames in their request. That is a
+capability-extension task (see below), not something to improvise inside a production run.
 
 That rejection is about the current state of the code, not a limitation of
 HyperFrames. `src/persian/layout.ts` and `text.ts` were written runtime-agnostic —
@@ -197,12 +202,22 @@ is measured against: a beat that does not serve it does not belong.
 }
 ```
 
+## Music (default: Pixabay, do not ask)
+
+If the user's request names a specific track, gives a link or a file path, or asks for no
+music, follow it. Otherwise **do not ask**: the asset stage selects an instrumental bed from
+`pixabay_music` by default (licensed for monetized social media, no key needed). Set
+`music_plan` from the video's tone (for example `"ambient, low, no percussion"`) and move on.
+A user-supplied track still needs a complete licence record at the asset stage, and "no
+music" still needs a recorded `omitMusicReason`.
+
 ## Before you checkpoint
 
 - Every one of the eight decisions is present and explicit.
 - `visual_subject` names something a camera can point at.
-- `render_runtime` was **presented** to the user, not assumed, and a
-  `render_runtime_selection` decision is in the `decision_log` with both options.
+- `render_runtime` is `remotion`, stated (not asked), and a `render_runtime_selection`
+  decision is in the `decision_log` with both options and `pipeline_default` as its source.
+- Music follows the default below: Pixabay unless the user named or supplied a track.
 - Beat durations sum to within 10% of the target.
 - Typographic beats are within budget.
 - The core idea passes the orthography gate — run it through

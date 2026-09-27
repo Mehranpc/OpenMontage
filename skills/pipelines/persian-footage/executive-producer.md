@@ -237,9 +237,11 @@ so a Persian query returns either nothing or random results. Translating the
 
 ## Runtime lock
 
-`render_runtime: "remotion"`, presented to the user at `idea` and carried through
-`edit`. Presented, not assumed — AGENT_GUIDE.md's "Present Both Composition Runtimes"
-rule applies here as everywhere, and both runtimes work on this machine.
+`render_runtime: "remotion"`, the Persian pipeline's default: stated at `idea`, not asked,
+and carried through `edit`. This is the pipeline-locked case of AGENT_GUIDE.md's "Present Both
+Composition Runtimes" rule. The `render_runtime_selection` decision still lists both runtimes;
+the user is not asked to choose unless they asked for HyperFrames themselves. Music likewise
+defaults to `pixabay_music` without asking unless the user named or supplied a track.
 
 The reason Remotion wins is specific to the code that exists, not to the runtimes. The
 Persian text layer lives in `remotion-composer/src/persian/`: Estedad loaded through

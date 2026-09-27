@@ -22,4 +22,4 @@ The provider seam is durable and policy-owned. Use `alignment-plan/start/status/
 
 ## Music
 
-Pixabay music is the approved provider. Select instrumental audio at least as long as delivery. Persist path, source, licence name/URL/download date, attribution, and Content-ID risk. Narrated mode requires music or explicit deliberate silence. Unknown risk needs acknowledgement; high risk is refused.
+Pixabay music is the approved provider and the default; do not ask the user unless their request named or supplied a track. Select instrumental audio at least as long as delivery. Persist path, source, licence name/URL/download date, attribution, and Content-ID risk. Narrated mode requires music or explicit deliberate silence. Unknown risk needs acknowledgement; high risk is refused.
