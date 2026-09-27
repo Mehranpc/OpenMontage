@@ -522,6 +522,67 @@ def _hook_shot_complexity_diagnostics(persian: dict[str, Any]) -> list[ContractD
         )
     return diagnostics
 
+def _moment_pacing_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnostic]:
+    """Film Type reading floors, checked before a candidate is spent (#271).
+
+    Compose runs this same `audit_moments` only inside the browser pass. The
+    first-date run's draft hand-set three moment ends below their reading floor;
+    each would have cost a convergence candidate to discover. When word timings
+    are present, the message names the end `retime_moments` derives, which is the
+    one honest remedy.
+    """
+    design = persian.get("design") if isinstance(persian.get("design"), dict) else {}
+    if str(design.get("profile") or "") != "film-type":
+        return []
+    authored = persian.get("moments")
+    if not isinstance(authored, list) or not authored:
+        return []
+    try:
+        duration = float(persian.get("durationSeconds") or 0.0)
+    except (TypeError, ValueError):
+        return []
+    if duration <= 0:
+        return []
+    from lib.persian_moments import audit_moments, build_moments
+    from lib.persian_scenes import _film_motion
+
+    try:
+        moments = build_moments(authored)
+    except (ValueError, TypeError, KeyError):
+        return []  # malformed moments are the schema layer's refusal
+    motion = _film_motion()
+    audit = audit_moments(
+        moments, duration_seconds=duration, v2=True,
+        adaptive_pixel_typography=True, simultaneous_hook_typography=True,
+        film_motion=motion,
+    )
+    if not audit.problems:
+        return []
+    derived: dict[str, float] = {}
+    words = (persian.get("audio") or {}).get("wordTimings") if isinstance(persian.get("audio"), dict) else None
+    if words:
+        try:
+            from lib.persian_sync import TimedWord, anchor_moments
+
+            for moment, binding in zip(
+                moments, anchor_moments(moments, TimedWord.from_dicts(words), film_motion=motion)
+            ):
+                if binding.located and binding.derived_end is not None:
+                    derived[moment.id] = float(binding.derived_end)
+        except (ValueError, TypeError, KeyError):
+            derived = {}
+    diagnostics: list[ContractDiagnostic] = []
+    for problem in audit.problems:
+        moment_id = problem.split(":", 1)[0].strip()
+        hint = "re-derive moment timings with lib.persian_sync.retime_moments, or shorten the copy"
+        if moment_id in derived:
+            hint = (
+                f"retime_moments derives endSeconds={derived[moment_id]:.3f} for {moment_id}; "
+                "re-derive rather than hand-set, or shorten the copy"
+            )
+        diagnostics.append(ContractDiagnostic("moments.pacing", "/persian/moments", problem, hint))
+    return diagnostics
+
 def collect_persian_edit_diagnostics(
     edit: dict[str, Any], *, base_dir: Path | None = None
 ) -> list[ContractDiagnostic]:
@@ -531,6 +592,7 @@ def collect_persian_edit_diagnostics(
     if isinstance(persian, dict):
         diagnostics.extend(_region_diagnostics(persian))
         diagnostics.extend(_hook_shot_complexity_diagnostics(persian))
+        diagnostics.extend(_moment_pacing_diagnostics(persian))
         diagnostics.extend(_shot_source_window_diagnostics(persian))
         diagnostics.extend(_frame_grid_diagnostics(persian))
         diagnostics.extend(_music_diagnostics(persian, base_dir=base_dir))
