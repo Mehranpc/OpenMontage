@@ -7,6 +7,7 @@ and runtime-relative writes cannot silently fall back to the repository root.
 from __future__ import annotations
 
 import os
+import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Mapping
@@ -84,6 +85,33 @@ def workspace_file(
     return target
 
 
+
+# Longest child path Chromium appends under TMPDIR:
+# "/com.google.Chrome.XXXXXX/SingletonSocket" is 41 bytes; keep a margin.
+_SOCKET_SUFFIX_BYTES = 48
+_SOCKET_PATH_LIMIT = 104
+
+
+def _short_temp_alias(project: Path, temp: Path) -> Path:
+    """`temp` itself when short enough for Unix sockets, else a short symlink to it."""
+    if len(str(temp).encode("utf-8")) + _SOCKET_SUFFIX_BYTES <= _SOCKET_PATH_LIMIT:
+        return temp
+    import hashlib
+
+    base = Path("/tmp") if Path("/tmp").is_dir() else Path(tempfile.gettempdir())
+    alias = base / f"om-{hashlib.sha256(str(project).encode('utf-8')).hexdigest()[:12]}"
+    try:
+        if alias.is_symlink():
+            if Path(os.readlink(alias)) == temp:
+                return alias
+            alias.unlink()
+        elif alias.exists():
+            return temp  # a foreign entry owns the name; never clobber it
+        alias.symlink_to(temp, target_is_directory=True)
+    except OSError:
+        return temp
+    return alias
+
 def project_execution_environment(
     project_dir: Path, *, base: Mapping[str, str] | None = None
 ) -> dict[str, str]:
@@ -96,10 +124,15 @@ def project_execution_environment(
     env[PROJECT_ENV] = str(project)
     env[WORKSPACE_ENV] = str(workspace)
     env[SCRATCH_ENV] = str(temp)
-    # tempfile-aware children honor these on a fresh process.
-    env["TMPDIR"] = str(temp)
-    env["TMP"] = str(temp)
-    env["TEMP"] = str(temp)
+    # tempfile-aware children honor these on a fresh process. Chromium puts its
+    # process-singleton Unix socket under TMPDIR, and a socket path is capped at
+    # 104 (macOS) / 108 (Linux) bytes, so a deep project path made the browser abort
+    # at launch (#277). Keep the bytes in the project, but hand children a short
+    # stable alias for the same directory.
+    short = _short_temp_alias(project, temp)
+    env["TMPDIR"] = str(short)
+    env["TMP"] = str(short)
+    env["TEMP"] = str(short)
     env["PWD"] = str(runtime)
     return env
 
