@@ -217,6 +217,31 @@ def render_independent_review_issues(
     return issues
 
 
+
+def _derived_speech_music_gain(narration: Any, music: Any) -> float:
+    """Speech-time music gain from the measured loudness policy (#267).
+
+    Preflight evaluates an edit without `musicDuckVolume` against the gain the
+    loudness policy derives from the measured narration and music. Rendering the
+    fixed default instead shipped a mix preflight never judged: a -8 LUFS bed over
+    -25 LUFS speech came out about 11 LU louder than the voice. Render the
+    judged gain, or refuse when the sources cannot be measured.
+    """
+    from lib.persian_music import derive_loudness_aware_mix, measure_integrated_loudness
+
+    if not narration:
+        return DEFAULT_MUSIC_DUCK_VOLUME
+    plan = derive_loudness_aware_mix(
+        narration_lufs=measure_integrated_loudness(Path(str(narration))),
+        music_lufs=measure_integrated_loudness(Path(str(music))),
+    )
+    if not plan.get("passed"):
+        raise ValueError(
+            "derived speech-time music gain fails the loudness policy: "
+            f"{plan.get('reason')} at {plan.get('predictedSeparationLu')} LU"
+        )
+    return float(plan["speechMusicGain"])
+
 class PersianCompose(BaseTool):
     """Render a Persian (RTL) footage video from edit_decisions."""
 
@@ -852,7 +877,10 @@ class PersianCompose(BaseTool):
             audio_props["music"] = self._stage(Path(track.path), staging_dir, run_id)
             audio_props.setdefault("musicFlatVolume", DEFAULT_MUSIC_FLAT_VOLUME)
             audio_props.setdefault("musicBaseVolume", DEFAULT_MUSIC_BASE_VOLUME)
-            audio_props.setdefault("musicDuckVolume", DEFAULT_MUSIC_DUCK_VOLUME)
+            if "musicDuckVolume" not in audio_props:
+                audio_props["musicDuckVolume"] = _derived_speech_music_gain(
+                    audio.get("narration"), track.path
+                )
             audio_props.setdefault("musicFadeSeconds", DEFAULT_MUSIC_FADE_SECONDS)
         music_audit = audit_music(
             track=track,
