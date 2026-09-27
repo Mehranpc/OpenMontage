@@ -292,29 +292,8 @@ class Rehearsal:
         self.complete("review_subject_regions", _region_evidence(proposed))
 
     def select_hook(self) -> None:
-        # No CLI front door exists for automatic hook selection yet, so the production
-        # agent calls the library directly; the rehearsal does the same (tracked in #260).
         hook = self.decision("hook-selection.json")
-        code = (
-            "import json,sys; from pathlib import Path;"
-            "from lib.persian_video_workflow import record_hook_selection;"
-            "h=json.loads(sys.argv[2]);"
-            "record_hook_selection(sys.argv[1], selected_text=h['text'], hook_family=h['hook_family'],"
-            " candidates=h['candidates'], score=h['score'], content_match_score=h['content_match_score'],"
-            " evidence_checked=h['evidence_checked'], unsupported_claims_rejected=h['unsupported_claims_rejected'],"
-            " rationale=h['rationale'])"
-        )
-        started = time.monotonic()
-        completed = subprocess.run(
-            [sys.executable, "-c", code, PROJECT_ID, json.dumps(hook, ensure_ascii=False)],
-            cwd=ROOT, env=self.env, capture_output=True, text=True,
-        )
-        elapsed = time.monotonic() - started
-        ok = completed.returncode == 0
-        self.steps.append({"step": "record_hook_selection", "seconds": round(elapsed, 3), "ok": ok})
-        self._log(f"{'ok ' if ok else 'ERR'} {elapsed:7.2f}s  record_hook_selection")
-        if not ok:
-            raise RehearsalFailure("record_hook_selection", completed.stderr.strip()[-3000:])
+        self.wf("hook-select", "hook-select", PROJECT_ID, "--json", self.write("hook-selection.json", hook))
 
     def edit(self) -> None:
         if not self.user_owns_hook:
@@ -337,8 +316,66 @@ class Rehearsal:
         self.wf("complete no_copy_preflight", "complete", PROJECT_ID, "--phase", "no_copy_preflight",
                 "--evidence-json", self.write("evidence-no_copy_preflight.json", {"attempt_id": "base"}))
 
+    def _media(self, phase: str, category: str) -> None:
+        self.run(
+            f"run-kernel {phase}", "lib.persian_run_kernel", "run", PROJECT_ID, f"rehearsal-{phase}",
+            "--phase", phase, "--idempotence-key", f"rehearsal-{phase}",
+            "--telemetry-category", category, "--timeout-seconds", "1200",
+            "--", sys.executable, "-m", "lib.persian_media_job", PROJECT_ID, "--phase", phase,
+        )
+
+    def _review_helper(self, kind: str) -> dict[str, Any]:
+        """Assemble review evidence the way the agent does, bound to the real bytes.
+
+        Judgement fields (hook strength, cold-viewer reading) are the recorded
+        agent's; every digest, probe, frame and audio measurement is taken from the
+        rendered MP4 by the production helpers.
+        """
+        code = (
+            "import json,sys; from scripts.persian_rehearsal_reviews import build;"
+            "print(json.dumps(build(sys.argv[1], sys.argv[2], sys.argv[3]), ensure_ascii=False))"
+        )
+        started = time.monotonic()
+        completed = subprocess.run(
+            [sys.executable, "-c", code, str(self.project), kind, str(self.decisions)],
+            cwd=ROOT, env=self.env, capture_output=True, text=True,
+        )
+        elapsed = time.monotonic() - started
+        ok = completed.returncode == 0
+        self.steps.append({"step": f"review {kind}", "seconds": round(elapsed, 3), "ok": ok})
+        self._log(f"{'ok ' if ok else 'ERR'} {elapsed:7.2f}s  review {kind}")
+        if not ok:
+            raise RehearsalFailure(f"review {kind}", completed.stderr.strip()[-3000:])
+        return json.loads(completed.stdout)
+
+    def render(self) -> None:
+        self._media("render_opening_candidate", "browser_render_execution")
+        self.wf("attempt opening_review", "attempt", PROJECT_ID, "--phase", "opening_review")
+        evidence = self._review_helper("opening")
+        self.wf("complete opening_review", "complete", PROJECT_ID, "--phase", "opening_review",
+                "--evidence-json", self.write("evidence-opening_review.json", evidence))
+        self._media("render_final_candidate", "browser_render_execution")
+        self._media("master_final_candidate", "machine_local_execution")
+
+    def review(self) -> None:
+        self.wf("attempt final_review", "attempt", PROJECT_ID, "--phase", "final_review")
+        paths = self._review_helper("final")
+        self.run(
+            "delivery-quality stage-candidate", "lib.persian_delivery_quality", "stage-candidate",
+            PROJECT_ID, "--render-report-json", paths["render_report_path"],
+            "--final-review-json", paths["final_review_path"],
+        )
+        self.wf("complete final_review", "complete", PROJECT_ID, "--phase", "final_review",
+                "--evidence-json", self.write("evidence-final_review.json",
+                                              {"final_review_path": paths["final_review_path"]}))
+        self.wf("attempt awaiting_human", "attempt", PROJECT_ID, "--phase", "awaiting_human")
+        self.wf("complete awaiting_human", "complete", PROJECT_ID, "--phase", "awaiting_human")
+
     # -- driver -----------------------------------------------------------------
-    PHASES = ("bootstrap", "prepare_inputs", "align", "plan", "acquire", "regions", "edit")
+    PHASES = (
+        "bootstrap", "prepare_inputs", "align", "plan", "acquire", "regions", "edit",
+        "render", "review",
+    )
 
     def rehearse(self, until: str | None = None) -> dict[str, Any]:
         started = time.monotonic()
