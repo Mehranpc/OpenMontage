@@ -74,6 +74,8 @@ class Rehearsal:
             if expect_fail:
                 detail = "expected a refusal but the command succeeded"
             raise RehearsalFailure(step, detail)
+        if expect_fail:
+            return (completed.stderr or completed.stdout).strip()
         out = completed.stdout.strip()
         try:
             return json.loads(out) if out else None
@@ -119,6 +121,13 @@ class Rehearsal:
         if evidence is not None:
             args += ["--evidence-json", self.write(f"evidence-{phase}.json", evidence)]
         self.wf(f"complete {phase}", *args)
+
+    def _assert_precheck_named(self, refusal: str, codes: Sequence[str]) -> None:
+        missing = [code for code in codes if code not in refusal]
+        if "[EDIT_PRECHECK]" not in refusal or missing:
+            raise RehearsalFailure(
+                "edit precheck", f"expected EDIT_PRECHECK naming {list(codes)}; missing {missing}: {refusal[-1500:]}"
+            )
 
     def status(self) -> dict[str, Any]:
         return self.wf("status", "status", PROJECT_ID, "--json")
@@ -274,10 +283,22 @@ class Rehearsal:
             hook = self.decision("hook-selection.json")["text"]
             self.wf("hook-override", "hook-override", PROJECT_ID, "--text", hook,
                     "--reason", "User owns the hook sentence at the preflight hook gate.")
+        # The recorded draft carries three deterministic defects the real run met one
+        # browser pass at a time. The precheck must name all of them at once, before
+        # any candidate is spent (#267, #269, #271); then the agent applies the
+        # remedies each diagnostic names.
+        refusal = self.wf("edit-stage base (expect precheck refusal)", "edit-stage", PROJECT_ID,
+                          "base", "--json", draft, expect_fail=True)
+        self._assert_precheck_named(refusal, ("moments.pacing", "music.mix_too_loud"))
+        draft = self.write("edit-decisions.json", _apply_named_remedies(
+            self.decision("edit-decisions-draft.json"), self.decision("region-annotations.json"),
+        ))
         self.wf("edit-stage base", "edit-stage", PROJECT_ID, "base", "--json", draft)
         self.wf("edit-preflight base", "edit-preflight", PROJECT_ID, "base")
         self.wf("edit-promote base", "edit-promote", PROJECT_ID, "base")
-        self.complete("no_copy_preflight", {"attempt_id": "base"})
+        self.wf("attempt no_copy_preflight", "attempt", PROJECT_ID, "--phase", "no_copy_preflight")
+        self.wf("complete no_copy_preflight", "complete", PROJECT_ID, "--phase", "no_copy_preflight",
+                "--evidence-json", self.write("evidence-no_copy_preflight.json", {"attempt_id": "base"}))
 
     # -- driver -----------------------------------------------------------------
     PHASES = ("bootstrap", "prepare_inputs", "align", "plan", "acquire", "regions", "edit")
@@ -306,6 +327,38 @@ class Rehearsal:
             "status": (final or {}).get("status"),
             "steps": self.steps,
         }
+
+
+def _apply_named_remedies(draft: dict[str, Any], annotations: dict[str, Any]) -> dict[str, Any]:
+    """What the recorded agent does with the precheck's named remedies."""
+    from lib.persian_moments import build_moments
+    from lib.persian_scenes import _film_motion
+    from lib.persian_sync import retime_moments_from_dicts
+
+    persian = draft["persian"]
+    audio = persian["audio"]
+    # music.mix_too_loud: let the loudness policy derive the speech-time gain (#267).
+    audio.pop("musicDuckVolume", None)
+    audio.pop("musicBaseVolume", None)
+    # moments.pacing: re-derive timings from the narration, never hand-set (#271).
+    retimed = retime_moments_from_dicts(
+        build_moments(persian["moments"]), audio["wordTimings"],
+        simultaneous_hook_typography=True, film_motion=_film_motion(),
+    )
+    derived = {moment.id: moment.to_props() for moment in retimed}
+    for moment in persian["moments"]:
+        props = derived.get(moment["id"])
+        if props and moment.get("kind") != "hook":
+            moment["startSeconds"], moment["endSeconds"] = props["startSeconds"], props["endSeconds"]
+    # visualComplexity is carried from the region review, not invented here (#269).
+    reviewed = {
+        str(shot["shot_id"]): shot.get("visual_complexity")
+        for shot in annotations.get("shots") or [] if shot.get("visual_complexity")
+    }
+    for shot in persian["shots"]:
+        if shot.get("id") in reviewed:
+            shot["visualComplexity"] = reviewed[shot["id"]]
+    return draft
 
 
 def _region_evidence(proposed: Any) -> dict[str, Any]:

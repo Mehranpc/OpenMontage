@@ -58,8 +58,7 @@
     "endSeconds": 5.16,
     "semanticRole": "curiosity_gap",
     "semanticDirection": "question_then_evidence",
-    "openingSemanticMatch": true,
-    "visualComplexity": "simple"
+    "openingSemanticMatch": true
    },
    {
     "id": "shot-2",
@@ -1293,7 +1292,9 @@
      "end": 62.28
     }
    ],
-   "musicFadeSeconds": 1.5
+   "musicFadeSeconds": 1.5,
+   "musicBaseVolume": 0.22,
+   "musicDuckVolume": 0.09
   },
   "watermark": {
    "persianText": "طریقت تسلیم",
