@@ -1,0 +1,134 @@
+[
+ {
+  "id": "m-hook",
+  "kind": "hook",
+  "startSeconds": 0.0,
+  "endSeconds": 5.0,
+  "segments": [
+   {
+    "role": "hero",
+    "text": "پیام بدی یا صبر کنی؟"
+   },
+   {
+    "role": "tail",
+    "text": "بعد از یه قرار خوب"
+   }
+  ],
+  "anchorText": "تا حالا شده بعد از یه قرار خوب"
+ },
+ {
+  "id": "m-figure",
+  "kind": "figure",
+  "startSeconds": 15.01,
+  "endSeconds": 17.412,
+  "segments": [
+   {
+    "role": "lead",
+    "text": "مطالعه:"
+   },
+   {
+    "role": "hero",
+    "text": "۵۴۳ نفر"
+   }
+  ],
+  "anchorText": "۵۴۳ نفر"
+ },
+ {
+  "id": "m-timings",
+  "kind": "statement",
+  "startSeconds": 19.57,
+  "endSeconds": 24.111,
+  "segments": [
+   {
+    "role": "lead",
+    "text": "سه حالت"
+   },
+   {
+    "role": "hero",
+    "text": "از فوری تا دو روز بعد"
+   }
+  ],
+  "anchorText": "یا بلافاصله پیام میداد یا صبح روز بعد یا دو روز بعد"
+ },
+ {
+  "id": "m-morning",
+  "kind": "statement",
+  "startSeconds": 27.73,
+  "endSeconds": 31.43,
+  "segments": [
+   {
+    "role": "lead",
+    "text": "بیشترین تمایل"
+   },
+   {
+    "role": "hero",
+    "text": "صبح روز بعد"
+   }
+  ],
+  "anchorText": "وقتی دیده شد که پیام صبح روز بعد میرسید"
+ },
+ {
+  "id": "m-immediate",
+  "kind": "statement",
+  "startSeconds": 32.386,
+  "endSeconds": 35.15,
+  "segments": [
+   {
+    "role": "lead",
+    "text": "پیام فوری"
+   },
+   {
+    "role": "hero",
+    "text": "علاقهٔ واضح‌تر"
+   }
+  ],
+  "anchorText": "علاقه رو واضح‌تر نشون میداد"
+ },
+ {
+  "id": "m-twodays",
+  "kind": "statement",
+  "startSeconds": 39.23,
+  "endSeconds": 41.89,
+  "segments": [
+   {
+    "role": "lead",
+    "text": "دو روز صبر"
+   },
+   {
+    "role": "hero",
+    "text": "کمکی نکرد"
+   }
+  ],
+  "anchorText": "دو روز صبر کردن هم کمکی نکرد"
+ },
+ {
+  "id": "m-strategy",
+  "kind": "statement",
+  "startSeconds": 51.099,
+  "endSeconds": 56.681,
+  "segments": [
+   {
+    "role": "lead",
+    "text": "دیر پیام بده"
+   },
+   {
+    "role": "hero",
+    "text": "استراتژی خوبی نبود"
+   }
+  ],
+  "anchorText": "دیر پیام بده تا مشتاق به نظر نرسی استراتژی خیلی خوبی نبود"
+ },
+ {
+  "id": "m-cta",
+  "kind": "statement",
+  "startSeconds": 58.306,
+  "endSeconds": 62.371,
+  "segments": [
+   {
+    "role": "hero",
+    "text": "همون شب یا فردا صبح یا صبر؟"
+   }
+  ],
+  "anchorText": "همون شب پیام میدی فردا صبح یا صبر"
+ }
+]

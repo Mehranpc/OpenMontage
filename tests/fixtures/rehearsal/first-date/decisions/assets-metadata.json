@@ -1,0 +1,8 @@
+{
+ "asset_count": 11,
+ "manifest": "artifacts/asset_manifest.json",
+ "video_only": "assert_video_only passed: every asset is an mp4 clip, zero stills",
+ "manifest_audit": "audit_asset_manifest reported no problems",
+ "plan_reconciliation": "ve-5's human_presence was corrected to false and its clear region to upper_band in the replanned scene plan; ve-4/ve-8 fallback levels recorded as adjacent_metaphor with reasons.",
+ "reacquisition": "one user-authorised cycle: four events re-queried with framing-led queries, 4 candidates considered, all four re-reviewed and re-selected."
+}

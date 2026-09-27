@@ -64,7 +64,9 @@ def _project(pipeline_dir: Path, project_id: str) -> Path:
 
 
 def _factory(provider: str) -> BaseTool:
-    return PixabayMusic() if provider == "pixabay_music" else FreesoundMusic()
+    from lib.persian_rehearsal import replay_music_tool
+
+    return replay_music_tool(PixabayMusic() if provider == "pixabay_music" else FreesoundMusic())
 
 
 def _search_id(request: Mapping[str, Any]) -> str:

@@ -1,0 +1,10 @@
+{
+ "authoritative_script_sha256": "97f0f70c7caac3cb47a965a67f33db350a3e58b417a1868b93beab4e4b259782",
+ "narration_sha256": "1eaec85dad2de226885fe77fe9143e1f91f00bfbe3f8bd4f36e65ae900ccc08e",
+ "input_mode": "approved_script_with_narration",
+ "idea_checkpoint": "checkpoint_idea.json (completed)",
+ "script_checkpoint": "checkpoint_script.json (completed)",
+ "orthography_gate": "pass: every line normalize-stable, ZWNJ present, Persian digits only",
+ "break_point_gate": "pass: every line has at least one legal break point",
+ "speech_budget": "771 visible chars / 62.48s = 12.34 chars per second"
+}

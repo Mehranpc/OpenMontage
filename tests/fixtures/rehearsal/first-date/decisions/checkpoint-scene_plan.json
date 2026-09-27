@@ -1,0 +1,540 @@
+{
+ "artifacts": {
+  "scene_plan": {
+   "version": "2.0",
+   "format": "vertical",
+   "subject": "phone",
+   "target_duration_seconds": 62.48,
+   "beats": [
+    {
+     "id": "beat-1",
+     "intent_fa": "بعد از یک قرار خوب، گوشی دست آدم است و تصمیم سخت",
+     "script_line_fa": "تا حالا شده بعد از یه قرار خوب، گوشی دستت باشه و ندونی الان پیام بدی یا صبر کنی؟",
+     "duration_seconds": 5.16,
+     "typographic": false,
+     "visual_events": [
+      {
+       "id": "ve-1",
+       "duration_seconds": 5.16,
+       "narration_span": "تا حالا شده بعد از یه قرار خوب، گوشی دستت باشه و ندونی الان پیام بدی یا صبر کنی؟",
+       "intent": "تنها سؤال ویدیو را در قاب گوشی مطرح کن: پیام بدهم یا صبر کنم",
+       "subject": "woman holding a phone",
+       "action": "sitting on the edge of a bed, looking at the phone in her hand",
+       "desired_affect": "curiosity",
+       "motif": "phone in hand",
+       "visual_search_brief": "a person sitting with a phone in hand, unhurried, plain quiet background",
+       "shot_composition": "medium shot, subject lower-centre, empty wall across the upper band",
+       "human_presence": true,
+       "importance": 3,
+       "conflict_visibility": "low",
+       "fallback_level": "exact_literal",
+       "camera": "push-in",
+       "shows_subject": true,
+       "shot_scale": "medium",
+       "environment": "bedroom",
+       "queries": [
+        "woman sitting bed holding phone",
+        "phone in hand plain wall behind"
+       ],
+       "carries_moment": true,
+       "negative_space": "upper_band",
+       "moment_copy": [
+        {
+         "role": "lead",
+         "text": "بعد از یه قرار خوب"
+        },
+        {
+         "role": "hero",
+         "text": "پیام بدی یا صبر کنی؟"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "beat-2",
+     "intent_fa": "پژوهشگرها همین سؤال را آزمایش کرده‌اند",
+     "script_line_fa": "پژوهشگرا دقیقاً همین سؤال رو آزمایش کردن:",
+     "duration_seconds": 3.48,
+     "typographic": false,
+     "visual_events": [
+      {
+       "id": "ve-2",
+       "duration_seconds": 3.48,
+       "narration_span": "پژوهشگرا دقیقاً همین سؤال رو آزمایش کردن:",
+       "intent": "نشان بده این سؤال آزمایش شده است، نه حدس شخصی",
+       "subject": "hand scrolling a phone screen",
+       "action": "a hand swiping through a phone screen at a desk",
+       "desired_affect": "curiosity",
+       "motif": "screen in hand",
+       "visual_search_brief": "close-up of a hand using a phone screen at a desk",
+       "shot_composition": "close-up, phone screen fills the lower two thirds",
+       "human_presence": true,
+       "importance": 2,
+       "conflict_visibility": "none",
+       "fallback_level": "exact_literal",
+       "camera": "none",
+       "shows_subject": true,
+       "shot_scale": "close",
+       "environment": "desk",
+       "queries": [
+        "hand scrolling phone screen desk",
+        "phone screen glow close up"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "beat-3",
+     "intent_fa": "زمان اولین پیام، سؤال اصلی است",
+     "script_line_fa": "بعد از قرار اول، چه زمانی برای فرستادن اولین پیام بهتره؟",
+     "duration_seconds": 4.7,
+     "typographic": false,
+     "visual_events": [
+      {
+       "id": "ve-3",
+       "duration_seconds": 4.7,
+       "narration_span": "بعد از قرار اول، چه زمانی برای فرستادن اولین پیام بهتره؟",
+       "intent": "زمان‌بندی را به قاب بیاور: کی پیام فرستادن بهتر است",
+       "subject": "woman checking her phone",
+       "action": "checking the phone across a cafe table, cup beside it",
+       "desired_affect": "anticipation",
+       "motif": "phone on the table",
+       "visual_search_brief": "a young woman checking her phone at a cafe table",
+       "shot_composition": "medium shot across the table, phone and cup in the lower half",
+       "human_presence": true,
+       "importance": 2,
+       "conflict_visibility": "low",
+       "fallback_level": "exact_literal",
+       "camera": "pan-left",
+       "shows_subject": true,
+       "shot_scale": "medium",
+       "environment": "cafe",
+       "queries": [
+        "young woman checking phone cafe",
+        "phone on cafe table morning"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "beat-4",
+     "intent_fa": "۵۴۳ نفر یک قرار اول را تصور کردند",
+     "script_line_fa": "در این مطالعه، ۵۴۳ نفر تصور کردند یک قرار اول داشتند",
+     "duration_seconds": 4.828,
+     "typographic": false,
+     "visual_events": [
+      {
+       "id": "ve-4",
+       "duration_seconds": 4.83,
+       "narration_span": "در این مطالعه، ۵۴۳ نفر تصور کردند یک قرار اول داشتند",
+       "intent": "مقیاس مطالعه را نشان بده: جمع زیادی از آدم‌ها، نه یک نفر",
+       "subject": "a crowd of people walking",
+       "action": "many people walking along a city street in daylight",
+       "desired_affect": "curiosity",
+       "motif": "many people, one question",
+       "visual_search_brief": "a wide city street with many people walking, plain open sky above them",
+       "shot_composition": "wide shot, people in the lower two thirds, open sky in the upper band",
+       "human_presence": true,
+       "importance": 3,
+       "conflict_visibility": "none",
+       "fallback_level": "adjacent_metaphor",
+       "camera": "pan-right",
+       "shows_subject": false,
+       "shot_scale": "wide",
+       "environment": "street",
+       "queries": [
+        "many people walking street looking phones",
+        "people walking street plain sky"
+       ],
+       "carries_moment": true,
+       "negative_space": "upper_band",
+       "moment_copy": [
+        {
+         "role": "lead",
+         "text": "مطالعه:"
+        },
+        {
+         "role": "hero",
+         "text": "۵۴۳ نفر"
+        },
+        {
+         "role": "tail",
+         "text": "یک قرار اول داشتند"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "beat-5",
+     "intent_fa": "سه زمان پیشنهادی برای پیام",
+     "script_line_fa": "و بعد، طرف مقابل یا بلافاصله پیام میداد، یا صبح روز بعد، یا دو روز بعد.",
+     "duration_seconds": 5.592,
+     "typographic": false,
+     "visual_events": [
+      {
+       "id": "ve-5",
+       "duration_seconds": 5.59,
+       "narration_span": "و بعد، طرف مقابل یا بلافاصله پیام میداد، یا صبح روز بعد، یا دو روز بعد.",
+       "intent": "سه حالت را نشان بده: فوری، صبح روز بعد، دو روز بعد",
+       "subject": "hands typing a message on a phone",
+       "action": "typing and sending a message, then resting the phone on the table",
+       "desired_affect": "anticipation",
+       "motif": "the message being written",
+       "visual_search_brief": "a phone lying on a bare table with typing hands, calm uncluttered background",
+       "shot_composition": "close shot of the phone on an empty surface, space above it",
+       "human_presence": false,
+       "importance": 3,
+       "conflict_visibility": "low",
+       "fallback_level": "exact_literal",
+       "camera": "none",
+       "shows_subject": true,
+       "shot_scale": "close",
+       "environment": "cafe",
+       "queries": [
+        "phone on wooden table wide shot",
+        "phone on table minimal background"
+       ],
+       "carries_moment": true,
+       "negative_space": "upper_band",
+       "moment_copy": [
+        {
+         "role": "lead",
+         "text": "سه حالت"
+        },
+        {
+         "role": "hero",
+         "text": "فوری، صبح فردا، دو روز بعد"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "beat-6",
+     "intent_fa": "بیشترین تمایل وقتی بود که پیام صبح روز بعد می‌رسید",
+     "script_line_fa": "جالبترین نتیجه این بود که بیشترین تمایل به ادامه رابطه وقتی دیده شد که پیام صبح روز بعد میرسید.",
+     "duration_seconds": 7.32,
+     "typographic": false,
+     "visual_events": [
+      {
+       "id": "ve-6",
+       "duration_seconds": 7.32,
+       "narration_span": "جالبترین نتیجه این بود که بیشترین تمایل به ادامه رابطه وقتی دیده شد که پیام صبح روز بعد میرسید.",
+       "intent": "نتیجهٔ اصلی را نشان بده: صبح روز بعد، بهترین زمان",
+       "subject": "person in bed looking at a phone in the morning",
+       "action": "waking in soft morning light and picking up the phone beside the bed",
+       "desired_affect": "relief",
+       "motif": "morning light",
+       "visual_search_brief": "a person waking in morning light beside a phone on the bed, calm plain wall",
+       "shot_composition": "wide shot of the bed and window, empty bright wall across the upper band",
+       "human_presence": true,
+       "importance": 3,
+       "conflict_visibility": "none",
+       "fallback_level": "exact_literal",
+       "camera": "pull-out",
+       "shows_subject": true,
+       "shot_scale": "wide",
+       "environment": "bedroom",
+       "queries": [
+        "person waking morning light bedroom",
+        "phone on bed plain wall morning"
+       ],
+       "carries_moment": true,
+       "negative_space": "upper_band",
+       "moment_copy": [
+        {
+         "role": "lead",
+         "text": "بیشترین تمایل"
+        },
+        {
+         "role": "hero",
+         "text": "صبح روز بعد"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "beat-7",
+     "intent_fa": "پیام فوری علاقه را واضح‌تر نشان می‌داد",
+     "script_line_fa": "پیام فوری، علاقه رو واضحتر نشون میداد، اما فرستنده کمی نیازمندتر به نظر میرسید.",
+     "duration_seconds": 7.28,
+     "typographic": false,
+     "visual_events": [
+      {
+       "id": "ve-7",
+       "duration_seconds": 7.28,
+       "narration_span": "پیام فوری، علاقه رو واضحتر نشون میداد، اما فرستنده کمی نیازمندتر به نظر میرسید.",
+       "intent": "حالت فوری را نشان بده: علاقهٔ روشن، همراه با کمی عجله",
+       "subject": "woman smiling at her phone on a sofa",
+       "action": "reading a message and smiling, then typing back quickly",
+       "desired_affect": "distraction",
+       "motif": "glow of the screen",
+       "visual_search_brief": "a young woman on a sofa smiling at her phone, the screen lighting her face",
+       "shot_composition": "medium shot, phone glow in the lower third of the frame",
+       "human_presence": true,
+       "importance": 2,
+       "conflict_visibility": "low",
+       "fallback_level": "exact_literal",
+       "camera": "push-in",
+       "shows_subject": true,
+       "shot_scale": "medium",
+       "environment": "living room",
+       "queries": [
+        "woman smiling phone sofa plain wall",
+        "phone screen glow plain background"
+       ],
+       "carries_moment": true,
+       "negative_space": "upper_band",
+       "moment_copy": [
+        {
+         "role": "lead",
+         "text": "پیام فوری"
+        },
+        {
+         "role": "hero",
+         "text": "علاقهٔ واضحتر"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "beat-8",
+     "intent_fa": "طرف مقابل، دو روز صبر کردن",
+     "script_line_fa": "از اون طرف، دو روز صبر کردن هم کمکی نکرد؛",
+     "duration_seconds": 3.18,
+     "typographic": false,
+     "visual_events": [
+      {
+       "id": "ve-8",
+       "duration_seconds": 3.18,
+       "narration_span": "از اون طرف، دو روز صبر کردن هم کمکی نکرد؛",
+       "intent": "سکوت دو روزه را نشان بده: گوشی که روی میز مانده",
+       "subject": "phone left face-down on a table",
+       "action": "a phone lying face down on a table while the room stays still",
+       "desired_affect": "patience",
+       "motif": "the waiting phone",
+       "visual_search_brief": "a phone left face down on a kitchen table, empty chair, quiet daylight",
+       "shot_composition": "close shot of the phone on the table with the chair behind it",
+       "human_presence": false,
+       "importance": 1,
+       "conflict_visibility": "none",
+       "fallback_level": "adjacent_metaphor",
+       "camera": "none",
+       "shows_subject": false,
+       "shot_scale": "close",
+       "environment": "kitchen",
+       "queries": [
+        "phone face down table kitchen",
+        "empty chair kitchen table morning"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "beat-9",
+     "intent_fa": "دو روز صبر کردن کمکی نکرد و اعتماد را کم کرد",
+     "script_line_fa": "افراد احساس شیمی و انگیزه کمتری برای ادامه ارتباط داشتند و طرف مقابل رو کمتر قابلاعتماد میدیدند.",
+     "duration_seconds": 7.32,
+     "typographic": false,
+     "visual_events": [
+      {
+       "id": "ve-9",
+       "duration_seconds": 7.32,
+       "narration_span": "افراد احساس شیمی و انگیزه کمتری برای ادامه ارتباط داشتند و طرف مقابل رو کمتر قابلاعتماد میدیدند.",
+       "intent": "هزینهٔ انتظار را نشان بده: فاصله و بی‌قراری",
+       "subject": "man waiting alone with his phone",
+       "action": "sitting apart and glancing at the phone in his hand",
+       "desired_affect": "stress",
+       "motif": "waiting alone",
+       "visual_search_brief": "a man sitting alone at a kitchen table glancing at his phone, plain wall behind",
+       "shot_composition": "medium shot, subject to one side, plain wall filling the background",
+       "human_presence": true,
+       "importance": 2,
+       "conflict_visibility": "visible",
+       "fallback_level": "exact_literal",
+       "camera": "pan-right",
+       "shows_subject": false,
+       "shot_scale": "medium",
+       "environment": "kitchen",
+       "queries": [
+        "man sitting alone table wide shot",
+        "phone on table plain wall behind"
+       ],
+       "carries_moment": true,
+       "negative_space": "upper_band",
+       "moment_copy": [
+        {
+         "role": "lead",
+         "text": "دو روز صبر"
+        },
+        {
+         "role": "hero",
+         "text": "کمکی نکرد"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "beat-10",
+     "intent_fa": "«دیر پیام بده» استراتژی خوبی نبود",
+     "script_line_fa": "یعنی حداقل در این آزمایش، «دیر پیام بده تا مشتاق به نظر نرسی» استراتژی خیلی خوبی نبود.",
+     "duration_seconds": 7.471,
+     "typographic": false,
+     "visual_events": [
+      {
+       "id": "ve-10",
+       "duration_seconds": 7.47,
+       "narration_span": "یعنی حداقل در این آزمایش، «دیر پیام بده تا مشتاق به نظر نرسی» استراتژی خیلی خوبی نبود.",
+       "intent": "راهبرد صبر کردن را کنار بگذار: حرکت رهاشده، نه درام",
+       "subject": "person shrugging at a cafe table",
+       "action": "putting the phone down on the table and shrugging",
+       "desired_affect": "amusement",
+       "motif": "the phone set aside",
+       "visual_search_brief": "a person shrugging at a cafe table with the phone left lying on it, wide framing",
+       "shot_composition": "wide shot across the cafe table, empty space above the subject",
+       "human_presence": true,
+       "importance": 2,
+       "conflict_visibility": "low",
+       "fallback_level": "exact_literal",
+       "camera": "none",
+       "shows_subject": false,
+       "shot_scale": "wide",
+       "environment": "cafe",
+       "queries": [
+        "person at cafe table wide shot",
+        "person shrugging at cafe table"
+       ],
+       "carries_moment": true,
+       "negative_space": "upper_band",
+       "moment_copy": [
+        {
+         "role": "lead",
+         "text": "دیر پیام بده"
+        },
+        {
+         "role": "hero",
+         "text": "استراتژی خوبی نبود"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "beat-11",
+     "intent_fa": "حالا تو بگو: همون شب، فردا صبح یا صبر؟",
+     "script_line_fa": "حالا تو بگو: بعد از قرار اول، همون شب پیام میدی، فردا صبح یا صبر میکنی؟",
+     "duration_seconds": 6.149,
+     "typographic": false,
+     "visual_events": [
+      {
+       "id": "ve-11",
+       "duration_seconds": 6.15,
+       "narration_span": "حالا تو بگو: بعد از قرار اول، همون شب پیام میدی، فردا صبح یا صبر میکنی؟",
+       "intent": "سؤال را به بیننده برگردان: انتخاب او چیست",
+       "subject": "thumb hovering over the message field",
+       "action": "holding the phone close and hesitating over the send button",
+       "desired_affect": "curiosity",
+       "motif": "the unanswered question",
+       "visual_search_brief": "a phone held close in one hand, plain quiet background, the other option still open",
+       "shot_composition": "close shot of the phone in hand, uncluttered background behind it",
+       "human_presence": true,
+       "importance": 3,
+       "conflict_visibility": "low",
+       "fallback_level": "exact_literal",
+       "camera": "push-in",
+       "shows_subject": true,
+       "shot_scale": "close",
+       "environment": "bedroom",
+       "queries": [
+        "hands typing phone wide shot table",
+        "hand holding phone thumb over message"
+       ],
+       "carries_moment": true,
+       "negative_space": "upper_band",
+       "moment_copy": [
+        {
+         "role": "lead",
+         "text": "حالا تو بگو"
+        },
+        {
+         "role": "hero",
+         "text": "همون شب یا فردا صبح یا صبر؟"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "metadata": {
+    "subject": "phone",
+    "target_duration_seconds": 62.48,
+    "moment_target": 8,
+    "typographic_beat_budget": 2,
+    "typographic_beats_used": 0,
+    "narration_sha256": "1eaec85dad2de226885fe77fe9143e1f91f00bfbe3f8bd4f36e65ae900ccc08e",
+    "word_timings_ref": "artifacts/script-word-timings.json",
+    "script_sections_ref": "artifacts/script.json",
+    "plan_revision": {
+     "at": "2026-09-27",
+     "reason": "User-authorised re-acquisition: the four moment carriers whose subjects occupied their declared upper band (ve-5, ve-9, ve-10, ve-11) are re-queried for footage whose subject sits below the band, with a plain wall or wide framing named in the query."
+    }
+   }
+  }
+ },
+ "metadata": {
+  "subject": "phone",
+  "audit": {
+   "problems": [],
+   "advisories": [],
+   "subject_fraction": 0.8182,
+   "footage_beats": 11,
+   "visual_events": 11,
+   "queries_total": 22
+  },
+  "sourcing_order": [
+   "ve-1",
+   "ve-4",
+   "ve-5",
+   "ve-6",
+   "ve-11",
+   "ve-2",
+   "ve-3",
+   "ve-7",
+   "ve-9",
+   "ve-10",
+   "ve-8"
+  ],
+  "replan_note": "User-authorised re-acquisition: the four moment carriers whose subjects occupied their declared upper band (ve-5, ve-9, ve-10, ve-11) are re-queried for footage whose subject sits below the band, with a plain wall or wide framing named in the query.",
+  "plan_reconciliations": [
+   {
+    "at": "2026-09-27T17:25:33.729583+00:00",
+    "reason": "The re-acquired clips for ve-9 and ve-10 are honest adjacent reads with no phone in frame: a man alone at a table against a plain wall, and a woman absorbed in her laptop in a cafe. Their shows_subject declarations are corrected to false; the subject quota still holds (first and last events show the phone).",
+    "amendments": [
+     {
+      "visual_event_id": "ve-9",
+      "before": {
+       "shows_subject": true
+      },
+      "after": {
+       "shows_subject": false
+      }
+     },
+     {
+      "visual_event_id": "ve-10",
+      "before": {
+       "shows_subject": true
+      },
+      "after": {
+       "shows_subject": false
+      }
+     }
+    ]
+   }
+  ]
+ }
+}

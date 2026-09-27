@@ -1,0 +1,6 @@
+{
+ "provider": "pixabay_music",
+ "query": "warm minimal ambient background",
+ "min_duration": 70,
+ "max_duration": 200
+}

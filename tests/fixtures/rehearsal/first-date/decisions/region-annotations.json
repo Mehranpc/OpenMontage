@@ -1,0 +1,473 @@
+{
+ "version": "1.0",
+ "shots": [
+  {
+   "shot_id": "shot-1",
+   "observed": "hand holding a blank-screen phone against a plain textured wall; the phone and hand sit in the middle band and the wall above row 4 is empty",
+   "frames": [
+    {
+     "position": "start",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 9
+     },
+     "face_visible": false
+    },
+    {
+     "position": "middle",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 9
+     },
+     "face_visible": false
+    },
+    {
+     "position": "end",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 9
+     },
+     "face_visible": false
+    }
+   ]
+  },
+  {
+   "shot_id": "shot-2",
+   "observed": "two hands using a phone on a wooden desk, laptop and cables above them in the upper band",
+   "frames": [
+    {
+     "position": "start",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 2,
+      "x2": 10,
+      "y2": 10
+     },
+     "face_visible": false
+    },
+    {
+     "position": "middle",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 2,
+      "x2": 10,
+      "y2": 10
+     },
+     "face_visible": false
+    },
+    {
+     "position": "end",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 2,
+      "x2": 10,
+      "y2": 10
+     },
+     "face_visible": false
+    }
+   ]
+  },
+  {
+   "shot_id": "shot-3",
+   "observed": "young woman in a leather armchair checking her phone, drink on the table in front of her; her head is upper-centre with the chair filling the rest",
+   "frames": [
+    {
+     "position": "start",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 1,
+      "x2": 10,
+      "y2": 10
+     },
+     "face": {
+      "x1": 5,
+      "y1": 1,
+      "x2": 8,
+      "y2": 4
+     }
+    },
+    {
+     "position": "middle",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 1,
+      "x2": 10,
+      "y2": 10
+     },
+     "face": {
+      "x1": 5,
+      "y1": 1,
+      "x2": 8,
+      "y2": 4
+     }
+    },
+    {
+     "position": "end",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 1,
+      "x2": 10,
+      "y2": 10
+     },
+     "face": {
+      "x1": 5,
+      "y1": 1,
+      "x2": 8,
+      "y2": 4
+     }
+    }
+   ]
+  },
+  {
+   "shot_id": "shot-4",
+   "observed": "wide promenade: people walking in the middle distance with open sky filling everything above row 4",
+   "frames": [
+    {
+     "position": "start",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 10
+     },
+     "face_visible": false
+    },
+    {
+     "position": "middle",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 10
+     },
+     "face_visible": false
+    },
+    {
+     "position": "end",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 10
+     },
+     "face_visible": false
+    }
+   ]
+  },
+  {
+   "shot_id": "shot-5",
+   "observed": "a phone lying on a table with books and a glass of coffee; the objects sit in the lower left and the wall and cloth above row 4 are plain",
+   "frames": [
+    {
+     "position": "start",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 6,
+      "y2": 7
+     }
+    },
+    {
+     "position": "middle",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 6,
+      "y2": 7
+     }
+    },
+    {
+     "position": "end",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 6,
+      "y2": 7
+     }
+    }
+   ]
+  },
+  {
+   "shot_id": "shot-6",
+   "observed": "man lying in bed looking at a phone in both hands; his head and shoulders are in the middle band and the white wall above row 4 stays empty",
+   "frames": [
+    {
+     "position": "start",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 10
+     },
+     "face": {
+      "x1": 2,
+      "y1": 4,
+      "x2": 5,
+      "y2": 6
+     }
+    },
+    {
+     "position": "middle",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 10
+     },
+     "face": {
+      "x1": 2,
+      "y1": 4,
+      "x2": 5,
+      "y2": 6
+     }
+    },
+    {
+     "position": "end",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 10
+     },
+     "face": {
+      "x1": 2,
+      "y1": 4,
+      "x2": 5,
+      "y2": 6
+     }
+    }
+   ]
+  },
+  {
+   "shot_id": "shot-7",
+   "observed": "a hand holding a lit phone against a warm dark wall; the phone occupies the lower third and the wall above row 6 is bare apart from the lamp at the top edge",
+   "frames": [
+    {
+     "position": "start",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 6,
+      "x2": 10,
+      "y2": 10
+     },
+     "face_visible": false
+    },
+    {
+     "position": "middle",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 6,
+      "x2": 10,
+      "y2": 10
+     },
+     "face_visible": false
+    },
+    {
+     "position": "end",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 6,
+      "x2": 10,
+      "y2": 10
+     },
+     "face_visible": false
+    }
+   ]
+  },
+  {
+   "shot_id": "shot-8",
+   "observed": "breakfast table with tulips, glass and plates, empty chairs behind it; the objects sit from row 4 down and the wall above is empty",
+   "frames": [
+    {
+     "position": "start",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 9
+     }
+    },
+    {
+     "position": "middle",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 9
+     }
+    },
+    {
+     "position": "end",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 9
+     }
+    }
+   ]
+  },
+  {
+   "shot_id": "shot-9",
+   "observed": "man alone at a small table, seen side-on with a cup and notebook; his hands and shoulders are in the middle band, his face is out of frame and the plain blue wall fills the upper band",
+   "frames": [
+    {
+     "position": "start",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 9
+     },
+     "face_visible": false
+    },
+    {
+     "position": "middle",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 9
+     },
+     "face_visible": false
+    },
+    {
+     "position": "end",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 9
+     },
+     "face_visible": false
+    }
+   ]
+  },
+  {
+   "shot_id": "shot-10",
+   "observed": "woman seated low in a wicker chair with a laptop in a cafe, hanging lamp and plants above her; she sits below row 4 and the room fills the band above her",
+   "frames": [
+    {
+     "position": "start",
+     "priority": "hard",
+     "grid": {
+      "x1": 2,
+      "y1": 4,
+      "x2": 8,
+      "y2": 9
+     },
+     "face": {
+      "x1": 4,
+      "y1": 4,
+      "x2": 6,
+      "y2": 6
+     }
+    },
+    {
+     "position": "middle",
+     "priority": "hard",
+     "grid": {
+      "x1": 2,
+      "y1": 4,
+      "x2": 8,
+      "y2": 9
+     },
+     "face": {
+      "x1": 4,
+      "y1": 4,
+      "x2": 6,
+      "y2": 6
+     }
+    },
+    {
+     "position": "end",
+     "priority": "hard",
+     "grid": {
+      "x1": 2,
+      "y1": 4,
+      "x2": 8,
+      "y2": 9
+     },
+     "face": {
+      "x1": 4,
+      "y1": 4,
+      "x2": 6,
+      "y2": 6
+     }
+    }
+   ]
+  },
+  {
+   "shot_id": "shot-11",
+   "observed": "hands working at a cafe table with a phone lying beside them and a laptop in front; the work is in the middle band and the room above it is out of focus",
+   "frames": [
+    {
+     "position": "start",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 8
+     },
+     "face_visible": false
+    },
+    {
+     "position": "middle",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 8
+     },
+     "face_visible": false
+    },
+    {
+     "position": "end",
+     "priority": "hard",
+     "grid": {
+      "x1": 0,
+      "y1": 4,
+      "x2": 10,
+      "y2": 8
+     },
+     "face_visible": false
+    }
+   ]
+  }
+ ]
+}

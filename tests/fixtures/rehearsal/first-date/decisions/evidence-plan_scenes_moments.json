@@ -1,0 +1,23 @@
+{
+ "sourcing_order": [
+  "ve-1",
+  "ve-4",
+  "ve-5",
+  "ve-6",
+  "ve-11",
+  "ve-2",
+  "ve-3",
+  "ve-7",
+  "ve-9",
+  "ve-10",
+  "ve-8"
+ ],
+ "scene_plan_sha256": "8afa6e3f9aa1e25d1b940a0c3eec1b4f53e6bedb356ebbbf615d537382b93103",
+ "audit_problems": [],
+ "audit_advisories": [],
+ "beat_count": 11,
+ "visual_event_count": 11,
+ "moment_carriers": 8,
+ "duration_binding": "beats sum to 62.480s against the authoritative narration duration",
+ "replanned": "ve-5 declared human_presence false and negative_space upper_band against the reviewed three-phones clip"
+}

@@ -1,0 +1,217 @@
+[
+ {
+  "visual_event_id": "ve-5",
+  "stage": {
+   "discovery_id": "asset-source-2f6a6980750935a991e6",
+   "visual_event_id": "ve-5",
+   "semantic_beat_id": "beat-5",
+   "source_in_seconds": 2.99,
+   "duration_seconds": 5.59,
+   "intended_crop": {
+    "mode": "cover_9x16",
+    "x": 0.0,
+    "y": 0.0,
+    "w": 1.0,
+    "h": 1.0
+   },
+   "candidate_rank": 1,
+   "query": "phone on table minimal background",
+   "narration_span": "و بعد، طرف مقابل یا بلافاصله پیام میداد، یا صبح روز بعد، یا دو روز بعد."
+  },
+  "review": {
+   "frame_review": {
+    "start": true,
+    "middle": true,
+    "end": true,
+    "observed": "start/middle/end of the selected window: the same three phones on the same plain wall, nothing moving into the empty centre band."
+   },
+   "shows_subject": true,
+   "human_presence": false,
+   "affect_match": true,
+   "staged_stock_risk": "medium",
+   "relevance_reason": "three identical phones standing against a plain wall are literally the beat's three message timings (immediate, next morning, two days), with the subject in frame.",
+   "selection_reason": "three phones on an empty wall: the centre band stays plain so the moment copy sits clear of them, and the shot states 'three options' without narrating it.",
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x2048 source; a 9:16 cover crop trims ~6% of the height and all three phones stay inside the frame."
+   },
+   "resolution_quality": "strong"
+  },
+  "reject": {
+   "category": "semantic",
+   "reason": "superseded by a pass-1 search with a framing-led query for this event (recorded run)"
+  }
+ },
+ {
+  "visual_event_id": "ve-8",
+  "stage": {
+   "discovery_id": "asset-source-73f2a369f60522454021",
+   "visual_event_id": "ve-8",
+   "semantic_beat_id": "beat-8",
+   "source_in_seconds": 2.04,
+   "duration_seconds": 3.18,
+   "intended_crop": {
+    "mode": "cover_9x16",
+    "x": 0.0,
+    "y": 0.0,
+    "w": 1.0,
+    "h": 1.0
+   },
+   "candidate_rank": 1,
+   "query": "phone face down table kitchen",
+   "narration_span": "از اون طرف، دو روز صبر کردن هم کمکی نکرد؛"
+  },
+  "review": {
+   "frame_review": {
+    "start": true,
+    "middle": true,
+    "end": true,
+    "observed": "start/middle/end of the selected window: the same table and vase with both chairs empty, nothing entering or leaving the frame."
+   },
+   "shows_subject": false,
+   "human_presence": false,
+   "affect_match": true,
+   "staged_stock_risk": "low",
+   "relevance_reason": "the beat is «از اون طرف، دو روز صبر کردن هم کمکی نکرد»; an untouched breakfast table with two empty chairs and nobody at it is that beat's stillness. The phone is honestly absent, and this is a non-literal read.",
+   "selection_reason": "a real apartment kitchen table: tulips, glass, empty chairs, nobody in frame. It reads as a place waiting for someone and gives the film its one beat of pure object stillness before the result is named.",
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x1920 source used at full frame; no crop needed."
+   },
+   "resolution_quality": "strong"
+  },
+  "reject": {
+   "category": "editorial",
+   "reason": "same shoot and same person as ve-9's candidate (a breakfast scene in the same white room); two adjacent shots of one man in one room read as a single long take, and the clip is a person eating rather than the phone left waiting that ve-8 needs."
+  }
+ },
+ {
+  "visual_event_id": "ve-9",
+  "stage": {
+   "discovery_id": "asset-source-ee201e0d4bf37a777b05",
+   "visual_event_id": "ve-9",
+   "semantic_beat_id": "beat-9",
+   "source_in_seconds": 2.04,
+   "duration_seconds": 7.32,
+   "intended_crop": {
+    "mode": "cover_9x16",
+    "x": 0.0,
+    "y": 0.0,
+    "w": 1.0,
+    "h": 1.0
+   },
+   "candidate_rank": 1,
+   "query": "phone on table plain wall behind",
+   "narration_span": "افراد احساس شیمی و انگیزه کمتری برای ادامه ارتباط داشتند و طرف مقابل رو کمتر قابلاعتماد میدیدند."
+  },
+  "review": {
+   "frame_review": {
+    "start": true,
+    "middle": true,
+    "end": true,
+    "observed": "start/middle/end of the selected window: the same man at the table with the phone, spoon and cup; the wall behind him stays plain across the window."
+   },
+   "shows_subject": true,
+   "human_presence": true,
+   "affect_match": true,
+   "staged_stock_risk": "low",
+   "relevance_reason": "the beat is 'two days of waiting helped nothing'; a man alone at a table with his phone, eating without looking up, is that beat without staging a breakdown.",
+   "selection_reason": "man alone at a white table with a phone and a cup, plain pale wall behind and the upper band clear. The affect is deliberately muted — absorbed and alone rather than visibly upset — which is what 'nothing came of it' looks like; recorded as a read, not an accident.",
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x2048 source; a 9:16 cover crop trims ~6% of the height and keeps the man and the wall above him."
+   },
+   "resolution_quality": "strong"
+  },
+  "reject": {
+   "category": "semantic",
+   "reason": "superseded by a pass-1 search with a framing-led query for this event (recorded run)"
+  }
+ },
+ {
+  "visual_event_id": "ve-10",
+  "stage": {
+   "discovery_id": "asset-source-0a426a28a056de3fc369",
+   "visual_event_id": "ve-10",
+   "semantic_beat_id": "beat-10",
+   "source_in_seconds": 1.0,
+   "duration_seconds": 7.47,
+   "intended_crop": {
+    "mode": "cover_9x16",
+    "x": 0.0,
+    "y": 0.0,
+    "w": 1.0,
+    "h": 1.0
+   },
+   "candidate_rank": 1,
+   "query": "phone left on cafe table plain",
+   "narration_span": "یعنی حداقل در این آزمایش، «دیر پیام بده تا مشتاق به نظر نرسی» استراتژی خیلی خوبی نبود."
+  },
+  "review": {
+   "frame_review": {
+    "start": true,
+    "middle": true,
+    "end": true,
+    "observed": "start/middle/end of the selected window: looking at the phone, then the phone on the table, then leaning back with clasped hands; same man, same table throughout."
+   },
+   "shows_subject": true,
+   "human_presence": true,
+   "affect_match": true,
+   "staged_stock_risk": "low",
+   "relevance_reason": "the beat says «دیر پیام بده» was not a good strategy; a man who reads his phone, puts it down and sits back with his hands clasped enacts exactly that verdict.",
+   "selection_reason": "one continuous action across the window — phone read, phone set on the table, then sitting back — so the shot argues the beat instead of illustrating it. The dark cafe background leaves the upper band clean for type.",
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x1920 source used at full frame; no crop needed."
+   },
+   "resolution_quality": "strong"
+  },
+  "reject": {
+   "category": "editorial",
+   "reason": "the cafe-table clip is a child in a pink jumper scrolling a phone; narratively wrong for a dating subject and misleading beside «دیر پیام بده تا مشتاق به نظر نرسی»."
+  }
+ },
+ {
+  "visual_event_id": "ve-11",
+  "stage": {
+   "discovery_id": "asset-source-4ecbf6866757d8f8cfcb",
+   "visual_event_id": "ve-11",
+   "semantic_beat_id": "beat-11",
+   "source_in_seconds": 1.0,
+   "duration_seconds": 6.15,
+   "intended_crop": {
+    "mode": "cover_9x16",
+    "x": 0.0,
+    "y": 0.0,
+    "w": 1.0,
+    "h": 1.0
+   },
+   "candidate_rank": 1,
+   "query": "phone held close plain background",
+   "narration_span": "حالا تو بگو: بعد از قرار اول، همون شب پیام میدی، فردا صبح یا صبر میکنی؟"
+  },
+  "review": {
+   "frame_review": {
+    "start": true,
+    "middle": true,
+    "end": true,
+    "observed": "start/middle/end of the selected window: the same two hands and phone, the message field and keyboard unchanged, the thumb moving over the keys."
+   },
+   "shows_subject": true,
+   "human_presence": true,
+   "affect_match": true,
+   "staged_stock_risk": "medium",
+   "relevance_reason": "the closing question asks what the viewer would do; two hands composing a message over a keyboard is the answer being typed.",
+   "selection_reason": "hands holding a phone on a live message thread with an unsent line under the keyboard; the phone and the act of writing are unmistakable. The interface text is small and out of focus at delivery size.",
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x2048 source; a 9:16 cover crop trims ~6% of the height and keeps the phone whole in the centre."
+   },
+   "resolution_quality": "strong"
+  },
+  "reject": {
+   "category": "technical",
+   "reason": "green-screen chroma plate: the phone screen is solid green, a production artifact rather than delivered footage."
+  }
+ }
+]

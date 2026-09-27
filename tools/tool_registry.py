@@ -158,6 +158,10 @@ class ToolRegistry:
         if tool is None:
             self.ensure_discovered()
             tool = self._tools.get(name)
+        if tool is not None and name == "transcriber":
+            from lib.persian_rehearsal import replay_transcriber
+
+            tool = replay_transcriber(tool)
         return tool
 
     def list_all(self) -> list[str]:

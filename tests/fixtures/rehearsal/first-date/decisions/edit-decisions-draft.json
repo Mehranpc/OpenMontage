@@ -1,0 +1,1394 @@
+{
+ "version": "1.0",
+ "render_runtime": "remotion",
+ "renderer_family": "persian-footage",
+ "composition_mode": "templated",
+ "audio": {
+  "narration": {
+   "segments": [
+    {
+     "asset_id": "assets/audio/narration.mp3",
+     "start_seconds": 0.0,
+     "end_seconds": 62.48
+    }
+   ]
+  }
+ },
+ "music": {
+  "path": "{project}/assets/music/bed.mp3",
+  "volume_db": -18
+ },
+ "persian": {
+  "design": {
+   "version": 2,
+   "profile": "film-type",
+   "seed": "first-date-message-timing-film-type-01"
+  },
+  "format": "vertical",
+  "durationSeconds": 62.48,
+  "platformTarget": "instagram-reels",
+  "captionMode": "hybrid",
+  "shots": [
+   {
+    "id": "shot-1",
+    "semanticBeatId": "beat-1",
+    "visualEventId": "ve-1",
+    "transitionIn": "cut",
+    "changeType": "establish",
+    "narrativeRole": "hook",
+    "humanPresence": true,
+    "showsSubject": true,
+    "camera": "push-in",
+    "selectionReason": "hand holding a phone upright against a large plain light wall; the empty wall fills the whole upper band the hook copy is placed on, and the screen is blank rather than a staged app.",
+    "source": "{project}/assets/clips/pexels_9305509.mp4",
+    "sourceInSeconds": 1.6,
+    "attribution": "Video by Monstera Production on Pexels",
+    "avoidRegions": [
+     {
+      "endSeconds": 5.159,
+      "h": 0.5,
+      "priority": "hard",
+      "startSeconds": 0.0,
+      "w": 1.0,
+      "x": 0.0,
+      "y": 0.4
+     }
+    ],
+    "startSeconds": 0.0,
+    "endSeconds": 5.16,
+    "semanticRole": "curiosity_gap",
+    "semanticDirection": "question_then_evidence",
+    "openingSemanticMatch": true
+   },
+   {
+    "id": "shot-2",
+    "semanticBeatId": "beat-2",
+    "visualEventId": "ve-2",
+    "transitionIn": "cut",
+    "changeType": "detail",
+    "narrativeRole": "exposition",
+    "humanPresence": true,
+    "showsSubject": true,
+    "camera": "none",
+    "selectionReason": "close view of hands on a phone over a wooden desk; the subject is unmistakable and the scene is a real desk, not a medical or academic cliché.",
+    "source": "{project}/assets/clips/pexels_10374885.mp4",
+    "sourceInSeconds": 1.07,
+    "attribution": "Video by RDNE Stock project on Pexels",
+    "avoidRegions": [
+     {
+      "endSeconds": 8.639000000000001,
+      "h": 0.8,
+      "priority": "hard",
+      "startSeconds": 5.16,
+      "w": 1.0,
+      "x": 0.0,
+      "y": 0.2
+     }
+    ],
+    "startSeconds": 5.16,
+    "endSeconds": 8.64
+   },
+   {
+    "id": "shot-3",
+    "semanticBeatId": "beat-3",
+    "visualEventId": "ve-3",
+    "transitionIn": "cut",
+    "changeType": "action",
+    "narrativeRole": "exposition",
+    "humanPresence": true,
+    "showsSubject": true,
+    "camera": "pan-left",
+    "selectionReason": "an everyday cafe scene with real depth and warm daylight; the phone is clearly in frame and the person is genuinely looking at it rather than posing.",
+    "source": "{project}/assets/clips/pexels_7817075.mp4",
+    "sourceInSeconds": 1.2,
+    "attribution": "Video by George Pak on Pexels",
+    "avoidRegions": [
+     {
+      "endSeconds": 13.339,
+      "h": 0.9,
+      "priority": "hard",
+      "startSeconds": 8.64,
+      "w": 1.0,
+      "x": 0.0,
+      "y": 0.1
+     },
+     {
+      "endSeconds": 13.339,
+      "h": 0.3,
+      "priority": "hard",
+      "startSeconds": 8.64,
+      "w": 0.3,
+      "x": 0.5,
+      "y": 0.1
+     }
+    ],
+    "startSeconds": 8.64,
+    "endSeconds": 13.34
+   },
+   {
+    "id": "shot-4",
+    "semanticBeatId": "beat-4",
+    "visualEventId": "ve-4",
+    "transitionIn": "cut",
+    "changeType": "scale_change",
+    "narrativeRole": "exposition",
+    "humanPresence": true,
+    "showsSubject": false,
+    "camera": "pan-right",
+    "selectionReason": "wide shot of many people walking below a large plain sky; the empty sky fills the upper band so the study's figure can be set in type. This is the plan's declared non-subject beat (shows_subject false), and it is the only one.",
+    "source": "{project}/assets/clips/pexels_36257136.mp4",
+    "sourceInSeconds": 1.4,
+    "attribution": "Video by Oguzcan Culla on Pexels",
+    "avoidRegions": [
+     {
+      "endSeconds": 18.166999999999998,
+      "h": 0.6,
+      "priority": "hard",
+      "startSeconds": 13.34,
+      "w": 1.0,
+      "x": 0.0,
+      "y": 0.4
+     }
+    ],
+    "startSeconds": 13.34,
+    "endSeconds": 18.168
+   },
+   {
+    "id": "shot-5",
+    "semanticBeatId": "beat-5",
+    "visualEventId": "ve-5",
+    "transitionIn": "cut",
+    "changeType": "detail",
+    "narrativeRole": "exposition",
+    "humanPresence": false,
+    "showsSubject": true,
+    "camera": "none",
+    "selectionReason": "a phone on a wooden table in a real room, the wall and cloth above and behind it empty across the whole upper band; the phone sits in the lower left so the moment can be set above it.",
+    "source": "{project}/assets/clips/pexels_38509907.mp4",
+    "sourceInSeconds": 2.55,
+    "attribution": "Video by Ebahir on Pexels",
+    "avoidRegions": [
+     {
+      "endSeconds": 23.758,
+      "h": 0.3,
+      "priority": "hard",
+      "startSeconds": 18.168,
+      "w": 0.6,
+      "x": 0.0,
+      "y": 0.4
+     }
+    ],
+    "startSeconds": 18.168,
+    "endSeconds": 23.76
+   },
+   {
+    "id": "shot-6",
+    "semanticBeatId": "beat-6",
+    "visualEventId": "ve-6",
+    "transitionIn": "cut",
+    "changeType": "reaction",
+    "narrativeRole": "turn",
+    "humanPresence": true,
+    "showsSubject": true,
+    "camera": "pull-out",
+    "selectionReason": "man lying in bed with a phone, plain white wall filling the upper half; the declared upper band is genuinely empty and the action is exactly the beat's.",
+    "source": "{project}/assets/clips/pexels_7131726.mp4",
+    "sourceInSeconds": 3.0,
+    "attribution": "Video by KATRIN  BOLOVTSOVA on Pexels",
+    "avoidRegions": [
+     {
+      "endSeconds": 31.078999999999997,
+      "h": 0.6,
+      "priority": "hard",
+      "startSeconds": 23.76,
+      "w": 1.0,
+      "x": 0.0,
+      "y": 0.4
+     },
+     {
+      "endSeconds": 31.078999999999997,
+      "h": 0.2,
+      "priority": "hard",
+      "startSeconds": 23.76,
+      "w": 0.3,
+      "x": 0.2,
+      "y": 0.4
+     }
+    ],
+    "startSeconds": 23.76,
+    "endSeconds": 31.08
+   },
+   {
+    "id": "shot-7",
+    "semanticBeatId": "beat-7",
+    "visualEventId": "ve-7",
+    "transitionIn": "cut",
+    "changeType": "reaction",
+    "narrativeRole": "exposition",
+    "humanPresence": true,
+    "showsSubject": true,
+    "camera": "push-in",
+    "selectionReason": "a single hand holding a lit phone against a dark wall; the frame's only light is the phone, and the upper band is bare wall apart from the lamp at the very top edge.",
+    "source": "{project}/assets/clips/pexels_6279146.mp4",
+    "sourceInSeconds": 1.7,
+    "attribution": "Video by Artem Podrez on Pexels",
+    "avoidRegions": [
+     {
+      "endSeconds": 38.359,
+      "h": 0.4,
+      "priority": "hard",
+      "startSeconds": 31.08,
+      "w": 1.0,
+      "x": 0.0,
+      "y": 0.6
+     }
+    ],
+    "startSeconds": 31.08,
+    "endSeconds": 38.36
+   },
+   {
+    "id": "shot-8",
+    "semanticBeatId": "beat-8",
+    "visualEventId": "ve-8",
+    "transitionIn": "cut",
+    "changeType": "detail",
+    "narrativeRole": "conflict",
+    "humanPresence": false,
+    "showsSubject": false,
+    "camera": "none",
+    "selectionReason": "a real apartment kitchen table: tulips, glass, empty chairs, nobody in frame. It reads as a place waiting for someone and gives the film its one beat of pure object stillness before the result is named.",
+    "source": "{project}/assets/clips/pexels_7394194.mp4",
+    "sourceInSeconds": 1.0,
+    "attribution": "Video by Max Vakhtbovych on Pexels",
+    "avoidRegions": [
+     {
+      "endSeconds": 41.539,
+      "h": 0.5,
+      "priority": "hard",
+      "startSeconds": 38.36,
+      "w": 1.0,
+      "x": 0.0,
+      "y": 0.4
+     }
+    ],
+    "startSeconds": 38.36,
+    "endSeconds": 41.54
+   },
+   {
+    "id": "shot-9",
+    "semanticBeatId": "beat-9",
+    "visualEventId": "ve-9",
+    "transitionIn": "cut",
+    "changeType": "action",
+    "narrativeRole": "conflict",
+    "humanPresence": true,
+    "showsSubject": false,
+    "camera": "pan-right",
+    "selectionReason": "a wide side-on shot of a man at a table with a cup: the plain wall fills the upper 40% of the frame, so the moment has a genuinely empty band, and his hands resting tell the waiting without a performance.",
+    "source": "{project}/assets/clips/pexels_6626949.mp4",
+    "sourceInSeconds": 3.05,
+    "attribution": "Video by cottonbro studio on Pexels",
+    "avoidRegions": [
+     {
+      "endSeconds": 48.859,
+      "h": 0.5,
+      "priority": "hard",
+      "startSeconds": 41.54,
+      "w": 1.0,
+      "x": 0.0,
+      "y": 0.4
+     }
+    ],
+    "startSeconds": 41.54,
+    "endSeconds": 48.86
+   },
+   {
+    "id": "shot-10",
+    "semanticBeatId": "beat-10",
+    "visualEventId": "ve-10",
+    "transitionIn": "cut",
+    "changeType": "reaction",
+    "narrativeRole": "turn",
+    "humanPresence": true,
+    "showsSubject": false,
+    "camera": "none",
+    "selectionReason": "a wide cafe interior with the woman seated low in the frame and the room's lamp, plants and shelving above her; the subject sits below row 4 so the moment's band stays clear of her.",
+    "source": "{project}/assets/clips/pexels_6764589.mp4",
+    "sourceInSeconds": 1.05,
+    "attribution": "Video by Pavel Danilyuk on Pexels",
+    "avoidRegions": [
+     {
+      "endSeconds": 56.33,
+      "h": 0.5,
+      "priority": "hard",
+      "startSeconds": 48.86,
+      "w": 0.6,
+      "x": 0.2,
+      "y": 0.4
+     },
+     {
+      "endSeconds": 56.33,
+      "h": 0.2,
+      "priority": "hard",
+      "startSeconds": 48.86,
+      "w": 0.2,
+      "x": 0.4,
+      "y": 0.4
+     }
+    ],
+    "startSeconds": 48.86,
+    "endSeconds": 56.331
+   },
+   {
+    "id": "shot-11",
+    "semanticBeatId": "beat-11",
+    "visualEventId": "ve-11",
+    "transitionIn": "cut",
+    "changeType": "reaction",
+    "narrativeRole": "resolution",
+    "humanPresence": true,
+    "showsSubject": true,
+    "camera": "push-in",
+    "selectionReason": "a real cafe table with a phone resting beside the hands and a plain tabletop across the lower frame; the band above the work is quiet background, so the closing moment can be set there.",
+    "source": "{project}/assets/clips/pexels_5054427.mp4",
+    "sourceInSeconds": 18.05,
+    "attribution": "Video by cottonbro studio on Pexels",
+    "avoidRegions": [
+     {
+      "endSeconds": 62.479,
+      "h": 0.4,
+      "priority": "hard",
+      "startSeconds": 56.331,
+      "w": 1.0,
+      "x": 0.0,
+      "y": 0.4
+     }
+    ],
+    "startSeconds": 56.331,
+    "endSeconds": 62.48
+   }
+  ],
+  "moments": [
+   {
+    "id": "m-hook",
+    "kind": "hook",
+    "startSeconds": 0.0,
+    "endSeconds": 5.0,
+    "segments": [
+     {
+      "role": "hero",
+      "text": "پیام بدی یا صبر کنی؟"
+     },
+     {
+      "role": "tail",
+      "text": "بعد از یه قرار خوب"
+     }
+    ],
+    "anchorText": "تا حالا شده بعد از یه قرار خوب"
+   },
+   {
+    "id": "m-figure",
+    "kind": "figure",
+    "startSeconds": 15.01,
+    "endSeconds": 17.412,
+    "segments": [
+     {
+      "role": "lead",
+      "text": "مطالعه:"
+     },
+     {
+      "role": "hero",
+      "text": "۵۴۳ نفر"
+     }
+    ],
+    "anchorText": "۵۴۳ نفر"
+   },
+   {
+    "id": "m-timings",
+    "kind": "statement",
+    "startSeconds": 19.57,
+    "endSeconds": 24.111,
+    "segments": [
+     {
+      "role": "lead",
+      "text": "سه حالت"
+     },
+     {
+      "role": "hero",
+      "text": "از فوری تا دو روز بعد"
+     }
+    ],
+    "anchorText": "یا بلافاصله پیام میداد یا صبح روز بعد یا دو روز بعد"
+   },
+   {
+    "id": "m-morning",
+    "kind": "statement",
+    "startSeconds": 27.73,
+    "endSeconds": 31.43,
+    "segments": [
+     {
+      "role": "lead",
+      "text": "بیشترین تمایل"
+     },
+     {
+      "role": "hero",
+      "text": "صبح روز بعد"
+     }
+    ],
+    "anchorText": "وقتی دیده شد که پیام صبح روز بعد میرسید"
+   },
+   {
+    "id": "m-immediate",
+    "kind": "statement",
+    "startSeconds": 32.386,
+    "endSeconds": 35.15,
+    "segments": [
+     {
+      "role": "lead",
+      "text": "پیام فوری"
+     },
+     {
+      "role": "hero",
+      "text": "علاقهٔ واضح‌تر"
+     }
+    ],
+    "anchorText": "علاقه رو واضح‌تر نشون میداد"
+   },
+   {
+    "id": "m-twodays",
+    "kind": "statement",
+    "startSeconds": 39.23,
+    "endSeconds": 41.89,
+    "segments": [
+     {
+      "role": "lead",
+      "text": "دو روز صبر"
+     },
+     {
+      "role": "hero",
+      "text": "کمکی نکرد"
+     }
+    ],
+    "anchorText": "دو روز صبر کردن هم کمکی نکرد"
+   },
+   {
+    "id": "m-strategy",
+    "kind": "statement",
+    "startSeconds": 51.099,
+    "endSeconds": 56.681,
+    "segments": [
+     {
+      "role": "lead",
+      "text": "دیر پیام بده"
+     },
+     {
+      "role": "hero",
+      "text": "استراتژی خوبی نبود"
+     }
+    ],
+    "anchorText": "دیر پیام بده تا مشتاق به نظر نرسی استراتژی خیلی خوبی نبود"
+   },
+   {
+    "id": "m-cta",
+    "kind": "statement",
+    "startSeconds": 58.306,
+    "endSeconds": 62.371,
+    "segments": [
+     {
+      "role": "hero",
+      "text": "همون شب یا فردا صبح یا صبر؟"
+     }
+    ],
+    "anchorText": "همون شب پیام میدی فردا صبح یا صبر"
+   }
+  ],
+  "typographicBeats": [],
+  "audio": {
+   "narration": "projects/first-date-message-timing/assets/narration.mp3",
+   "wordTimings": [
+    {
+     "word": "تا",
+     "start": 0.0,
+     "end": 0.12666666666666668
+    },
+    {
+     "word": "حالا",
+     "start": 0.12666666666666668,
+     "end": 0.38
+    },
+    {
+     "word": "شده",
+     "start": 0.38,
+     "end": 0.5974999999999999
+    },
+    {
+     "word": "بعد",
+     "start": 0.5974999999999999,
+     "end": 0.815
+    },
+    {
+     "word": "از",
+     "start": 0.815,
+     "end": 0.96
+    },
+    {
+     "word": "یه",
+     "start": 0.96,
+     "end": 1.1199999999999999
+    },
+    {
+     "word": "قرار",
+     "start": 1.1199999999999999,
+     "end": 1.44
+    },
+    {
+     "word": "خوب،",
+     "start": 1.44,
+     "end": 1.76
+    },
+    {
+     "word": "گوشی",
+     "start": 1.76,
+     "end": 2.2
+    },
+    {
+     "word": "دستت",
+     "start": 2.2,
+     "end": 2.42
+    },
+    {
+     "word": "باشه",
+     "start": 2.42,
+     "end": 2.9
+    },
+    {
+     "word": "و",
+     "start": 2.9,
+     "end": 2.9819999999999998
+    },
+    {
+     "word": "ندونی",
+     "start": 2.9819999999999998,
+     "end": 3.392
+    },
+    {
+     "word": "الان",
+     "start": 3.392,
+     "end": 3.72
+    },
+    {
+     "word": "پیام",
+     "start": 3.72,
+     "end": 4.1
+    },
+    {
+     "word": "بدی",
+     "start": 4.1,
+     "end": 4.44
+    },
+    {
+     "word": "یا",
+     "start": 4.44,
+     "end": 4.58
+    },
+    {
+     "word": "صبر",
+     "start": 4.58,
+     "end": 4.84
+    },
+    {
+     "word": "کنی؟",
+     "start": 4.84,
+     "end": 5.16
+    },
+    {
+     "word": "پژوهشگرا",
+     "start": 5.16,
+     "end": 6.378461538461538
+    },
+    {
+     "word": "دقیقاً",
+     "start": 6.378461538461538,
+     "end": 7.14
+    },
+    {
+     "word": "همین",
+     "start": 7.14,
+     "end": 7.404
+    },
+    {
+     "word": "سؤال",
+     "start": 7.404,
+     "end": 7.668
+    },
+    {
+     "word": "رو",
+     "start": 7.668,
+     "end": 7.8
+    },
+    {
+     "word": "آزمایش",
+     "start": 7.8,
+     "end": 8.02
+    },
+    {
+     "word": "کردن:",
+     "start": 8.02,
+     "end": 8.64
+    },
+    {
+     "word": "بعد",
+     "start": 8.64,
+     "end": 9.46
+    },
+    {
+     "word": "از",
+     "start": 9.46,
+     "end": 9.6
+    },
+    {
+     "word": "قرار",
+     "start": 9.6,
+     "end": 9.88
+    },
+    {
+     "word": "اول،",
+     "start": 9.88,
+     "end": 10.36
+    },
+    {
+     "word": "چه",
+     "start": 10.36,
+     "end": 10.64
+    },
+    {
+     "word": "زمانی",
+     "start": 10.64,
+     "end": 11.04
+    },
+    {
+     "word": "برای",
+     "start": 11.04,
+     "end": 11.22
+    },
+    {
+     "word": "فرستادن",
+     "start": 11.22,
+     "end": 11.98
+    },
+    {
+     "word": "اولین",
+     "start": 11.98,
+     "end": 12.38
+    },
+    {
+     "word": "پیام",
+     "start": 12.38,
+     "end": 12.68
+    },
+    {
+     "word": "بهتره؟",
+     "start": 12.68,
+     "end": 13.34
+    },
+    {
+     "word": "در",
+     "start": 13.34,
+     "end": 14.28
+    },
+    {
+     "word": "این",
+     "start": 14.28,
+     "end": 14.74
+    },
+    {
+     "word": "مطالعه،",
+     "start": 14.74,
+     "end": 15.26
+    },
+    {
+     "word": "۵۴۳",
+     "start": 15.26,
+     "end": 15.6
+    },
+    {
+     "word": "نفر",
+     "start": 15.6,
+     "end": 16.06
+    },
+    {
+     "word": "تصور",
+     "start": 16.06,
+     "end": 16.52
+    },
+    {
+     "word": "کردند",
+     "start": 16.52,
+     "end": 16.974545454545453
+    },
+    {
+     "word": "یک",
+     "start": 16.974545454545453,
+     "end": 17.156363636363636
+    },
+    {
+     "word": "قرار",
+     "start": 17.156363636363636,
+     "end": 17.52
+    },
+    {
+     "word": "اول",
+     "start": 17.52,
+     "end": 17.736
+    },
+    {
+     "word": "داشتند",
+     "start": 17.736,
+     "end": 18.168
+    },
+    {
+     "word": "و",
+     "start": 18.168,
+     "end": 18.24
+    },
+    {
+     "word": "بعد،",
+     "start": 18.24,
+     "end": 18.48
+    },
+    {
+     "word": "طرف",
+     "start": 18.48,
+     "end": 19.2
+    },
+    {
+     "word": "مقابل",
+     "start": 19.2,
+     "end": 19.82
+    },
+    {
+     "word": "یا",
+     "start": 19.82,
+     "end": 20.16
+    },
+    {
+     "word": "بلافاصله",
+     "start": 20.16,
+     "end": 20.54
+    },
+    {
+     "word": "پیام",
+     "start": 20.54,
+     "end": 20.9
+    },
+    {
+     "word": "میداد،",
+     "start": 20.9,
+     "end": 21.3
+    },
+    {
+     "word": "یا",
+     "start": 21.3,
+     "end": 21.9
+    },
+    {
+     "word": "صبح",
+     "start": 21.9,
+     "end": 22.163999999999998
+    },
+    {
+     "word": "روز",
+     "start": 22.163999999999998,
+     "end": 22.428
+    },
+    {
+     "word": "بعد،",
+     "start": 22.428,
+     "end": 22.78
+    },
+    {
+     "word": "یا",
+     "start": 22.78,
+     "end": 23.0
+    },
+    {
+     "word": "دو",
+     "start": 23.0,
+     "end": 23.16888888888889
+    },
+    {
+     "word": "روز",
+     "start": 23.16888888888889,
+     "end": 23.422222222222224
+    },
+    {
+     "word": "بعد.",
+     "start": 23.422222222222224,
+     "end": 23.76
+    },
+    {
+     "word": "جالبترین",
+     "start": 23.76,
+     "end": 24.66
+    },
+    {
+     "word": "نتیجه",
+     "start": 24.66,
+     "end": 25.2225
+    },
+    {
+     "word": "این",
+     "start": 25.2225,
+     "end": 25.56
+    },
+    {
+     "word": "بود",
+     "start": 25.56,
+     "end": 25.74
+    },
+    {
+     "word": "که",
+     "start": 25.74,
+     "end": 25.94
+    },
+    {
+     "word": "بیشترین",
+     "start": 25.94,
+     "end": 26.38
+    },
+    {
+     "word": "تمایل",
+     "start": 26.38,
+     "end": 26.72
+    },
+    {
+     "word": "به",
+     "start": 26.72,
+     "end": 27.0
+    },
+    {
+     "word": "ادامه",
+     "start": 27.0,
+     "end": 27.4
+    },
+    {
+     "word": "رابطه",
+     "start": 27.4,
+     "end": 27.98
+    },
+    {
+     "word": "وقتی",
+     "start": 27.98,
+     "end": 28.44
+    },
+    {
+     "word": "دیده",
+     "start": 28.44,
+     "end": 28.64
+    },
+    {
+     "word": "شد",
+     "start": 28.64,
+     "end": 28.92
+    },
+    {
+     "word": "که",
+     "start": 28.92,
+     "end": 29.08
+    },
+    {
+     "word": "پیام",
+     "start": 29.08,
+     "end": 29.42
+    },
+    {
+     "word": "صبح",
+     "start": 29.42,
+     "end": 29.62
+    },
+    {
+     "word": "روز",
+     "start": 29.62,
+     "end": 29.94
+    },
+    {
+     "word": "بعد",
+     "start": 29.94,
+     "end": 30.46
+    },
+    {
+     "word": "میرسید.",
+     "start": 30.46,
+     "end": 31.08
+    },
+    {
+     "word": "پیام",
+     "start": 31.08,
+     "end": 32.12
+    },
+    {
+     "word": "فوری،",
+     "start": 32.12,
+     "end": 32.63666666666666
+    },
+    {
+     "word": "علاقه",
+     "start": 32.63666666666666,
+     "end": 33.153333333333336
+    },
+    {
+     "word": "رو",
+     "start": 33.153333333333336,
+     "end": 33.36
+    },
+    {
+     "word": "واضحتر",
+     "start": 33.36,
+     "end": 33.8
+    },
+    {
+     "word": "نشون",
+     "start": 33.8,
+     "end": 34.2
+    },
+    {
+     "word": "میداد،",
+     "start": 34.2,
+     "end": 34.8
+    },
+    {
+     "word": "اما",
+     "start": 34.8,
+     "end": 35.4
+    },
+    {
+     "word": "فرستنده",
+     "start": 35.4,
+     "end": 36.14
+    },
+    {
+     "word": "کمی",
+     "start": 36.14,
+     "end": 36.52
+    },
+    {
+     "word": "نیازمندتر",
+     "start": 36.52,
+     "end": 37.38
+    },
+    {
+     "word": "به",
+     "start": 37.38,
+     "end": 37.48
+    },
+    {
+     "word": "نظر",
+     "start": 37.48,
+     "end": 37.84
+    },
+    {
+     "word": "میرسید.",
+     "start": 37.84,
+     "end": 38.36
+    },
+    {
+     "word": "از",
+     "start": 38.36,
+     "end": 38.608888888888885
+    },
+    {
+     "word": "اون",
+     "start": 38.608888888888885,
+     "end": 38.98222222222222
+    },
+    {
+     "word": "طرف،",
+     "start": 38.98222222222222,
+     "end": 39.48
+    },
+    {
+     "word": "دو",
+     "start": 39.48,
+     "end": 39.68
+    },
+    {
+     "word": "روز",
+     "start": 39.68,
+     "end": 39.98
+    },
+    {
+     "word": "صبر",
+     "start": 39.98,
+     "end": 40.22
+    },
+    {
+     "word": "کردن",
+     "start": 40.22,
+     "end": 40.62
+    },
+    {
+     "word": "هم",
+     "start": 40.62,
+     "end": 40.78
+    },
+    {
+     "word": "کمکی",
+     "start": 40.78,
+     "end": 41.117777777777775
+    },
+    {
+     "word": "نکرد؛",
+     "start": 41.117777777777775,
+     "end": 41.54
+    },
+    {
+     "word": "افراد",
+     "start": 41.54,
+     "end": 42.5
+    },
+    {
+     "word": "احساس",
+     "start": 42.5,
+     "end": 42.86
+    },
+    {
+     "word": "شیمی",
+     "start": 42.86,
+     "end": 43.4
+    },
+    {
+     "word": "و",
+     "start": 43.4,
+     "end": 43.8
+    },
+    {
+     "word": "انگیزه",
+     "start": 43.8,
+     "end": 44.13818181818182
+    },
+    {
+     "word": "کمتری",
+     "start": 44.13818181818182,
+     "end": 44.42
+    },
+    {
+     "word": "برای",
+     "start": 44.42,
+     "end": 44.73111111111111
+    },
+    {
+     "word": "ادامه",
+     "start": 44.73111111111111,
+     "end": 45.12
+    },
+    {
+     "word": "ارتباط",
+     "start": 45.12,
+     "end": 45.6
+    },
+    {
+     "word": "داشتند",
+     "start": 45.6,
+     "end": 45.96
+    },
+    {
+     "word": "و",
+     "start": 45.96,
+     "end": 46.16
+    },
+    {
+     "word": "طرف",
+     "start": 46.16,
+     "end": 46.54
+    },
+    {
+     "word": "مقابل",
+     "start": 46.54,
+     "end": 46.96
+    },
+    {
+     "word": "رو",
+     "start": 46.96,
+     "end": 47.24
+    },
+    {
+     "word": "کمتر",
+     "start": 47.24,
+     "end": 47.57142857142857
+    },
+    {
+     "word": "قابلاعتماد",
+     "start": 47.57142857142857,
+     "end": 48.4
+    },
+    {
+     "word": "میدیدند.",
+     "start": 48.4,
+     "end": 48.86
+    },
+    {
+     "word": "یعنی",
+     "start": 48.86,
+     "end": 49.84
+    },
+    {
+     "word": "حداقل",
+     "start": 49.84,
+     "end": 50.1
+    },
+    {
+     "word": "در",
+     "start": 50.1,
+     "end": 50.68
+    },
+    {
+     "word": "این",
+     "start": 50.68,
+     "end": 50.84
+    },
+    {
+     "word": "آزمایش،",
+     "start": 50.84,
+     "end": 51.34909090909091
+    },
+    {
+     "word": "«دیر",
+     "start": 51.34909090909091,
+     "end": 51.64
+    },
+    {
+     "word": "پیام",
+     "start": 51.64,
+     "end": 51.995555555555555
+    },
+    {
+     "word": "بده",
+     "start": 51.995555555555555,
+     "end": 52.26222222222222
+    },
+    {
+     "word": "تا",
+     "start": 52.26222222222222,
+     "end": 52.44
+    },
+    {
+     "word": "مشتاق",
+     "start": 52.44,
+     "end": 52.89
+    },
+    {
+     "word": "به",
+     "start": 52.89,
+     "end": 53.07
+    },
+    {
+     "word": "نظر",
+     "start": 53.07,
+     "end": 53.34
+    },
+    {
+     "word": "نرسی»",
+     "start": 53.34,
+     "end": 53.9
+    },
+    {
+     "word": "استراتژی",
+     "start": 53.9,
+     "end": 54.82
+    },
+    {
+     "word": "خیلی",
+     "start": 54.82,
+     "end": 55.28
+    },
+    {
+     "word": "خوبی",
+     "start": 55.28,
+     "end": 55.64
+    },
+    {
+     "word": "نبود.",
+     "start": 55.64,
+     "end": 56.33090909090909
+    },
+    {
+     "word": "حالا",
+     "start": 56.33090909090909,
+     "end": 56.88363636363636
+    },
+    {
+     "word": "تو",
+     "start": 56.88363636363636,
+     "end": 57.16
+    },
+    {
+     "word": "بگو:",
+     "start": 57.16,
+     "end": 57.46
+    },
+    {
+     "word": "بعد",
+     "start": 57.46,
+     "end": 57.72
+    },
+    {
+     "word": "از",
+     "start": 57.72,
+     "end": 57.86
+    },
+    {
+     "word": "قرار",
+     "start": 57.86,
+     "end": 58.14
+    },
+    {
+     "word": "اول،",
+     "start": 58.14,
+     "end": 58.556
+    },
+    {
+     "word": "همون",
+     "start": 58.556,
+     "end": 58.972
+    },
+    {
+     "word": "شب",
+     "start": 58.972,
+     "end": 59.18
+    },
+    {
+     "word": "پیام",
+     "start": 59.18,
+     "end": 59.6
+    },
+    {
+     "word": "میدی،",
+     "start": 59.6,
+     "end": 59.94
+    },
+    {
+     "word": "فردا",
+     "start": 59.94,
+     "end": 61.22
+    },
+    {
+     "word": "صبح",
+     "start": 61.22,
+     "end": 61.46
+    },
+    {
+     "word": "یا",
+     "start": 61.46,
+     "end": 61.92
+    },
+    {
+     "word": "صبر",
+     "start": 61.92,
+     "end": 62.02
+    },
+    {
+     "word": "میکنی؟",
+     "start": 62.02,
+     "end": 62.28
+    }
+   ],
+   "musicBaseVolume": 0.22,
+   "musicDuckVolume": 0.09,
+   "musicFadeSeconds": 1.5
+  },
+  "watermark": {
+   "persianText": "طریقت تسلیم",
+   "latinText": "Pathway_of_Surrender"
+  },
+  "musicTrack": {
+   "path": "{project}/assets/music/bed.mp3",
+   "source": "pixabay_music",
+   "license": {
+    "downloadedAt": "2026-09-27",
+    "name": "Pixabay Content License",
+    "url": "https://pixabay.com/service/license-summary/"
+   },
+   "contentIdRisk": {
+    "acknowledged": "Content-ID is third-party fingerprinting; no licence binds it, so no automated check can guarantee zero claim risk on Instagram. Provenance is recorded so any claim can be answered with the licence page.",
+    "level": "low",
+    "reason": "licensed use under the Pixabay Content License, which permits monetized social use; third-party Content-ID claims remain possible and are not guaranteed zero"
+   },
+   "attribution": "Minimal - Minimal Ambient Background — AudioDollar (Pixabay Music)"
+  }
+ },
+ "metadata": {
+  "persianSubtitleScript": {
+   "text": "تا حالا شده بعد از یه قرار خوب، گوشی دستت باشه و ندونی الان پیام بدی یا صبر کنی؟\n\nپژوهشگرا دقیقاً همین سؤال رو آزمایش کردن: بعد از قرار اول، چه زمانی برای فرستادن اولین پیام بهتره؟\n\nدر این مطالعه، ۵۴۳ نفر تصور کردند یک قرار اول داشتند و بعد، طرف مقابل یا بلافاصله پیام میداد، یا صبح روز بعد، یا دو روز بعد.\n\nجالبترین نتیجه این بود که بیشترین تمایل به ادامه رابطه وقتی دیده شد که پیام صبح روز بعد میرسید.\n\nپیام فوری، علاقه رو واضحتر نشون میداد، اما فرستنده کمی نیازمندتر به نظر میرسید. از اون طرف، دو روز صبر کردن هم کمکی نکرد؛ افراد احساس شیمی و انگیزه کمتری برای ادامه ارتباط داشتند و طرف مقابل رو کمتر قابلاعتماد میدیدند.\n\nیعنی حداقل در این آزمایش، «دیر پیام بده تا مشتاق به نظر نرسی» استراتژی خیلی خوبی نبود.\n\nحالا تو بگو: بعد از قرار اول، همون شب پیام میدی، فردا صبح یا صبر میکنی؟\n",
+   "sha256": "97f0f70c7caac3cb47a965a67f33db350a3e58b417a1868b93beab4e4b259782",
+   "matchPolicy": "exact",
+   "maxCps": 21
+  },
+  "hookQuality": {
+   "version": "2.0",
+   "viewerValue": {
+    "evidenceId": "opening-value-01",
+    "atSeconds": 0.9,
+    "evidence": "the opening frame is a phone held in one hand against a plain wall while the narration asks whether to text after a good date — the viewer recognises their own evening and understands the video is about when to send the first message"
+   },
+   "semanticTension": {
+    "evidenceId": "opening-tension-01",
+    "kind": "question",
+    "atSeconds": 1.4,
+    "evidence": "the question is put as a live choice — send now or wait — and neither the footage nor the type answers it"
+   },
+   "firstProof": {
+    "evidenceId": "opening-proof-01",
+    "kind": "evidence",
+    "atSeconds": 15.0,
+    "evidence": "the study's own scale arrives: «مطالعه: ۵۴۳ نفر» — the film stops asking and starts reporting the experiment it is about"
+   },
+   "judgements": {
+    "semanticPredictionError": {
+     "level": "strong",
+     "rationale": "the title question promises an answer the film spends its middle delivering, and the answer (next morning) contradicts the folk rule the film names later."
+    },
+    "audienceRelevance": {
+     "level": "strong",
+     "rationale": "the after-first-date phone moment is the viewer's own evening, not an abstraction about relationships."
+    },
+    "concreteness": {
+     "level": "acceptable",
+     "rationale": "the hook is concrete about the situation (a phone, a first date) though not about the finding."
+    },
+    "hookBodyAlignment": {
+     "level": "strong",
+     "rationale": "the body answers exactly the question the hook asks, in the order the study found it."
+    },
+    "visualVoiceAlignment": {
+     "level": "strong",
+     "rationale": "the opening shot is the subject of the film — a phone in hand — and the hook type sits above it on empty wall."
+    }
+   },
+   "flags": {
+    "metaIntroDelay": false,
+    "vagueGap": false,
+    "fullConclusionRevealed": false
+   },
+   "perceptualChanges": [
+    {
+     "kind": "action",
+     "atSeconds": 1.2,
+     "evidence": "the hand lifts and turns the phone in the opening shot, changing the frame's silhouette"
+    },
+    {
+     "kind": "typography",
+     "atSeconds": 0.6,
+     "evidence": "the hook composition arrives within the opening second and holds for its full 3–5 second window"
+    }
+   ],
+   "semanticIntegrity": {
+    "sourceText": "پیام بدی یا صبر کنی؟ بعد از یه قرار خوب",
+    "requiredTopicAnchors": [
+     "پیام",
+     "قرار"
+    ],
+    "anchorDelivery": "text"
+   }
+  }
+ }
+}
