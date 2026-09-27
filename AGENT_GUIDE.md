@@ -282,6 +282,9 @@ If the folder has tracks, the proposal and asset stages should present them as o
 
 ## Mandatory Preflight
 
+**Persian production on the Mac: `make pre-mac` first.** A production run happens only on a clean checkout whose SHA passed the CI rehearsal. The command checks both and prints why when it refuses. Production runs are for acceptance, not bug-finding (#265).
+
+
 Do this before any creative work. **Use `provider_menu_summary()` first — it's the human-ready rollup.** The raw `support_envelope()` dump is a firehose (megabytes of JSON on a well-configured machine); pasting it into chat will bury the user.
 
 ```bash

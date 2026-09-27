@@ -22,6 +22,8 @@ A fresh production may start from:
 "Approved" means the user supplied or selected that Persian wording as the copy to produce. The production pipeline may perform technical normalization allowed by the subtitle contract, but it must not editorially rewrite the wording.
 ## Start a fresh production
 
+**Before `bootstrap` on a production machine, run `make pre-mac` (#265).** It exits non-zero unless the checkout is clean and its SHA passed the CI rehearsal (`tests/rehearsal`, which drives a recorded run to `awaiting_human`). If it refuses, do not start the run: report its one-line reason. A production run accepts real footage and taste. It is not a way to find pipeline bugs; any bug it finds is first reproduced as a rehearsal scenario, then fixed.
+
 Create a genuinely new project only after video-production intent is explicit:
 
 ```bash
