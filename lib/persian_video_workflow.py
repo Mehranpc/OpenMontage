@@ -1537,6 +1537,14 @@ def resolve_budget_stop(
         state["next_phase"] = None
         record["terminal"] = True
 
+    # The stop closed the run span. The time until this decision was the operator
+    # reading the question and answering it: a human wait, not orchestration gap. On
+    # the f13d914 run this was the only kind of wait that telemetry never recorded
+    # (#250).
+    if state.get("status") == "active":
+        record_human_idle_and_reopen_run(
+            state, resumed_at=effective_now, reason=f"budget decision: {choice}"
+        )
     decisions = list(state.get("budget_decisions") or [])
     decisions.append(record)
     state["budget_decisions"] = decisions
