@@ -435,8 +435,13 @@ def aggregate_preflight_edit_decisions(
     precomputed_components: dict[str, Any] | None = None,
     scratch_dir: Path | None = None,
     hook_authority: Mapping[str, Any] | None = None,
+    cheap_only: bool = False,
 ) -> dict[str, Any]:
-    """Aggregate independent cheap blockers, then run at most one browser-heavy pass."""
+    """Aggregate independent cheap blockers, then run at most one browser-heavy pass.
+
+    `cheap_only` stops before the browser pass. The edit front door uses it to refuse
+    a draft with deterministic defects before the draft becomes a bounded candidate.
+    """
     root = (base_dir or REPO_ROOT).resolve()
     precomputed = dict(precomputed_components or {})
     try:
@@ -570,6 +575,12 @@ def aggregate_preflight_edit_decisions(
             watermark_diagnostics=watermark_feasibility,
             next_actions=list(dict.fromkeys(actions)),
             diagnostic_layers=list(dict.fromkeys(layers)),
+        )
+
+    if cheap_only:
+        return _report(
+            ok=True, edit=edit, blocking=[], evidence=evidence,
+            diagnostic_layers=["contract", "retention", "hook", "geometric_precheck"],
         )
 
     cached_browser = precomputed.get("browserEvidence")
