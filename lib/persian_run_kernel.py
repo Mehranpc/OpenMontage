@@ -1334,9 +1334,12 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _read_evidence(path: str | None) -> dict[str, Any]:
+def _read_evidence(path: str | None) -> dict[str, Any] | None:
+    # No flag means "no caller evidence", not "empty evidence": a media phase
+    # derives its evidence from the job's own semantic result only when this is
+    # None, which is the documented route for the three media phases (#284).
     if path is None:
-        return {}
+        return None
     raw = Path(path).expanduser().resolve()
     try:
         payload = json.loads(raw.read_text(encoding="utf-8"))
