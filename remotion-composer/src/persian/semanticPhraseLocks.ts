@@ -87,10 +87,17 @@ export function validatePhraseLocks(
  * phraseLocks entry when semantic grouping is not structurally obvious.
  */
 export function deriveListPhraseLocks(text: string): string[] {
-  const parts = text
+  const byComma = text
     .split(/[،,]/u)
     .map((part) => part.trim())
     .filter(Boolean);
+  // A three-way choice joined by «یا» ("همون شب یا فردا صبح یا صبر؟") is the same
+  // structure as a comma list. Without this, «فردا / صبح» broke across rows.
+  const byOr = text
+    .split(/\s+یا\s+/u)
+    .map((part) => part.replace(/[؟?!.،,]+$/u, "").trim())
+    .filter(Boolean);
+  const parts = byComma.length >= 3 ? byComma : byOr;
   if (parts.length < 3) return [];
   return parts.filter((part) => {
     const count = phraseKeys(part).length;

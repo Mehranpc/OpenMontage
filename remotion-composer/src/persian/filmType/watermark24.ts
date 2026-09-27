@@ -48,16 +48,20 @@ export function planMovingBrand(duration:number,shotTimes:number[],eventTimes:nu
 
 
 type CoverageConfig=Config&{
- minCoverageRatio?:number;targetCoverageRatio?:number;
+ minCoverageRatio?:number;targetCoverageRatio?:number;maxCoverageRatio?:number;
  longFormThresholdSeconds?:number;minLongFormRelocations?:number;minLongFormVerticalBands?:number;verticalDiversityMinDwellSeconds?:number;
 };
 type CoverageSlot={zone:string;start:number;end:number};
 type CoverageState={covered:number;cost:number;zone:string;mask:number;moves:number;slots:CoverageSlot[]};
 const bitCount=(n:number)=>{let count=0;for(let v=n;v;v>>>=1)count+=v&1;return count;};
 const verticalBandCount=(slots:CoverageSlot[])=>new Set(slots.map(slot=>slot.zone.split("-")[0])).size;
-function betterCoverage(a:CoverageState,b:CoverageState|undefined,requiredMoves:number):boolean{
+function betterCoverage(a:CoverageState,b:CoverageState|undefined,requiredMoves:number,capSeconds=Infinity):boolean{
  if(!b)return true;
- if(Math.abs(a.covered-b.covered)>1e-8)return a.covered>b.covered;
+ // Coverage counts only up to the cap; beyond it, less is better (#230: 92% crowded the frame).
+ const ac=Math.min(a.covered,capSeconds),bc=Math.min(b.covered,capSeconds);
+ if(Math.abs(ac-bc)>1e-8)return ac>bc;
+ const ax=Math.max(0,a.covered-capSeconds),bx=Math.max(0,b.covered-capSeconds);
+ if(Math.abs(ax-bx)>1e-8)return ax<bx;
  const am=Math.min(a.moves,requiredMoves),bm=Math.min(b.moves,requiredMoves);
  if(am!==bm)return am>bm;
  const az=bitCount(a.mask),bz=bitCount(b.mask);if(az!==bz)return az>bz;
@@ -70,7 +74,7 @@ function betterCoverage(a:CoverageState,b:CoverageState|undefined,requiredMoves:
  */
 export function planCoverageAwareBrand(duration:number,boundaries:number[],order:string[],
  rects:Record<string,Rect>,clear:(r:Rect,a:number,b:number)=>boolean,cfg:CoverageConfig,
- introDelay=0,diagnostics?:()=>string){
+ introDelay=0,diagnostics?:()=>string,proximity?:(r:Rect,a:number,b:number)=>number){
  const min=cfg.minDwellSeconds,target=cfg.targetDwellSeconds??12,delay=Math.max(0,introDelay);
  if(delay>0&&delay>=duration)throw new Error("Film Type watermark intro delay covers the whole film; shorten it or author an empty watermark.");
  const visibleDuration=duration-delay;
@@ -83,11 +87,12 @@ export function planCoverageAwareBrand(duration:number,boundaries:number[],order
  const requiredMoves=longForm?Math.max(0,cfg.minLongFormRelocations??0):0;
  const requiredBands=longForm?Math.max(0,cfg.minLongFormVerticalBands??0):0;
  const diversityMinDwell=longForm?Math.min(min,Math.max(0,cfg.verticalDiversityMinDwellSeconds??min)):min;
+ const capSeconds=Number.isFinite(cfg.maxCoverageRatio??NaN)?duration*(cfg.maxCoverageRatio as number):Infinity;
  const layers=Array.from({length:times.length},()=>new Map<string,CoverageState>());
  layers[0].set("0::0:0",{covered:0,cost:0,zone:"",mask:0,moves:0,slots:[]});
  const push=(at:number,state:CoverageState)=>{
   const key=`${state.slots.length}:${state.zone}:${state.mask}:${state.moves}`;
-  if(betterCoverage(state,layers[at].get(key),requiredMoves))layers[at].set(key,state);
+  if(betterCoverage(state,layers[at].get(key),requiredMoves,capSeconds))layers[at].set(key,state);
  };
  const valid=new Map<string,boolean>();
  for(let i=0;i<times.length-1;i++){
@@ -110,7 +115,11 @@ export function planCoverageAwareBrand(duration:number,boundaries:number[],order
      const mask=state.mask|(1<<z);
      const topPenalty=zone.startsWith("upper")?0.18:0;
      const diversityPenalty=diversityException?0.75:0;
-     const cost=state.cost+Math.pow(dwell-target,2)*.1+z*.12+topPenalty+diversityPenalty;
+     // 2.16 (#230): among equally covering schedules, prefer the anchor farthest from the
+     // text and captions it shares the screen with (the opposite corner, not the one
+     // right under the moment). Coverage still dominates this cost.
+     const near=proximity?proximity(rects[zone],start,end):0;
+     const cost=state.cost+Math.pow(dwell-target,2)*.1+z*.12+topPenalty+diversityPenalty+near;
      push(j,{covered:state.covered+dwell,cost,zone,mask,moves,
       slots:[...state.slots,{zone,start,end}]});
     }
@@ -122,7 +131,7 @@ export function planCoverageAwareBrand(duration:number,boundaries:number[],order
  const protectedPool=finals.filter(state=>state.covered+1e-8>=floorSeconds
   && state.moves>=requiredMoves && verticalBandCount(state.slots)>=requiredBands);
  const pool=protectedPool.length?protectedPool:finals;
- pool.sort((a,b)=>betterCoverage(a,b,requiredMoves)?-1:betterCoverage(b,a,requiredMoves)?1:0);
+ pool.sort((a,b)=>betterCoverage(a,b,requiredMoves,capSeconds)?-1:betterCoverage(b,a,requiredMoves,capSeconds)?1:0);
  const best=pool[0];
  if(!best)throw new Error("No safe coverage-aware watermark schedule: review text/subject regions or explicitly author an empty watermark. "+(diagnostics?.()??""));
  return best.slots.map((slot,index)=>({zone:slot.zone,startSeconds:slot.start,endSeconds:slot.end,
