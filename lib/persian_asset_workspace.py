@@ -1075,6 +1075,47 @@ def build_asset_manifest_from_workspace(
     return manifest
 
 
+def retry_readiness(project_dir: Path) -> dict[str, Any]:
+    """What a retry pass must know before it may be spent (#239).
+
+    Returns the staged candidates still awaiting review, the events that earlier passes
+    found footage for but nobody has judged yet, and the events whose every staged
+    candidate was rejected with no selection. A retry issued before
+    review is how the single pass was spent on the wrong scope on the 58048e2 run.
+    """
+    candidates = _candidate_records(project_dir)
+    selections = _read_selections(project_dir)
+    unreviewed = sorted(
+        str(item.get("candidateId") or "") for item in candidates
+        if item.get("disposition") == "staged"
+    )
+    judged_events = {
+        str((item.get("context") or {}).get("visualEventId") or "").strip()
+        for item in candidates if item.get("disposition") in {"reviewed", "selected", "rejected"}
+    }
+    discovered_events: set[str] = set()
+    discovery_dir = _discovery_root(project_dir) / "candidates"
+    for path in sorted(discovery_dir.glob("*.json")) if discovery_dir.is_dir() else []:
+        try:
+            slot = str(json.loads(path.read_text(encoding="utf-8")).get("slotId") or "").strip()
+        except (OSError, json.JSONDecodeError, AttributeError):
+            continue
+        if slot:
+            discovered_events.add(slot)
+    unjudged_events = sorted(discovered_events - judged_events)
+    by_event: dict[str, list[dict[str, Any]]] = {}
+    for item in candidates:
+        event_id = str((item.get("context") or {}).get("visualEventId") or "").strip()
+        if event_id:
+            by_event.setdefault(event_id, []).append(item)
+    blocked = sorted(
+        event_id for event_id, items in by_event.items()
+        if event_id not in selections and all(item.get("disposition") == "rejected" for item in items)
+    )
+    return {"unreviewedCandidateIds": unreviewed, "unjudgedDiscoveredEventIds": unjudged_events,
+            "rejectedOnlyEventIds": blocked}
+
+
 def asset_workspace_status(project_dir: Path) -> dict[str, Any]:
     root = _root(project_dir)
     passes = sorted((_discovery_root(project_dir) / "passes").glob("pass-*.json")) if root.exists() else []

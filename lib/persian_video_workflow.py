@@ -61,6 +61,7 @@ from lib.persian_asset_workspace import (
     record_candidate_review,
     record_discovery_pass,
     reject_asset_candidate,
+    retry_readiness,
     select_asset_candidate,
     stage_asset_candidate,
     validate_asset_manifest_against_workspace,
@@ -2821,6 +2822,41 @@ def reconcile_scene_plan(
     }
 
 
+def _require_reviewed_retry_scope(
+    project_root: Path, request: Mapping[str, Any], *, retry_pass: int
+) -> None:
+    """A retry pass is spent only after review, and it covers every rejected event (#239).
+
+    The retry budget is one pass. Spending it on a pre-review signal (a duplicate source,
+    say) leaves nothing for the events that review then rejects, and no in-phase path
+    re-sources them. So every staged candidate must be reviewed or rejected first, every
+    event an earlier pass found footage for must have been judged, and the pass must
+    query each event whose staged candidates were all rejected. Events no earlier pass
+    found anything for are free retry targets.
+    """
+    readiness = retry_readiness(project_root)
+    if readiness["unreviewedCandidateIds"]:
+        raise PersianVideoWorkflowError(
+            f"asset retry pass {retry_pass} would be spent before review: review or reject "
+            f"staged candidates {readiness['unreviewedCandidateIds']} first"
+        )
+    if readiness["unjudgedDiscoveredEventIds"]:
+        raise PersianVideoWorkflowError(
+            f"asset retry pass {retry_pass} would be spent before review: earlier passes found "
+            f"footage for {readiness['unjudgedDiscoveredEventIds']} that no candidate review has "
+            "judged yet; stage and review (or reject) it first so the retry carries every event "
+            "that really needs new footage"
+        )
+    queries = request.get("queries") if isinstance(request.get("queries"), list) else []
+    covered = {str(query.get("slot_id") or "").strip() for query in queries if isinstance(query, Mapping)}
+    missing = [event_id for event_id in readiness["rejectedOnlyEventIds"] if event_id not in covered]
+    if missing:
+        raise PersianVideoWorkflowError(
+            f"asset retry pass {retry_pass} must carry queries for every review-rejected event "
+            f"with no selection; missing {missing}"
+        )
+
+
 def bounded_asset_search_request(
     project_id: str,
     request: Mapping[str, Any],
@@ -2855,6 +2891,8 @@ def bounded_asset_search_request(
 
     bounded = dict(request)
     reacquisition_scope = state.get("asset_reacquisition_scope")
+    if retry_pass > 0 and not isinstance(reacquisition_scope, Mapping):
+        _require_reviewed_retry_scope(_project_root(state), bounded, retry_pass=retry_pass)
     if isinstance(reacquisition_scope, Mapping):
         allowed_events = {str(item) for item in reacquisition_scope.get("visualEventIds") or []}
         queries = bounded.get("queries")
