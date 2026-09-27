@@ -304,10 +304,22 @@ def _validate_narration_source(path_value: str) -> dict[str, Any]:
     }
 
 
+_MARKDOWN_MARKUP_RE = re.compile(r"[*`]|^\s{0,3}(?:#{1,6}\s|>\s|[-+]\s)|(?<!\w)__|__(?!\w)", re.MULTILINE)
+
+
 def _validate_approved_script(text_value: str) -> dict[str, Any]:
     text = str(text_value)
     if not text.strip():
         raise PersianVideoWorkflowError("approved script must not be empty")
+    # Approved copy is spoken and burned into captions verbatim. Markdown emphasis or
+    # headings copied from a notes app would render as literal `**` (#241). Stop at the
+    # front door with the fix spelled out rather than letting them reach the render.
+    marks = sorted({match.group(0).strip() for match in _MARKDOWN_MARKUP_RE.finditer(text)})
+    if marks:
+        raise PersianVideoWorkflowError(
+            f"approved script contains markdown markup {marks}; it would be burned into "
+            "captions literally. Remove the formatting (keep the words) and pass the plain text"
+        )
     return {"text": text, "sha256": _hash_text(text)}
 
 
