@@ -216,6 +216,108 @@ def _span_times(span: Mapping[str, Any]) -> tuple[datetime, datetime] | None:
     return started, finished
 
 
+# Two consecutive pipeline commands at most this far apart bracket agent activity.
+# The agent was demonstrably working at both edges, so the interval between them is
+# observed, not guessed. A longer silence stays unattributed: it may be a pause, and
+# the accounting must not claim it (#107 coverage).
+COMMAND_CADENCE_MAX_GAP_SECONDS = 300.0
+# Derived at read time from command events; never a recordable span category.
+COMMAND_CADENCE_CATEGORY = "agent_command_activity"
+
+
+COMMAND_EVENTS_RELATIVE_PATH = Path(".telemetry") / "command-events.jsonl"
+
+
+def command_events_path(project_root: Path) -> Path:
+    return Path(project_root) / COMMAND_EVENTS_RELATIVE_PATH
+
+
+def record_command_event(
+    project_root: Path,
+    *,
+    command: str,
+    edge: str,
+    at: datetime | str,
+    run_active: bool,
+) -> dict[str, Any]:
+    """Append one pipeline-command boundary to the project's command log.
+
+    The log is an append-only sidecar, not workflow state: a command edge must never
+    race a durable job's state write. Events are observations, not spans. Accounting
+    derives activity from them at read time and gives every measured span precedence,
+    so they can never overlap or relabel a durable job, explicit work, or a human wait.
+    """
+    if edge not in {"start", "finish"}:
+        raise ValueError("command event edge must be start or finish")
+    event = {
+        "at": _required_time(at, "at").isoformat(),
+        "command": str(command),
+        "edge": edge,
+        "run_active": bool(run_active),
+    }
+    path = command_events_path(project_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = (__import__("json").dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    try:
+        os.write(fd, line)
+    finally:
+        os.close(fd)
+    return event
+
+
+def _command_events(state: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    trace = state.get("causal_telemetry")
+    events: list[Mapping[str, Any]] = [
+        item for item in list((trace or {}).get("command_events") or [])
+        if isinstance(item, Mapping)
+    ] if isinstance(trace, Mapping) else []
+    allowlist = state.get("read_allowlist")
+    root = allowlist.get("project_root") if isinstance(allowlist, Mapping) else None
+    if root:
+        path = command_events_path(Path(str(root)))
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            lines = []
+        for line in lines:
+            try:
+                value = __import__("json").loads(line)
+            except ValueError:
+                continue  # a torn final line from a killed process is not evidence
+            if isinstance(value, Mapping):
+                events.append(value)
+    return events
+
+
+def _command_cadence_intervals(
+    state: Mapping[str, Any], *, origin: datetime, current: datetime
+) -> list[tuple[datetime, datetime]]:
+    events: list[tuple[datetime, bool, str, str]] = []
+    for raw in _command_events(state):
+        at = _parse(raw.get("at"))
+        if at is not None:
+            events.append((
+                at, bool(raw.get("run_active")),
+                str(raw.get("command") or ""), str(raw.get("edge") or ""),
+            ))
+    events.sort(key=lambda item: item[0])
+    intervals: list[tuple[datetime, datetime]] = []
+    for left, right in zip(events, events[1:]):
+        # A command's own execution is observed however long it runs.
+        own_execution = left[3] == "start" and right[3] == "finish" and left[2] == right[2]
+        if not own_execution:
+            # After a stop the run waits on a person; that silence is never agent work.
+            if not left[1]:
+                continue
+            if (right[0] - left[0]).total_seconds() > COMMAND_CADENCE_MAX_GAP_SECONDS:
+                continue
+        start, end = max(origin, left[0]), min(current, right[0])
+        if end > start:
+            intervals.append((start, end))
+    return intervals
+
+
 def _counts_toward_wall(span: Mapping[str, Any]) -> bool:
     return bool(span.get("count_toward_wall")) and span.get("kind") != "phase_residual"
 
@@ -454,10 +556,16 @@ def causal_time_accounting(
         category = str(raw.get("category") or "")
         if category in category_seconds:
             category_seconds[category] += duration
+    # Command cadence fills only what no measured span explains.
+    cadence_seconds = 0.0
+    for left, right in _command_cadence_intervals(state, origin=origin, current=current):
+        for gap_start, gap_end in _complement_intervals(left, right, intervals):
+            cadence_seconds += (gap_end - gap_start).total_seconds()
+            intervals.append((gap_start, gap_end))
     covered = _interval_union_seconds(intervals)
     wall = max(0.0, (current - origin).total_seconds())
     unattributed = max(0.0, wall - covered)
-    concurrency = max(0.0, raw_total - covered)
+    concurrency = max(0.0, raw_total + cadence_seconds - covered)
     coverage_percent = 100.0 if wall <= 0.0 else min(100.0, (covered / wall) * 100.0)
     provider = category_seconds["provider_network_wait"]
     editorial = category_seconds["agent_editorial_work"]
@@ -470,7 +578,7 @@ def causal_time_accounting(
     human_idle = category_seconds["human_idle"]
     external = provider + machine + browser
     return {
-        "accounting_policy_version": "2.0",
+        "accounting_policy_version": "2.1",
         "job_runtime_seconds": round(wall, 3),
         "workflow_wall_seconds": round(wall, 3),
         "provider_wait_seconds": round(provider, 3),
@@ -482,6 +590,7 @@ def causal_time_accounting(
         "review_phase_seconds": round(review, 3),
         "automated_recovery_seconds": round(recovery, 3),
         "human_idle_seconds": round(human_idle, 3),
+        "agent_command_activity_seconds": round(cadence_seconds, 3),
         "causal_covered_seconds": round(covered, 3),
         "explicit_concurrency_seconds": round(concurrency, 3),
         "telemetry_span_count": counted,
@@ -726,6 +835,10 @@ def reconcile_phase_telemetry(
 
 __all__ = [
     "CAUSAL_CATEGORIES",
+    "COMMAND_CADENCE_CATEGORY",
+    "COMMAND_CADENCE_MAX_GAP_SECONDS",
+    "command_events_path",
+    "record_command_event",
     "TERMINAL_ATTEMPT_OUTCOMES",
     "causal_phase_span_id",
     "backfill_phase_residual_spans",

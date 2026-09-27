@@ -89,6 +89,7 @@ from lib.persian_workflow_telemetry import (
     finish_phase_attempt_span,
     new_causal_trace,
     record_causal_interval,
+    record_command_event,
     record_human_idle_and_reopen_run,
     record_phase_attempt_span,
     reconcile_phase_telemetry,
@@ -4212,8 +4213,13 @@ def reconcile_approved_compose_checkpoint(
 def _last_project_write(project_root: Path) -> tuple[str | None, datetime | None]:
     latest_path: Path | None = None
     latest_mtime = -1.0
+    telemetry_dir = project_root / ".telemetry"
     for candidate in project_root.rglob("*"):
         if not candidate.is_file():
+            continue
+        # The command log is written by every CLI call, `status` included, so it
+        # says nothing about production progress and would mask a real stall.
+        if telemetry_dir in candidate.parents:
             continue
         try:
             modified = candidate.stat().st_mtime
@@ -5105,8 +5111,48 @@ def _enforce_cli_front_door_budget(args: argparse.Namespace) -> None:
     )
 
 
+def record_cli_command_edge(
+    project_id: str | None,
+    command: str,
+    edge: str,
+    *,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> None:
+    """Record one pipeline-command boundary for command-cadence accounting.
+
+    Best effort by design: telemetry must never change whether a command runs, so
+    a project without state (before bootstrap) or an unwritable log is skipped.
+    """
+    if not project_id:
+        return
+    try:
+        state = load_workflow_state(str(project_id), pipeline_dir=pipeline_dir)
+        if not isinstance(state.get("causal_telemetry"), Mapping):
+            return
+        record_command_event(
+            _project_root(state),
+            command=command,
+            edge=edge,
+            at=now or datetime.now(timezone.utc),
+            run_active=state.get("status") == "active",
+        )
+    except (PersianVideoWorkflowError, OSError, ValueError, KeyError, TypeError):
+        return
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    command = f"workflow:{_cli_operation_name(args)}"
+    project_id = getattr(args, "project_id", None)
+    record_cli_command_edge(project_id, command, "start")
+    try:
+        return _main(args)
+    finally:
+        record_cli_command_edge(project_id, command, "finish")
+
+
+def _main(args: argparse.Namespace) -> int:
     try:
         _enforce_cli_front_door_budget(args)
         if args.command == "bootstrap":

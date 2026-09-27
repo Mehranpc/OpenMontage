@@ -98,6 +98,16 @@ largest source of unattributed wall time in an agent-driven run: the L3 run that
 `awaiting_human` closed one span per phase and still measured **53.8%** coverage over an
 8784s wall, because every between-phase interval was unspanned while the work was real. The lower-level `attempt` command remains available for phases whose measurable work is entirely represented by durable jobs.
 
+Explicit spans stay the precise record, but they are no longer the only one. Every
+`persian_video_workflow`, `persian_run_kernel` and `persian_delivery_quality` command
+logs its start and finish to `.telemetry/command-events.jsonl`, and accounting (policy
+2.1) reports the time between two commands at most 5 minutes apart as
+`agent_command_activity_seconds`: the agent was observably working at both edges. A
+longer silence, or any silence after the run stopped for a person, stays unattributed,
+and measured spans always take precedence. So keep driving the run through pipeline
+commands rather than long stretches of ad-hoc work, and still open spans for long
+thinking or review between commands.
+
 If a session stops without `work-finish` and the actual stop time is unknown, recover the open span before resuming work:
 
 ```bash
