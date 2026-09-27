@@ -77,7 +77,7 @@ Then use durable `alignment-start` → `alignment-status` → `alignment-commit`
 
 ## Music
 
-Use `pixabay_music`, instrumental, long enough for the video. Persist a complete `musicTrack` with path, provider, licence name/URL/date, attribution, and honest Content-ID risk. Narrated mode requires the record unless deliberate silence is stated. The edit artifact owns runtime music; do not duplicate it under audio.
+Default: `pixabay_music`, instrumental, long enough for the video, selected without asking the user. Use a user-named or user-supplied track only when the request provided one (and still record its licence). Persist a complete `musicTrack` with path, provider, licence name/URL/date, attribution, and honest Content-ID risk. Narrated mode requires the record unless deliberate silence is stated. The edit artifact owns runtime music; do not duplicate it under audio.
 
 ## Gate
 

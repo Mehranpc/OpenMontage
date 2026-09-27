@@ -132,6 +132,8 @@ The presentation MUST include, for each runtime:
 
 Then wait for explicit user approval before advancing. Record the full shortlist — BOTH runtimes plus any "ffmpeg" option that applies — as `options_considered` in the `render_runtime_selection` decision logged in `decision_log`. A decision log entry with only one runtime considered when both were available is a CRITICAL reviewer finding.
 
+Exception (pipeline-locked runtime): when a pipeline's manifest locks `render_runtime` because only one runtime can realize it (e.g. `persian-footage`, whose Persian text layer exists only in Remotion), the agent states the runtime in one line instead of asking, and still logs both runtimes in `options_considered` with the lock as `rejected_because`. Ask only if the user explicitly requested the other runtime.
+
 Exception: if only one runtime is available on the machine, the agent proceeds with it but MUST say so explicitly ("HyperFrames isn't installed on this machine; I'm proceeding with Remotion. Install HyperFrames if you want the alternative."). The `render_runtime_selection` decision still records the unavailable option as `rejected_because: "runtime not available on this machine"`.
 
 This rule applies to every pipeline that invokes `video_compose` — not just Wave 1. A pipeline's director skill may recommend a runtime, but that recommendation is input to the conversation with the user, not a decision.
