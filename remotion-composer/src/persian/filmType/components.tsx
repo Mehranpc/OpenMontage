@@ -154,7 +154,8 @@ const EditorialBurst: React.FC<{
 export const PersianFilmTypeMoment: React.FC<{
   moment: PersianMoment; layout: FilmMomentLayout; format: PersianFormat;
   durationFrames: number; design: PersianDesignSnapshot; shots: PersianVideoProps["shots"];
-}> = ({moment,layout,format,durationFrames,design,shots}) => {
+  hideGlyphs?: boolean;
+}> = ({moment,layout,format,durationFrames,design,shots,hideGlyphs=false}) => {
   const frame = useCurrentFrame(), {fps} = useVideoConfig();
   const p = filmProfile(design), dims = FORMAT_DIMENSIONS[format];
   const kahrobaPromise = p.profileVersion === "2.16.0"
@@ -225,7 +226,7 @@ export const PersianFilmTypeMoment: React.FC<{
         const transform = `translate(0 ${y}) translate(${rowAnchor} 0) scale(${punch}) translate(${-rowAnchor} 0)`;
         const segmentHasSemanticAccent = (moment.segments[row.segmentIndex]?.accentWords?.length ?? 0) > 0;
         return <g key={index} data-film-type-row={index} opacity={life.opacity} transform={transform}>
-          <Run row={row} x={rowAnchor} align={align} color={color} accent={accent} semanticHero={p.profileVersion === "2.16.0" && row.role === "hero" && !segmentHasSemanticAccent} emphasis={moment.presentation?.emphasis === "inline"}/>
+          {hideGlyphs ? null : <Run row={row} x={rowAnchor} align={align} color={color} accent={accent} semanticHero={p.profileVersion === "2.16.0" && row.role === "hero" && !segmentHasSemanticAccent} emphasis={moment.presentation?.emphasis === "inline"}/>}
           {accented216 && moment.kind !== "hook" ? <EditorialBurst row={row} anchor={rowAnchor} align={align} accent={accent} progress={life.arrive} opacity={life.opacity}/> : null}
         </g>;
       })}
