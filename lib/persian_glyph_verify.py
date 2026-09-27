@@ -58,16 +58,33 @@ def _black_clip(path: Path, seconds: float, fmt: str) -> None:
     )
 
 
+def _geometry(rows: Any) -> list[tuple]:
+    return [
+        (row.get("text"), row.get("role"), round(float(row.get("fontSizePx") or 0), 2),
+         round(float(row.get("baselinePx") or 0), 2), round(float(row.get("widthPx") or 0), 2))
+        for row in rows or [] if isinstance(row, dict)
+    ]
+
+
 def verification_props(props: dict[str, Any], clip_rel: str) -> dict[str, Any]:
     out = json.loads(json.dumps(props))
     for shot in out.get("shots") or []:
         shot["source"] = clip_rel
         shot.pop("sourceInSeconds", None)
     out["audio"] = {}
+    # The shot source is part of the Film Type input hash, and a saved layout whose
+    # inputs changed is refused as stale. Drop the saved measurement and let the still
+    # pass re-measure. `verify_project` then requires the re-measured rows to equal the
+    # delivered ones, so the check still runs on the delivered geometry.
+    for key in ("filmType", "watermarkPlan", "watermarkPlanMeasured", "watermarkDiagnostics"):
+        out.pop(key, None)
     return out
 
 
-def verify_project(project: Path, props_path: Path | None = None) -> dict[str, Any]:
+def verify_project(
+    project: Path, props_path: Path | None = None, *, reference_rows=None,
+) -> dict[str, Any]:
+    """`reference_rows(moment_id, rows) -> rows` lets a test corrupt only the reference."""
     props_path = props_path or project / "renders" / "candidate.mp4.props.json"
     props = json.loads(props_path.read_text(encoding="utf-8"))
     if (props.get("design") or {}).get("profile") != "film-type" or not props.get("filmType"):
@@ -85,6 +102,9 @@ def verify_project(project: Path, props_path: Path | None = None) -> dict[str, A
         with tempfile.TemporaryDirectory(prefix="glyph-verify-") as tmp:
             tmp_path = Path(tmp)
             (tmp_path / "props.json").write_text(json.dumps(vprops, ensure_ascii=False), encoding="utf-8")
+            (tmp_path / "expected_rows.json").write_text(json.dumps(
+                {mid: layout.get("rows") for mid, layout in props["filmType"]["moments"].items()},
+                ensure_ascii=False), encoding="utf-8")
             (tmp_path / "request.json").write_text(json.dumps(
                 {"frames": [{"momentId": mid, "frame": frame} for mid, (frame, _) in plan.items()]}),
                 encoding="utf-8")
@@ -97,12 +117,21 @@ def verify_project(project: Path, props_path: Path | None = None) -> dict[str, A
                 raise RuntimeError((done.stderr or "")[-2000:])
             # The still pass re-runs Film Type measurement; use the layout it rendered.
             rendered = json.loads((tmp_path / "stills" / "stills.json").read_text(encoding="utf-8"))
-            report: dict[str, Any] = {"props": str(props_path), "inputHash": rendered.get("inputHash"),
-                                      "moments": {}}
+            drift = [
+                mid for mid, layout in props["filmType"]["moments"].items()
+                if _geometry(layout.get("rows")) != _geometry((rendered.get("rows") or {}).get(mid))
+            ]
+            if drift:
+                raise RuntimeError(
+                    f"the verification pass measured different row geometry for {drift} than the "
+                    "delivered props; this browser/font does not match the delivery render"
+                )
+            report: dict[str, Any] = {"props": str(props_path), "moments": {}}
             for mid, (frame, rows) in plan.items():
                 still = np.asarray(Image.open(tmp_path / "stills" / f"{mid}-frame.png").convert("RGB"), dtype=float)
                 bg = np.asarray(Image.open(tmp_path / "stills" / f"{mid}-background.png").convert("RGB"), dtype=float)
-                layout = {**props["filmType"]["moments"][mid], "rows": rows}
+                checked = reference_rows(mid, json.loads(json.dumps(rows))) if reference_rows else rows
+                layout = {**props["filmType"]["moments"][mid], "rows": checked}
                 placement = str(layout.get("placement") or "")
                 align = "center" if placement == "center" or placement.endswith("-center") else "right"
                 report["moments"][mid] = {"frame": frame, **glyph_order_check(still, bg, layout, props, align=align)}

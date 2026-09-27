@@ -17,7 +17,7 @@ try {
   const {selectComposition, renderStill, openBrowser} = require('@remotion/renderer');
   const props = JSON.parse(fs.readFileSync(propsPath, 'utf8'));
   const request = JSON.parse(fs.readFileSync(requestPath, 'utf8'));
-  if (props.design?.profile !== 'film-type' || !props.filmType?.inputHash) throw new Error('Glyph verification needs prepared Film Type props.');
+  if (props.design?.profile !== 'film-type') throw new Error('Glyph verification needs Film Type props.');
   temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'openmontage-glyph-verify-'));
   const serveUrl = await bundle({
     entryPoint: path.join(composer, 'src', 'index.tsx'), rootDir: composer,
@@ -28,17 +28,18 @@ try {
   browser = await openBrowser('chrome', executable ? {browserExecutable: executable, logLevel: 'error'} : {logLevel: 'error'});
   const id = props.format === 'landscape' ? 'PersianFootageLandscape' : 'PersianFootageVertical';
   fs.mkdirSync(outDir, {recursive: true});
-  const results = [];
+  const results = []; let rows = {};
   for (const variant of [false, true]) {
     const inputProps = {...props, verificationHideGlyphs: variant};
     const composition = await selectComposition({serveUrl, id, inputProps, puppeteerInstance: browser, timeoutInMilliseconds: 120000, logLevel: 'error'});
+    if (!variant) rows = Object.fromEntries(Object.entries(composition.props.filmType?.moments ?? {}).map(([k, v]) => [k, v.rows]));
     for (const item of request.frames) {
       const output = path.join(outDir, `${item.momentId}-${variant ? 'background' : 'frame'}.png`);
       await renderStill({serveUrl, composition, inputProps: composition.props, frame: item.frame, output, imageFormat: 'png', puppeteerInstance: browser, timeoutInMilliseconds: 120000, logLevel: 'error'});
       results.push({momentId: item.momentId, frame: item.frame, variant: variant ? 'background' : 'frame', path: output});
     }
   }
-  fs.writeFileSync(path.join(outDir, 'stills.json'), JSON.stringify({inputHash: props.filmType.inputHash, results}, null, 2));
+  fs.writeFileSync(path.join(outDir, 'stills.json'), JSON.stringify({rows, results}, null, 2));
 } catch (error) {
   console.error("OPENMONTAGE_GLYPH_STILLS_ERROR=" + JSON.stringify({message: error?.message ?? String(error)}));
   process.exitCode = 1;
