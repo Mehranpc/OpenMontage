@@ -52,7 +52,13 @@ def execute(project_id: str, phase: str) -> dict[str, Any]:
             evidence["opening_candidate_sha256"] = _hash_file(output)
         else:
             evidence["output_sha256"] = _hash_file(output)
-            evidence["motion_qa_passed"] = (data.get("post_render_motion_qa") or {}).get("passed") is True
+            motion = data.get("post_render_motion_qa")
+            evidence["motion_qa_passed"] = isinstance(motion, dict) and motion.get("passed") is True
+            # render_report.post_render_motion_qa needs the full measured report,
+            # not a boolean; keep it with the bytes it measured (#286).
+            if isinstance(motion, dict):
+                evidence["post_render_motion_qa"] = motion
+                evidence["luminance_qa"] = data.get("luminance_qa")
     digest = _hash_file(output)
     return {
         "success": True,
