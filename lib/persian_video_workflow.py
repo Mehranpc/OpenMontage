@@ -3464,6 +3464,65 @@ def stage_workflow_asset_candidate(
     )
 
 
+
+def _planned_moment_band(state: Mapping[str, Any], visual_event_id: str) -> str | None:
+    """The declared negative_space of a moment-carrying event in the current plan."""
+    from lib.persian_scene_plan_source import materialize_scene_plan
+
+    project = _project_root(state)
+    path = materialize_scene_plan(project) or project / "artifacts" / "scene_plan.json"
+    if not Path(path).is_file():
+        return None
+    plan = json.loads(Path(path).read_text(encoding="utf-8"))
+    for beat in plan.get("beats") or []:
+        for event in (beat.get("visual_events") or []) if isinstance(beat, Mapping) else []:
+            if isinstance(event, Mapping) and str(event.get("id") or "") == visual_event_id:
+                if event.get("carries_moment") and event.get("negative_space"):
+                    return str(event["negative_space"])
+                return None
+    return None
+
+
+def _refuse_candidate_occupying_declared_band(
+    state: Mapping[str, Any], candidate_id: str, review: Mapping[str, Any]
+) -> None:
+    """Refuse, at candidate review, footage whose subject fills the planned text band (#261).
+
+    The first-date run bought, selected and manifested four moment shots whose subjects
+    filled the declared upper band; region review then refused all four, after the
+    search ceiling was spent. The reviewer already looks at the candidate's frames here,
+    so the same 10x10 grid is recorded now and judged by the region-review rule.
+    """
+    from lib.persian_asset_workspace import load_asset_candidate
+    from lib.persian_region_commands import PersianRegionCommandError, candidate_band_occupancy
+
+    candidate = load_asset_candidate(_project_root(state), candidate_id)
+    event_id = str((candidate.get("context") or {}).get("visualEventId") or "")
+    band = _planned_moment_band(state, event_id)
+    if band is None or band == "full_frame":
+        return
+    frame = review.get("frame_review") if isinstance(review, Mapping) else None
+    grid = frame.get("subject_grid") if isinstance(frame, Mapping) else None
+    if grid is None:
+        raise PersianVideoWorkflowError(
+            f"[BAND_EVIDENCE_REQUIRED] {event_id} carries a moment in its declared "
+            f"{band!r}: record frame_review.subject_grid (start/middle/end, the same 10x10 "
+            "annotation format as regions propose) so the band is judged before selection"
+        )
+    try:
+        occupancy = candidate_band_occupancy(grid, band)
+    except PersianRegionCommandError as exc:
+        raise PersianVideoWorkflowError(f"[BAND_EVIDENCE_INVALID] {exc}") from exc
+    if occupancy["occupied"]:
+        where = ", ".join(sorted({box["position"] for box in occupancy["occupying"]}))
+        clear = ", ".join(occupancy["clearRegions"]) or "none"
+        raise PersianVideoWorkflowError(
+            f"[BAND_OCCUPIED:{band}] {candidate_id} for {event_id}: a reviewed hard region "
+            f"occupies the declared {band} on the {where} frame(s), so region review would "
+            f"refuse this shot. Clear regions on this footage: {clear}. Reject the candidate "
+            f"(asset-candidate-reject --category technical) or reconcile-plan the band first."
+        )
+
 def review_workflow_asset_candidate(
     project_id: str, candidate_id: str, input_path: str | Path, *, pipeline_dir: Path | None = None
 ) -> dict[str, Any]:
@@ -3471,8 +3530,10 @@ def review_workflow_asset_candidate(
     _require_asset_candidate_phase(state)
     _scope_allows_candidate(state, candidate_id)
     source = assert_read_allowed(state, str(input_path))
+    review = _read_json(str(source))
+    _refuse_candidate_occupying_declared_band(state, candidate_id, review)
     return record_candidate_review(
-        _project_root(state), candidate_id, _read_json(str(source))
+        _project_root(state), candidate_id, review
     )
 
 

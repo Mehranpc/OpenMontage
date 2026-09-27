@@ -25,7 +25,36 @@
     "middle": true,
     "observed": "start/middle/end of the selected window: one hand holding a blank-screen phone, the same plain textured wall behind it, nothing entering the upper band. Clear region: the plain textured wall fills the whole upper band; only the hand and phone sit in the lower half.",
     "placement_space": "upper_band",
-    "start": true
+    "start": true,
+    "subject_grid": {
+     "start": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 9
+      }
+     },
+     "middle": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 9
+      }
+     },
+     "end": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 9
+      }
+     }
+    }
    },
    "geometry_review": {
     "crop_safe": true,
@@ -64,7 +93,36 @@
     "end": true,
     "middle": true,
     "observed": "start/middle/end of the selected window: the same two hands using a phone on the desk, laptop behind, no cut or change of subject.",
-    "start": true
+    "start": true,
+    "subject_grid": {
+     "start": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 2,
+       "x2": 10,
+       "y2": 10
+      }
+     },
+     "middle": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 2,
+       "x2": 10,
+       "y2": 10
+      }
+     },
+     "end": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 2,
+       "x2": 10,
+       "y2": 10
+      }
+     }
+    }
    },
    "geometry_review": {
     "crop_safe": true,
@@ -103,7 +161,36 @@
     "end": true,
     "middle": true,
     "observed": "start/middle/end of the selected window: the same woman in the leather chair with her phone, a drink on the table, the cafe behind her unchanged across the window.",
-    "start": true
+    "start": true,
+    "subject_grid": {
+     "start": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 1,
+       "x2": 10,
+       "y2": 10
+      }
+     },
+     "middle": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 1,
+       "x2": 10,
+       "y2": 10
+      }
+     },
+     "end": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 1,
+       "x2": 10,
+       "y2": 10
+      }
+     }
+    }
    },
    "geometry_review": {
     "crop_safe": true,
@@ -143,7 +230,36 @@
     "middle": true,
     "observed": "start/middle/end of the selected window: people walking along the promenade, sky unchanged across the whole upper band, no camera move that closes the space. Clear region: the open sky fills the upper band above the promenade; no subject enters it.",
     "placement_space": "upper_band",
-    "start": true
+    "start": true,
+    "subject_grid": {
+     "start": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 10
+      }
+     },
+     "middle": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 10
+      }
+     },
+     "end": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 10
+      }
+     }
+    }
    },
    "geometry_review": {
     "crop_safe": true,
@@ -183,7 +299,36 @@
     "middle": true,
     "observed": "start/middle/end of the selected window: the same table with the phone, books and glass; the upper band stays plain fabric and wall.",
     "placement_space": "upper_band",
-    "start": true
+    "start": true,
+    "subject_grid": {
+     "start": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 6,
+       "y2": 7
+      }
+     },
+     "middle": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 6,
+       "y2": 7
+      }
+     },
+     "end": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 6,
+       "y2": 7
+      }
+     }
+    }
    },
    "geometry_review": {
     "crop_safe": true,
@@ -223,7 +368,36 @@
     "middle": true,
     "observed": "start/middle/end of the selected window: the same man in bed holding the phone, wall and pillows unchanged, no subject inside the upper band. Clear region: the white wall above the bed fills the upper band; nothing crosses it.",
     "placement_space": "upper_band",
-    "start": true
+    "start": true,
+    "subject_grid": {
+     "start": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 10
+      }
+     },
+     "middle": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 10
+      }
+     },
+     "end": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 10
+      }
+     }
+    }
    },
    "geometry_review": {
     "crop_safe": true,
@@ -263,7 +437,36 @@
     "middle": true,
     "observed": "start/middle/end of the selected window: the same hand holding the lit phone against the warm dark wall, the lamp glow at the top edge unchanged across the window. Clear region: the warm dark wall spans the upper band; only the lamp glow sits at the very top edge.",
     "placement_space": "upper_band",
-    "start": true
+    "start": true,
+    "subject_grid": {
+     "start": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 6,
+       "x2": 10,
+       "y2": 10
+      }
+     },
+     "middle": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 6,
+       "x2": 10,
+       "y2": 10
+      }
+     },
+     "end": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 6,
+       "x2": 10,
+       "y2": 10
+      }
+     }
+    }
    },
    "geometry_review": {
     "crop_safe": true,
@@ -302,7 +505,36 @@
     "end": true,
     "middle": true,
     "observed": "start/middle/end of the selected window: the same table and vase with both chairs empty, nothing entering or leaving the frame.",
-    "start": true
+    "start": true,
+    "subject_grid": {
+     "start": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 9
+      }
+     },
+     "middle": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 9
+      }
+     },
+     "end": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 9
+      }
+     }
+    }
    },
    "geometry_review": {
     "crop_safe": true,
@@ -342,7 +574,36 @@
     "middle": true,
     "observed": "start/middle/end of the selected window: the same man at the table with the cup and notebook; his face is out of frame, only hands and shoulders are visible, and the wall behind stays plain.",
     "placement_space": "upper_band",
-    "start": true
+    "start": true,
+    "subject_grid": {
+     "start": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 9
+      }
+     },
+     "middle": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 9
+      }
+     },
+     "end": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 9
+      }
+     }
+    }
    },
    "geometry_review": {
     "crop_safe": true,
@@ -382,7 +643,36 @@
     "middle": true,
     "observed": "start/middle/end of the selected window: the same woman in the wicker chair with her laptop, the plants and hanging lamp unchanged above her.",
     "placement_space": "upper_band",
-    "start": true
+    "start": true,
+    "subject_grid": {
+     "start": {
+      "priority": "hard",
+      "grid": {
+       "x1": 2,
+       "y1": 4,
+       "x2": 8,
+       "y2": 9
+      }
+     },
+     "middle": {
+      "priority": "hard",
+      "grid": {
+       "x1": 2,
+       "y1": 4,
+       "x2": 8,
+       "y2": 9
+      }
+     },
+     "end": {
+      "priority": "hard",
+      "grid": {
+       "x1": 2,
+       "y1": 4,
+       "x2": 8,
+       "y2": 9
+      }
+     }
+    }
    },
    "geometry_review": {
     "crop_safe": true,
@@ -422,7 +712,36 @@
     "middle": true,
     "observed": "start/middle/end of the selected window: the same hands at the table with the phone beside them, the tabletop and background unchanged.",
     "placement_space": "upper_band",
-    "start": true
+    "start": true,
+    "subject_grid": {
+     "start": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 8
+      }
+     },
+     "middle": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 8
+      }
+     },
+     "end": {
+      "priority": "hard",
+      "grid": {
+       "x1": 0,
+       "y1": 4,
+       "x2": 10,
+       "y2": 8
+      }
+     }
+    }
    },
    "geometry_review": {
     "crop_safe": true,

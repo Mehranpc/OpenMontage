@@ -1,0 +1,144 @@
+[
+ {
+  "visual_event_id": "ve-5",
+  "stage": {
+   "discovery_id": "asset-source-2f6a6980750935a991e6",
+   "visual_event_id": "ve-5",
+   "semantic_beat_id": "beat-5",
+   "source_in_seconds": 3.1,
+   "duration_seconds": 5.59,
+   "intended_crop": {
+    "mode": "cover_9x16",
+    "x": 0.0,
+    "y": 0.0,
+    "w": 1.0,
+    "h": 1.0
+   },
+   "candidate_rank": 1,
+   "query": "phone on table minimal background",
+   "narration_span": "و بعد، طرف مقابل یا بلافاصله پیام میداد، یا صبح روز بعد، یا دو روز بعد."
+  },
+  "review": {
+   "frame_review": {
+    "start": true,
+    "middle": true,
+    "end": true,
+    "observed": "start/middle/end of the selected window: the same three phones on the same plain wall, nothing moving into the empty centre band.",
+    "placement_space": "upper_band",
+    "placement_observed": "the beige wall above the three phones is empty across the whole upper band",
+    "subject_grid": {
+     "start": {
+      "priority": "hard",
+      "grid": {
+       "x1": 2,
+       "y1": 2,
+       "x2": 8,
+       "y2": 7
+      }
+     },
+     "middle": {
+      "priority": "hard",
+      "grid": {
+       "x1": 2,
+       "y1": 2,
+       "x2": 8,
+       "y2": 7
+      }
+     },
+     "end": {
+      "priority": "hard",
+      "grid": {
+       "x1": 2,
+       "y1": 2,
+       "x2": 8,
+       "y2": 7
+      }
+     }
+    }
+   },
+   "shows_subject": true,
+   "human_presence": false,
+   "affect_match": true,
+   "staged_stock_risk": "medium",
+   "relevance_reason": "three identical phones standing against a plain wall are literally the beat's three message timings (immediate, next morning, two days), with the subject in frame.",
+   "selection_reason": "three phones on an empty wall: the centre band stays plain so the moment copy sits clear of them, and the shot states 'three options' without narrating it.",
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x2048 source; a 9:16 cover crop trims ~6% of the height and all three phones stay inside the frame."
+   },
+   "resolution_quality": "strong"
+  },
+  "measurement": "a phone standing on a plain wall, body 29.5%-70% of frame height (measured dark-run scan)"
+ },
+ {
+  "visual_event_id": "ve-9",
+  "stage": {
+   "discovery_id": "asset-source-ee201e0d4bf37a777b05",
+   "visual_event_id": "ve-9",
+   "semantic_beat_id": "beat-9",
+   "source_in_seconds": 2.2,
+   "duration_seconds": 7.32,
+   "intended_crop": {
+    "mode": "cover_9x16",
+    "x": 0.0,
+    "y": 0.0,
+    "w": 1.0,
+    "h": 1.0
+   },
+   "candidate_rank": 1,
+   "query": "phone on table plain wall behind",
+   "narration_span": "افراد احساس شیمی و انگیزه کمتری برای ادامه ارتباط داشتند و طرف مقابل رو کمتر قابلاعتماد میدیدند."
+  },
+  "review": {
+   "frame_review": {
+    "start": true,
+    "middle": true,
+    "end": true,
+    "observed": "start/middle/end of the selected window: the same man at the table with the phone, spoon and cup; the wall behind him stays plain across the window.",
+    "placement_space": "upper_band",
+    "placement_observed": "the pale wall behind the man is empty across the upper band",
+    "subject_grid": {
+     "start": {
+      "priority": "hard",
+      "grid": {
+       "x1": 1,
+       "y1": 2,
+       "x2": 9,
+       "y2": 10
+      }
+     },
+     "middle": {
+      "priority": "hard",
+      "grid": {
+       "x1": 1,
+       "y1": 2,
+       "x2": 9,
+       "y2": 10
+      }
+     },
+     "end": {
+      "priority": "hard",
+      "grid": {
+       "x1": 1,
+       "y1": 2,
+       "x2": 9,
+       "y2": 10
+      }
+     }
+    }
+   },
+   "shows_subject": true,
+   "human_presence": true,
+   "affect_match": true,
+   "staged_stock_risk": "low",
+   "relevance_reason": "the beat is 'two days of waiting helped nothing'; a man alone at a table with his phone, eating without looking up, is that beat without staging a breakdown.",
+   "selection_reason": "man alone at a white table with a phone and a cup, plain pale wall behind and the upper band clear. The affect is deliberately muted — absorbed and alone rather than visibly upset — which is what 'nothing came of it' looks like; recorded as a read, not an accident.",
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x2048 source; a 9:16 cover crop trims ~6% of the height and keeps the man and the wall above him."
+   },
+   "resolution_quality": "strong"
+  },
+  "measurement": "man alone at a table, cap and head enter the band around 30%"
+ }
+]
