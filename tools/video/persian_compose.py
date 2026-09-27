@@ -47,6 +47,7 @@ two independent guards, because the failure they prevent is silent.
 from __future__ import annotations
 
 import json
+import os
 import logging
 import re
 import secrets
@@ -483,6 +484,13 @@ class PersianCompose(BaseTool):
                 # Windows. Same reasoning as video_compose._remotion_render.
                 f"--props={props_path}",
             ]
+            # The Film Type prepass (lib/persian_film_type.py) launches this same
+            # executable. The Remotion CLI ignores the variable, so without the flag
+            # the render uses its own headless shell, whose glyph bounds can differ
+            # by a pixel and refuse the saved geometry as stale (#282).
+            browser_executable = os.environ.get("REMOTION_BROWSER_EXECUTABLE")
+            if browser_executable:
+                cmd.append(f"--browser-executable={browser_executable}")
 
             scale = inputs.get("scale")
             if scale is not None and float(scale) != 1.0:
