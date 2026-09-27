@@ -2525,6 +2525,7 @@ def request_send_back(
         state["send_backs"] = 0
         state["budget_window_started_at"] = effective_now.isoformat()
         state["recovery_attempts"] = {}
+        state["plan_reconciliations"] = []
         state.pop("recovery_stop", None)
         state["attempts"] = {
             key: value for key, value in previous_attempts.items()
@@ -2625,6 +2626,199 @@ def request_send_back(
     state["send_back_history"] = history
     _write_state(_project_root(state), state)
     return state
+
+
+#: Declarative scene-plan fields that describe what the footage IS, not what to fetch.
+#: Correcting them after acquisition changes no timing, query, id or download; it makes
+#: the plan tell the truth about the reviewed footage (#224).
+_RECONCILABLE_EVENT_FIELDS = frozenset({
+    "shows_subject", "negative_space", "carries_moment", "fallback_level", "moment_copy",
+})
+_RECONCILE_PHASES = ("acquire_assets", "review_subject_regions")
+
+
+def reconcile_scene_plan(
+    project_id: str,
+    amendments: Sequence[Mapping[str, Any]],
+    *,
+    reason: str,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Correct declarative plan fields against reviewed footage without a send-back (#224).
+
+    A run found that its footage had no phone in three events and no clear band on
+    three moment carriers. Every repair was the same edit: re-declare `shows_subject`
+    or `negative_space`, or move `carries_moment`, with no new download. The only tool
+    for that was `send-back plan_scenes_moments`. It spends one of two send-backs,
+    archives the assets checkpoint, and forces the manifest and every phase after it
+    to be rebuilt. Two such repairs exhausted the budget and the third needed a human.
+
+    This amends only `_RECONCILABLE_EVENT_FIELDS` on existing visual events, re-runs the
+    plan's own gates (schema, declared-region vocabulary, moment-copy feasibility), and
+    keeps timing, queries, ids and acquisition state untouched. When an assets checkpoint
+    exists, the manifest is re-audited against the corrected plan. If it still passes, the
+    run continues where it was. If it no longer passes (a carrier's reviewed placement
+    now differs), only the assets checkpoint is archived and the run returns to
+    `acquire_assets` with its candidates, passes and budgets intact, so the manifest can
+    be rebuilt from the durable workspace. No send-back is spent. It is bounded by
+    `max_revisions_per_stage` per budget window.
+    """
+    from lib.persian_assets import audit_asset_manifest
+    from lib.persian_scenes import NEGATIVE_SPACE_REGIONS
+
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    effective_now = now or datetime.now(timezone.utc)
+    assert_within_wall_time(state, now=effective_now)
+    if state.get("status") != "active":
+        raise PersianVideoWorkflowError(
+            f"reconcile-plan needs an active run, not {state.get('status')!r}"
+        )
+    phase = str(state.get("next_phase") or "")
+    if phase not in _RECONCILE_PHASES:
+        raise PersianVideoWorkflowError(
+            f"reconcile-plan is for correcting the plan against reviewed footage during "
+            f"{' or '.join(_RECONCILE_PHASES)}; the run is at {phase!r}"
+        )
+    if not reason.strip():
+        raise PersianVideoWorkflowError("reconcile-plan requires a non-empty reason")
+    if not amendments:
+        raise PersianVideoWorkflowError("reconcile-plan requires at least one amendment")
+    history = list(state.get("plan_reconciliations") or [])
+    limit = int(state["budgets"]["max_revisions_per_stage"])
+    if len(history) >= limit:
+        raise PersianVideoWorkflowError(
+            f"plan reconciliation budget exhausted: {len(history)} of {limit} used this "
+            "window; the footage does not support this plan, so it needs a real replan "
+            "(send-back plan_scenes_moments)"
+        )
+
+    root = _project_root(state)
+    projects_root = root.parent
+    checkpoint = read_checkpoint(projects_root, project_id, "scene_plan")
+    if not isinstance(checkpoint, Mapping) or checkpoint.get("status") != "completed":
+        raise PersianVideoWorkflowError("reconcile-plan needs a completed scene_plan checkpoint")
+    plan = json.loads(json.dumps((checkpoint.get("artifacts") or {}).get("scene_plan") or {}))
+    events = {
+        str(event.get("id")): event
+        for beat in plan.get("beats") or [] if isinstance(beat, dict)
+        for event in beat.get("visual_events") or [] if isinstance(event, dict)
+    }
+
+    applied: list[dict[str, Any]] = []
+    for index, amendment in enumerate(amendments):
+        if not isinstance(amendment, Mapping):
+            raise PersianVideoWorkflowError(f"amendment[{index}] must be an object")
+        event_id = str(amendment.get("visual_event_id") or "").strip()
+        if event_id not in events:
+            raise PersianVideoWorkflowError(
+                f"amendment[{index}]: unknown visual_event_id {event_id!r}"
+            )
+        fields = amendment.get("set")
+        if not isinstance(fields, Mapping) or not fields:
+            raise PersianVideoWorkflowError(f"amendment[{index}].set must be a non-empty object")
+        illegal = sorted(set(fields) - _RECONCILABLE_EVENT_FIELDS)
+        if illegal:
+            raise PersianVideoWorkflowError(
+                f"amendment[{index}] ({event_id}): {', '.join(illegal)} cannot be reconciled; "
+                f"only {', '.join(sorted(_RECONCILABLE_EVENT_FIELDS))} describe the footage. "
+                "Timing, queries and identity need a real replan (send-back)."
+            )
+        event = events[event_id]
+        before = {key: event.get(key) for key in fields}
+        for key, value in fields.items():
+            if value is None:
+                event.pop(key, None)
+            else:
+                event[key] = value
+        if event.get("carries_moment") and event.get("negative_space") not in NEGATIVE_SPACE_REGIONS:
+            raise PersianVideoWorkflowError(
+                f"amendment[{index}] ({event_id}): a moment carrier must declare negative_space "
+                f"as one of {sorted(NEGATIVE_SPACE_REGIONS)}"
+            )
+        applied.append({"visual_event_id": event_id, "before": before, "after": dict(fields)})
+
+    try:
+        validate_artifact("scene_plan", plan)
+    except Exception as exc:
+        raise PersianVideoWorkflowError(f"reconciled scene_plan breaks its schema: {exc}") from exc
+    _refuse_infeasible_moment_copy({"artifacts": {"scene_plan": plan}})
+
+    metadata = dict(checkpoint.get("metadata") or {})
+    records = list(metadata.get("plan_reconciliations") or [])
+    records.append({"at": effective_now.isoformat(), "reason": reason.strip(), "amendments": applied})
+    metadata["plan_reconciliations"] = records
+    write_checkpoint(
+        projects_root, project_id, "scene_plan", "completed", {"scene_plan": plan},
+        pipeline_type="persian-footage", metadata=metadata,
+        review=checkpoint.get("review"),
+    )
+    artifact_path = root / "artifacts" / "scene_plan.json"
+    if artifact_path.parent.is_dir():
+        artifact_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    outcome = "plan_reconciled"
+    archived: list[str] = []
+    manifest_problems: list[str] = []
+    assets = read_checkpoint(projects_root, project_id, "assets")
+    if isinstance(assets, Mapping) and assets.get("status") == "completed":
+        manifest = (assets.get("artifacts") or {}).get("asset_manifest")
+        manifest_problems = audit_asset_manifest(dict(manifest or {}), plan)
+        if manifest_problems:
+            moved = _archive_stale_checkpoint(
+                root, "assets",
+                reason=f"plan reconciled ({reason.strip()}); manifest no longer matches it",
+            )
+            if moved:
+                archived.append(moved)
+            if phase != "acquire_assets":
+                _interrupt_open_explicit_work_for_phase(state, phase, now=effective_now)
+                _finish_phase_telemetry(state, phase, outcome="superseded", now=effective_now)
+                acquire_index = _phase_index("acquire_assets")
+                state["completed_phases"] = [
+                    item for item in state.get("completed_phases", [])
+                    if _phase_index(item) < acquire_index
+                ]
+                evidence = dict(state.get("evidence") or {})
+                state["evidence"] = {
+                    key: value for key, value in evidence.items()
+                    if _phase_index(key) < acquire_index
+                }
+                attempts = dict(state.get("attempts") or {})
+                for item in PHASES[acquire_index:]:
+                    attempts.pop(item, None)
+                state["attempts"] = attempts
+                state["next_phase"] = "acquire_assets"
+            outcome = "plan_reconciled_rebuild_manifest"
+
+    history.append({
+        "at": effective_now.isoformat(),
+        "reason": reason.strip(),
+        "phase": phase,
+        "event_ids": [row["visual_event_id"] for row in applied],
+        "outcome": outcome,
+        "archived_checkpoints": archived,
+    })
+    state["plan_reconciliations"] = history
+    _write_state(root, state)
+    return {
+        "outcome": outcome,
+        "nextPhase": state.get("next_phase"),
+        "amendments": applied,
+        "manifestProblems": manifest_problems,
+        "archivedCheckpoints": archived,
+        "sendBacksUsed": int(state.get("send_backs", 0)),
+        "reconciliationsUsed": len(history),
+        "reconciliationLimit": limit,
+        "note": (
+            "Rebuild the manifest from the durable workspace (assets build-manifest with "
+            "overrides for the corrected carriers), write the assets checkpoint, and "
+            "complete acquire_assets; no new download is needed."
+            if outcome == "plan_reconciled_rebuild_manifest" else
+            "Plan corrected in place. If region sheets were built, rebuild them (cached "
+            "frames are reused) and re-propose; the proposal is bound to the plan."
+        ),
+    }
 
 
 def bounded_asset_search_request(
@@ -3244,8 +3438,9 @@ def _refuse_declared_negative_space_collisions(state: Mapping[str, Any]) -> None
         "[DECLARED_NEGATIVE_SPACE_OCCUPIED] review_subject_regions cannot complete: "
         f"{len(collisions)} carries_moment event(s) declare negative space the reviewed "
         "subject occupies, which the edit stage would refuse after spending candidates. "
-        "Fix the plan now (send-back plan_scenes_moments to move the moment carrier or "
-        "re-declare the region), or correct the annotations if the review was wrong:\n  - "
+        "Fix the plan now with `reconcile-plan` (move the moment carrier or re-declare the "
+        "region against the reviewed footage; no send-back is spent), or correct the "
+        "annotations if the review was wrong:\n  - "
         + "\n  - ".join(lines)
     )
 
@@ -4430,6 +4625,14 @@ def build_parser() -> argparse.ArgumentParser:
     recovery.add_argument("--strategy", required=True)
     recovery.add_argument("--artifact-sha256")
 
+    reconcile = sub.add_parser(
+        "reconcile-plan",
+        help="correct declarative plan fields against reviewed footage; no send-back spent",
+    )
+    reconcile.add_argument("project_id")
+    reconcile.add_argument("--json", required=True, metavar="PATH",
+                           help='{"amendments":[{"visual_event_id":"ve-4","set":{"shows_subject":false}}]}')
+    reconcile.add_argument("--reason", required=True)
     send_back = sub.add_parser("send-back", help="rewind within the send-back budget")
     send_back.add_argument("project_id")
     send_back.add_argument("target_phase")
@@ -4759,6 +4962,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.project_id, diagnostic_code=args.code,
                 recovery_class=args.recovery_class, strategy=args.strategy,
                 artifact_sha256=args.artifact_sha256,
+            ))
+        elif args.command == "reconcile-plan":
+            state = load_workflow_state(args.project_id)
+            source = assert_read_allowed(state, str(args.json))
+            payload = _read_json(str(source))
+            _print_json(reconcile_scene_plan(
+                args.project_id, list((payload or {}).get("amendments") or []),
+                reason=args.reason,
             ))
         elif args.command == "send-back":
             _print_json(
