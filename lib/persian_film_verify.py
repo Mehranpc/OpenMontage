@@ -88,7 +88,9 @@ def glyph_order_check(frame, background, layout, props, *, align="right"):
     h, w = frame.shape[:2]
     dims = (1080, 1920) if props["format"] == "vertical" else (1920, 1080)
     scale = w / dims[0]
-    ink = np.abs(frame - background).max(axis=2) > 40
+    # Ink is what the glyphs ADD: white/yellow over a darkened field. The glyph shadow
+    # only darkens, so a signed difference keeps it out of the profile.
+    ink = (np.asarray(frame, dtype=float) - np.asarray(background, dtype=float)).max(axis=2) > 40
     pad = float(props["design"]["resolved"]["layout"].get("inkPaddingPx", 12))
     rect = layout["rect"]
     left, top = rect["x"] * w, rect["y"] * h

@@ -350,6 +350,8 @@ export type PersianVideoProps = {
   readonly design?: PersianDesignSnapshot;
   /** Browser-measured, frozen Film Type layout; produced before render, not authored by hand. */
   readonly filmType?: FilmTypeLayout;
+  /** Verification only (#252): paint every Film Type layer except the glyphs, so a lossless still pair isolates the ink. Never set on a delivery render. */
+  readonly verificationHideGlyphs?: boolean;
   readonly shots: readonly PersianShot[];
   readonly moments: readonly PersianMoment[];
   readonly typographicBeats?: readonly PersianTypographicBeat[];
