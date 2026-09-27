@@ -37,3 +37,23 @@ Reviewed subject regions are authoritative typography-placement evidence in 2.16
 ## Preserved protections
 
 2.16 retains Issue #28 opening-first rendering, digest-bound promotion, canonical mastering before final SHA identity, deterministic watermark coverage, caption authority, safe areas, provenance, final review, and the terminal `awaiting_human` checkpoint.
+
+## Watermark relocates beside text (#215)
+
+The brand yields to editorial text by moving, not by disappearing:
+
+- While a moment is on screen, the brand stays out of that text's whole vertical band.
+  Text at upper-right sends the brand to a lower anchor, not to upper-left beside it,
+  and the brand keeps `minTextClearancePx` from the text.
+- A burned caption blocks the brand only while it actually paints. Captions hide
+  whenever a moment owns the frame, so they no longer close the lower anchors under
+  every moment.
+- With burned captions active, the lower anchors sit above the caption band by the
+  same clearance, so a painting caption does not evict the brand from the lower band.
+
+Coverage stays governed by `minCoverageRatio` (0.70; the intended range is 60-70% of
+runtime) and the brand may still be briefly absent where no anchor is clear. In a
+62.5s hybrid-caption run with seven upper moments, coverage went from 36% (a hard
+`WATERMARK_COVERAGE` stop) to 92%. The profile tokens are unchanged, so the pinned
+2.16 hash is unchanged. Older pins plan exactly as before.
+

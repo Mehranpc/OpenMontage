@@ -929,6 +929,24 @@ function buildWatermarkDiagnostics(
   return {durationSeconds:round(duration),introDelaySeconds:round(intro),eligibleSeconds:round(eligible),coveredSeconds:round(covered),missingSeconds:round(Math.max(0,duration-covered)),coverageRatio:round(coverage),coverageRatioEligibleWindow:round(eligible>0?covered/eligible:0),coverageFloor:round(floor),coverageTarget:round(target),suppressionGaps:gaps,candidateZones:[...sink.candidateZones],rejectedIntervals:[...sink.rejectedIntervals],bestSchedule:[...plan],topBlockers};
 }
 
+/** The sub-intervals of a burned cue that actually paint, mirroring PersianCaptionBlock:
+ * the cue minus every active moment, and nothing when the paintable total is a sub-second
+ * residue (the component returns null for the whole cue then). */
+export function paintedCaptionIntervals(start:number,end:number,moments:readonly {startSeconds:number;endSeconds:number}[]):Array<[number,number]>{
+  let spans:Array<[number,number]>=[[start,end]];
+  for(const m of moments){
+    const next:Array<[number,number]>=[];
+    for(const [a,b] of spans){
+      if(m.endSeconds<=a||m.startSeconds>=b){next.push([a,b]);continue;}
+      if(m.startSeconds>a)next.push([a,m.startSeconds]);
+      if(m.endSeconds<b)next.push([m.endSeconds,b]);
+    }
+    spans=next;
+  }
+  const paintable=spans.reduce((sum,[a,b])=>sum+Math.max(0,b-a),0);
+  return paintable>0&&paintable<1?[]:spans;
+}
+
 function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record<string,FilmMomentLayout>, lockup: FilmLockup | null, avoid: TimedRect[], diagnosticSink?: WatermarkDiagnosticSink): NonNullable<PersianVideoProps["watermarkPlan"]> {
   if (!lockup) return [];
   const dims=FORMAT_DIMENSIONS[props.format],safe=watermarkSafeArea(p,props.format),l=p.layout,cfg=p.watermark;
@@ -945,8 +963,11 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
   const padPx = safePadPx(p);
   const left=safe.left+(l.edgeInsetPx+padPx)/dims.width,right=1-safe.right-(l.edgeInsetPx+padPx)/dims.width-w;
   const top=safe.top+(l.edgeInsetPx+padPx)/dims.height,bottom=1-safe.bottom-(l.edgeInsetPx+padPx)/dims.height-h;
+  const captionTop=(props.captionMode === "burned_captions" || props.captionMode === "hybrid")&&p.profileVersion==="2.16.0"
+    ? captionBandRect(props.format, props.design).y-(Math.max(cfg.minTextClearancePx??0,lockup.heightPx)+2)/dims.height-h : bottom;
+  const lowerY=Math.min(bottom,captionTop);
   const rects: Record<string,Rect> = {
-    "lower-left":{x:left,y:bottom,w,h},"lower-right":{x:right,y:bottom,w,h},
+    "lower-left":{x:left,y:lowerY,w,h},"lower-right":{x:right,y:lowerY,w,h},
     "mid-left":{x:left,y:.5-h/2,w,h},"mid-right":{x:right,y:.5-h/2,w,h},
     "upper-left":{x:left,y:top,w,h},"upper-right":{x:right,y:top,w,h},
   };
@@ -990,10 +1011,24 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
   const textRects: TimedRect[]=props.moments.map(m=>({...layouts[m.id].rect,h:layouts[m.id].rect.h+l.motionClearancePx/dims.height,startSeconds:m.startSeconds,endSeconds:m.endSeconds,ownerType:"moment",ownerId:m.id}));
   const textLabels:string[]=props.moments.map(m=>`moment ${m.id}`);
   const captionActive=props.captionMode === "burned_captions" || props.captionMode === "hybrid";
+  // 2.16 (#215): the brand relocates away from text instead of disappearing.
+  // (1) A burned caption is an obstacle only while it actually paints.
+  //     PersianCaptionBlock hides itself whenever a moment owns the frame, so charging
+  //     its whole cue window closed the lower anchors exactly while the text held the
+  //     upper ones. With both bands shut, the brand vanished under every moment.
+  // (2) Editorial text claims its whole vertical band for the brand. With text at
+  //     upper-right, the brand moves to the lower band, not to upper-left beside it.
+  const relocating=p.profileVersion==="2.16.0";
+  if(relocating) for(const rect of textRects) if(rect.ownerType==="moment"){ rect.x=0; rect.w=1; }
   if(captionActive) {
     for(const caption of props.captions ?? []) {
-      textRects.push({...captionBandRect(props.format, props.design),startSeconds:caption.startSeconds,endSeconds:caption.endSeconds,ownerType:"caption",ownerId:caption.id});
-      textLabels.push(`caption ${caption.id}`);
+      const intervals=relocating
+        ? paintedCaptionIntervals(caption.startSeconds,caption.endSeconds,props.moments)
+        : [[caption.startSeconds,caption.endSeconds] as [number,number]];
+      for(const [startSeconds,endSeconds] of intervals){
+        textRects.push({...captionBandRect(props.format, props.design),startSeconds,endSeconds,ownerType:"caption",ownerId:caption.id});
+        textLabels.push(`caption ${caption.id}`);
+      }
     }
   }
   const blockers:string[]=[];
