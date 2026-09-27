@@ -1058,6 +1058,84 @@ def declared_negative_space_collisions(
     return collisions
 
 
+#: Film Type 2.16 opening-hook geometry, mirrored from `placeMoment` in
+#: remotion-composer/src/persian/filmType/layout.ts: the hook zone order and the tokens
+#: that place a zone (layout.upperCentre/middleCentre, vertical safe area, edge inset,
+#: motion clearance). The box is the smallest poster hook measured in real renders (a
+#: 3-row hero/tail/tail at ~0.56 x 0.20 of the frame), so "no zone fits" here means no
+#: real hook can fit either. It is a feasibility screen, not the placement itself.
+_HOOK_ZONES = ("upper-right", "upper-center", "mid-right", "center", "lower-right")
+_HOOK_BOX = (0.56, 0.20)
+_HOOK_WINDOW_SECONDS = 5.0
+_SAFE = {"top": 0.14, "bottom": 0.35, "left": 0.08, "right": 0.08}
+_UPPER_CENTRE, _MIDDLE_CENTRE = 0.26, 0.56
+_EDGE_INSET, _MOTION = 10 / 1920, 18 / 1920
+
+
+def _hook_zone_rect(zone: str) -> tuple[float, float, float, float]:
+    w, h = _HOOK_BOX
+    if zone in ("center", "upper-center"):
+        x = (_SAFE["left"] + 1 - _SAFE["right"]) / 2 - w / 2
+    else:
+        x = 1 - _SAFE["right"] - 10 / 1080 - w
+    low = 1 - _SAFE["bottom"] - (10 + 18) / 1920 - h
+    if zone.startswith("lower"):
+        y = low
+    else:
+        centre = _UPPER_CENTRE if zone.startswith("upper") else _MIDDLE_CENTRE
+        y = min(max(centre - h / 2, _SAFE["top"] + _EDGE_INSET), low)
+    return x, y, w, h + _MOTION
+
+
+def opening_hook_placement(
+    canonical_shots: Sequence[Mapping[str, Any]],
+    proposed_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any] | None:
+    """Whether any Film Type hook zone is clear of reviewed hard regions over the opening.
+
+    In a real run, the opening hook had to change three times and the opening and closing
+    shots were finally swapped at the edit stage, because the opening shot's subject left
+    no hook zone clear. That is known the moment the opening shot's regions are reviewed
+    (#229), so it is reported here with the zones that stay clear.
+    """
+    regions_by_shot = {
+        str(row.get("shot_id")): list(row.get("avoidRegions") or []) for row in proposed_rows
+    }
+    opening = [
+        shot for shot in canonical_shots
+        if float((shot.get("timeline") or {}).get("startSeconds", 99.0)) < _HOOK_WINDOW_SECONDS
+    ]
+    if not opening:
+        return None
+    clear: list[str] = []
+    blockers: dict[str, list[str]] = {}
+    for zone in _HOOK_ZONES:
+        zx, zy, zw, zh = _hook_zone_rect(zone)
+        hit: list[str] = []
+        for shot in opening:
+            timeline = shot.get("timeline") or {}
+            window_end = min(float(timeline.get("endSeconds", 0.0)), _HOOK_WINDOW_SECONDS)
+            for index, region in enumerate(regions_by_shot.get(str(shot["shotId"]), [])):
+                if not isinstance(region, Mapping) or region.get("priority") == "soft":
+                    continue
+                if float(region.get("startSeconds", 0.0)) >= window_end:
+                    continue
+                rx, ry = float(region.get("x", 0.0)), float(region.get("y", 0.0))
+                rw, rh = float(region.get("w", 0.0)), float(region.get("h", 0.0))
+                if min(zx + zw, rx + rw) - max(zx, rx) > 0 and min(zy + zh, ry + rh) - max(zy, ry) > 0:
+                    hit.append(f"{shot['shotId']}#{index}")
+        if hit:
+            blockers[zone] = hit
+        else:
+            clear.append(zone)
+    return {
+        "shotIds": [str(shot["shotId"]) for shot in opening],
+        "clearZones": clear,
+        "blockedZones": blockers,
+        "feasible": bool(clear),
+    }
+
+
 def propose_regions(
     pipeline_dir: Path,
     project_id: str,
@@ -1171,6 +1249,7 @@ def propose_regions(
     negative_space_collisions = declared_negative_space_collisions(
         scene_plan, canonical_shots, proposed_rows
     )
+    hook_placement = opening_hook_placement(canonical_shots, proposed_rows)
 
     evidence = {"shot_regions": proposed_rows}
     try:
@@ -1191,6 +1270,7 @@ def propose_regions(
         },
         "proposedEvidence": normalized,
         "negativeSpaceCollisions": negative_space_collisions,
+        "openingHookPlacement": hook_placement,
         "scenePlanSha256": input_record["scenePlanSha256"],
     }
     proposal_path = output_root / PROPOSAL_NAME
@@ -1202,9 +1282,25 @@ def propose_regions(
         "shotCount": len(proposed_rows),
         "negativeSpaceCollisions": negative_space_collisions,
         "negativeSpaceClear": not negative_space_collisions,
+        "openingHookPlacement": hook_placement,
         "changed": changed,
         "idempotent": not changed,
     }
+
+
+def pending_opening_hook_block(project: Path) -> dict[str, Any] | None:
+    """The current proposal's opening-hook finding when no hook zone is clear (#229)."""
+    proposal_path = project / SHEET_DIR / PROPOSAL_NAME
+    scene_path = project / "artifacts" / "scene_plan.json"
+    if not proposal_path.is_file() or not scene_path.is_file():
+        return None
+    proposal = _read_object(proposal_path, label="subject-region proposal")
+    if str(proposal.get("scenePlanSha256") or "") != _hash_file(scene_path):
+        return None
+    finding = proposal.get("openingHookPlacement")
+    if isinstance(finding, Mapping) and finding.get("feasible") is False:
+        return dict(finding)
+    return None
 
 
 def pending_negative_space_collisions(project: Path) -> list[dict[str, Any]]:
@@ -1229,6 +1325,8 @@ __all__ = [
     "PersianRegionCommandError",
     "declared_negative_space_collisions",
     "pending_negative_space_collisions",
+    "pending_opening_hook_block",
+    "opening_hook_placement",
     "build_sheets",
     "propose_regions",
 ]
