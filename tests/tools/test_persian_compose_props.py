@@ -31,6 +31,33 @@ import pytest
 
 from tools.video.persian_compose import PersianCompose
 
+
+def _tone(path: Path, *, volume: float) -> Path:
+    import subprocess
+
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=3",
+         "-af", f"volume={volume}", str(path)],
+        check=True,
+    )
+    return path
+
+
+def _track(path: Path) -> dict:
+    return {
+        "path": str(path),
+        "source": "pixabay_music",
+        "license": {
+            "name": "Pixabay Content License",
+            "url": "https://pixabay.com/music/",
+            "downloadedAt": "2026-09-02",
+        },
+        "contentIdRisk": {
+            "level": "low",
+            "reason": "Pixabay Content License permits monetized social use.",
+        },
+    }
+
 #: Keys that paint something and therefore must never be inheritable. A key here that
 #: the tool omits gets whatever the composition's `defaultProps` says.
 PAINTING_KEYS = ("shots", "moments", "typographicBeats", "captions")
@@ -474,10 +501,8 @@ class TestAudioProps:
         The fade is stated here rather than inherited from the renderer, because a
         default that lives in two places drifts apart in exactly one of them.
         """
-        narration = tmp_path / "vo.wav"
-        bed = tmp_path / "bed.mp3"
-        narration.write_bytes(b"\x00" * 32)
-        bed.write_bytes(b"\x00" * 32)
+        narration = _tone(tmp_path / "vo.wav", volume=0.05)
+        bed = _tone(tmp_path / "bed.mp3", volume=0.5)
         persian = _persian(
             clip,
             audio={"narration": str(narration)},
@@ -498,6 +523,44 @@ class TestAudioProps:
         props, _ = _build(persian, staging)
         assert props["audio"]["music"].startswith("persian/run-test/")
         assert props["audio"]["musicFadeSeconds"] == 1.5
+
+    def test_speech_time_music_gain_is_the_measured_policy_gain_not_a_fixed_default(
+        self, clip: Path, staging: Path, tmp_path: Path
+    ) -> None:
+        """#267: preflight judges an edit without musicDuckVolume at the gain the
+        loudness policy derives. The render must use that same gain. The fixed 0.55
+        default put a loud bed ~11 LU over the voice in a mix preflight never saw."""
+        from lib.persian_music import (
+            DEFAULT_MUSIC_DUCK_VOLUME, derive_loudness_aware_mix, measure_integrated_loudness,
+        )
+
+        narration = _tone(tmp_path / "vo.wav", volume=0.05)
+        bed = _tone(tmp_path / "bed.mp3", volume=0.9)
+        props, _ = _build(
+            _persian(clip, audio={"narration": str(narration)}, musicTrack=_track(bed)),
+            staging,
+        )
+
+        expected = derive_loudness_aware_mix(
+            narration_lufs=measure_integrated_loudness(narration),
+            music_lufs=measure_integrated_loudness(bed),
+        )
+        assert props["audio"]["musicDuckVolume"] == pytest.approx(expected["speechMusicGain"])
+        assert props["audio"]["musicDuckVolume"] < DEFAULT_MUSIC_DUCK_VOLUME / 4
+
+    def test_an_authored_speech_gain_still_wins(
+        self, clip: Path, staging: Path, tmp_path: Path
+    ) -> None:
+        narration = _tone(tmp_path / "vo.wav", volume=0.05)
+        bed = _tone(tmp_path / "bed.mp3", volume=0.9)
+        props, _ = _build(
+            _persian(
+                clip, audio={"narration": str(narration), "musicDuckVolume": 0.04},
+                musicTrack=_track(bed),
+            ),
+            staging,
+        )
+        assert props["audio"]["musicDuckVolume"] == 0.04
 
     def test_music_levels_pass_through_as_floats(
         self, clip: Path, staging: Path
