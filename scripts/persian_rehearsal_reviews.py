@@ -220,7 +220,9 @@ def _final(project: Path) -> dict[str, Any]:
         opening_evidence={"framePaths": cold_frames, "startSeconds": 0.0, "endSeconds": 3.0},
     )
     cold_path = _write(project / "artifacts" / "cold_viewer_review_input.json", cold)
-    rendered_audio = measure_rendered_audio_output(candidate)
+    from lib.persian_audio_policy import rendered_audio_review_evidence
+
+    rendered_audio = rendered_audio_review_evidence(edit, candidate, base_dir=project)
     subtitle = next(iter(sorted((project / "renders").glob("*.srt"))), None)
     music = (edit["persian"].get("musicTrack") or {})
     review = {
@@ -242,7 +244,7 @@ def _final(project: Path) -> dict[str, Any]:
             "audio_spotcheck": {
                 **rendered_audio,
                 "measurementSource": "rendered_mp4_plus_mix_policy",
-                "narration_present": bool(audio), "music_present": bool(music),
+                "narration_present": bool(audio),
                 "unexpected_silence": False, "clipping_detected": False,
                 "mix_intelligible": True, "issues": [],
             },
