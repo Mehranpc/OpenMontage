@@ -39,7 +39,7 @@ def _props() -> dict:
         {
             "id": f"m{index}", "kind": "statement",
             "startSeconds": start, "endSeconds": start + 3.8,
-            "presentation": {"placement": "upper-right" if index % 2 else "upper-left"},
+            "presentation": {"placement": "upper-right"},
             "segments": [{"role": "hero", "text": "دو روز صبر کردن"}],
         }
         for index, start in enumerate(MOMENT_STARTS)
