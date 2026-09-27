@@ -321,6 +321,8 @@ def _edit_decisions(narration: Path, words: list[dict[str, Any]], clips: dict[st
             # explicit review. Film Type requires the reviewed geometry to be
             # durable even when the truthful result is an empty region list.
             "avoidRegions": [],
+            # Synthetic gradient footage is a broad low-detail field.
+            "visualComplexity": "simple",
         })
     return {
         "version": "1.0", "cuts": [], "renderer_family": "persian-footage",

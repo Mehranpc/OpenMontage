@@ -1227,6 +1227,21 @@ def propose_regions(
             )
 
         _require_face_marked_hard(shot, annotation_frames)
+        complexity = str(annotation.get("visual_complexity") or annotation.get("visualComplexity") or "").strip()
+        if complexity and complexity not in {"simple", "busy"}:
+            raise PersianRegionCommandError(
+                f"{shot_id}.visual_complexity must be 'simple' or 'busy'"
+            )
+        opens_hook = float((shot.get("timeline") or {}).get("startSeconds", 99.0)) < _HOOK_WINDOW_SECONDS
+        if opens_hook and not complexity:
+            # Film Type 2.16 picks the opening hook's contrast treatment from this.
+            # It is a property of the reviewed frames, so it is recorded here instead
+            # of being discovered missing in the browser pass (#269).
+            raise PersianRegionCommandError(
+                f"{shot_id} sits under the opening hook: state visual_complexity "
+                "('simple' for a broad low-detail field, 'busy' for dense texture, "
+                "signage, screens or crowds) from the reviewed frames"
+            )
 
         timed: list[dict[str, Any]] = []
         for frame_index, position in enumerate(FRAME_POSITIONS):
@@ -1238,6 +1253,7 @@ def propose_regions(
 
         proposed_rows.append({
             "shot_id": shot_id,
+            **({"visualComplexity": complexity} if complexity else {}),
             "avoidRegions": _merge_timed_regions(timed),
             "frame_review": {
                 "start": True,

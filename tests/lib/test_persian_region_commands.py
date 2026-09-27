@@ -106,6 +106,7 @@ def _annotations() -> dict:
             {
                 "shot_id": "shot-1",
                 "observed": "سوژه در سه قاب بررسی شد.",
+                "visual_complexity": "simple",
                 "frames": [
                     {
                         "position": "start",

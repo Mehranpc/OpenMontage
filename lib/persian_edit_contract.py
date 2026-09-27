@@ -470,6 +470,58 @@ def _path_diagnostics(
     return diagnostics
 
 
+
+def _hook_shot_complexity_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnostic]:
+    """Film Type 2.16: every shot under the opening hook states its visual complexity (#269).
+
+    Compose already refuses a missing value, but only in the browser pass, after a
+    convergence candidate was spent. The rule needs no browser: the hook span and the
+    shot spans are in the draft.
+    """
+    design = persian.get("design") if isinstance(persian.get("design"), dict) else {}
+    if str(design.get("profile") or "") != "film-type":
+        return []
+    version = str(design.get("profileVersion") or "")
+    if not version:
+        # An unpinned Film Type design resolves to the active profile at compose time.
+        import json as _json
+        from lib.paths import REPO_ROOT
+
+        version = str(_json.loads(
+            (REPO_ROOT / "styles" / "persian-footage" / "film-type.json").read_text(encoding="utf-8")
+        ).get("profileVersion") or "")
+    if version != "2.16.0":
+        return []
+    hooks = [
+        (float(m.get("startSeconds") or 0.0), float(m.get("endSeconds") or 0.0))
+        for m in persian.get("moments") or []
+        if isinstance(m, dict) and str(m.get("kind") or "") == "hook"
+    ]
+    diagnostics: list[ContractDiagnostic] = []
+    for index, shot in enumerate(persian.get("shots") or []):
+        if not isinstance(shot, dict):
+            continue
+        try:
+            start, end = float(shot.get("startSeconds") or 0.0), float(shot.get("endSeconds") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if not any(max(start, hs) < min(end, he) - 1e-6 for hs, he in hooks):
+            continue
+        value = str(shot.get("visualComplexity") or "").strip()
+        if value in {"simple", "busy"}:
+            continue
+        diagnostics.append(
+            ContractDiagnostic(
+                "shot.visual_complexity_missing",
+                _pointer(["persian", "shots", index, "visualComplexity"]),
+                f"opening-hook shot {shot.get('id') or index!r} has no visualComplexity "
+                "('simple' or 'busy'), so Film Type 2.16 cannot choose the hook contrast treatment",
+                "record visualComplexity from the subject-region review of this shot "
+                "(simple = broad low-detail field, busy = dense texture/signage/crowd)",
+            )
+        )
+    return diagnostics
+
 def collect_persian_edit_diagnostics(
     edit: dict[str, Any], *, base_dir: Path | None = None
 ) -> list[ContractDiagnostic]:
@@ -478,6 +530,7 @@ def collect_persian_edit_diagnostics(
     persian = edit.get("persian")
     if isinstance(persian, dict):
         diagnostics.extend(_region_diagnostics(persian))
+        diagnostics.extend(_hook_shot_complexity_diagnostics(persian))
         diagnostics.extend(_shot_source_window_diagnostics(persian))
         diagnostics.extend(_frame_grid_diagnostics(persian))
         diagnostics.extend(_music_diagnostics(persian, base_dir=base_dir))

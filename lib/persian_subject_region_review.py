@@ -109,8 +109,14 @@ def validate_subject_region_review_evidence(
             raise SubjectRegionReviewError(
                 f"shot_regions[{shot_id}].avoidRegions must be an array"
             )
+        complexity = str(raw.get("visualComplexity") or "").strip()
+        if complexity and complexity not in {"simple", "busy"}:
+            raise SubjectRegionReviewError(
+                f"shot_regions[{shot_id}].visualComplexity must be 'simple' or 'busy'"
+            )
         normalized.append({
             "shot_id": shot_id,
+            **({"visualComplexity": complexity} if complexity else {}),
             "avoidRegions": [
                 _normalize_region(region, shot_id=shot_id, index=region_index)
                 for region_index, region in enumerate(regions)
