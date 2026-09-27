@@ -29,8 +29,26 @@ def test_recorded_run_reaches_the_edit_phase_offline(tmp_path: Path) -> None:
     assert result["wall_seconds"] < 180
 
 
+
 @pytest.mark.skipif(not L2, reason="needs Chromium and the licensed Kahroba font (L2 CI job)")
-def test_recorded_run_passes_edit_preflight_with_the_named_remedies(tmp_path: Path) -> None:
-    result = _rehearse(tmp_path, "edit")
-    assert result["ok"], result["failure"]
-    assert result["next_phase"] == "render_opening_candidate"
+def test_recorded_run_reaches_awaiting_human(tmp_path: Path) -> None:
+    result = _rehearse(tmp_path, "review")
+    keep = os.environ.get("OPENMONTAGE_REHEARSAL_ARTIFACT_DIR")
+    if keep and not result["ok"]:
+        import json
+        import shutil
+
+        target = Path(keep)
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"REHEARSAL FAILED at {result['failed_step']}:\n{result['failure']}")
+        try:
+            shutil.copytree(
+                tmp_path / "projects", target / "projects", dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns("*.mp4", "*.mp3", "*.png", "*.jpg", "*.wav", "tmp", "Singleton*"),
+                ignore_dangling_symlinks=True,
+            )
+        except shutil.Error:
+            pass  # evidence copy is best effort; the assertion below carries the failure
+    assert result["ok"], f"{result['failed_step']}: {result['failure']}"
+    assert result["status"] == "awaiting_human"
