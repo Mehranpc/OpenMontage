@@ -1347,7 +1347,14 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
   // A saved layout must still agree with the browser that actually paints it.
   // Do not silently revise a stale/differently measured props sidecar on render.
   if(props.filmType && (stableJSON(props.filmType)!==stableJSON(filmType) || stableJSON(props.watermarkPlan)!==stableJSON(watermarkPlan))) {
-    throw new Error("Saved Film Type geometry is stale or differs from this browser's font measurement. Re-run persian_compose to create a fresh review snapshot.");
+    // Name what differs, so a stale snapshot and a measurement drift are distinguishable.
+    const saved=props.filmType as unknown as Record<string,unknown>, now=filmType as unknown as Record<string,unknown>;
+    const keys=[...new Set([...Object.keys(saved),...Object.keys(now)])].filter(k=>stableJSON(saved[k])!==stableJSON(now[k]));
+    const moments=keys.includes("moments")?Object.keys({...(saved.moments as object),...(now.moments as object)})
+      .filter(id=>stableJSON((saved.moments as Record<string,unknown>)?.[id])!==stableJSON((now.moments as Record<string,unknown>)?.[id])):[];
+    const detail={filmTypeKeys:keys,moments,watermarkPlanDiffers:stableJSON(props.watermarkPlan)!==stableJSON(watermarkPlan),
+      savedInputHash:saved.inputHash,currentInputHash:now.inputHash};
+    throw new Error(`Saved Film Type geometry is stale or differs from this browser's font measurement. Re-run persian_compose to create a fresh review snapshot. OPENMONTAGE_DIAGNOSTICS=${JSON.stringify({code:"FILM_TYPE_GEOMETRY_DRIFT",...detail})}`);
   }
   return {...props,filmType,watermarkPlan,watermarkPlanMeasured:true,watermarkDiagnostics,
     watermarkMeasurement:lockup?{widthPx:lockup.widthPx,heightPx:lockup.heightPx,layout:"two-line" as const,measured:true as const}:undefined,
