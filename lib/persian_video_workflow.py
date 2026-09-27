@@ -849,6 +849,49 @@ def _freeze_performance_summary(state: dict[str, Any], *, now: datetime) -> None
             for name, entries in (state.get("phase_telemetry") or {}).items()
             if isinstance(entries, list)
         },
+        "whole_run": _whole_run_totals(state),
+    }
+
+
+def _whole_run_totals(state: Mapping[str, Any]) -> dict[str, Any]:
+    """Run-wide counts and per-phase totals that a revision cycle does not reset (#251).
+
+    A user-directed revision rightly opens a fresh budget window and zeroes the
+    operational counters. The acceptance report used to read those zeroed counters
+    and one-attempt-deep phase figures as whole-run facts. So a run whose footage
+    phase took 4 attempts and overran its phase SLO reported `send_backs: 0`, no
+    reconciliations, and no SLO overrun. These totals are summed across every attempt
+    of every cycle, from the append-only history and phase telemetry.
+    """
+    phases: dict[str, Any] = {}
+    for name, entries in (state.get("phase_telemetry") or {}).items():
+        if not isinstance(entries, list):
+            continue
+        rows = [item for item in entries if isinstance(item, Mapping)]
+        total = 0.0
+        for item in rows:
+            try:
+                total += max(0.0, float(item.get("duration_seconds") or 0.0))
+            except (TypeError, ValueError):
+                continue
+        slo = PHASE_SLO_SECONDS.get(str(name))
+        phases[str(name)] = {
+            "attempts": len(rows),
+            "cycles": sorted({_entry_revision_cycle(item) for item in rows}),
+            "total_seconds": round(total, 3),
+            "slo_seconds": slo,
+            "slo_exceeded": bool(slo is not None and total > slo),
+        }
+    history = [item for item in state.get("send_back_history") or [] if isinstance(item, Mapping)]
+    cycles = [item for item in state.get("revision_cycle_archive") or [] if isinstance(item, Mapping)]
+    return {
+        "revision_cycles": int(state.get("user_revision_cycles") or 0),
+        "send_backs": sum(1 for item in history if not item.get("user_directed_revision")),
+        "user_directed_revisions": sum(1 for item in history if item.get("user_directed_revision")),
+        "plan_reconciliations": len(state.get("plan_reconciliations") or [])
+        + sum(len(item.get("plan_reconciliations") or []) for item in cycles),
+        "budget_decisions": len(state.get("budget_decisions") or []),
+        "phases": phases,
     }
 
 
@@ -2575,6 +2618,17 @@ def request_send_back(
         # The bounded protocol explicitly permits a fresh cycle after new user
         # feedback.  Record the provenance and reset only operational counters at
         # or after the requested rewind; never silently expand the automatic budget.
+        # Archive what the reset below discards, so run-wide reporting keeps it (#251).
+        archive = list(state.get("revision_cycle_archive") or [])
+        archive.append({
+            "revision_cycle": int(state.get("user_revision_cycles", 0)),
+            "closed_at": effective_now.isoformat(),
+            "send_backs": previous_send_backs,
+            "plan_reconciliations": list(state.get("plan_reconciliations") or []),
+            "recovery_attempts": dict(state.get("recovery_attempts") or {}),
+            "attempts": previous_attempts,
+        })
+        state["revision_cycle_archive"] = archive
         state["user_revision_cycles"] = int(state.get("user_revision_cycles", 0)) + 1
         state["send_backs"] = 0
         state["budget_window_started_at"] = effective_now.isoformat()
