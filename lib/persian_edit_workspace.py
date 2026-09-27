@@ -1018,7 +1018,10 @@ def _declared_region_is_clear(edit: Mapping[str, Any], plan: Mapping[str, Any]) 
             continue
         rx, ry, rw, rh = _NEGATIVE_SPACE_RECTS[region]
         for index, hard in enumerate(shot.get("avoidRegions") or []):
-            if not isinstance(hard, Mapping):
+            # Soft occupancy (general body) is the fitter's preference, not a refusal, and
+            # region review already ignores it; counting it here refused an edit that
+            # region review had certified clear (#248).
+            if not isinstance(hard, Mapping) or hard.get("priority") == "soft":
                 continue
             try:
                 hx = float(hard.get("x", 0.0)); hy = float(hard.get("y", 0.0))
