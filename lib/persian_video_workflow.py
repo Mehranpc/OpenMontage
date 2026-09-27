@@ -2318,6 +2318,8 @@ def _complete_phase_impl(
         _refuse_declared_negative_space_collisions(state)
     if phase == "no_copy_preflight":
         phase_evidence.update(_validate_no_copy_preflight_completion(state, phase_evidence))
+    if phase == "opening_review":
+        phase_evidence.update(_validate_opening_review_completion(state, phase_evidence))
     if phase == "final_review":
         phase_evidence.update(_validate_final_review_completion(state, phase_evidence))
     if phase == "acquire_assets" and (state.get("asset_usage") or {}).get("pending_pass") is not None:
@@ -4024,6 +4026,64 @@ def _validate_cold_viewer_input_artifact(
     except PersianRenderedReviewError as exc:
         raise PersianVideoWorkflowError(str(exc)) from exc
     return {"path": str(path), "sha256": actual_sha}
+
+
+def _validate_opening_review_completion(
+    state: Mapping[str, Any], evidence: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Judge the opening where it was rendered, not three phases later (#292).
+
+    The rendered hook review, its cold-viewer input and payoff-timing authority are
+    all decidable once the opening candidate exists. Final review re-checks them on
+    the final bytes; this makes a weak or unauthorized opening stop here, before
+    the full render and mastering.
+    """
+    rendered = ((state.get("evidence") or {}).get("render_opening_candidate") or {})
+    opening_sha = str(rendered.get("opening_candidate_sha256") or "").strip().lower()
+    if not _valid_sha256(opening_sha):
+        raise PersianVideoWorkflowError("opening_review requires a measured render_opening_candidate")
+    if str(evidence.get("opening_candidate_sha256") or "").strip().lower() != opening_sha:
+        raise PersianVideoWorkflowError(
+            "opening_review is not bound to the rendered opening candidate digest"
+        )
+    path = _project_file(state, evidence.get("opening_review_path"), label="opening review")
+    actual_sha = _hash_file(path)
+    declared = str(evidence.get("opening_review_sha256") or "").strip().lower()
+    if declared and declared != actual_sha:
+        raise PersianVideoWorkflowError("opening_review_sha256 does not match the review bytes")
+    try:
+        review = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PersianVideoWorkflowError("opening review is unreadable JSON") from exc
+    if not isinstance(review, Mapping):
+        raise PersianVideoWorkflowError("opening review must be a JSON object")
+    if str(review.get("openingCandidateSha256") or "").strip().lower() != opening_sha:
+        raise PersianVideoWorkflowError("opening review names a different opening candidate")
+    hook_review = review.get("hookQualityReview")
+    if not isinstance(hook_review, Mapping):
+        raise PersianVideoWorkflowError("opening review requires a rendered hookQualityReview")
+    passing = str(review.get("status") or "") == "pass"
+    if str(hook_review.get("version") or "") in HOOK_RENDER_REVIEW_VERSIONS:
+        try:
+            validate_rendered_hook_review(
+                hook_review, candidate_sha256=opening_sha, require_pass=passing,
+                hook_timing=resolve_hook_timing_authority(state.get("hook_selection")),
+            )
+        except PersianRenderedReviewError as exc:
+            raise PersianVideoWorkflowError(f"opening_review hook-quality review failed: {exc}") from exc
+        if passing:
+            _validate_cold_viewer_input_artifact(state, review, hook_review, candidate_sha256=opening_sha)
+    elif passing:
+        raise PersianVideoWorkflowError(
+            "a passing opening review requires a rendered Hook Quality review "
+            f"(version {', '.join(sorted(HOOK_RENDER_REVIEW_VERSIONS))})"
+        )
+    return {
+        "opening_review_path": str(path),
+        "opening_review_sha256": actual_sha,
+        "opening_candidate_sha256": opening_sha,
+        "opening_review_status": str(review.get("status") or ""),
+    }
 
 
 def _current_final_review_dependency_digests(

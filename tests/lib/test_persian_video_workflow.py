@@ -71,7 +71,7 @@ def _advance_to(tmp_path: Path, target: str, *, project_id: str = "run") -> dict
         assert phase is not None
         state = record_phase_attempt(project_id, phase, pipeline_dir=tmp_path, now=BASE)
         if phase in workflow._PHASE_CHECKPOINT or phase in {
-            "render_opening_candidate", "render_final_candidate", "master_final_candidate",
+            "render_opening_candidate", "opening_review", "render_final_candidate", "master_final_candidate",
         }:
             # This helper builds fixtures for tests unrelated to checkpoint
             # persistence. Dedicated lifecycle tests exercise the real atomic
@@ -1255,6 +1255,17 @@ def test_double_phase_slo_stops_after_phase_without_interrupting_it(tmp_path: Pa
     state["completed_phases"] = list(PHASES[: PHASES.index("opening_review")])
     state["next_phase"] = "opening_review"
     state["attempts"] = {}
+    # opening_review now validates its review (#292); give it a minimal one that is
+    # not presented as passing, so this test stays about the phase budget.
+    opening = tmp_path / "run" / "renders" / "opening-candidate.mp4"
+    opening.parent.mkdir(parents=True, exist_ok=True)
+    opening.write_bytes(b"opening")
+    opening_sha = hashlib.sha256(b"opening").hexdigest()
+    state["evidence"] = {**(state.get("evidence") or {}),
+                         "render_opening_candidate": {"opening_candidate_sha256": opening_sha}}
+    review = tmp_path / "run" / "artifacts" / "opening_review.json"
+    review.write_text(json.dumps({"status": "revise", "openingCandidateSha256": opening_sha,
+                                  "hookQualityReview": {"version": "1.0"}}), encoding="utf-8")
     workflow._write_state(tmp_path / "run", state)
 
     record_phase_attempt(
@@ -1262,6 +1273,7 @@ def test_double_phase_slo_stops_after_phase_without_interrupting_it(tmp_path: Pa
     )
     stopped = workflow._complete_phase_impl(
         "run", "opening_review", pipeline_dir=tmp_path,
+        evidence={"opening_review_path": str(review), "opening_candidate_sha256": opening_sha},
         now=BASE + timedelta(minutes=7),
     )
 
