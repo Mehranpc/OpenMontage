@@ -750,8 +750,16 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
       // phrase locks still remain hard constraints, and ordinary prose keeps the
       // historical scoring. This is a preference rather than a gate so subject
       // safety / safe-area geometry can still choose the only legal candidate.
+      // #232: the hook's hierarchy is a poster, not a sentence. Counting hero rows only let
+      // a two-row composition (hero + one stretched full-width tail) win whenever the
+      // column widened, the "ugly two-line" hook. Score every painted row, and keep a
+      // long tail from running across the frame as one line under a short hero.
+      const allRows = fitted.rows.filter(row => row.role !== "brand").length;
+      const tailRows = fitted.rows.filter(row => row.role === "tail" || row.role === "lead");
+      const heroMax = Math.max(1, ...hero.map(row => row.widthPx));
+      const tailOverrun = tailRows.some(row => row.widthPx > heroMax * 1.12) ? 2.5 : 0;
       const linePenalty = posterHook
-        ? (lines === 3 || lines === 4 ? 0 : lines === 2 ? 1.5 : lines === 5 ? 4 : Math.abs(lines - 3.5) * 6)
+        ? (allRows === 3 || allRows === 4 ? 0 : allRows === 2 ? 3 : allRows === 5 ? 4 : Math.abs(allRows - 3.5) * 6) + tailOverrun
         : semanticListDisplay
           ? (lines === 2 || lines === 3 ? 0 : lines === 1 ? 4 : Math.max(0, lines - 3) * 6)
           : Math.max(0,lines-2)*8 + Math.max(0,lines-1)*.8;
@@ -1090,7 +1098,21 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
   const stackGapPx=Math.max(cfg.minTextClearancePx??0,64)*5;
   // Moments only: the caption strip spans nearly the full width, so "same column" would
   // close both lower anchors for every cue. Captions keep the doubled pixel gap instead.
+  // #232: a painting caption counts too. Its panel is wide, so stacking is measured by the
+  // brand's centre being over the caption's painted width and within the stacking gap.
   const paintedText=()=>props.moments.map(m=>({...layouts[m.id].rect,startSeconds:m.startSeconds,endSeconds:m.endSeconds,id:`moment ${m.id}`}));
+  // #232: while a burned caption paints, the brand stays out of the caption's band
+  // altogether (screenshot: brand directly above the caption panel). Captions hide under
+  // moments, so the lower band is free exactly when a moment holds the upper one.
+  const captionBandTop=captionActive?captionBandRect(props.format,props.design).y:1;
+  const clearCaptionBand=(r:Rect,start:number,end:number)=>{
+    if(p.profileVersion!=="2.16.0"||!captionActive)return true;
+    if(r.y+r.h<captionBandTop-(stackGapPx/dims.height))return true;
+    const t=textRects.find(o=>o.ownerType==="caption"&&o.startSeconds<end&&o.endSeconds>start);
+    if(!t)return true;
+    noteBlocker(r,start,end,`caption band ${t.ownerId}`,t,"text-clearance",stackGapPx);
+    return false;
+  };
   const clearStack=(r:Rect,start:number,end:number)=>{
     if(p.profileVersion!=="2.16.0")return true;
     for(const t of paintedText()){
@@ -1106,7 +1128,9 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
   };
   const baseClear=(r:Rect,start:number,end:number)=>hardClear(r,start,end)
     && clearText(r,start,end,visualClearancePx,true);
-  const preferredClear=(r:Rect,start:number,end:number)=>baseClear(r,start,end) && clearStack(r,start,end);
+  const preferredClear=(r:Rect,start:number,end:number)=>baseClear(r,start,end) && clearStack(r,start,end) && clearCaptionBand(r,start,end);
+  const captionOnlyClear=(r:Rect,start:number,end:number)=>baseClear(r,start,end) && clearCaptionBand(r,start,end);
+  const stackOnlyClear=(r:Rect,start:number,end:number)=>baseClear(r,start,end) && clearStack(r,start,end);
   const clear=(p.profileVersion==="2.12.0" || p.profileVersion==="2.13.0" || p.profileVersion==="2.14.0" || (p.profileVersion==="2.15.0" || p.profileVersion==="2.16.0"))?preferredClear:hardClear;
   const timelineBoundaries=[...props.shots.flatMap(s=>[s.startSeconds,s.endSeconds]),...props.moments.flatMap(m=>[m.startSeconds,m.endSeconds]),...(captionActive?(props.captions ?? []).flatMap(c=>[c.startSeconds,c.endSeconds]):[]),...subjectAvoid.flatMap(r=>[r.startSeconds,r.endSeconds])];
   // Distance cost: time-weighted closeness of the brand to every text/caption rect it
@@ -1137,12 +1161,14 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
   if(p.profileVersion==="2.13.0" || p.profileVersion==="2.14.0" || (p.profileVersion==="2.15.0" || p.profileVersion==="2.16.0")) {
     const policy=brandCoveragePolicy(p);
     const plan=(fn:(r:Rect,a:number,b:number)=>boolean)=>planCoverageAwareBrand(props.durationSeconds,timelineBoundaries,order,rects,fn,policy,cfg.introDelaySeconds??0,()=>blockers.join("; "),proximity);
-    let stacked: ReturnType<typeof plan>|undefined;
-    try{stacked=plan(preferredClear);}catch{stacked=undefined;}
-    // The stacking gap is a preference: when honouring it would drop the brand below its
-    // floor (text on screen most of the runtime), keep the pixel clearance and the
-    // far-corner preference, and drop only the stacking rule.
-    if(stacked && watermarkCoveredSeconds(stacked)+1e-6>=props.durationSeconds*(policy.minCoverageRatio??0)) return stacked;
+    // The caption-band and stacking rules are preferences, tried strictest first. When
+    // honouring one would drop the brand below its floor (text on screen most of the
+    // runtime), relax the stacking rule before the caption band, and keep the pixel
+    // clearance and the far-corner preference in every tier.
+    const floorSeconds=props.durationSeconds*(policy.minCoverageRatio??0);
+    for(const tier of [preferredClear,captionOnlyClear,stackOnlyClear]){
+      try{const candidate=plan(tier);if(watermarkCoveredSeconds(candidate)+1e-6>=floorSeconds)return candidate;}catch{/* next tier */}
+    }
     return plan(baseClear);
   }
   if(p.profileVersion === "2.4.0" || (p.profileVersion === "2.5.0" || (p.profileVersion === "2.6.0" || (p.profileVersion === "2.7.0" || p.profileVersion === "2.8.0" || p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || p.profileVersion === "2.11.0" || p.profileVersion === "2.12.0")))) {
