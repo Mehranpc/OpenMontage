@@ -164,7 +164,13 @@ def _opening(project: Path) -> dict[str, Any]:
     )
     cold_path = _write(project / "artifacts" / "opening_cold_viewer_review_input.json", cold)
     hook_review = _hook_review(opening_sha, hook_audit, _sha(cold_path))
-    validate_rendered_hook_review(hook_review, candidate_sha256=opening_sha, require_pass=True)
+    from lib.persian_hook_quality import resolve_hook_timing_authority
+
+    # Same authority the workflow resolves before it accepts the review.
+    validate_rendered_hook_review(
+        hook_review, candidate_sha256=opening_sha, require_pass=True,
+        hook_timing=resolve_hook_timing_authority(state.get("hook_selection")),
+    )
     review = {
         "version": "1.0",
         "status": "pass",
