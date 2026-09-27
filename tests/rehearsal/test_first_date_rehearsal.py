@@ -41,9 +41,14 @@ def test_recorded_run_reaches_awaiting_human(tmp_path: Path) -> None:
         target = Path(keep)
         target.mkdir(parents=True, exist_ok=True)
         (target / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-        shutil.copytree(
-            tmp_path / "projects", target / "projects", dirs_exist_ok=True,
-            ignore=shutil.ignore_patterns("*.mp4", "*.mp3", "*.png", "*.jpg", "*.wav"),
-        )
+        print(f"REHEARSAL FAILED at {result['failed_step']}:\n{result['failure']}")
+        try:
+            shutil.copytree(
+                tmp_path / "projects", target / "projects", dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns("*.mp4", "*.mp3", "*.png", "*.jpg", "*.wav", "tmp", "Singleton*"),
+                ignore_dangling_symlinks=True,
+            )
+        except shutil.Error:
+            pass  # evidence copy is best effort; the assertion below carries the failure
     assert result["ok"], f"{result['failed_step']}: {result['failure']}"
     assert result["status"] == "awaiting_human"
