@@ -72,3 +72,20 @@ def test_the_brand_stays_out_of_the_caption_band_while_captions_paint(tmp_path: 
             continue
         live = [c for c in captions if c["startSeconds"] < slot["endSeconds"] and c["endSeconds"] > slot["startSeconds"]]
         assert not live, (slot["zone"], slot["startSeconds"], slot["endSeconds"])
+
+
+def test_region_review_hook_screen_agrees_with_real_placement(tmp_path: Path) -> None:
+    """#229: when the region-review screen reports a clear hook zone, the real Film Type
+    placement finds a spot clear of the same hard regions (the screen is not optimistic)."""
+    from lib.persian_region_commands import opening_hook_placement
+
+    face = {"x": 0.3, "y": 0.1, "w": 0.45, "h": 0.25, "priority": "hard",
+            "startSeconds": 0.0, "endSeconds": 30.0}
+    finding = opening_hook_placement(
+        [{"shotId": "s1", "timeline": {"startSeconds": 0.0, "endSeconds": 30.0}}],
+        [{"shot_id": "s1", "avoidRegions": [face]}],
+    )
+    assert finding["feasible"] is True
+    prepared = prepare_film_type_props(_hook_props(), ROOT / "remotion-composer", scratch_dir=tmp_path)
+    placed = prepared["filmType"]["moments"]["m-hook"]["placement"]
+    assert placed in finding["clearZones"], (placed, finding["clearZones"])

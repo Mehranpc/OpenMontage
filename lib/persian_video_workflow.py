@@ -3422,10 +3422,30 @@ def _refuse_declared_negative_space_collisions(state: Mapping[str, Any]) -> None
     stop. Here every colliding event is named at once, before any edit candidate
     exists, with the plan-level remedies.
     """
-    from lib.persian_region_commands import pending_negative_space_collisions
+    from lib.persian_region_commands import (
+        pending_negative_space_collisions, pending_opening_hook_block,
+    )
 
+    hook_block = pending_opening_hook_block(_project_root(state))
+    hook_message = ""
+    if hook_block:
+        blocked = "; ".join(
+            f"{zone}: {', '.join(hits)}" for zone, hits in (hook_block.get("blockedZones") or {}).items()
+        )
+        hook_message = (
+            "[OPENING_HOOK_UNPLACEABLE] no Film Type hook zone is clear of reviewed hard "
+            f"regions on the opening shot(s) {', '.join(hook_block.get('shotIds') or [])} "
+            f"({blocked}); the edit stage would spend candidates rediscovering this (#229). "
+            "Open on a shot whose subject leaves a hook zone clear (send-back "
+            "plan_scenes_moments to reorder, or re-source the opening), or correct the "
+            "annotations if a region was drawn too large."
+        )
     collisions = pending_negative_space_collisions(_project_root(state))
     if not collisions:
+        if hook_message:
+            raise PersianVideoWorkflowError(
+                "review_subject_regions cannot complete: " + hook_message
+            )
         return
     lines = [
         f"{row.get('shotId')} ({row.get('visualEventId')}): declared "
@@ -3442,6 +3462,7 @@ def _refuse_declared_negative_space_collisions(state: Mapping[str, Any]) -> None
         "region against the reviewed footage; no send-back is spent), or correct the "
         "annotations if the review was wrong:\n  - "
         + "\n  - ".join(lines)
+        + (f"\nAlso: {hook_message}" if hook_message else "")
     )
 
 
