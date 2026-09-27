@@ -1,0 +1,23 @@
+{
+ "text": "پیام بدی یا صبر کنی؟ بعد از یه قرار خوب",
+ "hook_family": "شکاف کنجکاوی + خودارجاعی",
+ "score": 8.5,
+ "content_match_score": 2,
+ "evidence_checked": true,
+ "unsupported_claims_rejected": true,
+ "rationale": "The film's own opening line is the strongest and most honest hook: it asks the question the viewer has lived, in the order it is set on screen (claim above, qualifier below), and claims nothing the narration does not say. Result-led candidates score lower for giving the turn away; the figure-led candidate front-loads the study instead of the viewer.",
+ "candidates": [
+  {
+   "text": "پیام بدی یا صبر کنی؟ بعد از یه قرار خوب"
+  },
+  {
+   "text": "بیشترین علاقه وقتی بود که پیام صبح روز بعد می‌رسید"
+  },
+  {
+   "text": "۵۴۳ نفر یه قرار اول رو تصور کردن"
+  },
+  {
+   "text": "دیر پیام دادن استراتژی خوبی نیست"
+  }
+ ]
+}

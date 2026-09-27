@@ -1,0 +1,44 @@
+{
+ "sources": [
+  "pexels",
+  "pixabay_video"
+ ],
+ "filters": {
+  "orientation": "portrait",
+  "min_duration": 8,
+  "min_width": 1080,
+  "max_width": 1080
+ },
+ "output_dir": "assets",
+ "clips_per_query": 1,
+ "timeout_seconds": 180,
+ "search_cache_ttl_seconds": 21600,
+ "max_bytes_per_clip": 100663296,
+ "queries": [
+  {
+   "query": "phone on wooden table wide shot",
+   "slot_id": "ve-5",
+   "kind": "video"
+  },
+  {
+   "query": "empty chair kitchen table morning",
+   "slot_id": "ve-8",
+   "kind": "video"
+  },
+  {
+   "query": "man sitting alone table wide shot",
+   "slot_id": "ve-9",
+   "kind": "video"
+  },
+  {
+   "query": "person at cafe table wide shot",
+   "slot_id": "ve-10",
+   "kind": "video"
+  },
+  {
+   "query": "hands typing phone wide shot table",
+   "slot_id": "ve-11",
+   "kind": "video"
+  }
+ ]
+}

@@ -1,0 +1,899 @@
+{
+ "assets": {
+  "ve-4": {
+   "fallback_level": "adjacent_metaphor",
+   "fallback_reason": "no stock library holds 543 people imagining a first date; the literal depiction does not exist, so the beat is carried by a real crowd under an open sky, the closest honest level before abstraction."
+  },
+  "ve-8": {
+   "fallback_level": "adjacent_metaphor",
+   "fallback_reason": "the beat is an absence — two days of waiting changed nothing. A literal shot of a phone nobody answered does not exist in the retry pass either; an untouched breakfast table with empty chairs is the honest adjacent read."
+  }
+ },
+ "word_timings": [
+  {
+   "word": "تحالاش",
+   "start": 0.0,
+   "end": 0.38,
+   "probability": 0.411
+  },
+  {
+   "word": "دباد",
+   "start": 0.38,
+   "end": 0.82,
+   "probability": 0.473
+  },
+  {
+   "word": "از",
+   "start": 0.82,
+   "end": 0.96,
+   "probability": 0.598
+  },
+  {
+   "word": "یکارار",
+   "start": 0.96,
+   "end": 1.38,
+   "probability": 0.61
+  },
+  {
+   "word": "خوب",
+   "start": 1.38,
+   "end": 1.76,
+   "probability": 0.783
+  },
+  {
+   "word": "قوشی",
+   "start": 1.76,
+   "end": 2.2,
+   "probability": 0.531
+  },
+  {
+   "word": "دست",
+   "start": 2.2,
+   "end": 2.42,
+   "probability": 0.773
+  },
+  {
+   "word": "باشون",
+   "start": 2.42,
+   "end": 2.9,
+   "probability": 0.316
+  },
+  {
+   "word": "ندنیادان",
+   "start": 2.9,
+   "end": 3.72,
+   "probability": 0.614
+  },
+  {
+   "word": "پیام",
+   "start": 3.72,
+   "end": 4.1,
+   "probability": 0.619
+  },
+  {
+   "word": "بیدی",
+   "start": 4.1,
+   "end": 4.44,
+   "probability": 0.622
+  },
+  {
+   "word": "یا",
+   "start": 4.44,
+   "end": 4.58,
+   "probability": 0.256
+  },
+  {
+   "word": "ساب",
+   "start": 4.58,
+   "end": 4.84,
+   "probability": 0.697
+  },
+  {
+   "word": "کنی",
+   "start": 4.84,
+   "end": 5.16,
+   "probability": 0.699
+  },
+  {
+   "word": "پجوش",
+   "start": 5.16,
+   "end": 6.38,
+   "probability": 0.434
+  },
+  {
+   "word": "کرد",
+   "start": 6.38,
+   "end": 6.62,
+   "probability": 0.455
+  },
+  {
+   "word": "دقیغن",
+   "start": 6.62,
+   "end": 7.14,
+   "probability": 0.454
+  },
+  {
+   "word": "همین",
+   "start": 7.14,
+   "end": 7.46,
+   "probability": 0.627
+  },
+  {
+   "word": "سوال",
+   "start": 7.46,
+   "end": 7.8,
+   "probability": 0.737
+  },
+  {
+   "word": "از",
+   "start": 7.8,
+   "end": 8.02,
+   "probability": 0.397
+  },
+  {
+   "word": "ماشکرد",
+   "start": 8.02,
+   "end": 8.64,
+   "probability": 0.505
+  },
+  {
+   "word": "باد",
+   "start": 8.64,
+   "end": 9.46,
+   "probability": 0.479
+  },
+  {
+   "word": "از",
+   "start": 9.46,
+   "end": 9.6,
+   "probability": 0.97
+  },
+  {
+   "word": "کارار",
+   "start": 9.6,
+   "end": 9.88,
+   "probability": 0.671
+  },
+  {
+   "word": "آوال",
+   "start": 9.88,
+   "end": 10.36,
+   "probability": 0.373
+  },
+  {
+   "word": "چه",
+   "start": 10.36,
+   "end": 10.64,
+   "probability": 0.657
+  },
+  {
+   "word": "زمانی",
+   "start": 10.64,
+   "end": 11.04,
+   "probability": 0.762
+  },
+  {
+   "word": "بر",
+   "start": 11.04,
+   "end": 11.22,
+   "probability": 0.735
+  },
+  {
+   "word": "یفرستدن",
+   "start": 11.22,
+   "end": 11.98,
+   "probability": 0.688
+  },
+  {
+   "word": "آوالیم",
+   "start": 11.98,
+   "end": 12.38,
+   "probability": 0.604
+  },
+  {
+   "word": "پیام",
+   "start": 12.38,
+   "end": 12.68,
+   "probability": 0.928
+  },
+  {
+   "word": "به",
+   "start": 12.68,
+   "end": 12.94,
+   "probability": 0.361
+  },
+  {
+   "word": "تره",
+   "start": 12.94,
+   "end": 13.34,
+   "probability": 0.55
+  },
+  {
+   "word": "تری",
+   "start": 13.34,
+   "end": 14.28,
+   "probability": 0.456
+  },
+  {
+   "word": "مطاله",
+   "start": 14.28,
+   "end": 14.74,
+   "probability": 0.488
+  },
+  {
+   "word": "پنسد",
+   "start": 14.74,
+   "end": 15.26,
+   "probability": 0.578
+  },
+  {
+   "word": "شهر",
+   "start": 15.26,
+   "end": 15.6,
+   "probability": 0.666
+  },
+  {
+   "word": "سنفر",
+   "start": 15.6,
+   "end": 16.06,
+   "probability": 0.553
+  },
+  {
+   "word": "تساور",
+   "start": 16.06,
+   "end": 16.52,
+   "probability": 0.53
+  },
+  {
+   "word": "کردن",
+   "start": 16.52,
+   "end": 17.04,
+   "probability": 0.676
+  },
+  {
+   "word": "یکارار",
+   "start": 17.04,
+   "end": 17.52,
+   "probability": 0.953
+  },
+  {
+   "word": "آوال",
+   "start": 17.52,
+   "end": 17.94,
+   "probability": 0.969
+  },
+  {
+   "word": "داشتن",
+   "start": 17.94,
+   "end": 18.24,
+   "probability": 0.653
+  },
+  {
+   "word": "بعد",
+   "start": 18.24,
+   "end": 18.48,
+   "probability": 0.467
+  },
+  {
+   "word": "ترف",
+   "start": 18.48,
+   "end": 19.2,
+   "probability": 0.902
+  },
+  {
+   "word": "مغابل",
+   "start": 19.2,
+   "end": 19.82,
+   "probability": 0.661
+  },
+  {
+   "word": "یابل",
+   "start": 19.82,
+   "end": 20.16,
+   "probability": 0.686
+  },
+  {
+   "word": "افسل",
+   "start": 20.16,
+   "end": 20.54,
+   "probability": 0.535
+  },
+  {
+   "word": "پیام",
+   "start": 20.54,
+   "end": 20.9,
+   "probability": 0.779
+  },
+  {
+   "word": "میداد",
+   "start": 20.9,
+   "end": 21.3,
+   "probability": 0.852
+  },
+  {
+   "word": "یا",
+   "start": 21.3,
+   "end": 21.9,
+   "probability": 0.797
+  },
+  {
+   "word": "سوپه",
+   "start": 21.9,
+   "end": 22.24,
+   "probability": 0.53
+  },
+  {
+   "word": "روزباد",
+   "start": 22.24,
+   "end": 22.78,
+   "probability": 0.815
+  },
+  {
+   "word": "یا",
+   "start": 22.78,
+   "end": 23.0,
+   "probability": 0.976
+  },
+  {
+   "word": "دوروزباد",
+   "start": 23.0,
+   "end": 23.76,
+   "probability": 0.833
+  },
+  {
+   "word": "جالترین",
+   "start": 23.76,
+   "end": 25.04,
+   "probability": 0.387
+  },
+  {
+   "word": "نتجائیم",
+   "start": 25.04,
+   "end": 25.56,
+   "probability": 0.493
+  },
+  {
+   "word": "بود",
+   "start": 25.56,
+   "end": 25.74,
+   "probability": 0.755
+  },
+  {
+   "word": "که",
+   "start": 25.74,
+   "end": 25.94,
+   "probability": 0.636
+  },
+  {
+   "word": "بیشتر",
+   "start": 25.94,
+   "end": 26.38,
+   "probability": 0.708
+  },
+  {
+   "word": "انتما",
+   "start": 26.38,
+   "end": 26.72,
+   "probability": 0.378
+  },
+  {
+   "word": "یول",
+   "start": 26.72,
+   "end": 27.0,
+   "probability": 0.376
+  },
+  {
+   "word": "بیدام",
+   "start": 27.0,
+   "end": 27.4,
+   "probability": 0.59
+  },
+  {
+   "word": "ایرابت",
+   "start": 27.4,
+   "end": 27.98,
+   "probability": 0.518
+  },
+  {
+   "word": "واخدی",
+   "start": 27.98,
+   "end": 28.44,
+   "probability": 0.413
+  },
+  {
+   "word": "دید",
+   "start": 28.44,
+   "end": 28.64,
+   "probability": 0.809
+  },
+  {
+   "word": "شوط",
+   "start": 28.64,
+   "end": 28.92,
+   "probability": 0.31
+  },
+  {
+   "word": "که",
+   "start": 28.92,
+   "end": 29.08,
+   "probability": 0.749
+  },
+  {
+   "word": "پیام",
+   "start": 29.08,
+   "end": 29.42,
+   "probability": 0.708
+  },
+  {
+   "word": "از",
+   "start": 29.42,
+   "end": 29.62,
+   "probability": 0.196
+  },
+  {
+   "word": "سوپه",
+   "start": 29.62,
+   "end": 29.94,
+   "probability": 0.533
+  },
+  {
+   "word": "روزباد",
+   "start": 29.94,
+   "end": 30.46,
+   "probability": 0.572
+  },
+  {
+   "word": "میرسید",
+   "start": 30.46,
+   "end": 31.08,
+   "probability": 0.691
+  },
+  {
+   "word": "پیام",
+   "start": 31.08,
+   "end": 32.12,
+   "probability": 0.62
+  },
+  {
+   "word": "افوری",
+   "start": 32.12,
+   "end": 32.72,
+   "probability": 0.88
+  },
+  {
+   "word": "الغر",
+   "start": 32.72,
+   "end": 33.36,
+   "probability": 0.49
+  },
+  {
+   "word": "ووازه",
+   "start": 33.36,
+   "end": 33.8,
+   "probability": 0.546
+  },
+  {
+   "word": "ترن",
+   "start": 33.8,
+   "end": 34.2,
+   "probability": 0.808
+  },
+  {
+   "word": "شمیداد",
+   "start": 34.2,
+   "end": 34.8,
+   "probability": 0.642
+  },
+  {
+   "word": "اما",
+   "start": 34.8,
+   "end": 35.4,
+   "probability": 0.698
+  },
+  {
+   "word": "فرستنده",
+   "start": 35.4,
+   "end": 36.14,
+   "probability": 0.765
+  },
+  {
+   "word": "کمی",
+   "start": 36.14,
+   "end": 36.52,
+   "probability": 0.733
+  },
+  {
+   "word": "نیازمان",
+   "start": 36.52,
+   "end": 37.1,
+   "probability": 0.629
+  },
+  {
+   "word": "تر",
+   "start": 37.1,
+   "end": 37.38,
+   "probability": 0.862
+  },
+  {
+   "word": "به",
+   "start": 37.38,
+   "end": 37.48,
+   "probability": 0.198
+  },
+  {
+   "word": "نزر",
+   "start": 37.48,
+   "end": 37.84,
+   "probability": 0.673
+  },
+  {
+   "word": "میرسید",
+   "start": 37.84,
+   "end": 38.36,
+   "probability": 0.984
+  },
+  {
+   "word": "ازون",
+   "start": 38.36,
+   "end": 39.24,
+   "probability": 0.697
+  },
+  {
+   "word": "ترف",
+   "start": 39.24,
+   "end": 39.48,
+   "probability": 0.695
+  },
+  {
+   "word": "دوروز",
+   "start": 39.48,
+   "end": 39.98,
+   "probability": 0.443
+  },
+  {
+   "word": "ساب",
+   "start": 39.98,
+   "end": 40.22,
+   "probability": 0.486
+  },
+  {
+   "word": "کاردن",
+   "start": 40.22,
+   "end": 40.62,
+   "probability": 0.347
+  },
+  {
+   "word": "ام",
+   "start": 40.62,
+   "end": 40.78,
+   "probability": 0.626
+  },
+  {
+   "word": "کم",
+   "start": 40.78,
+   "end": 40.98,
+   "probability": 0.646
+  },
+  {
+   "word": "اکن",
+   "start": 40.98,
+   "end": 41.26,
+   "probability": 0.358
+  },
+  {
+   "word": "اکه",
+   "start": 41.26,
+   "end": 41.54,
+   "probability": 0.301
+  },
+  {
+   "word": "افراد",
+   "start": 41.54,
+   "end": 42.5,
+   "probability": 0.758
+  },
+  {
+   "word": "اصاست",
+   "start": 42.5,
+   "end": 42.86,
+   "probability": 0.368
+  },
+  {
+   "word": "شمیو",
+   "start": 42.86,
+   "end": 43.4,
+   "probability": 0.675
+  },
+  {
+   "word": "انگزی",
+   "start": 43.4,
+   "end": 43.8,
+   "probability": 0.697
+  },
+  {
+   "word": "ایک",
+   "start": 43.8,
+   "end": 43.98,
+   "probability": 0.434
+  },
+  {
+   "word": "هم",
+   "start": 43.98,
+   "end": 44.14,
+   "probability": 0.609
+  },
+  {
+   "word": "تاری",
+   "start": 44.14,
+   "end": 44.42,
+   "probability": 0.576
+  },
+  {
+   "word": "بر",
+   "start": 44.42,
+   "end": 44.6,
+   "probability": 0.633
+  },
+  {
+   "word": "یه",
+   "start": 44.6,
+   "end": 44.8,
+   "probability": 0.353
+  },
+  {
+   "word": "دامی",
+   "start": 44.8,
+   "end": 45.12,
+   "probability": 0.487
+  },
+  {
+   "word": "ارتباد",
+   "start": 45.12,
+   "end": 45.6,
+   "probability": 0.567
+  },
+  {
+   "word": "داشتن",
+   "start": 45.6,
+   "end": 45.96,
+   "probability": 0.442
+  },
+  {
+   "word": "و",
+   "start": 45.96,
+   "end": 46.16,
+   "probability": 0.794
+  },
+  {
+   "word": "ترفه",
+   "start": 46.16,
+   "end": 46.54,
+   "probability": 0.75
+  },
+  {
+   "word": "مغابل",
+   "start": 46.54,
+   "end": 46.96,
+   "probability": 0.79
+  },
+  {
+   "word": "روک",
+   "start": 46.96,
+   "end": 47.24,
+   "probability": 0.699
+  },
+  {
+   "word": "هم",
+   "start": 47.24,
+   "end": 47.38,
+   "probability": 0.82
+  },
+  {
+   "word": "ترغابل",
+   "start": 47.38,
+   "end": 47.96,
+   "probability": 0.725
+  },
+  {
+   "word": "ایتماد",
+   "start": 47.96,
+   "end": 48.4,
+   "probability": 0.414
+  },
+  {
+   "word": "میدیدن",
+   "start": 48.4,
+   "end": 48.86,
+   "probability": 0.683
+  },
+  {
+   "word": "یعنی",
+   "start": 48.86,
+   "end": 49.84,
+   "probability": 0.72
+  },
+  {
+   "word": "هده",
+   "start": 49.84,
+   "end": 50.1,
+   "probability": 0.466
+  },
+  {
+   "word": "غلدرین",
+   "start": 50.1,
+   "end": 50.68,
+   "probability": 0.543
+  },
+  {
+   "word": "از",
+   "start": 50.68,
+   "end": 50.84,
+   "probability": 0.632
+  },
+  {
+   "word": "ما",
+   "start": 50.84,
+   "end": 50.98,
+   "probability": 0.484
+  },
+  {
+   "word": "یه",
+   "start": 50.98,
+   "end": 51.12,
+   "probability": 0.363
+  },
+  {
+   "word": "اشتیر",
+   "start": 51.12,
+   "end": 51.64,
+   "probability": 0.632
+  },
+  {
+   "word": "پیام",
+   "start": 51.64,
+   "end": 51.98,
+   "probability": 0.604
+  },
+  {
+   "word": "بودتا",
+   "start": 51.98,
+   "end": 52.44,
+   "probability": 0.329
+  },
+  {
+   "word": "مستخب",
+   "start": 52.44,
+   "end": 52.98,
+   "probability": 0.601
+  },
+  {
+   "word": "نزر",
+   "start": 52.98,
+   "end": 53.34,
+   "probability": 0.522
+  },
+  {
+   "word": "نرسی",
+   "start": 53.34,
+   "end": 53.9,
+   "probability": 0.835
+  },
+  {
+   "word": "از",
+   "start": 53.9,
+   "end": 54.42,
+   "probability": 0.482
+  },
+  {
+   "word": "سرطجی",
+   "start": 54.42,
+   "end": 54.96,
+   "probability": 0.515
+  },
+  {
+   "word": "خیل",
+   "start": 54.96,
+   "end": 55.28,
+   "probability": 0.897
+  },
+  {
+   "word": "خوبی",
+   "start": 55.28,
+   "end": 55.64,
+   "probability": 0.749
+  },
+  {
+   "word": "نبود",
+   "start": 55.64,
+   "end": 56.04,
+   "probability": 0.864
+  },
+  {
+   "word": "حلتو",
+   "start": 56.04,
+   "end": 57.16,
+   "probability": 0.325
+  },
+  {
+   "word": "بگو",
+   "start": 57.16,
+   "end": 57.46,
+   "probability": 0.639
+  },
+  {
+   "word": "باد",
+   "start": 57.46,
+   "end": 57.72,
+   "probability": 0.55
+  },
+  {
+   "word": "از",
+   "start": 57.72,
+   "end": 57.86,
+   "probability": 0.566
+  },
+  {
+   "word": "غرور",
+   "start": 57.86,
+   "end": 58.14,
+   "probability": 0.467
+  },
+  {
+   "word": "آووال",
+   "start": 58.14,
+   "end": 58.64,
+   "probability": 0.256
+  },
+  {
+   "word": "همونشه",
+   "start": 58.64,
+   "end": 59.18,
+   "probability": 0.703
+  },
+  {
+   "word": "پیام",
+   "start": 59.18,
+   "end": 59.6,
+   "probability": 0.889
+  },
+  {
+   "word": "میدی",
+   "start": 59.6,
+   "end": 59.94,
+   "probability": 0.707
+  },
+  {
+   "word": "فردسوپ",
+   "start": 59.94,
+   "end": 61.22,
+   "probability": 0.496
+  },
+  {
+   "word": "یا",
+   "start": 61.22,
+   "end": 61.46,
+   "probability": 0.756
+  },
+  {
+   "word": "ساپر",
+   "start": 61.46,
+   "end": 61.92,
+   "probability": 0.639
+  },
+  {
+   "word": "می",
+   "start": 61.92,
+   "end": 62.02,
+   "probability": 0.644
+  },
+  {
+   "word": "کنی",
+   "start": 62.02,
+   "end": 62.28,
+   "probability": 0.673
+  }
+ ],
+ "metadata": {
+  "word_timing_source": "durable whisperx alignment job alignment-404b585a0014cc64 (timing evidence only; approved script owns wording)"
+ }
+}

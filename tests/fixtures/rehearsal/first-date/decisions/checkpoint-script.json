@@ -1,0 +1,106 @@
+{
+ "artifacts": {
+  "script": {
+   "version": "1.0",
+   "title": "پیام بعد از قرار اول",
+   "total_duration_seconds": 62.48,
+   "voice_performance": {
+    "performance_intent": "گفتوگوی نزدیک و دوستانه؛ narration از پیش ضبطشده، بازنویسی نمیشود",
+    "pacing_profile": "conversational",
+    "energy_curve": "شروع کنجکاو، میانه شواهدمحور، پایان با سؤال مستقیم به مخاطب",
+    "pause_policy": "وقفههای طبیعی خود گوینده؛ بدون بازنویسی متن",
+    "sample_section_id": "s3"
+   },
+   "sections": [
+    {
+     "id": "s1",
+     "label": "جملهٔ 1",
+     "text": "تا حالا شده بعد از یه قرار خوب، گوشی دستت باشه و ندونی الان پیام بدی یا صبر کنی؟",
+     "start_seconds": 0.0,
+     "end_seconds": 5.16
+    },
+    {
+     "id": "s2",
+     "label": "جملهٔ 2",
+     "text": "پژوهشگرا دقیقاً همین سؤال رو آزمایش کردن: بعد از قرار اول، چه زمانی برای فرستادن اولین پیام بهتره؟",
+     "start_seconds": 5.16,
+     "end_seconds": 13.34
+    },
+    {
+     "id": "s3",
+     "label": "جملهٔ 3",
+     "text": "در این مطالعه، ۵۴۳ نفر تصور کردند یک قرار اول داشتند و بعد، طرف مقابل یا بلافاصله پیام میداد، یا صبح روز بعد، یا دو روز بعد.",
+     "start_seconds": 13.34,
+     "end_seconds": 23.76
+    },
+    {
+     "id": "s4",
+     "label": "جملهٔ 4",
+     "text": "جالبترین نتیجه این بود که بیشترین تمایل به ادامه رابطه وقتی دیده شد که پیام صبح روز بعد میرسید.",
+     "start_seconds": 23.76,
+     "end_seconds": 31.08
+    },
+    {
+     "id": "s5",
+     "label": "جملهٔ 5",
+     "text": "پیام فوری، علاقه رو واضحتر نشون میداد، اما فرستنده کمی نیازمندتر به نظر میرسید. از اون طرف، دو روز صبر کردن هم کمکی نکرد؛ افراد احساس شیمی و انگیزه کمتری برای ادامه ارتباط داشتند و طرف مقابل رو کمتر قابلاعتماد میدیدند.",
+     "start_seconds": 31.08,
+     "end_seconds": 48.86
+    },
+    {
+     "id": "s6",
+     "label": "جملهٔ 6",
+     "text": "یعنی حداقل در این آزمایش، «دیر پیام بده تا مشتاق به نظر نرسی» استراتژی خیلی خوبی نبود.",
+     "start_seconds": 48.86,
+     "end_seconds": 56.331
+    },
+    {
+     "id": "s7",
+     "label": "جملهٔ 7",
+     "text": "حالا تو بگو: بعد از قرار اول، همون شب پیام میدی، فردا صبح یا صبر میکنی؟",
+     "start_seconds": 56.331,
+     "end_seconds": 62.28
+    }
+   ],
+   "metadata": {
+    "authority": "approved_script",
+    "preserved_wording": true,
+    "script_sha256": "97f0f70c7caac3cb47a965a67f33db350a3e58b417a1868b93beab4e4b259782",
+    "narration_sha256": "1eaec85dad2de226885fe77fe9143e1f91f00bfbe3f8bd4f36e65ae900ccc08e",
+    "narration_source": "inputs/narration.mp3",
+    "approved_script_source": "inputs/approved_script.txt",
+    "timing_status": "aligned_word_timings",
+    "timing_note": "section times derived from the durable whisperx alignment result via build_script_aligned_word_timings; wording remains the approved copy.",
+    "orthography": {
+     "normalize_stable": true,
+     "zwnj_present": false,
+     "persian_digits_only": true
+    },
+    "visible_characters": 771,
+    "chars_per_second": 12.34,
+    "figures_for_moments": [
+     "۵۴۳ نفر"
+    ],
+    "terms_for_moments": [
+     "پیام صبح روز بعد"
+    ],
+    "figures_note": "authoritative copy was not rewritten; the figures available for typographic moments are those the narration already states.",
+    "word_timings_ref": "artifacts/script-word-timings.json",
+    "provider_decision": {
+     "provider": "whisperx",
+     "tool": "transcriber",
+     "model": "base",
+     "mode": "timing_oriented",
+     "heavy_recovery_used": false
+    }
+   }
+  }
+ },
+ "metadata": {
+  "authority": "approved_script",
+  "wording_preserved": true,
+  "timing_status": "aligned_word_timings",
+  "timing_source": "durable whisperx alignment job alignment-404b585a0014cc64",
+  "word_timings_ref": "artifacts/script-word-timings.json"
+ }
+}

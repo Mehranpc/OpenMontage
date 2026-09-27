@@ -1,0 +1,74 @@
+{
+ "queries": [
+  {
+   "query": "phone in hand plain wall behind",
+   "slot_id": "ve-1",
+   "kind": "video"
+  },
+  {
+   "query": "hand scrolling phone screen desk",
+   "slot_id": "ve-2",
+   "kind": "video"
+  },
+  {
+   "query": "young woman checking phone cafe",
+   "slot_id": "ve-3",
+   "kind": "video"
+  },
+  {
+   "query": "people walking street plain sky",
+   "slot_id": "ve-4",
+   "kind": "video"
+  },
+  {
+   "query": "phone on table minimal background",
+   "slot_id": "ve-5",
+   "kind": "video"
+  },
+  {
+   "query": "phone on bed plain wall morning",
+   "slot_id": "ve-6",
+   "kind": "video"
+  },
+  {
+   "query": "phone screen glow plain background",
+   "slot_id": "ve-7",
+   "kind": "video"
+  },
+  {
+   "query": "phone face down table kitchen",
+   "slot_id": "ve-8",
+   "kind": "video"
+  },
+  {
+   "query": "phone on table plain wall behind",
+   "slot_id": "ve-9",
+   "kind": "video"
+  },
+  {
+   "query": "phone left on cafe table plain",
+   "slot_id": "ve-10",
+   "kind": "video"
+  },
+  {
+   "query": "phone held close plain background",
+   "slot_id": "ve-11",
+   "kind": "video"
+  }
+ ],
+ "sources": [
+  "pexels",
+  "pixabay_video"
+ ],
+ "filters": {
+  "orientation": "portrait",
+  "min_duration": 8,
+  "min_width": 1080,
+  "max_width": 1080
+ },
+ "output_dir": "assets",
+ "clips_per_query": 1,
+ "timeout_seconds": 180,
+ "search_cache_ttl_seconds": 21600,
+ "max_bytes_per_clip": 100663296
+}

@@ -1,0 +1,12 @@
+{
+ "advisories_answered": [
+  "ve-5 carries no human presence: the reviewed clip is three phones on a plain wall, and the beat's declaration was corrected in the replan rather than the footage being described as something it is not.",
+  "ve-4 and ve-8 are non-literal reads: a real crowd under open sky stands for 543 people imagining a date, and an untouched breakfast table stands for two days of waiting that changed nothing. Both carry a fallback_reason.",
+  "ve-9's affect is deliberately muted: the man is absorbed and alone rather than visibly stressed. It reads as 'nothing came of it' without staging a breakdown, and that read is recorded rather than implied.",
+  "three clips (ve-1, ve-5, ve-7, ve-11) are studio or product-style phone shots recorded at medium staged-stock risk; none exceeds the ceiling, and each is the only honest way a stock library shows a phone by itself."
+ ],
+ "subject_quota": "first and last footage events show the phone; 7 of 11 footage events do (64%), above the 40% floor. ve-4, ve-8, ve-9 and ve-10 are the declared non-subject beats.",
+ "acquisition": "one bounded pass (11 events) plus one reviewed retry pass for the three events review rejected (ve-8, ve-10, ve-11). 14 candidates considered, 101.5 MB downloaded, no source reused, every selected window distinct.",
+ "music": "assets/music/bed.mp3 — 'Minimal - Minimal Ambient Background' by AudioDollar, Pixabay Content License, Content-ID risk recorded as low with its reason.",
+ "reacquisition": "Four moment carriers (ve-5, ve-9, ve-10, ve-11) were re-acquired on the user's explicit decision because their subjects occupied the declared upper band. The new clips leave that band clear; ve-9 and ve-10 are honest adjacent reads with no phone in frame (shows_subject corrected to false), ve-5 is the phone at rest on a table and ve-11 has the phone beside the hands."
+}

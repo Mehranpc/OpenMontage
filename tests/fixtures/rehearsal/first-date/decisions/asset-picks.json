@@ -1,0 +1,439 @@
+[
+ {
+  "visual_event_id": "ve-1",
+  "stage": {
+   "discovery_id": "asset-source-1c1d1f0c0564ccb27e28",
+   "visual_event_id": "ve-1",
+   "semantic_beat_id": "beat-1",
+   "source_in_seconds": 1.6,
+   "duration_seconds": 5.16,
+   "intended_crop": {
+    "h": 1.0,
+    "mode": "cover_9x16",
+    "w": 1.0,
+    "x": 0.0,
+    "y": 0.0
+   },
+   "candidate_rank": 1,
+   "query": "phone in hand plain wall behind",
+   "narration_span": "تا حالا شده بعد از یه قرار خوب، گوشی دستت باشه و ندونی الان پیام بدی یا صبر کنی؟"
+  },
+  "review": {
+   "affect_match": true,
+   "frame_review": {
+    "end": true,
+    "middle": true,
+    "observed": "start/middle/end of the selected window: one hand holding a blank-screen phone, the same plain textured wall behind it, nothing entering the upper band. Clear region: the plain textured wall fills the whole upper band; only the hand and phone sit in the lower half.",
+    "placement_space": "upper_band",
+    "start": true
+   },
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x2048 portrait source; a 9:16 cover crop trims ~6% of the height, and the phone stays whole in the lower centre."
+   },
+   "human_presence": true,
+   "relevance_reason": "the video's subject — a phone held in a hand — is literally in frame, and the blank screen keeps foreign UI off the opening frame.",
+   "resolution_quality": "strong",
+   "selection_reason": "hand holding a phone upright against a large plain light wall; the empty wall fills the whole upper band the hook copy is placed on, and the screen is blank rather than a staged app.",
+   "shows_subject": true,
+   "staged_stock_risk": "medium"
+  }
+ },
+ {
+  "visual_event_id": "ve-2",
+  "stage": {
+   "discovery_id": "asset-source-0d3280e5dbcf63327754",
+   "visual_event_id": "ve-2",
+   "semantic_beat_id": "beat-2",
+   "source_in_seconds": 1.07,
+   "duration_seconds": 3.48,
+   "intended_crop": {
+    "h": 1.0,
+    "mode": "cover_9x16",
+    "w": 1.0,
+    "x": 0.0,
+    "y": 0.0
+   },
+   "candidate_rank": 1,
+   "query": "hand scrolling phone screen desk",
+   "narration_span": "پژوهشگرا دقیقاً همین سؤال رو آزمایش کردن:"
+  },
+  "review": {
+   "affect_match": true,
+   "frame_review": {
+    "end": true,
+    "middle": true,
+    "observed": "start/middle/end of the selected window: the same two hands using a phone on the desk, laptop behind, no cut or change of subject.",
+    "start": true
+   },
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x1920 source used at full frame; no crop needed."
+   },
+   "human_presence": true,
+   "relevance_reason": "hands using a phone screen carry the beat's 'researchers tested exactly this question' as an ordinary action, not a laboratory illustration.",
+   "resolution_quality": "strong",
+   "selection_reason": "close view of hands on a phone over a wooden desk; the subject is unmistakable and the scene is a real desk, not a medical or academic cliché.",
+   "shows_subject": true,
+   "staged_stock_risk": "medium"
+  }
+ },
+ {
+  "visual_event_id": "ve-3",
+  "stage": {
+   "discovery_id": "asset-source-0111bf72dcd2cd60acb1",
+   "visual_event_id": "ve-3",
+   "semantic_beat_id": "beat-3",
+   "source_in_seconds": 1.2,
+   "duration_seconds": 4.7,
+   "intended_crop": {
+    "h": 1.0,
+    "mode": "cover_9x16",
+    "w": 1.0,
+    "x": 0.0,
+    "y": 0.0
+   },
+   "candidate_rank": 1,
+   "query": "young woman checking phone cafe",
+   "narration_span": "بعد از قرار اول، چه زمانی برای فرستادن اولین پیام بهتره؟"
+  },
+  "review": {
+   "affect_match": true,
+   "frame_review": {
+    "end": true,
+    "middle": true,
+    "observed": "start/middle/end of the selected window: the same woman in the leather chair with her phone, a drink on the table, the cafe behind her unchanged across the window.",
+    "start": true
+   },
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x1920 source used at full frame; no crop needed."
+   },
+   "human_presence": true,
+   "relevance_reason": "a woman checking her phone in a cafe is the video's subject in its natural setting and matches the anticipation of an unanswered message.",
+   "resolution_quality": "strong",
+   "selection_reason": "an everyday cafe scene with real depth and warm daylight; the phone is clearly in frame and the person is genuinely looking at it rather than posing.",
+   "shows_subject": true,
+   "staged_stock_risk": "low"
+  }
+ },
+ {
+  "visual_event_id": "ve-4",
+  "stage": {
+   "discovery_id": "asset-source-3efd1caca023aec37bdf",
+   "visual_event_id": "ve-4",
+   "semantic_beat_id": "beat-4",
+   "source_in_seconds": 1.4,
+   "duration_seconds": 4.83,
+   "intended_crop": {
+    "h": 1.0,
+    "mode": "cover_9x16",
+    "w": 1.0,
+    "x": 0.0,
+    "y": 0.0
+   },
+   "candidate_rank": 1,
+   "query": "people walking street plain sky",
+   "narration_span": "در این مطالعه، ۵۴۳ نفر تصور کردند یک قرار اول داشتند"
+  },
+  "review": {
+   "affect_match": true,
+   "frame_review": {
+    "end": true,
+    "middle": true,
+    "observed": "start/middle/end of the selected window: people walking along the promenade, sky unchanged across the whole upper band, no camera move that closes the space. Clear region: the open sky fills the upper band above the promenade; no subject enters it.",
+    "placement_space": "upper_band",
+    "start": true
+   },
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x1920 source used at full frame; no crop needed."
+   },
+   "human_presence": true,
+   "relevance_reason": "the beat states that 543 people imagined a first date; a wide promenade with many people walking under open sky carries that scale without faking a specific event.",
+   "resolution_quality": "acceptable",
+   "selection_reason": "wide shot of many people walking below a large plain sky; the empty sky fills the upper band so the study's figure can be set in type. This is the plan's declared non-subject beat (shows_subject false), and it is the only one.",
+   "shows_subject": false,
+   "staged_stock_risk": "low"
+  }
+ },
+ {
+  "visual_event_id": "ve-5",
+  "stage": {
+   "discovery_id": "asset-source-e5d85c0376e7ed106740",
+   "visual_event_id": "ve-5",
+   "semantic_beat_id": "beat-5",
+   "source_in_seconds": 2.55,
+   "duration_seconds": 5.59,
+   "intended_crop": {
+    "h": 1.0,
+    "mode": "cover_9x16",
+    "w": 1.0,
+    "x": 0.0,
+    "y": 0.0
+   },
+   "candidate_rank": 1,
+   "query": "phone on wooden table wide shot",
+   "narration_span": "و بعد، طرف مقابل یا بلافاصله پیام میداد، یا صبح روز بعد، یا دو روز بعد."
+  },
+  "review": {
+   "affect_match": true,
+   "frame_review": {
+    "end": true,
+    "middle": true,
+    "observed": "start/middle/end of the selected window: the same table with the phone, books and glass; the upper band stays plain fabric and wall.",
+    "placement_space": "upper_band",
+    "start": true
+   },
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x1920 source used at full frame; no crop needed."
+   },
+   "human_presence": false,
+   "relevance_reason": "the re-acquired clip is the video's subject at rest: a phone lying on a table with books and coffee. It carries the beat's three timings as a still, calm object without a hand or a screen competing for the frame.",
+   "resolution_quality": "acceptable",
+   "selection_reason": "a phone on a wooden table in a real room, the wall and cloth above and behind it empty across the whole upper band; the phone sits in the lower left so the moment can be set above it.",
+   "shows_subject": true,
+   "staged_stock_risk": "low"
+  }
+ },
+ {
+  "visual_event_id": "ve-6",
+  "stage": {
+   "discovery_id": "asset-source-7ae98aeab71dab0dc30f",
+   "visual_event_id": "ve-6",
+   "semantic_beat_id": "beat-6",
+   "source_in_seconds": 3.0,
+   "duration_seconds": 7.32,
+   "intended_crop": {
+    "h": 1.0,
+    "mode": "cover_9x16",
+    "w": 1.0,
+    "x": 0.0,
+    "y": 0.0
+   },
+   "candidate_rank": 1,
+   "query": "phone on bed plain wall morning",
+   "narration_span": "جالبترین نتیجه این بود که بیشترین تمایل به ادامه رابطه وقتی دیده شد که پیام صبح روز بعد میرسید."
+  },
+  "review": {
+   "affect_match": true,
+   "frame_review": {
+    "end": true,
+    "middle": true,
+    "observed": "start/middle/end of the selected window: the same man in bed holding the phone, wall and pillows unchanged, no subject inside the upper band. Clear region: the white wall above the bed fills the upper band; nothing crosses it.",
+    "placement_space": "upper_band",
+    "start": true
+   },
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x2048 source; a 9:16 cover crop trims ~6% of the height, keeping the man and the wall above him."
+   },
+   "human_presence": true,
+   "relevance_reason": "the study's strongest result belongs to a message arriving the next morning, and this is a person reading a phone in bed in daylight; the blank white wall above mirrors the calm the result describes.",
+   "resolution_quality": "strong",
+   "selection_reason": "man lying in bed with a phone, plain white wall filling the upper half; the declared upper band is genuinely empty and the action is exactly the beat's.",
+   "shows_subject": true,
+   "staged_stock_risk": "low"
+  }
+ },
+ {
+  "visual_event_id": "ve-7",
+  "stage": {
+   "discovery_id": "asset-source-9bd12702d46a647499f0",
+   "visual_event_id": "ve-7",
+   "semantic_beat_id": "beat-7",
+   "source_in_seconds": 1.7,
+   "duration_seconds": 7.28,
+   "intended_crop": {
+    "h": 1.0,
+    "mode": "cover_9x16",
+    "w": 1.0,
+    "x": 0.0,
+    "y": 0.0
+   },
+   "candidate_rank": 1,
+   "query": "phone screen glow plain background",
+   "narration_span": "پیام فوری، علاقه رو واضحتر نشون میداد، اما فرستنده کمی نیازمندتر به نظر میرسید."
+  },
+  "review": {
+   "affect_match": true,
+   "frame_review": {
+    "end": true,
+    "middle": true,
+    "observed": "start/middle/end of the selected window: the same hand holding the lit phone against the warm dark wall, the lamp glow at the top edge unchanged across the window. Clear region: the warm dark wall spans the upper band; only the lamp glow sits at the very top edge.",
+    "placement_space": "upper_band",
+    "start": true
+   },
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x1920 source used at full frame; no crop needed."
+   },
+   "human_presence": true,
+   "relevance_reason": "a phone lit in a dark warm room is the beat's «پیام فوری» — the glow on the screen is the interest being shown immediately.",
+   "resolution_quality": "acceptable",
+   "selection_reason": "a single hand holding a lit phone against a dark wall; the frame's only light is the phone, and the upper band is bare wall apart from the lamp at the very top edge.",
+   "shows_subject": true,
+   "staged_stock_risk": "medium"
+  }
+ },
+ {
+  "visual_event_id": "ve-8",
+  "stage": {
+   "discovery_id": "asset-source-154f58255f2bef383dff",
+   "visual_event_id": "ve-8",
+   "semantic_beat_id": "beat-8",
+   "source_in_seconds": 1.0,
+   "duration_seconds": 3.18,
+   "intended_crop": {
+    "h": 1.0,
+    "mode": "cover_9x16",
+    "w": 1.0,
+    "x": 0.0,
+    "y": 0.0
+   },
+   "candidate_rank": 1,
+   "query": "empty chair kitchen table morning",
+   "narration_span": "از اون طرف، دو روز صبر کردن هم کمکی نکرد؛"
+  },
+  "review": {
+   "affect_match": true,
+   "frame_review": {
+    "end": true,
+    "middle": true,
+    "observed": "start/middle/end of the selected window: the same table and vase with both chairs empty, nothing entering or leaving the frame.",
+    "start": true
+   },
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x1920 source used at full frame; no crop needed."
+   },
+   "human_presence": false,
+   "relevance_reason": "the beat is «از اون طرف، دو روز صبر کردن هم کمکی نکرد»; an untouched breakfast table with two empty chairs and nobody at it is that beat's stillness. The phone is honestly absent, and this is a non-literal read.",
+   "resolution_quality": "strong",
+   "selection_reason": "a real apartment kitchen table: tulips, glass, empty chairs, nobody in frame. It reads as a place waiting for someone and gives the film its one beat of pure object stillness before the result is named.",
+   "shows_subject": false,
+   "staged_stock_risk": "low"
+  }
+ },
+ {
+  "visual_event_id": "ve-9",
+  "stage": {
+   "discovery_id": "asset-source-214dd93fe8f16c36426c",
+   "visual_event_id": "ve-9",
+   "semantic_beat_id": "beat-9",
+   "source_in_seconds": 3.05,
+   "duration_seconds": 7.32,
+   "intended_crop": {
+    "h": 1.0,
+    "mode": "cover_9x16",
+    "w": 1.0,
+    "x": 0.0,
+    "y": 0.0
+   },
+   "candidate_rank": 1,
+   "query": "man sitting alone table wide shot",
+   "narration_span": "افراد احساس شیمی و انگیزه کمتری برای ادامه ارتباط داشتند و طرف مقابل رو کمتر قابلاعتماد میدیدند."
+  },
+  "review": {
+   "affect_match": true,
+   "frame_review": {
+    "end": true,
+    "middle": true,
+    "observed": "start/middle/end of the selected window: the same man at the table with the cup and notebook; his face is out of frame, only hands and shoulders are visible, and the wall behind stays plain.",
+    "placement_space": "upper_band",
+    "start": true
+   },
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x2048 source; a 9:16 cover crop trims ~6% of the height and keeps the table and wall."
+   },
+   "human_presence": true,
+   "relevance_reason": "the beat is that two days of waiting changed nothing. A man alone at a small table, waiting, against a plain wall is that beat directly; no phone is in frame and that is recorded honestly rather than assumed.",
+   "resolution_quality": "strong",
+   "selection_reason": "a wide side-on shot of a man at a table with a cup: the plain wall fills the upper 40% of the frame, so the moment has a genuinely empty band, and his hands resting tell the waiting without a performance.",
+   "shows_subject": false,
+   "staged_stock_risk": "low"
+  }
+ },
+ {
+  "visual_event_id": "ve-10",
+  "stage": {
+   "discovery_id": "asset-source-f788e57f931342e13944",
+   "visual_event_id": "ve-10",
+   "semantic_beat_id": "beat-10",
+   "source_in_seconds": 1.05,
+   "duration_seconds": 7.47,
+   "intended_crop": {
+    "h": 1.0,
+    "mode": "cover_9x16",
+    "w": 1.0,
+    "x": 0.0,
+    "y": 0.0
+   },
+   "candidate_rank": 1,
+   "query": "person at cafe table wide shot",
+   "narration_span": "یعنی حداقل در این آزمایش، «دیر پیام بده تا مشتاق به نظر نرسی» استراتژی خیلی خوبی نبود."
+  },
+  "review": {
+   "affect_match": true,
+   "frame_review": {
+    "end": true,
+    "middle": true,
+    "observed": "start/middle/end of the selected window: the same woman in the wicker chair with her laptop, the plants and hanging lamp unchanged above her.",
+    "placement_space": "upper_band",
+    "start": true
+   },
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x1920 source used at full frame; no crop needed."
+   },
+   "human_presence": true,
+   "relevance_reason": "the beat says waiting to look keen was not a good strategy. A woman absorbed in her work in a warm cafe is the film's read of getting on with things instead; the phone is not in frame and that is recorded.",
+   "resolution_quality": "acceptable",
+   "selection_reason": "a wide cafe interior with the woman seated low in the frame and the room's lamp, plants and shelving above her; the subject sits below row 4 so the moment's band stays clear of her.",
+   "shows_subject": false,
+   "staged_stock_risk": "low"
+  }
+ },
+ {
+  "visual_event_id": "ve-11",
+  "stage": {
+   "discovery_id": "asset-source-b360a47eaa7a7285a4cb",
+   "visual_event_id": "ve-11",
+   "semantic_beat_id": "beat-11",
+   "source_in_seconds": 18.05,
+   "duration_seconds": 6.15,
+   "intended_crop": {
+    "h": 1.0,
+    "mode": "cover_9x16",
+    "w": 1.0,
+    "x": 0.0,
+    "y": 0.0
+   },
+   "candidate_rank": 1,
+   "query": "hands typing phone wide shot table",
+   "narration_span": "حالا تو بگو: بعد از قرار اول، همون شب پیام میدی، فردا صبح یا صبر میکنی؟"
+  },
+  "review": {
+   "affect_match": true,
+   "frame_review": {
+    "end": true,
+    "middle": true,
+    "observed": "start/middle/end of the selected window: the same hands at the table with the phone beside them, the tabletop and background unchanged.",
+    "placement_space": "upper_band",
+    "start": true
+   },
+   "geometry_review": {
+    "crop_safe": true,
+    "observed": "1080x2048 source; a 9:16 cover crop trims ~6% of the height and keeps the table."
+   },
+   "human_presence": true,
+   "relevance_reason": "the closing question asks what the viewer would do. Hands working at a table with a phone lying beside them is the answer being decided, and the subject is genuinely in frame.",
+   "resolution_quality": "strong",
+   "selection_reason": "a real cafe table with a phone resting beside the hands and a plain tabletop across the lower frame; the band above the work is quiet background, so the closing moment can be set there.",
+   "shows_subject": true,
+   "staged_stock_risk": "medium"
+  }
+ }
+]

@@ -1,0 +1,262 @@
+{
+ "artifacts": {
+  "brief": {
+   "version": "1.0",
+   "title": "پیام بعد از قرار اول",
+   "hook": "بعد از یه قرار خوب، پیام بدی یا صبر کنی؟",
+   "key_points": [
+    "پژوهش تجربی زمان فرستادن اولین پیام بعد از قرار اول را آزموده است.",
+    "۵۴۳ نفر سه حالت را تصور کردند: پیام فوری، صبح روز بعد، دو روز بعد.",
+    "بیشترین تمایل به ادامهٔ رابطه به پیام صبح روز بعد تعلق داشت.",
+    "پیام فوری علاقه را روشنتر نشان میدهد اما فرستنده را نیازمندتر جلوه میدهد.",
+    "دو روز صبر کردن شیمی، انگیزه و قابلاعتماد بودن طرف مقابل را کم میکند."
+   ],
+   "core_message": "دیر پیام دادن برای مشتاق به نظر رسیدن، در این آزمایش نتیجهٔ بهتری نداده است.",
+   "cta": "حالا تو بگو: بعد از قرار اول، همون شب پیام میدی، فردا صبح یا صبر میکنی؟",
+   "tone": "خودی، گفتوگویی، شواهدمحور — نه نصیحتآمیز",
+   "style": "film-type-2.16 (Persian composition, Estedad, real footage)",
+   "target_audience": "فارسیزبانهای ۲۰ تا ۳۵ ساله؛ مخاطب اینستاگرام ریلز",
+   "target_platform": "instagram-reels",
+   "target_duration_seconds": 62.48,
+   "reference_material": [
+    "inputs/narration.mp3",
+    "inputs/approved_script.txt"
+   ],
+   "selected_angle": "آزمایش تجربی جای حدس و گمان را میگیرد: زمانبندی پیام چه اثری روی برداشت طرف مقابل دارد؟",
+   "metadata": {
+    "production_mode": "narrated",
+    "narration_mode": "narrated",
+    "script_authority": "approved_script",
+    "platform_target": "instagram-reels",
+    "format": "vertical",
+    "aspect_ratio": "9:16",
+    "target_duration_seconds": 62.48,
+    "caption_mode": "hybrid",
+    "hook_visual_strategy": "شات اول مردی/زنی است که گوشی در دست روی لبهٔ تخت نشسته و به صفحه نگاه میکند (سوژهٔ اعلامشده — گوشی — در همان قاب). مومنت هوک از سبک claim+qualifier است و سؤال را روی همین قاب مینویسد؛ هیچ ادعایی که بعداً گفته یا نشان داده نشود در هوک نیست.",
+    "visual_subject": "phone",
+    "typographic_beat_budget": 2,
+    "moment_target": 8,
+    "render_runtime": "remotion",
+    "composition_mode": "templated",
+    "renderer_family": "persian-footage",
+    "design": {
+     "version": 2,
+     "profile": "film-type",
+     "seed": "first-date-message-timing-film-type-01"
+    },
+    "watermark": {
+     "persian_text": "طریقت تسلیم",
+     "latin_text": "Pathway_of_Surrender"
+    },
+    "music_plan": "warm minimal instrumental, low, no percussion (default: pixabay_music)",
+    "narration_source": "inputs/narration.mp3",
+    "approved_script_source": "inputs/approved_script.txt",
+    "speech_budget": {
+     "visible_characters": 771,
+     "chars_per_second": 12.34,
+     "natural_band": "14-16 chars/second; this recording is slower, matching its measured pace",
+     "measured_narration_seconds": 62.48
+    },
+    "beats": [
+     {
+      "id": "beat-1",
+      "intent_fa": "بعد از یک قرار خوب، گوشی دستِ آدم است و تصمیم سخت",
+      "footage_feasible": true,
+      "duration_seconds": 5.2,
+      "shot_hint": "woman sitting on the edge of a bed holding a phone, plain wall, soft daylight"
+     },
+     {
+      "id": "beat-2",
+      "intent_fa": "پژوهشگرها همین سؤال را آزمایش کردهاند",
+      "footage_feasible": true,
+      "duration_seconds": 5.0,
+      "shot_hint": "person reading research notes beside a phone on a desk"
+     },
+     {
+      "id": "beat-3",
+      "intent_fa": "چه زمانی برای فرستادن اولین پیام بهتر است؟",
+      "footage_feasible": true,
+      "duration_seconds": 5.4,
+      "shot_hint": "close-up thumbs typing a message on a phone screen"
+     },
+     {
+      "id": "beat-4",
+      "intent_fa": "۵۴۳ نفر یک قرار اول را تصور کردند",
+      "footage_feasible": true,
+      "duration_seconds": 5.2,
+      "shot_hint": "young couple at a table on a date, phone resting beside a coffee cup"
+     },
+     {
+      "id": "beat-5",
+      "intent_fa": "پیام بلافاصله، صبح روز بعد، یا دو روز بعد",
+      "footage_feasible": true,
+      "duration_seconds": 6.0,
+      "shot_hint": "hand lifting a phone as a message notification lights the screen"
+     },
+     {
+      "id": "beat-6",
+      "intent_fa": "بیشترین تمایل وقتی بود که پیام صبح روز بعد میرسید",
+      "footage_feasible": true,
+      "duration_seconds": 5.2,
+      "shot_hint": "person in bed in morning light looking at a phone"
+     },
+     {
+      "id": "beat-7",
+      "intent_fa": "پیام فوری علاقه را واضحتر نشان میداد",
+      "footage_feasible": true,
+      "duration_seconds": 5.0,
+      "shot_hint": "fast typing on a phone with a bright notification glow"
+     },
+     {
+      "id": "beat-8",
+      "intent_fa": "اما فرستنده کمی نیازمندتر به نظر میرسید",
+      "footage_feasible": true,
+      "duration_seconds": 5.0,
+      "shot_hint": "person waiting alone staring at the phone in their hand"
+     },
+     {
+      "id": "beat-9",
+      "intent_fa": "دو روز صبر کردن هم کمکی نکرد",
+      "footage_feasible": true,
+      "duration_seconds": 5.4,
+      "shot_hint": "phone left face-down on a table while the day passes outside"
+     },
+     {
+      "id": "beat-10",
+      "intent_fa": "شیمی، انگیزه و قابلاعتماد بودن کمتر شد",
+      "footage_feasible": true,
+      "duration_seconds": 4.8,
+      "shot_hint": "two people sitting apart, one glancing at a phone on the table"
+     },
+     {
+      "id": "beat-11",
+      "intent_fa": "پس دیر پیام دادن استراتژی خوبی نبود",
+      "footage_feasible": true,
+      "duration_seconds": 5.0,
+      "shot_hint": "person dropping the phone onto a sofa and shrugging"
+     },
+     {
+      "id": "beat-12",
+      "intent_fa": "حالا تو بگو: همون شب، فردا صبح یا صبر؟",
+      "footage_feasible": true,
+      "duration_seconds": 5.28,
+      "shot_hint": "hand holding a phone, thumb hovering over the message field"
+     }
+    ]
+   }
+  },
+  "decision_log": {
+   "version": "1.0",
+   "project_id": "first-date-message-timing",
+   "decisions": [
+    {
+     "decision_id": "d-001",
+     "stage": "idea",
+     "category": "pipeline_selection",
+     "subject": "Pipeline for a Persian narrated Reel",
+     "options_considered": [
+      {
+       "option_id": "persian-footage",
+       "label": "persian-footage",
+       "score": 1.0,
+       "reason": "on-screen text is Persian; RTL, Estedad measurement and a Persian-aware line breaker exist only here"
+      },
+      {
+       "option_id": "animated-explainer",
+       "label": "animated-explainer",
+       "score": 0.2,
+       "reason": "no Persian font, no RTL handling",
+       "rejected_because": "CSS line wrapping breaks Persian at grammatically wrong points"
+      }
+     ],
+     "selected": "persian-footage",
+     "reason": "Persian on-screen type always routes to persian-footage.",
+     "confidence": 1.0
+    },
+    {
+     "decision_id": "d-002",
+     "stage": "idea",
+     "category": "render_runtime_selection",
+     "subject": "Composition runtime",
+     "options_considered": [
+      {
+       "option_id": "remotion",
+       "label": "Remotion",
+       "score": 1.0,
+       "reason": "the Persian text layer (Estedad via FontFace, canvas text measurement, DP line breaker, RTL containers) exists only as Remotion components"
+      },
+      {
+       "option_id": "hyperframes",
+       "label": "HyperFrames",
+       "score": 0.0,
+       "reason": "not viable for this pipeline",
+       "rejected_because": "the Persian text layer (Estedad measurement, DP line breaker, RTL containers) exists only as Remotion components; no HyperFrames skill provides bidi or ZWNJ-aware line breaking"
+      }
+     ],
+     "selected": "remotion",
+     "reason": "pipeline_default: the Persian pipeline locks Remotion; the user did not request HyperFrames.",
+     "user_approved": true,
+     "confidence": 1.0
+    },
+    {
+     "decision_id": "d-003",
+     "stage": "idea",
+     "category": "composition_mode",
+     "subject": "Composition authoring mode",
+     "options_considered": [
+      {
+       "option_id": "templated",
+       "label": "Templated",
+       "score": 1.0,
+       "reason": "the Persian composition IS the template; Film Type 2.16 supplies bespoke per-moment placement and motion on top of it"
+      },
+      {
+       "option_id": "atelier",
+       "label": "Atelier",
+       "score": 0.3,
+       "reason": "hand-authoring a new visual language",
+       "rejected_because": "the Persian composition's RTL/type layer is the deliverable here; authoring a fresh engine layer is a capability extension, not a production choice"
+      }
+     ],
+     "selected": "templated",
+     "reason": "manifest pins composition_mode templated for this pipeline.",
+     "confidence": 0.9
+    },
+    {
+     "decision_id": "d-004",
+     "stage": "idea",
+     "category": "music_source",
+     "subject": "Background music source",
+     "options_considered": [
+      {
+       "option_id": "pixabay_music",
+       "label": "Pixabay instrumental",
+       "score": 1.0,
+       "reason": "no key needed, licensed for monetized social media; narrated mode requires music"
+      },
+      {
+       "option_id": "user_track",
+       "label": "User-supplied track",
+       "score": 0.5,
+       "reason": "none named or supplied in the request",
+       "rejected_because": "the user gave no track, link or file"
+      },
+      {
+       "option_id": "omit",
+       "label": "No music",
+       "score": 0.0,
+       "reason": "silence under a narrated edit",
+       "rejected_because": "the user did not ask for no music"
+      }
+     ],
+     "selected": "pixabay_music",
+     "reason": "pipeline default when the user names no track and does not ask for silence.",
+     "confidence": 1.0
+    }
+   ]
+  }
+ },
+ "metadata": {
+  "note": "authored from the approved narration copy by the persian-video front door; no generated assets consumed."
+ }
+}

@@ -138,3 +138,6 @@ remotion-composer/public/fonts/kahroba/*.woff2
 
 # Agent worktrees: nested checkouts the desktop app creates for parallel sessions.
 .claude/worktrees/
+
+# Offline rehearsal fixture clips (#260; temporary per the fixture README)
+!tests/fixtures/rehearsal/*/clips/*.mp4

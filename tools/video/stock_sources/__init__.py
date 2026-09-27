@@ -73,11 +73,19 @@ def _source_classes() -> list[type]:
 def all_sources() -> list[StockSource]:
     """Instantiate every registered adapter, whether available or not.
 
+    Under an offline rehearsal (``OPENMONTAGE_REHEARSAL_FIXTURE``, #260) the
+    production sources are served from the fixture's recorded run instead.
+
     Returned instances are cheap — adapters keep no state beyond env
     var reads, so constructing them has no cost. Use this when you
     want to show the user what sources exist regardless of whether
     their credentials are configured.
     """
+    from lib.persian_rehearsal import replay_stock_sources
+
+    replayed = replay_stock_sources()
+    if replayed is not None:
+        return list(replayed)
     return [cls() for cls in _source_classes()]
 
 
