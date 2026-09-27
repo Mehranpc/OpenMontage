@@ -1359,8 +1359,19 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
         .filter(k=>stableJSON(a[k])!==stableJSON(b[k]))
         .map(k=>[k,{saved:JSON.stringify(a[k]).slice(0,600),now:JSON.stringify(b[k]).slice(0,600)}]));
     })():{};
+    type Row=Record<string,unknown>;
+    const rowDiffs:string[]=[];
+    for(const id of moments){
+      const a=((saved.moments as Record<string,{rows?:Row[]}>)[id]?.rows)??[], b=((now.moments as Record<string,{rows?:Row[]}>)[id]?.rows)??[];
+      for(let i=0;i<Math.max(a.length,b.length);i++){
+        for(const f of ["text","fontSizePx","abovePx","belowPx","widthPx","baselinePx"]){
+          if(stableJSON(a[i]?.[f])!==stableJSON(b[i]?.[f])) rowDiffs.push(`${id}#${i}(${String(b[i]?.text??a[i]?.text)}).${f}:${String(a[i]?.[f])}->${String(b[i]?.[f])}`);
+        }
+      }
+    }
     const detail={filmTypeKeys:keys,moments,watermarkPlanDiffers:stableJSON(props.watermarkPlan)!==stableJSON(watermarkPlan),
-      savedInputHash:saved.inputHash,currentInputHash:now.inputHash,firstMoment:first,firstDiff};
+      savedInputHash:saved.inputHash,currentInputHash:now.inputHash,firstMoment:first,rowDiffs:rowDiffs.slice(0,40),
+      firstDiffKeys:Object.keys(firstDiff)};
     throw new Error(`Saved Film Type geometry is stale or differs from this browser's font measurement. Re-run persian_compose to create a fresh review snapshot. OPENMONTAGE_DIAGNOSTICS=${JSON.stringify({code:"FILM_TYPE_GEOMETRY_DRIFT",...detail})}`);
   }
   return {...props,filmType,watermarkPlan,watermarkPlanMeasured:true,watermarkDiagnostics,
