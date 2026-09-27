@@ -58,7 +58,8 @@
     "endSeconds": 5.16,
     "semanticRole": "curiosity_gap",
     "semanticDirection": "question_then_evidence",
-    "openingSemanticMatch": true
+    "openingSemanticMatch": true,
+    "visualComplexity": "simple"
    },
    {
     "id": "shot-2",
@@ -504,7 +505,7 @@
   ],
   "typographicBeats": [],
   "audio": {
-   "narration": "projects/first-date-message-timing/assets/narration.mp3",
+   "narration": "{project}/inputs/narration.mp3",
    "wordTimings": [
     {
      "word": "تا",
@@ -1292,8 +1293,6 @@
      "end": 62.28
     }
    ],
-   "musicBaseVolume": 0.22,
-   "musicDuckVolume": 0.09,
    "musicFadeSeconds": 1.5
   },
   "watermark": {
@@ -1374,11 +1373,6 @@
      "kind": "action",
      "atSeconds": 1.2,
      "evidence": "the hand lifts and turns the phone in the opening shot, changing the frame's silhouette"
-    },
-    {
-     "kind": "typography",
-     "atSeconds": 0.6,
-     "evidence": "the hook composition arrives within the opening second and holds for its full 3–5 second window"
     }
    ],
    "semanticIntegrity": {

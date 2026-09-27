@@ -38,7 +38,10 @@ class RehearsalFailure(RuntimeError):
 
 
 class Rehearsal:
-    def __init__(self, fixture: Path, work: Path, *, echo: bool = True) -> None:
+    def __init__(
+        self, fixture: Path, work: Path, *, echo: bool = True, user_owns_hook: bool = True,
+    ) -> None:
+        self.user_owns_hook = user_owns_hook
         self.fixture = fixture.resolve()
         self.decisions = self.fixture / "decisions"
         self.work = work.resolve()
@@ -235,8 +238,49 @@ class Rehearsal:
         )
         self.complete("review_subject_regions", _region_evidence(proposed))
 
+    def select_hook(self) -> None:
+        # No CLI front door exists for automatic hook selection yet, so the production
+        # agent calls the library directly; the rehearsal does the same (tracked in #260).
+        hook = self.decision("hook-selection.json")
+        code = (
+            "import json,sys; from pathlib import Path;"
+            "from lib.persian_video_workflow import record_hook_selection;"
+            "h=json.loads(sys.argv[2]);"
+            "record_hook_selection(sys.argv[1], selected_text=h['text'], hook_family=h['hook_family'],"
+            " candidates=h['candidates'], score=h['score'], content_match_score=h['content_match_score'],"
+            " evidence_checked=h['evidence_checked'], unsupported_claims_rejected=h['unsupported_claims_rejected'],"
+            " rationale=h['rationale'])"
+        )
+        started = time.monotonic()
+        completed = subprocess.run(
+            [sys.executable, "-c", code, PROJECT_ID, json.dumps(hook, ensure_ascii=False)],
+            cwd=ROOT, env=self.env, capture_output=True, text=True,
+        )
+        elapsed = time.monotonic() - started
+        ok = completed.returncode == 0
+        self.steps.append({"step": "record_hook_selection", "seconds": round(elapsed, 3), "ok": ok})
+        self._log(f"{'ok ' if ok else 'ERR'} {elapsed:7.2f}s  record_hook_selection")
+        if not ok:
+            raise RehearsalFailure("record_hook_selection", completed.stderr.strip()[-3000:])
+
+    def edit(self) -> None:
+        self.select_hook()
+        draft = self.write("edit-decisions.json", self.decision("edit-decisions-draft.json"))
+        if self.user_owns_hook:
+            # Scenario 3: the automatic hook's first proof lands after 6s, so the gate hands
+            # the decision to the user, who answers "record this sentence as my hook" (#257).
+            self.wf("edit-stage base (expect late-proof refusal)", "edit-stage", PROJECT_ID,
+                    "base", "--json", draft, expect_fail=True)
+            hook = self.decision("hook-selection.json")["text"]
+            self.wf("hook-override", "hook-override", PROJECT_ID, "--text", hook,
+                    "--reason", "User owns the hook sentence at the preflight hook gate.")
+        self.wf("edit-stage base", "edit-stage", PROJECT_ID, "base", "--json", draft)
+        self.wf("edit-preflight base", "edit-preflight", PROJECT_ID, "base")
+        self.wf("edit-promote base", "edit-promote", PROJECT_ID, "base")
+        self.complete("no_copy_preflight", {"attempt_id": "base"})
+
     # -- driver -----------------------------------------------------------------
-    PHASES = ("bootstrap", "prepare_inputs", "align", "plan", "acquire", "regions")
+    PHASES = ("bootstrap", "prepare_inputs", "align", "plan", "acquire", "regions", "edit")
 
     def rehearse(self, until: str | None = None) -> dict[str, Any]:
         started = time.monotonic()
