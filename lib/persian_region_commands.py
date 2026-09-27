@@ -13,6 +13,7 @@ from typing import Any
 from uuid import uuid4
 
 from lib.persian_assets import scene_asset_requirements
+from lib.persian_scene_plan_source import materialize_scene_plan
 from lib.persian_dependency_cache import (
     asset_visual_dependency_digest, scene_geometry_dependency_digest,
 )
@@ -617,7 +618,7 @@ def build_sheets(
     """Build cached 10x10 start/middle/end subject-region review sheets."""
     project = _project_dir(Path(pipeline_dir), project_id)
     manifest_path = project / "artifacts" / "asset_manifest.json"
-    scene_path = project / "artifacts" / "scene_plan.json"
+    scene_path = materialize_scene_plan(project) or project / "artifacts" / "scene_plan.json"
     manifest = _read_object(manifest_path, label="asset manifest")
     scene_plan = _read_object(scene_path, label="scene plan")
     shots = _build_shot_plan(project, manifest, scene_plan)
@@ -1150,7 +1151,7 @@ def propose_regions(
     if not isinstance(inputs, Mapping):
         raise PersianRegionCommandError("subject-region sheet index has no input binding")
     manifest_path = project / "artifacts" / "asset_manifest.json"
-    scene_path = project / "artifacts" / "scene_plan.json"
+    scene_path = materialize_scene_plan(project) or project / "artifacts" / "scene_plan.json"
     manifest = _read_object(manifest_path, label="asset manifest")
     scene_plan = _read_object(scene_path, label="scene plan")
     input_record = {
@@ -1291,7 +1292,7 @@ def propose_regions(
 def pending_opening_hook_block(project: Path) -> dict[str, Any] | None:
     """The current proposal's opening-hook finding when no hook zone is clear (#229)."""
     proposal_path = project / SHEET_DIR / PROPOSAL_NAME
-    scene_path = project / "artifacts" / "scene_plan.json"
+    scene_path = materialize_scene_plan(project) or project / "artifacts" / "scene_plan.json"
     if not proposal_path.is_file() or not scene_path.is_file():
         return None
     proposal = _read_object(proposal_path, label="subject-region proposal")
@@ -1311,7 +1312,7 @@ def pending_negative_space_collisions(project: Path) -> list[dict[str, Any]]:
     stale and `regions propose` refuses them.
     """
     proposal_path = project / SHEET_DIR / PROPOSAL_NAME
-    scene_path = project / "artifacts" / "scene_plan.json"
+    scene_path = materialize_scene_plan(project) or project / "artifacts" / "scene_plan.json"
     if not proposal_path.is_file() or not scene_path.is_file():
         return []
     proposal = _read_object(proposal_path, label="subject-region proposal")

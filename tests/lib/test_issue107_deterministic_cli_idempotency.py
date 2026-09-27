@@ -23,7 +23,7 @@ from lib import persian_music_commands as music_commands
 from lib import persian_region_commands as region_commands
 from lib.checkpoint import init_project, write_checkpoint
 from tests.contracts.test_phase0_contracts import sample_artifact
-from tests.lib.test_issue35_asset_candidate_workspace import _selected_candidate
+from tests.lib.test_issue35_asset_candidate_workspace import _selected_candidate, _write_matching_scene_plan
 from tests.lib.test_persian_music_commands import (
     _FakeMusicTool,
     _metadata,
@@ -56,12 +56,17 @@ def _persian_project_ready_for_assets(tmp_path: Path) -> Path:
     init_project("run", title="Run", pipeline_type="persian-footage", pipeline_dir=tmp_path)
     project = tmp_path / "run"
     _selected_candidate(project)
-    for stage, artifact in (("idea", "brief"), ("script", "script"), ("scene_plan", "scene_plan")):
+    for stage, artifact in (("idea", "brief"), ("script", "script")):
         write_checkpoint(
             tmp_path, "run", stage, "completed",
             {artifact: sample_artifact(artifact)},
             pipeline_type="persian-footage",
         )
+    plan = _write_matching_scene_plan(project)
+    write_checkpoint(
+        tmp_path, "run", "scene_plan", "completed", {"scene_plan": plan},
+        pipeline_type="persian-footage",
+    )
     return project
 
 

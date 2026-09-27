@@ -520,3 +520,22 @@ def test_status_surfaces_reviewed_reusable_candidates_by_visual_event(tmp_path: 
     assert reusable[1]["reviewSha256"] == workspace.load_asset_candidate(
         project, alternate["candidateId"]
     )["reviewSha256"]
+
+
+def _write_matching_scene_plan(project: Path, *, event: str = "event-1", **event_fields) -> dict:
+    """A completed, schema-valid scene-plan checkpoint whose event matches `_selected_candidate` (#238)."""
+    import json as _json
+
+    from tests.lib.test_issue35_semantic_scene_plan_checkpoint import _event
+
+    visual = {**_event(event, 4.0), "narration_span": "این یک جمله نمونه است",
+              "queries": ["person thinking at desk", "person at desk wide shot"], **event_fields}
+    plan = {"version": "2.0", "format": "vertical", "subject": "sample",
+            "target_duration_seconds": 4.0,
+            "beats": [{"id": "beat-1", "intent_fa": "نمونه", "script_line_fa": "این یک جمله نمونه است",
+                       "duration_seconds": 4.0, "typographic": False, "visual_events": [visual]}]}
+    project.mkdir(parents=True, exist_ok=True)
+    (project / "checkpoint_scene_plan.json").write_text(_json.dumps({
+        "stage": "scene_plan", "status": "completed", "artifacts": {"scene_plan": plan},
+    }, ensure_ascii=False), encoding="utf-8")
+    return plan
