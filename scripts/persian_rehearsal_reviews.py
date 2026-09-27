@@ -117,6 +117,10 @@ def _hook_review(candidate_sha: str, hook_audit: Mapping[str, Any], cold_sha: st
         "payoffBeginsPromptly": False,
         "timingPolicyVersion": str(policy.get("version") or HOOK_TIMING_POLICY_VERSION),
         "timingDisposition": disposition,
+        **({"advisoryReason": (
+            "The user chose this hook at planning time knowing the study evidence lands at 15s; "
+            "the late proof is an advisory, not a blocker, under user-supplied authority."
+        )} if disposition == "late-authoritative-advisory" else {}),
         "authorityProvenance": provenance,
         "coldViewer": {
             "evidenceSource": "rendered_opening_only",
