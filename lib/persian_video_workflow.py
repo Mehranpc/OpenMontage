@@ -1291,6 +1291,38 @@ def _phase_elapsed_seconds(state: Mapping[str, Any], phase: str, *, now: datetim
     return max(0.0, (now - _parse_timestamp(str(started_at))).total_seconds())
 
 
+#: Candidates per planned footage event. Review rejects about a third to a half of
+#: stock footage (4 of 13 and 6 of 14 on the two 2026-09-27 acceptance runs), so one
+#: candidate per event plus the fixed ceiling left too little for the retry pass and a
+#: 14-event plan stopped on a human question. Two per event gives every event its
+#: primary pass plus one reviewed retry.
+_CANDIDATES_PER_EVENT = 2
+#: Hard upper bound for the scaled ceiling; bytes stay bounded by the aggregate cap.
+_SCALED_CANDIDATE_CAP = 32
+
+
+def _planned_footage_events(state: Mapping[str, Any]) -> int:
+    """How many footage events the completed scene plan asks acquisition to fill."""
+    try:
+        path = _project_root(state) / "checkpoint_scene_plan.json"
+        checkpoint = json.loads(path.read_text(encoding="utf-8"))
+    except (KeyError, TypeError, OSError, ValueError):
+        return 0
+    if not isinstance(checkpoint, Mapping) or checkpoint.get("status") != "completed":
+        return 0
+    plan = (checkpoint.get("artifacts") or {}).get("scene_plan")
+    if not isinstance(plan, Mapping):
+        return 0
+    requirements, _, _ = scene_asset_requirements(dict(plan))
+    return len(requirements)
+
+
+def _scaled_policy_total(state: Mapping[str, Any], policy_total: int) -> int:
+    """The whole-run ceiling, raised to cover the plan's events (#246). Never lowered."""
+    scaled = min(_SCALED_CANDIDATE_CAP, _CANDIDATES_PER_EVENT * _planned_footage_events(state))
+    return max(policy_total, scaled)
+
+
 def _candidate_ceiling(state: Mapping[str, Any], policy_total: int) -> int:
     """The candidate ceiling in force, including any sanctioned scoped grant (#152).
 
@@ -1300,6 +1332,7 @@ def _candidate_ceiling(state: Mapping[str, Any], policy_total: int) -> int:
     (`16 + 4 - 16 = 4`) and the second did not (`16 + 2 - 18 = 0`), so a run could only
     ever repair once.
     """
+    policy_total = _scaled_policy_total(state, policy_total)
     grant = state.get("asset_reacquisition_grant")
     if not isinstance(grant, Mapping) or not grant.get("candidates"):
         return policy_total
