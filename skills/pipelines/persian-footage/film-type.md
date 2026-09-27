@@ -69,6 +69,18 @@ and understandable on mute. Film Type 2.16 does not use a character-count/CPS ga
 to force a complete opening hook shorter than this product contract; real Kahroba
 pixel fit plus rendered review are authoritative.
 
+Do not size a 2.16 hook with `PersianMoment.min_read_seconds` or
+`film_min_read_seconds`: those are the sequential body-moment models, and
+`audit_moments` deliberately skips them for the simultaneous hook. A hook that
+"needs 8 s" under them is not infeasible, so do not re-run hook selection on
+that basis (#240). The limits that actually apply at selection time are the
+segment caps in `lib/persian_moments.py` (`MAX_HERO_CHARS`,
+`MAX_FLAT_HERO_CHARS`, `MAX_SUPPORT_CHARS`), the five-line Kahroba pixel fit at
+prepass, and preflight's `HOOK_TYPOGRAPHIC_DURATION_EXCESS` reading ceiling
+(`0.45 s + chars / 11 cps + 0.75 s`, minimum 2.4 s). That ceiling is a maximum
+hold, not a floor. Whether a long hook reads within 3–5 s on mute is an
+editorial judgment for rendered review.
+
 ### Kahroba editorial typography
 
 The default editorial palette is support white `#FFFFFF` plus semantic yellow
