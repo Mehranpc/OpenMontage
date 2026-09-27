@@ -292,29 +292,8 @@ class Rehearsal:
         self.complete("review_subject_regions", _region_evidence(proposed))
 
     def select_hook(self) -> None:
-        # No CLI front door exists for automatic hook selection yet, so the production
-        # agent calls the library directly; the rehearsal does the same (tracked in #260).
         hook = self.decision("hook-selection.json")
-        code = (
-            "import json,sys; from pathlib import Path;"
-            "from lib.persian_video_workflow import record_hook_selection;"
-            "h=json.loads(sys.argv[2]);"
-            "record_hook_selection(sys.argv[1], selected_text=h['text'], hook_family=h['hook_family'],"
-            " candidates=h['candidates'], score=h['score'], content_match_score=h['content_match_score'],"
-            " evidence_checked=h['evidence_checked'], unsupported_claims_rejected=h['unsupported_claims_rejected'],"
-            " rationale=h['rationale'])"
-        )
-        started = time.monotonic()
-        completed = subprocess.run(
-            [sys.executable, "-c", code, PROJECT_ID, json.dumps(hook, ensure_ascii=False)],
-            cwd=ROOT, env=self.env, capture_output=True, text=True,
-        )
-        elapsed = time.monotonic() - started
-        ok = completed.returncode == 0
-        self.steps.append({"step": "record_hook_selection", "seconds": round(elapsed, 3), "ok": ok})
-        self._log(f"{'ok ' if ok else 'ERR'} {elapsed:7.2f}s  record_hook_selection")
-        if not ok:
-            raise RehearsalFailure("record_hook_selection", completed.stderr.strip()[-3000:])
+        self.wf("hook-select", "hook-select", PROJECT_ID, "--json", self.write("hook-selection.json", hook))
 
     def edit(self) -> None:
         if not self.user_owns_hook:
