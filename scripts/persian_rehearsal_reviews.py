@@ -202,7 +202,10 @@ def _final(project: Path) -> dict[str, Any]:
     retention = audit_persian_retention(edit["persian"])
     state = _state(project)
     render = (state.get("evidence") or {}).get("render_final_candidate") or {}
-    motion = dict(render.get("post_render_motion_qa") or {"passed": bool(render.get("motion_qa_passed", True))})
+    # The measured report the final render persisted (#286); no stand-in.
+    motion = render.get("post_render_motion_qa")
+    if not isinstance(motion, dict):
+        raise RuntimeError("render_final_candidate evidence has no measured post_render_motion_qa")
     probe = _probe(candidate)
     streams = list(probe.get("streams") or [])
     video = next((s for s in streams if s.get("codec_type") == "video"), {})
