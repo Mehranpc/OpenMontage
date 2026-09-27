@@ -213,23 +213,6 @@ def test_user_directed_revision_promotes_new_hook_to_authoritative_user_copy(tmp
     assert staged["hookAuthority"]["verified"] is True
 
 
-def test_user_hook_override_requires_active_user_revision(tmp_path: Path) -> None:
-    import pytest
-
-    _bootstrap_to_preflight(tmp_path, hook_text=None)
-    record_hook_selection(
-        "run", selected_text=SCRIPT, hook_family="common-mistake",
-        candidates=[{"text": "بازی فقط سرگرمیه؟"}, {"text": SCRIPT}], score=8.6,
-        content_match_score=2, evidence_checked=True, unsupported_claims_rejected=True,
-        rationale="Initial automatic winner.", pipeline_dir=tmp_path,
-    )
-    with pytest.raises(PersianVideoWorkflowError, match="user-directed revision"):
-        record_user_hook_override(
-            "run", selected_text="هوک تازه", reason="User requested it.",
-            pipeline_dir=tmp_path, now=BASE,
-        )
-
-
 def test_automatic_selection_cannot_replace_user_override(tmp_path: Path) -> None:
     import pytest
     from lib.persian_editorial_hook import PersianEditorialHookError
@@ -274,3 +257,55 @@ def test_hook_override_cli_is_declared() -> None:
     assert args.project_id == "run"
     assert args.text == "هوک تازه"
     assert args.reason == "بازخورد صریح کاربر"
+
+
+def test_user_can_own_the_automatic_hook_before_any_render(tmp_path: Path) -> None:
+    """#257: the preflight hook gate hands the decision to the user; binding their
+    answer must not require a rendered candidate, a fresh run, or re-downloads."""
+    _bootstrap_to_preflight(tmp_path, hook_text=None)
+    record_hook_selection(
+        "run", selected_text=SCRIPT, hook_family="common-mistake",
+        candidates=[{"text": "بازی فقط سرگرمیه؟"}, {"text": SCRIPT}], score=8.6,
+        content_match_score=2, evidence_checked=True, unsupported_claims_rejected=True,
+        rationale="Initial automatic winner.", pipeline_dir=tmp_path,
+    )
+
+    state = record_user_hook_override(
+        "run", selected_text=SCRIPT, reason="User owns this hook sentence at the preflight gate.",
+        pipeline_dir=tmp_path, now=BASE,
+    )
+
+    decision = state["hook_selection"]
+    assert decision["mode"] == "user_supplied"
+    assert decision["authoritative"] is True
+    assert decision["source"] == "user_preflight_decision"
+    assert state["hook_selection_history"][-1]["decision"]["mode"] == "automatic"
+    assert state["next_phase"] == "no_copy_preflight"
+
+    staged = _stage_payload(tmp_path, SCRIPT, attempt="edit-user-owned")
+    assert staged["hookAuthority"]["mode"] == "user_supplied"
+    assert staged["hookAuthority"]["verified"] is True
+
+
+def test_hook_override_after_a_render_still_needs_a_user_revision(tmp_path: Path) -> None:
+    import pytest
+    from lib import persian_video_workflow as workflow
+
+    _bootstrap_to_preflight(tmp_path, hook_text=None)
+    record_hook_selection(
+        "run", selected_text=SCRIPT, hook_family="common-mistake",
+        candidates=[{"text": "بازی فقط سرگرمیه؟"}, {"text": SCRIPT}], score=8.6,
+        content_match_score=2, evidence_checked=True, unsupported_claims_rejected=True,
+        rationale="Initial automatic winner.", pipeline_dir=tmp_path,
+    )
+    state = workflow.load_workflow_state("run", pipeline_dir=tmp_path)
+    state.setdefault("phase_telemetry", {})["render_opening_candidate"] = [
+        {"attempt": 1, "started_at": BASE.isoformat(), "outcome": "superseded"}
+    ]
+    workflow._write_state(workflow._project_root(state), state)
+
+    with pytest.raises(PersianVideoWorkflowError, match="user-directed revision"):
+        record_user_hook_override(
+            "run", selected_text="هوک تازه", reason="User requested it.",
+            pipeline_dir=tmp_path, now=BASE,
+        )

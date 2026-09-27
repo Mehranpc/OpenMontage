@@ -1180,8 +1180,9 @@ def record_user_hook_override(
     """Bind explicit user hook feedback as authoritative copy in a revision cycle.
 
     This is intentionally narrower than automatic hook selection. It is available
-    only after an explicit user-directed rewind to ``no_copy_preflight`` and only
-    for a hook that was previously selected automatically. The superseded decision
+    only at an active ``no_copy_preflight``, either in an explicit user-directed
+    revision or before any candidate was rendered (a user answer to the preflight
+    hook gate), and only for a hook that was previously selected automatically. The superseded decision
     is retained verbatim in durable history before the new user authority is stored.
     """
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
@@ -1198,12 +1199,23 @@ def record_user_hook_override(
     cycle = int(state.get("user_revision_cycles") or 0)
     history = list(state.get("send_back_history") or [])
     latest = history[-1] if history else None
-    if (
-        cycle <= 0
-        or not isinstance(latest, Mapping)
-        or latest.get("user_directed_revision") is not True
-        or latest.get("target_phase") != "no_copy_preflight"
-    ):
+    in_user_revision = (
+        cycle > 0
+        and isinstance(latest, Mapping)
+        and latest.get("user_directed_revision") is True
+        and latest.get("target_phase") == "no_copy_preflight"
+    )
+    # Before anything is rendered, the hook-quality gate itself can hand the
+    # decision to the user ("the hook sentence is yours; decide"). Their answer
+    # is explicit feedback too; requiring a rendered candidate first forced a
+    # fresh run and re-downloading every asset just to record it (#257).
+    # Phase telemetry is append-only, so a send-back cannot hide an earlier render.
+    telemetry = state.get("phase_telemetry") or {}
+    rendered = any(
+        phase in (state.get("completed_phases") or []) or bool(telemetry.get(phase))
+        for phase in ("render_opening_candidate", "render_final_candidate")
+    )
+    if not in_user_revision and rendered:
         raise PersianVideoWorkflowError(
             "user hook override requires an explicit user-directed revision rewind"
         )
@@ -1220,7 +1232,7 @@ def record_user_hook_override(
     stamp = now or datetime.now(timezone.utc)
     decision = build_initial_hook_selection(text)
     decision.update({
-        "source": "user_directed_revision",
+        "source": "user_directed_revision" if in_user_revision else "user_preflight_decision",
         "revision_cycle": cycle,
         "reason": why,
         "overrides_sha256": str(previous.get("sha256") or ""),

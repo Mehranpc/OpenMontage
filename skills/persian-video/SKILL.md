@@ -260,7 +260,7 @@ If that explicit user feedback also changes a hook that was previously selected 
 python -m lib.persian_video_workflow hook-override <project-id> --text "هوک تأییدشدهٔ جدید" --reason "Explicit user revision after rendered review"
 ```
 
-`hook-override` is valid only in the active `no_copy_preflight` user-directed revision opened by `send-back`. It archives the superseded automatic decision and makes the new copy `user_supplied` and authoritative; do not simulate this by calling automatic selection again or editing workflow JSON.
+`hook-override` is valid at an active `no_copy_preflight`, either in the user-directed revision opened by `send-back`, or before any candidate has been rendered. The second case is for when the preflight hook-quality gate hands the decision to the user (for example, first proof after 6s on an automatic hook) and the user answers "record this sentence as my hook": run `hook-override` with that exact sentence in the same run, then re-run the edit preflight. Do not start a fresh run or re-download assets for it. It archives the superseded automatic decision and makes the new copy `user_supplied` and authoritative; do not simulate this by calling automatic selection again or editing workflow JSON.
 
 Before reading any path not already opened by the current tool call, enforce project isolation:
 
