@@ -65,3 +65,12 @@ def test_brand_never_stacks_under_a_right_aligned_block_and_stays_in_range(tmp_p
                 centre = brand["x"] + brand["w"] / 2
                 stacked = text["x"] <= centre <= text["x"] + text["w"]
                 assert not stacked or _gap_px(brand, text) >= 320, (moment["id"], slot["zone"], text)
+    # #232: while a caption paints, the brand stays out of the lower band next to it.
+    for slot in plan:
+        if slot["zone"].startswith("lower"):
+            live = [c for c in props["captions"]
+                    if c["startSeconds"] < slot["endSeconds"] and c["endSeconds"] > slot["startSeconds"]
+                    and not any(m["startSeconds"] <= c["startSeconds"] and c["endSeconds"] <= m["endSeconds"]
+                                for m in props["moments"])]
+            assert not live, (slot["zone"], slot["startSeconds"], slot["endSeconds"])
+
