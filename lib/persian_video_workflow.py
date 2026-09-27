@@ -5042,6 +5042,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="continue_with_extension: at least the stop's advertised minimum",
     )
 
+    hook_select = sub.add_parser(
+        "hook-select",
+        help="persist the automatic hook winner (record_hook_selection) from a reviewed JSON",
+    )
+    hook_select.add_argument("project_id")
+    hook_select.add_argument(
+        "--json", required=True, metavar="PATH",
+        help="object with text, hook_family, candidates, score, content_match_score, "
+             "evidence_checked, unsupported_claims_rejected, rationale",
+    )
     hook_override = sub.add_parser(
         "hook-override",
         help="bind explicit user hook feedback as authoritative copy in a revision cycle",
@@ -5408,6 +5418,24 @@ def _main(args: argparse.Namespace) -> int:
                 decision=args.decision,
                 extension_minutes=args.extension_minutes,
             ))
+        elif args.command == "hook-select":
+            state = load_workflow_state(args.project_id)
+            hook = _read_json(str(assert_read_allowed(state, args.json)))
+            missing = [key for key in (
+                "text", "hook_family", "candidates", "score", "content_match_score",
+                "evidence_checked", "unsupported_claims_rejected", "rationale",
+            ) if key not in hook]
+            if missing:
+                raise PersianVideoWorkflowError(f"hook-select JSON is missing: {', '.join(missing)}")
+            after = record_hook_selection(
+                args.project_id, selected_text=str(hook["text"]), hook_family=str(hook["hook_family"]),
+                candidates=list(hook["candidates"]), score=float(hook["score"]),
+                content_match_score=int(hook["content_match_score"]),
+                evidence_checked=bool(hook["evidence_checked"]),
+                unsupported_claims_rejected=bool(hook["unsupported_claims_rejected"]),
+                rationale=str(hook["rationale"]),
+            )
+            _print_json({"hook_selection": after.get("hook_selection")})
         elif args.command == "hook-override":
             _print_json(record_user_hook_override(
                 args.project_id, selected_text=args.text, reason=args.reason,
