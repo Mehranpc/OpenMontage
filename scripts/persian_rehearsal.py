@@ -167,11 +167,10 @@ class Rehearsal:
                 break
             time.sleep(0.25)
         self.wf("alignment-commit", "alignment-commit", PROJECT_ID, job_id)
-        # The recorded agent wrote the approved-lexeme timings itself; no front-door command
-        # produces this artifact yet (tracked in #263), so the rehearsal places the same file.
-        target = self.project / "artifacts" / "script-word-timings.json"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(self.fixture / "recorded" / "word-timings.json", target)
+        # alignment-commit writes artifacts/script-word-timings.json itself (#290).
+        state = json.loads((self.project / "persian-video-workflow.json").read_text(encoding="utf-8"))
+        if not (state.get("evidence") or {}).get("align_script_timing", {}).get("script_word_timings_ref"):
+            raise RehearsalFailure("alignment-commit", "no script word timings were committed")
 
     def plan(self) -> None:
         self.checkpoint("scene_plan", self.decision("checkpoint-scene_plan.json"))

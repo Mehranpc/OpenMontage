@@ -410,6 +410,7 @@ def _completion_evidence_from_job(
                 f"alignment provider decision drifted from frozen plan field {key!r}"
             )
     evidence = {
+        **_write_script_word_timings(root, result_path, script_path, script_sha, words),
         "provider_decision": dict(decision),
         "word_timing_count": len(words),
         "alignment_mode": result.get("alignment_mode") or decision.get("mode"),
@@ -423,6 +424,50 @@ def _completion_evidence_from_job(
         "provider_plan_path": str(plan_path),
     }
     return evidence
+
+
+SCRIPT_WORD_TIMINGS_REF = "artifacts/script-word-timings.json"
+
+
+def _write_script_word_timings(
+    root: Path, result_path: Path, script_path: Path | None, script_sha: str | None,
+    words: list[Any],
+) -> dict[str, Any]:
+    """Persist approved-script lexemes on the ASR clock at the alignment commit (#290).
+
+    The plan-time hook-proof check (#262) and the script checkpoint's
+    ``word_timings_ref`` read this artifact; before, nothing produced it, so the
+    agent had to write it by hand. The approved script owns the words; ASR only
+    supplies timing, through the same aligner subtitle delivery uses.
+    """
+    if script_path is None or script_sha is None:
+        return {}
+    from lib.persian_srt_alignment import build_script_aligned_word_timings
+
+    text = script_path.read_text(encoding="utf-8")
+    record = {"text": text, "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()}
+    timed = None
+    refusal = ""
+    for policy in ("exact", "normalized"):
+        try:
+            timed = build_script_aligned_word_timings({**record, "matchPolicy": policy}, words)
+            break
+        except Exception as exc:  # the aligner names its own refusal
+            refusal = str(exc)
+    if timed is None:
+        # Alignment itself succeeded; only the script-lexeme mapping did not. Record
+        # why, so the consumer (#262) names the cause instead of a missing file.
+        return {"script_word_timings_error": refusal[:500]}
+    target = root / SCRIPT_WORD_TIMINGS_REF
+    target.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "version": "1.0", "source": result_path.name,
+        "authority": "approved_script lexemes on the ASR timing clock",
+        "approved_script_sha256": script_sha, "word_count": len(timed), "words": timed,
+    }
+    target.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {"script_word_timings_ref": SCRIPT_WORD_TIMINGS_REF,
+            "script_word_timings_sha256": _sha(target)}
 
 
 def commit_alignment_job(

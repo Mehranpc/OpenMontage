@@ -433,6 +433,7 @@ def _validate_alignment_completion(
     for key in (
         "alignment_result_path", "alignment_result_sha256",
         "provider_plan_path", "provider_plan_sha256",
+        "script_word_timings_ref", "script_word_timings_sha256", "script_word_timings_error",
     ):
         value = evidence.get(key)
         if value is not None:
@@ -681,22 +682,34 @@ def _refuse_infeasible_moment_copy(scene_checkpoint: Mapping[str, Any] | None) -
 
 
 def _committed_word_timings(state: Mapping[str, Any]) -> list[dict[str, Any]] | None:
-    """The script's committed narration word timings, if the script checkpoint names them."""
+    """The committed approved-script word timings.
+
+    The alignment commit writes them and records ref + digest (#290); that record
+    wins. A script checkpoint ``word_timings_ref`` is the older, agent-written route.
+    """
     project = _project_root(state)
-    try:
-        script = read_checkpoint(
-            Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve(),
-            str(state.get("project_id") or project.name), "script",
-        )
-    except (CheckpointValidationError, OSError, json.JSONDecodeError):
-        return None
-    artifact = ((script or {}).get("artifacts") or {}).get("script") or {}
-    ref = str((artifact.get("metadata") or {}).get("word_timings_ref") or "").strip()
+    alignment = ((state.get("evidence") or {}).get("align_script_timing") or {})
+    ref = str(alignment.get("script_word_timings_ref") or "").strip()
+    expected_sha = str(alignment.get("script_word_timings_sha256") or "").strip().lower()
+    if not ref:
+        try:
+            script = read_checkpoint(
+                Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve(),
+                str(state.get("project_id") or project.name), "script",
+            )
+        except (CheckpointValidationError, OSError, json.JSONDecodeError):
+            return None
+        artifact = ((script or {}).get("artifacts") or {}).get("script") or {}
+        ref = str((artifact.get("metadata") or {}).get("word_timings_ref") or "").strip()
     if not ref:
         return None
     path = (project / ref).resolve()
     if not _is_within(path, project) or not path.is_file():
         return None
+    if expected_sha and _hash_file(path) != expected_sha:
+        raise PersianVideoWorkflowError(
+            f"committed script word timings changed after alignment: {ref}"
+        )
     value = json.loads(path.read_text(encoding="utf-8"))
     rows = value.get("words") if isinstance(value, Mapping) else value
     return [dict(row) for row in rows or [] if isinstance(row, Mapping)] or None
@@ -734,8 +747,11 @@ def _plan_hook_first_proof(
         raise PersianVideoWorkflowError("hook_first_proof.anchorText must name the spoken proof phrase")
     rows = _committed_word_timings(state)
     if not rows:
+        why = str(((state.get("evidence") or {}).get("align_script_timing") or {}).get(
+            "script_word_timings_error") or "").strip()
         raise PersianVideoWorkflowError(
             "hook_first_proof needs the committed script word timings (script word_timings_ref)"
+            + (f"; the alignment commit could not map the approved script onto the narration: {why}" if why else "")
         )
     words = TimedWord.from_dicts(rows)
     span = find_anchor_span(words, anchor)
