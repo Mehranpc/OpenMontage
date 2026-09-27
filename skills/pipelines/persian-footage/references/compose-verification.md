@@ -31,4 +31,6 @@ Do not implement brightness-only text or watermark masks, row-mean/per-column da
 
 Record numbers and missing coverage, not adjectives: resolved profile/hash, output digest, dimensions/duration, moment/caption counts, text coverage, sampled frame paths, worst contrast, rect/shadow/composite results, brand slot evidence, sync drift, reading floors, motion/luminance runs, caption frames, audio probe/mix, attributions, music provenance, warnings, and explicit `not_checked` items.
 
+The Film Type verifier also checks glyph order per row (#228): with the synchronized no-text `background` evidence it isolates the painted ink of each measured row and correlates it with the same text shaped right-to-left by HarfBuzz in the same font file and size. A reversed, mirrored or scrambled row fails; a row whose font file is not installed is `not_checked`, never passed. The report's `glyph_order_verified` is true only when every sampled frame's rows pass. Report it in `verification_notes` instead of `not_checked`.
+
 A green measurement run is not approval. `persian_text_verified` requires profile automation plus actual painted-frame review; final delivery additionally requires final review of the same digest and explicit human approval.
