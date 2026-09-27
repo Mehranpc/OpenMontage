@@ -19,5 +19,10 @@
  "visual_event_count": 11,
  "moment_carriers": 8,
  "duration_binding": "beats sum to 62.480s against the authoritative narration duration",
- "replanned": "ve-5 declared human_presence false and negative_space upper_band against the reviewed three-phones clip"
+ "replanned": "ve-5 declared human_presence false and negative_space upper_band against the reviewed three-phones clip",
+ "hook_first_proof": {
+  "kind": "evidence",
+  "anchorText": "۵۴۳ نفر",
+  "evidence": "the study's own scale arrives: «مطالعه: ۵۴۳ نفر» — the film stops asking and starts reporting the experiment it is about"
+ }
 }

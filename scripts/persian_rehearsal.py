@@ -167,10 +167,33 @@ class Rehearsal:
                 break
             time.sleep(0.25)
         self.wf("alignment-commit", "alignment-commit", PROJECT_ID, job_id)
+        # The recorded agent wrote the approved-lexeme timings itself; no front-door command
+        # produces this artifact yet (tracked in #263), so the rehearsal places the same file.
+        target = self.project / "artifacts" / "script-word-timings.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(self.fixture / "recorded" / "word-timings.json", target)
 
     def plan(self) -> None:
         self.checkpoint("scene_plan", self.decision("checkpoint-scene_plan.json"))
-        self.complete("plan_scenes_moments", self.decision("evidence-plan_scenes_moments.json"))
+        evidence = self.decision("evidence-plan_scenes_moments.json")
+        if self.user_owns_hook:
+            # Scenario 3 (#262): the automatic hook's proof is spoken at ~15s. The plan now
+            # stops here, before any footage, and the user owns the hook in the same run.
+            self.wf("attempt plan_scenes_moments", "attempt", PROJECT_ID, "--phase", "plan_scenes_moments")
+            refusal = self.wf(
+                "complete plan_scenes_moments (expect HOOK_PROOF_LATE)", "complete", PROJECT_ID,
+                "--phase", "plan_scenes_moments", "--evidence-json",
+                self.write("evidence-plan_scenes_moments.json", evidence), expect_fail=True,
+            )
+            if "[HOOK_PROOF_LATE]" not in refusal:
+                raise RehearsalFailure("plan proof gate", f"expected HOOK_PROOF_LATE: {refusal[-800:]}")
+            hook = self.decision("hook-selection.json")["text"]
+            self.wf("hook-override (plan)", "hook-override", PROJECT_ID, "--text", hook,
+                    "--reason", "User owns the hook sentence at the plan-time proof gate.")
+            self.wf("complete plan_scenes_moments", "complete", PROJECT_ID, "--phase", "plan_scenes_moments",
+                    "--evidence-json", self.write("evidence-plan_scenes_moments.json", evidence))
+            return
+        self.complete("plan_scenes_moments", evidence)
 
     def _search(self, retry_pass: int) -> None:
         request = self.write(
@@ -294,16 +317,9 @@ class Rehearsal:
             raise RehearsalFailure("record_hook_selection", completed.stderr.strip()[-3000:])
 
     def edit(self) -> None:
-        self.select_hook()
+        if not self.user_owns_hook:
+            self.select_hook()
         draft = self.write("edit-decisions.json", self.decision("edit-decisions-draft.json"))
-        if self.user_owns_hook:
-            # Scenario 3: the automatic hook's first proof lands after 6s, so the gate hands
-            # the decision to the user, who answers "record this sentence as my hook" (#257).
-            self.wf("edit-stage base (expect late-proof refusal)", "edit-stage", PROJECT_ID,
-                    "base", "--json", draft, expect_fail=True)
-            hook = self.decision("hook-selection.json")["text"]
-            self.wf("hook-override", "hook-override", PROJECT_ID, "--text", hook,
-                    "--reason", "User owns the hook sentence at the preflight hook gate.")
         # The recorded draft carries three deterministic defects the real run met one
         # browser pass at a time. The precheck must name all of them at once, before
         # any candidate is spent (#267, #269, #271); then the agent applies the

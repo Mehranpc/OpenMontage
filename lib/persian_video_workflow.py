@@ -679,6 +679,88 @@ def _refuse_infeasible_moment_copy(scene_checkpoint: Mapping[str, Any] | None) -
         )
 
 
+
+def _committed_word_timings(state: Mapping[str, Any]) -> list[dict[str, Any]] | None:
+    """The script's committed narration word timings, if the script checkpoint names them."""
+    project = _project_root(state)
+    try:
+        script = read_checkpoint(
+            Path(str(state.get("projects_root") or PROJECTS_DIR)).resolve(),
+            str(state.get("project_id") or project.name), "script",
+        )
+    except (CheckpointValidationError, OSError, json.JSONDecodeError):
+        return None
+    artifact = ((script or {}).get("artifacts") or {}).get("script") or {}
+    ref = str((artifact.get("metadata") or {}).get("word_timings_ref") or "").strip()
+    if not ref:
+        return None
+    path = (project / ref).resolve()
+    if not _is_within(path, project) or not path.is_file():
+        return None
+    value = json.loads(path.read_text(encoding="utf-8"))
+    rows = value.get("words") if isinstance(value, Mapping) else value
+    return [dict(row) for row in rows or [] if isinstance(row, Mapping)] or None
+
+
+def _plan_hook_first_proof(
+    state: Mapping[str, Any], evidence: Mapping[str, Any]
+) -> dict[str, Any] | None:
+    """Apply the hook first-proof ceiling where its inputs first exist (#262).
+
+    Which spoken phrase is the first concrete proof is an editorial judgement, so the
+    plan names it (`hook_first_proof.anchorText`). When the proof lands is then a fact
+    of the committed word timings. On the first-date run, the edit precheck refused an
+    automatic hook for a 15s proof about 90 minutes in; the same rule runs here, before
+    any footage is bought. The preflight check stays the final authority.
+    """
+    from lib.persian_hook_quality import (
+        CONCRETE_PROOF_KINDS, PROOF_BLOCK_SECONDS, resolve_hook_timing_authority,
+    )
+    from lib.persian_sync import TimedWord, find_anchor_span
+
+    raw = evidence.get("hook_first_proof")
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise PersianVideoWorkflowError("hook_first_proof must be an object with kind and anchorText")
+    kind = str(raw.get("kind") or "").strip()
+    anchor = str(raw.get("anchorText") or "").strip()
+    if kind not in CONCRETE_PROOF_KINDS:
+        raise PersianVideoWorkflowError(
+            f"hook_first_proof.kind must be one of {sorted(CONCRETE_PROOF_KINDS)}; "
+            "authority/setup language is not concrete proof"
+        )
+    if not anchor:
+        raise PersianVideoWorkflowError("hook_first_proof.anchorText must name the spoken proof phrase")
+    rows = _committed_word_timings(state)
+    if not rows:
+        raise PersianVideoWorkflowError(
+            "hook_first_proof needs the committed script word timings (script word_timings_ref)"
+        )
+    words = TimedWord.from_dicts(rows)
+    span = find_anchor_span(words, anchor)
+    if span is None:
+        raise PersianVideoWorkflowError(
+            f"hook_first_proof.anchorText {anchor!r} is not in the narration word timings"
+        )
+    at = round(float(words[span[0]].start), 3)
+    authority = resolve_hook_timing_authority(state.get("hook_selection"))
+    record = {
+        "kind": kind, "anchorText": anchor, "atSeconds": at,
+        "blockSeconds": PROOF_BLOCK_SECONDS,
+        "authoritative": bool(authority.get("authoritative")),
+        "evidence": str(raw.get("evidence") or ""),
+    }
+    if at > PROOF_BLOCK_SECONDS and not record["authoritative"]:
+        raise PersianVideoWorkflowError(
+            f"[HOOK_PROOF_LATE] the first concrete proof ({anchor!r}) is spoken at {at:.2f}s, "
+            f"after the {PROOF_BLOCK_SECONDS:.1f}s ceiling for an automatic hook; the edit "
+            "precheck would refuse it after acquisition. Decide now: the user owns this hook "
+            "(hook-override --text \"<exact hook>\"), choose an automatic hook whose proof lands "
+            "within the ceiling, or change the short-form target."
+        )
+    return record
+
 def _validate_scene_plan_duration_binding(
     state: Mapping[str, Any], scene_checkpoint: Mapping[str, Any] | None
 ) -> dict[str, Any]:
@@ -1192,9 +1274,15 @@ def record_user_hook_override(
         raise PersianVideoWorkflowError("user hook override requires non-empty selected text")
     if not why:
         raise PersianVideoWorkflowError("user hook override requires a non-empty reason")
-    if state.get("status") != "active" or state.get("next_phase") != "no_copy_preflight":
+    # The plan-time proof gate (#262) hands the same decision to the user before any
+    # footage exists, so the answer is bindable there too.
+    at_plan = state.get("next_phase") == "plan_scenes_moments"
+    if state.get("status") != "active" or state.get("next_phase") not in {
+        "no_copy_preflight", "plan_scenes_moments",
+    }:
         raise PersianVideoWorkflowError(
-            "user hook override requires an active user-directed revision at no_copy_preflight"
+            "user hook override requires an active plan_scenes_moments, or a user-directed "
+            "revision / pre-render no_copy_preflight"
         )
     cycle = int(state.get("user_revision_cycles") or 0)
     history = list(state.get("send_back_history") or [])
@@ -1215,7 +1303,7 @@ def record_user_hook_override(
         phase in (state.get("completed_phases") or []) or bool(telemetry.get(phase))
         for phase in ("render_opening_candidate", "render_final_candidate")
     )
-    if not in_user_revision and rendered:
+    if not at_plan and not in_user_revision and rendered:
         raise PersianVideoWorkflowError(
             "user hook override requires an explicit user-directed revision rewind"
         )
@@ -1232,7 +1320,7 @@ def record_user_hook_override(
     stamp = now or datetime.now(timezone.utc)
     decision = build_initial_hook_selection(text)
     decision.update({
-        "source": "user_directed_revision" if in_user_revision else "user_preflight_decision",
+        "source": "user_directed_revision" if in_user_revision else ("user_plan_decision" if at_plan else "user_preflight_decision"),
         "revision_cycle": cycle,
         "reason": why,
         "overrides_sha256": str(previous.get("sha256") or ""),
@@ -2204,6 +2292,9 @@ def _complete_phase_impl(
         phase_evidence["sourcing_order"] = sourcing_order
     if phase == "plan_scenes_moments":
         _refuse_infeasible_moment_copy(checkpoint)
+        hook_proof = _plan_hook_first_proof(state, phase_evidence)
+        if hook_proof is not None:
+            phase_evidence["hook_first_proof"] = hook_proof
         # The declared duration-coverage rule, enforced: the plan's beats must cover the
         # authoritative narration within one frame, or the phase refuses to advance.
         phase_evidence.update(_validate_scene_plan_duration_binding(state, checkpoint))
