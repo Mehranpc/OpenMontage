@@ -308,6 +308,38 @@ class TestPreRenderCoverageGate:
         assert calls, "the render must start when only rounding noise separates shots"
         assert result.success is True
 
+    def test_render_uses_the_prepass_browser_executable(
+        self, clip: Path, tmp_path: Path, monkeypatch
+    ) -> None:
+        """#282: the render launches the same Chrome the Film Type prepass measured with."""
+        import subprocess
+
+        from tools.video.persian_compose import PersianCompose
+
+        monkeypatch.setenv("REMOTION_BROWSER_EXECUTABLE", "/opt/chrome/chrome")
+        persian = _persian(clip, [_opener(), _moment("moment-2", 6.0, 9.0, hero="نور")], [])
+        persian["shots"] = [{
+            "id": "s1", "source": str(clip), "startSeconds": 0.0, "endSeconds": 20.0,
+            "sourceInSeconds": 0.0, "camera": "none", "attribution": "Video by Someone on Pexels",
+        }]
+        tool = PersianCompose()
+        calls: list = []
+        fake_path = tmp_path / "out.mp4"
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            fake_path.write_bytes(b"\x00" * 64)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(tool, "run_command", fake_run)
+        for name in ("audit_render_luminance", "audit_render_motion"):
+            monkeypatch.setattr(f"tools.video.persian_compose.{name}", lambda *a, **k: mock.Mock(
+                passed=True, warn_runs=[], dead_runs=[], fail_runs=[], to_dict=lambda: {}))
+        tool.execute({"edit_decisions": {"persian": persian, "render_runtime": "remotion"},
+                      "output_path": str(fake_path)})
+        render = next(cmd for cmd in calls if "render" in cmd)
+        assert "--browser-executable=/opt/chrome/chrome" in render
+
 
 class TestPostRenderMotionGate:
     def test_a_long_near_frozen_render_is_refused(self, clip: Path, tmp_path: Path, monkeypatch) -> None:
