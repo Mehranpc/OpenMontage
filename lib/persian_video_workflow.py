@@ -8,7 +8,6 @@ and download budgets, and the terminal digest-bound awaiting-human transition.
 from __future__ import annotations
 
 import argparse
-import fcntl
 import functools
 import hashlib
 import json
@@ -19,8 +18,6 @@ import subprocess
 import sys
 import time
 import uuid
-from contextlib import contextmanager
-from contextvars import ContextVar
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +27,8 @@ from uuid import uuid4
 from backlot.__main__ import cmd_open as open_backlot
 from lib.checkpoint import CheckpointValidationError, init_project, read_checkpoint, write_checkpoint
 from lib.paths import PROJECTS_DIR, REPO_ROOT
+from lib import persian_state_lock as _state_lock
+from lib.persian_state_lock import STATE_LOCK_FILENAME
 from lib.pipeline_loader import load_pipeline_readonly
 from lib.persian_film_type_docs import active_film_type_version, film_type_contract_paths
 from lib.persian_editorial_hook import (
@@ -1094,56 +1093,10 @@ def _state_path(project_dir: Path) -> Path:
     return project_dir / STATE_FILENAME
 
 
-STATE_LOCK_FILENAME = ".workflow-state.lock"
-# A state read-modify-write takes milliseconds. A lock held this long is a bug (a
-# holder waiting on a process that needs the same lock); fail with the holder named
-# instead of hanging the run.
-STATE_LOCK_TIMEOUT_SECONDS = float(os.environ.get("OPENMONTAGE_STATE_LOCK_TIMEOUT", "120"))
-_HELD_STATE_LOCKS: ContextVar[tuple[str, ...]] = ContextVar("persian_state_locks", default=())
-
-
-@contextmanager
 def state_transaction(project_id: str, *, pipeline_dir: Path | None = None):
-    """Hold the project's state lock across one load-modify-write (#325).
-
-    The run kernel (parent) and a durable worker (child) both rewrite the whole
-    state file. Without a lock, a parent that loaded before the worker settled an
-    asset pass writes its stale copy back afterwards and restores `pending_pass`.
-    Re-entrant within a process, so locked functions may call each other.
-    """
+    """Hold the project's state lock across one load-modify-write (#325)."""
     _validate_project_id(project_id)
-    project_dir = (pipeline_dir or PROJECTS_DIR).resolve() / project_id
-    key = str(project_dir)
-    held = _HELD_STATE_LOCKS.get()
-    if key in held or not project_dir.is_dir():
-        yield
-        return
-    lock_path = project_dir / STATE_LOCK_FILENAME
-    with lock_path.open("a+b") as handle:
-        deadline = time.monotonic() + STATE_LOCK_TIMEOUT_SECONDS
-        while True:
-            try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                if time.monotonic() > deadline:
-                    handle.seek(0)
-                    holder = handle.read().decode("utf-8", "replace").strip()
-                    raise PersianVideoWorkflowError(
-                        f"workflow state lock was not released within {STATE_LOCK_TIMEOUT_SECONDS:.0f}s; "
-                        f"held by: {holder or 'unknown'}"
-                    ) from None
-                time.sleep(0.05)
-        handle.seek(0)
-        handle.truncate()
-        handle.write(" ".join([f"pid={os.getpid()}", *sys.argv[:4]]).encode("utf-8"))
-        handle.flush()
-        token = _HELD_STATE_LOCKS.set(held + (key,))
-        try:
-            yield
-        finally:
-            _HELD_STATE_LOCKS.reset(token)
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    return _state_lock.state_transaction((pipeline_dir or PROJECTS_DIR).resolve() / project_id)
 
 
 def state_locked(func: Callable[..., Any]) -> Callable[..., Any]:

@@ -98,16 +98,46 @@ def test_a_stuck_holder_fails_with_its_identity_instead_of_hanging(tmp_path: Pat
     import pytest
 
     _state(tmp_path)
-    monkeypatch.setattr(workflow, "STATE_LOCK_TIMEOUT_SECONDS", 0.5)
+    from lib import persian_state_lock
+
+    monkeypatch.setattr(persian_state_lock, "STATE_LOCK_TIMEOUT_SECONDS", 0.5)
     ctx = multiprocessing.get_context("spawn")
     loaded, release = ctx.Event(), ctx.Event()
     holder = ctx.Process(target=_hold, args=(str(tmp_path), loaded, release))
     holder.start()
     try:
         assert loaded.wait(10)
-        with pytest.raises(workflow.PersianVideoWorkflowError, match=rf"held by: pid={holder.pid}"):
+        with pytest.raises(persian_state_lock.StateLockTimeout, match=rf"held by: pid={holder.pid}"):
             with workflow.state_transaction(PROJECT, pipeline_dir=tmp_path):
                 pass
     finally:
         release.set()
         holder.join(10)
+
+
+def test_the_lock_is_reentrant_across_a_main_module_and_its_import(tmp_path: Path) -> None:
+    """The CLI runs the workflow as __main__ and the kernel imports it again; on L2
+    `complete awaiting_human` waited 120 s on the lock its own process held."""
+    import os
+    import subprocess
+    import sys
+
+    _state(tmp_path)
+    # Two module instances in one process, as `python -m lib.persian_video_workflow`
+    # plus the kernel's import: both must see one held-lock registry.
+    runner = (
+        "import sys;"
+        "import lib.persian_state_lock;"
+        "import lib.persian_video_workflow as a;"
+        "import importlib.util as u;"
+        "spec=u.spec_from_file_location('__dup__', a.__file__); b=u.module_from_spec(spec);"
+        "sys.modules['__dup__']=b; spec.loader.exec_module(b);"
+        "from pathlib import Path; p=Path(sys.argv[1]);"
+        "lib.persian_state_lock.STATE_LOCK_TIMEOUT_SECONDS=2;"
+        "cm=b.state_transaction('lost-update', pipeline_dir=p); cm.__enter__();"
+        "cm2=a.state_transaction('lost-update', pipeline_dir=p); cm2.__enter__(); print('ok')"
+    )
+    done = subprocess.run([sys.executable, "-c", runner, str(tmp_path)], capture_output=True, text=True,
+                          timeout=30, cwd=Path(workflow.__file__).resolve().parents[1],
+                          env={**os.environ, "PYTHONPATH": str(Path(workflow.__file__).resolve().parents[1])})
+    assert done.returncode == 0 and done.stdout.strip() == "ok", done.stderr[-1500:]
