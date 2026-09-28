@@ -8,6 +8,7 @@ and download budgets, and the terminal digest-bound awaiting-human transition.
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import os
@@ -15,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -25,6 +27,8 @@ from uuid import uuid4
 from backlot.__main__ import cmd_open as open_backlot
 from lib.checkpoint import CheckpointValidationError, init_project, read_checkpoint, write_checkpoint
 from lib.paths import PROJECTS_DIR, REPO_ROOT
+from lib import persian_state_lock as _state_lock
+from lib.persian_state_lock import STATE_LOCK_FILENAME
 from lib.pipeline_loader import load_pipeline_readonly
 from lib.persian_film_type_docs import active_film_type_version, film_type_contract_paths
 from lib.persian_editorial_hook import (
@@ -1089,6 +1093,23 @@ def _state_path(project_dir: Path) -> Path:
     return project_dir / STATE_FILENAME
 
 
+def state_transaction(project_id: str, *, pipeline_dir: Path | None = None):
+    """Hold the project's state lock across one load-modify-write (#325)."""
+    _validate_project_id(project_id)
+    return _state_lock.state_transaction((pipeline_dir or PROJECTS_DIR).resolve() / project_id)
+
+
+def state_locked(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Run `func(project_id, ..., pipeline_dir=...)` inside `state_transaction`."""
+
+    @functools.wraps(func)
+    def wrapper(project_id: str, *args: Any, **kwargs: Any) -> Any:
+        with state_transaction(project_id, pipeline_dir=kwargs.get("pipeline_dir")):
+            return func(project_id, *args, **kwargs)
+
+    return wrapper
+
+
 def _write_state(project_dir: Path, state: Mapping[str, Any]) -> None:
     path = _state_path(project_dir)
     # A unique temp name per writer: the foreground CLI and a durable job both write
@@ -1320,6 +1341,7 @@ def load_workflow_state(
     return state
 
 
+@state_locked
 def record_hook_selection(
     project_id: str,
     *,
@@ -1350,6 +1372,7 @@ def record_hook_selection(
     return state
 
 
+@state_locked
 def record_user_hook_override(
     project_id: str,
     *,
@@ -1702,6 +1725,7 @@ def _enforce_phase_boundary_budget(
 _BUDGET_DECISIONS = ("continue_with_extension", "continue_to_preview", "stop")
 
 
+@state_locked
 def resolve_budget_stop(
     project_id: str,
     *,
@@ -1851,6 +1875,7 @@ def _open_countable_work_spans(state: Mapping[str, Any]) -> list[dict[str, Any]]
     ]
 
 
+@state_locked
 def enforce_front_door_budget(
     project_id: str,
     *,
@@ -1896,6 +1921,7 @@ def enforce_front_door_budget(
     )
 
 
+@state_locked
 def start_explicit_work_span(
     project_id: str,
     *,
@@ -1984,6 +2010,7 @@ def start_explicit_work_span(
     return span
 
 
+@state_locked
 def finish_explicit_work_span(
     project_id: str,
     span_id: str,
@@ -2020,6 +2047,7 @@ def finish_explicit_work_span(
     return finished
 
 
+@state_locked
 def abandon_explicit_work_span(
     project_id: str,
     span_id: str,
@@ -2104,6 +2132,7 @@ def _assert_no_open_explicit_work(state: Mapping[str, Any], phase: str) -> None:
         )
 
 
+@state_locked
 def record_phase_attempt(
     project_id: str,
     phase: str,
@@ -2161,6 +2190,7 @@ def record_phase_attempt(
     return state
 
 
+@state_locked
 def record_phase_failure(
     project_id: str,
     phase: str,
@@ -2464,6 +2494,7 @@ def _complete_phase_impl(
     return state
 
 
+@state_locked
 def complete_phase(
     project_id: str,
     phase: str,
@@ -2517,6 +2548,7 @@ def _invalidate_checkpoints_for_rewind(state: Mapping[str, Any], target_phase: s
     return archived
 
 
+@state_locked
 def reconcile_workflow_state(
     project_id: str, *, pipeline_dir: Path | None = None
 ) -> dict[str, Any]:
@@ -2608,6 +2640,7 @@ def reconcile_workflow_state(
     return state
 
 
+@state_locked
 def record_recovery_attempt(
     project_id: str,
     *,
@@ -2726,6 +2759,7 @@ def _scope_allows_visual_event(state: Mapping[str, Any], visual_event_id: str) -
         )
 
 
+@state_locked
 def request_send_back(
     project_id: str,
     target_phase: str,
@@ -2952,6 +2986,7 @@ _RECONCILABLE_EVENT_FIELDS = frozenset({
 _RECONCILE_PHASES = ("acquire_assets", "review_subject_regions")
 
 
+@state_locked
 def reconcile_scene_plan(
     project_id: str,
     amendments: Sequence[Mapping[str, Any]],
@@ -3171,6 +3206,7 @@ def _require_reviewed_retry_scope(
         )
 
 
+@state_locked
 def bounded_asset_search_request(
     project_id: str,
     request: Mapping[str, Any],
@@ -3369,6 +3405,7 @@ def bounded_asset_search_request(
     return bounded
 
 
+@state_locked
 def record_asset_search_result(
     project_id: str,
     *,
@@ -3562,6 +3599,7 @@ def record_asset_search_result(
     return state
 
 
+@state_locked
 def release_asset_search_pass(
     project_id: str,
     *,
@@ -4653,6 +4691,9 @@ def _last_project_write(project_root: Path) -> tuple[str | None, datetime | None
         # says nothing about production progress and would mask a real stall.
         if telemetry_dir in candidate.parents:
             continue
+        # The state lock (#325) is touched by every locked read-modify-write.
+        if candidate.name == STATE_LOCK_FILENAME:
+            continue
         try:
             modified = candidate.stat().st_mtime
         except OSError:
@@ -4783,6 +4824,7 @@ def _bootstrap_inputs(args: argparse.Namespace) -> tuple[str | None, str | None]
     return narration, approved_script
 
 
+@state_locked
 def resume_workflow(
     project_id: str,
     *,
