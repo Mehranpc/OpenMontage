@@ -12,9 +12,11 @@ from contextvars import ContextVar
 import fcntl
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import re
 import time
+import uuid
 from typing import Any, Callable, Mapping, Sequence
 
 from lib.json_safe import to_json_safe
@@ -175,12 +177,15 @@ def _envelope_path(state: Mapping[str, Any], job_id: str) -> Path:
 
 def _atomic_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(path.suffix + ".tmp")
-    temp.write_text(
-        json.dumps(to_json_safe(dict(payload)), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    temp.replace(path)
+    temp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+    try:
+        temp.write_text(
+            json.dumps(to_json_safe(dict(payload)), ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temp.replace(path)
+    finally:
+        temp.unlink(missing_ok=True)
 
 
 def _read_json(path: Path) -> dict[str, Any]:
