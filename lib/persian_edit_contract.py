@@ -624,6 +624,57 @@ def _moment_pacing_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnost
         diagnostics.append(ContractDiagnostic("moments.pacing", "/persian/moments", problem, hint))
     return diagnostics
 
+def _film_type_profile_version(persian: dict[str, Any]) -> str | None:
+    design = persian.get("design") if isinstance(persian.get("design"), dict) else {}
+    if str(design.get("profile") or "") != "film-type":
+        return None
+    version = str(design.get("profileVersion") or "")
+    if version:
+        return version
+    import json as _json
+    from lib.paths import REPO_ROOT
+
+    return str(_json.loads(
+        (REPO_ROOT / "styles" / "persian-footage" / "film-type.json").read_text(encoding="utf-8")
+    ).get("profileVersion") or "")
+
+
+def _opening_semantic_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnostic]:
+    """Film Type 2.13+: the opening hook shot's semantic evidence, on the draft.
+
+    Compose runs ``audit_opening_semantic_shots`` only while building render props in
+    the browser pass. A draft missing these five fields therefore passed the cheap
+    precheck, spent an EDIT_ARTIFACT candidate at preflight, and on a live run the
+    repair needed a third candidate the class does not allow (2/2). The rule reads
+    only shot fields in the draft, so it runs here on the same shot dicts.
+    """
+    if _film_type_profile_version(persian) not in {"2.13.0", "2.14.0", "2.15.0", "2.16.0"}:
+        return []
+    from lib.persian_scenes import audit_opening_semantic_shots
+
+    shots = [shot for shot in persian.get("shots") or [] if isinstance(shot, dict)]
+    try:
+        problems = audit_opening_semantic_shots(shots)
+    except (TypeError, ValueError):
+        return []
+    index = next(
+        (i for i, shot in enumerate(persian.get("shots") or [])
+         if isinstance(shot, dict) and shot.get("narrativeRole") == "hook"),
+        None,
+    )
+    pointer = _pointer(["persian", "shots", index]) if index is not None else "/persian/shots"
+    return [
+        ContractDiagnostic(
+            "shot.opening_semantic_missing",
+            pointer,
+            problem,
+            "carry semanticRole, semanticDirection, openingSemanticMatch, selectionReason, "
+            "showsSubject and humanPresence from the visual event and its frame review onto the opening hook shot",
+        )
+        for problem in problems
+    ]
+
+
 def _design_snapshot_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnostic]:
     """Resolve the design snapshot with the cheap checks (#263 item G).
 
@@ -685,6 +736,7 @@ def collect_persian_edit_diagnostics(
         diagnostics.extend(_design_snapshot_diagnostics(persian))
         diagnostics.extend(_region_diagnostics(persian))
         diagnostics.extend(_hook_shot_complexity_diagnostics(persian))
+        diagnostics.extend(_opening_semantic_diagnostics(persian))
         diagnostics.extend(_moment_pacing_diagnostics(persian))
         diagnostics.extend(_shot_source_window_diagnostics(persian))
         diagnostics.extend(_frame_grid_diagnostics(persian))
