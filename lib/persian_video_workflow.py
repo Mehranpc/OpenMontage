@@ -5361,6 +5361,41 @@ def _enforce_cli_front_door_budget(args: argparse.Namespace) -> None:
     )
 
 
+# Every CLI flag that hands a command a JSON file (#264). A new file flag must be
+# listed here, or replay cannot restore what the command read.
+_REPLAY_INPUT_FLAGS = (
+    "--json", "--evidence-json", "--render-report-json", "--final-review-json", "--request",
+    "--metadata-json", "--overrides-json", "--rejections-json", "--review-json",
+    "--asset-binding-json", "--edit-draft-json",
+)
+
+
+def _snapshot_command_inputs(project_root: Path, argv: Sequence[str]) -> dict[str, str]:
+    """Keep a content-addressed copy of each JSON file a command was handed (#264).
+
+    Agents overwrite their decision files between attempts, so the command log
+    alone could not say what a given call read. The copy lives beside the log.
+    """
+    found: dict[str, str] = {}
+    items = [str(item) for item in argv]
+    for index, item in enumerate(items):
+        flag, _, inline = item.partition("=")
+        if flag not in _REPLAY_INPUT_FLAGS:
+            continue
+        raw = inline or (items[index + 1] if index + 1 < len(items) else "")
+        path = Path(raw).expanduser()
+        if not raw or raw == "-" or not path.is_file() or path.stat().st_size > 8 * 1024 * 1024:
+            continue
+        data = path.read_bytes()
+        digest = hashlib.sha256(data).hexdigest()
+        store = project_root / ".telemetry" / "inputs" / f"{digest}.json"
+        if not store.exists():
+            store.parent.mkdir(parents=True, exist_ok=True)
+            store.write_bytes(data)
+        found[flag] = digest
+    return found
+
+
 def record_cli_command_edge(
     project_id: str | None,
     command: str,
@@ -5368,8 +5403,11 @@ def record_cli_command_edge(
     *,
     pipeline_dir: Path | None = None,
     now: datetime | None = None,
+    argv: Sequence[str] | None = None,
+    exit_code: int | None = None,
+    bootstrap_argv: Sequence[str] | None = None,
 ) -> None:
-    """Record one pipeline-command boundary for command-cadence accounting.
+    """Record one pipeline-command boundary for command-cadence accounting and replay.
 
     Best effort by design: telemetry must never change whether a command runs, so
     a project without state (before bootstrap) or an unwritable log is skipped.
@@ -5380,26 +5418,47 @@ def record_cli_command_edge(
         state = load_workflow_state(str(project_id), pipeline_dir=pipeline_dir)
         if not isinstance(state.get("causal_telemetry"), Mapping):
             return
+        root = _project_root(state)
+        inputs = _snapshot_command_inputs(root, argv) if argv is not None and edge == "start" else None
         record_command_event(
-            _project_root(state),
+            root,
             command=command,
             edge=edge,
             at=now or datetime.now(timezone.utc),
             run_active=state.get("status") == "active",
+            argv=argv if edge == "start" else bootstrap_argv,
+            inputs=inputs,
+            exit_code=exit_code,
         )
     except (PersianVideoWorkflowError, OSError, ValueError, KeyError, TypeError):
         return
+
+
+def run_recorded_cli(
+    project_id: str | None, command: str, argv: Sequence[str] | None, body: Any,
+) -> int:
+    """Run one CLI body between recorded start/finish edges, keeping argv and exit code."""
+    recorded = list(argv) if argv is not None else list(sys.argv[1:])
+    record_cli_command_edge(project_id, command, "start", argv=recorded)
+    code = 1
+    try:
+        code = int(body() or 0)
+        return code
+    except SystemExit as exc:
+        code = exc.code if isinstance(exc.code, int) else 1
+        raise
+    finally:
+        # A command that creates the project (bootstrap) has no log at its start
+        # edge; its finish edge then carries the argv so replay can recreate it.
+        record_cli_command_edge(project_id, command, "finish", exit_code=code,
+                                bootstrap_argv=recorded if command == "workflow:bootstrap" else None)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     command = f"workflow:{_cli_operation_name(args)}"
     project_id = getattr(args, "project_id", None)
-    record_cli_command_edge(project_id, command, "start")
-    try:
-        return _main(args)
-    finally:
-        record_cli_command_edge(project_id, command, "finish")
+    return run_recorded_cli(project_id, command, argv, lambda: _main(args))
 
 
 def _main(args: argparse.Namespace) -> int:

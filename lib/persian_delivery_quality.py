@@ -26,7 +26,7 @@ from lib.checkpoint import (
 )
 from lib.paths import PROJECTS_DIR
 from lib.persian_video_workflow import (
-    load_workflow_state, phase_time_accounting, record_cli_command_edge,
+    load_workflow_state, phase_time_accounting, run_recorded_cli,
 )
 from lib.persian_workflow_telemetry import causal_time_accounting
 from schemas.artifacts import validate_artifact
@@ -426,11 +426,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     command = f"delivery-quality:{args.command}"
-    record_cli_command_edge(args.project_id, command, "start")
-    try:
-        return _main(args)
-    finally:
-        record_cli_command_edge(args.project_id, command, "finish")
+    return run_recorded_cli(args.project_id, command, argv, lambda: _main(args))
 
 
 def _main(args: argparse.Namespace) -> int:

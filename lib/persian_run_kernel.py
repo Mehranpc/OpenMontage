@@ -1354,11 +1354,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     command = f"run-kernel:{args.command}"
-    workflow.record_cli_command_edge(args.project_id, command, "start")
-    try:
-        return _main(parser, args)
-    finally:
-        workflow.record_cli_command_edge(args.project_id, command, "finish")
+    return workflow.run_recorded_cli(args.project_id, command, argv, lambda: _main(parser, args))
 
 
 def _main(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:

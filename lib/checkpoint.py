@@ -887,8 +887,52 @@ def write_checkpoint(
     _archive_superseded_checkpoint(path, stage)
     import os
     os.replace(tmp_path, path)
+    _record_checkpoint_for_replay(pipeline_dir, project_id, stage, status, artifacts, {
+        "pipeline_type": pipeline_type, "style_playbook": style_playbook,
+        "checkpoint_policy": checkpoint_policy, "human_approval_required": human_approval_required,
+        "human_approved": human_approved, "review": review, "cost_snapshot": cost_snapshot,
+        "error": error, "metadata": metadata,
+    })
 
     return path
+
+
+def _record_checkpoint_for_replay(
+    pipeline_dir: Path, project_id: str, stage: str, status: str,
+    artifacts: dict[str, Any], options: dict[str, Any],
+) -> None:
+    """Log a checkpoint write so a run replay can repeat it (#264).
+
+    Checkpoints are written by a library call, not a CLI command, so the command
+    log never saw them. Only runs with a Persian workflow state are logged. Best
+    effort: telemetry must never change whether the checkpoint is written.
+    """
+    try:
+        project = Path(pipeline_dir) / project_id
+        if not (project / "persian-video-workflow.json").is_file():
+            return
+        import hashlib
+        from datetime import datetime, timezone
+
+        from lib.persian_workflow_telemetry import record_command_event
+
+        payload = json.dumps({"stage": stage, "status": status, "artifacts": artifacts,
+                              "options": options}, ensure_ascii=False, default=str).encode("utf-8")
+        digest = hashlib.sha256(payload).hexdigest()
+        store = project / ".telemetry" / "inputs" / f"{digest}.json"
+        if not store.exists():
+            store.parent.mkdir(parents=True, exist_ok=True)
+            store.write_bytes(payload)
+        now = datetime.now(timezone.utc)
+        for edge in ("start", "finish"):
+            record_command_event(
+                project, command=f"checkpoint:{stage}", edge=edge, at=now, run_active=True,
+                argv=[project_id, stage] if edge == "start" else None,
+                inputs={"--checkpoint": digest} if edge == "start" else None,
+                exit_code=0 if edge == "finish" else None,
+            )
+    except Exception:
+        return
 
 
 def read_checkpoint(
