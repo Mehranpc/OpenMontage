@@ -40,6 +40,7 @@ DEFAULT_FIXTURE = ROOT / "tests" / "fixtures" / "rehearsal" / "first-date"
 # real; skip them with --no-media when only the decision path matters.
 _MEDIA = ("run-kernel:run", "run-kernel:start")
 _POLLS = {"workflow:alignment-status", "workflow:job-status", "run-kernel:status"}
+POLL_STALL_SECONDS = float(os.environ.get("OPENMONTAGE_REPLAY_POLL_STALL_SECONDS") or 10)
 
 
 def _job_id(stdout: str) -> str:
@@ -50,11 +51,38 @@ def _job_id(stdout: str) -> str:
     return str(value.get("jobId") or value.get("job_id") or "") if isinstance(value, dict) else ""
 
 
-def _next_recorded_job_id(commands: list[dict[str, Any]], index: int) -> str:
+#: A command that starts a durable job, and the later commands that name its id as
+#: argv[2]. The id derives from a content digest, and replay rewrites project paths
+#: inside the job's inputs, so the replayed id differs and later polls must follow it.
+_JOB_STARTS = {
+    "workflow:alignment-start": {"workflow:alignment-status", "workflow:alignment-commit"},
+    "workflow:asset-search": {"run-kernel:status", "workflow:job-status", "workflow:asset-reconcile"},
+}
+
+
+def _next_recorded_job_id(commands: list[dict[str, Any]], index: int, followers: set[str] | None = None) -> str:
+    followers = followers or _JOB_STARTS["workflow:alignment-start"]
     for later in commands[index + 1:]:
-        if later.get("command") in {"workflow:alignment-status", "workflow:alignment-commit"}:
+        if later.get("command") in followers:
             argv = later.get("argv") or []
             return str(argv[2]) if len(argv) > 2 else ""
+    return ""
+
+
+def _started_job_id(stdout: str) -> str:
+    """The durable job id a start command reports, whatever key it uses."""
+    found = _job_id(stdout)
+    if found:
+        return found
+    try:
+        value = json.loads(stdout or "{}")
+    except json.JSONDecodeError:
+        return ""
+    if isinstance(value, dict):
+        for key in ("job", "durableJob", "pass"):
+            inner = value.get(key)
+            if isinstance(inner, dict) and (inner.get("jobId") or inner.get("job_id")):
+                return str(inner.get("jobId") or inner.get("job_id"))
     return ""
 
 
@@ -65,6 +93,38 @@ def _settled(stdout: str) -> bool:
         return True
     status = str((value or {}).get("status") or "") if isinstance(value, dict) else ""
     return status not in {"queued", "running", "pending", "starting"}
+
+
+def _age_budget_window(project: Path) -> None:
+    from datetime import datetime, timedelta
+
+    path = project / "persian-video-workflow.json"
+    if not path.is_file():
+        return
+    state = json.loads(path.read_text(encoding="utf-8"))
+    if state.get("budget_stop"):
+        return
+    limit = float((state.get("budgets") or {}).get("max_wall_time_minutes") or 45)
+    started = str(state.get("budget_window_started_at") or state.get("created_at") or "")
+    try:
+        at = datetime.fromisoformat(started.replace("Z", "+00:00"))
+    except ValueError:
+        return
+    extended = sum(float(d.get("extension_minutes") or 0) for d in state.get("budget_decisions") or []
+                   if isinstance(d, dict))
+    state["budget_window_started_at"] = (at - timedelta(minutes=limit + extended + 1)).isoformat()
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # The stop itself is persisted by the front-door guard the recorded refusal hit;
+    # call that guard directly so the decision that follows has a stop to act on.
+    code = (
+        "import sys; from pathlib import Path; from lib.persian_video_workflow import "
+        "enforce_front_door_budget, PersianVideoWorkflowError\n"
+        "try: enforce_front_door_budget(sys.argv[1], operation='replay:budget-stop', pipeline_dir=Path(sys.argv[2]))\n"
+        "except PersianVideoWorkflowError: pass"
+    )
+    subprocess.run([sys.executable, "-c", code, project.name, str(project.parent)],
+                   cwd=ROOT, env=dict(os.environ, PYTHONPATH=str(ROOT)),
+                   capture_output=True, text=True, timeout=300)
 
 
 def recorded_commands(project: Path) -> list[dict[str, Any]]:
@@ -97,7 +157,19 @@ def _remap(argv: list[str], old_root: str, new_root: Path, inputs: dict[str, str
     the new project (some commands require a current-project file); one outside
     goes to the scratch directory.
     """
-    out = [item.replace(old_root, str(new_root)) for item in argv]
+    # A recorded path can be absolute (under the old project root) or relative to the
+    # repo the agent ran in (`projects/<id>/search-request-0.json`, as on the f418063
+    # run); both must land inside the replay project.
+    rel_root = "projects/" + Path(old_root).name
+    out = []
+    for item in argv:
+        item = item.replace(old_root, str(new_root))
+        flag, sep, value = item.partition("=")
+        target = value if sep else flag
+        if target == rel_root or target.startswith(rel_root + "/"):
+            target = str(new_root) + target[len(rel_root):]
+            item = f"{flag}={target}" if sep else target
+        out.append(item)
     for index, item in enumerate(out):
         flag, sep, inline = item.partition("=")
         if flag not in inputs:
@@ -191,6 +263,13 @@ def replay(export: Path, *, until: int | None = None, fixture: Path = DEFAULT_FI
                     first_regression = first_regression or row
                 results.append(row)
                 continue
+            if name == "workflow:budget-decision" and cmd.get("exit_code") == 0:
+                # The recorded run hit its wall budget in real minutes; replay runs the
+                # same commands in seconds and never does. Reproduce the recorded stop by
+                # ageing the replay's budget window past the limit (the rehearsal's own
+                # stand-in for elapsed time, #260 scenario 4), so the decision has a stop
+                # to act on and everything after it sees the same budget state.
+                _age_budget_window(project)
             module = MODULES.get(name.split(":", 1)[0])
             if module is None:
                 results.append({"index": index, "command": name, "skipped": True})
@@ -204,17 +283,26 @@ def replay(export: Path, *, until: int | None = None, fixture: Path = DEFAULT_FI
                                   capture_output=True, text=True, timeout=1500)
             if name in _POLLS:
                 # The original agent polled a durable job until it settled; wall time
-                # differs here, so poll until the job reaches the recorded outcome.
-                for _ in range(600):
-                    if done.returncode == cmd.get("exit_code") and _settled(done.stdout):
+                # differs here, so poll until the job reaches the recorded outcome. A
+                # poll whose answer stops changing will never reach it (a job the
+                # replay skipped, or one that settled differently), so it gives up
+                # after POLL_STALL_SECONDS of identical answers instead of spinning
+                # through 600 subprocesses per recorded poll.
+                deadline = time.monotonic() + POLL_STALL_SECONDS
+                last = (done.returncode, done.stdout)
+                while not (done.returncode == cmd.get("exit_code") and _settled(done.stdout)):
+                    if time.monotonic() > deadline:
                         break
                     time.sleep(0.25)
                     done = subprocess.run([sys.executable, "-m", module, *call], cwd=ROOT, env=env,
                                           capture_output=True, text=True, timeout=1500)
-            if name == "workflow:alignment-start" and done.returncode == 0:
-                new_id = _job_id(done.stdout)
-                old_id = _next_recorded_job_id(commands, index)
-                if new_id and old_id and new_id != old_id:
+                    if (done.returncode, done.stdout) != last:
+                        last = (done.returncode, done.stdout)
+                        deadline = time.monotonic() + POLL_STALL_SECONDS
+            if name in _JOB_STARTS and done.returncode == 0:
+                new_id = _started_job_id(done.stdout)
+                old_id = _next_recorded_job_id(commands, index, _JOB_STARTS[name])
+                if new_id and old_id and new_id != old_id and new_id.split("-")[0] == old_id.split("-")[0]:
                     job_ids[old_id] = new_id
             recorded = cmd.get("exit_code")
             row = {"index": index, "command": name, "recorded_exit": recorded, "exit": done.returncode}
