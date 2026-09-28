@@ -67,6 +67,23 @@ def require_measured_phase_commit(state: Mapping[str, Any], phase: str,
     evidence_sha = evidence.get("candidateSha256") if phase == "master_final_candidate" else evidence.get("opening_candidate_sha256" if phase == "render_opening_candidate" else "output_sha256")
     if str(evidence_sha or "").lower() != reported_sha:
         raise workflow.PersianVideoWorkflowError("phase media sha256 does not match measured execution")
+    if phase == "render_final_candidate":
+        # The anti-slideshow gate is measured on these bytes by the render itself
+        # (#286). Refuse here, before mastering and final review are spent on a
+        # candidate final review must reject (#296, #263 item B).
+        motion = evidence.get("post_render_motion_qa")
+        if isinstance(motion, Mapping) and (
+            motion.get("passed") is not True or list(motion.get("failRuns") or [])
+        ):
+            runs = ", ".join(
+                f"{float(run.get('startSeconds', 0)):.1f}-{float(run.get('endSeconds', 0)):.1f}s"
+                for run in list(motion.get("failRuns") or [])[:5] if isinstance(run, Mapping)
+            )
+            raise workflow.PersianVideoWorkflowError(
+                "[MOTION_QA_FAILED] the final render failed the anti-slideshow gate"
+                + (f" (near-static runs: {runs})" if runs else "")
+                + "; revise the edit's camera/shot plan before mastering"
+            )
 
 
 _ENVELOPE_VERSION = "1.0"
