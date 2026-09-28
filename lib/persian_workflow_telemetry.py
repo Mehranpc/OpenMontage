@@ -13,7 +13,7 @@ import os
 import platform
 from pathlib import Path
 import subprocess
-from typing import Any
+from typing import Any, Sequence
 
 
 TERMINAL_ATTEMPT_OUTCOMES = frozenset(
@@ -239,6 +239,9 @@ def record_command_event(
     edge: str,
     at: datetime | str,
     run_active: bool,
+    argv: Sequence[str] | None = None,
+    inputs: Mapping[str, str] | None = None,
+    exit_code: int | None = None,
 ) -> dict[str, Any]:
     """Append one pipeline-command boundary to the project's command log.
 
@@ -255,6 +258,14 @@ def record_command_event(
         "edge": edge,
         "run_active": bool(run_active),
     }
+    # Replay (#264): the exact argv, the digest of each JSON input it read (a copy
+    # lives under .telemetry/inputs/<sha>.json), and the finish edge's exit code.
+    if argv is not None:
+        event["argv"] = [str(item) for item in argv]
+    if inputs:
+        event["inputs"] = {str(k): str(v) for k, v in inputs.items()}
+    if exit_code is not None:
+        event["exit_code"] = int(exit_code)
     path = command_events_path(project_root)
     path.parent.mkdir(parents=True, exist_ok=True)
     line = (__import__("json").dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
