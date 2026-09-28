@@ -572,20 +572,35 @@ class PersianCompose(BaseTool):
                     f"(YAVG {run.mean_yavg:.1f})"
                     for run in qa.dead_runs
                 )
+                # Name the shots under the dark stretch with a recovery code, so the
+                # scoped repair can act on it: on the f418063 run the refusal named
+                # only seconds, and no send-back path could take it (#313).
+                dark_shots = sorted({
+                    str(shot.get("id"))
+                    for shot in props["shots"]
+                    for run in qa.dead_runs
+                    if float(shot.get("startSeconds", 0.0)) < run.end_seconds
+                    and float(shot.get("endSeconds", 0.0)) > run.start_seconds
+                })
+                shot_flags = " ".join(f"--shot-id {shot}" for shot in dark_shots)
                 return ToolResult(
                     success=False,
                     data={
                         "output_path": str(output_path),
                         "luminance_qa": qa.to_dict(),
+                        "code": "ASSET_SELECTION_DARK_FOOTAGE",
+                        "shotIds": dark_shots,
                     },
                     artifacts=[str(output_path)],
                     error=(
-                        "The render contains a near-black dead stretch and "
-                        "cannot be delivered: "
+                        "[ASSET_SELECTION_DARK_FOOTAGE] The render contains a near-black "
+                        "dead stretch and cannot be delivered: "
                         + ranges
-                        + ". The file is left on disk for inspection. Either "
-                        "restore footage under that stretch or attach "
-                        "typography to it, then re-render."
+                        + f" under shot(s) {', '.join(dark_shots) or '-'}. The file is left "
+                        "on disk for inspection. Either attach typography to it, reselect a "
+                        "brighter reviewed option (an overlapping window of the same source "
+                        "is the same footage), or send back: `send-back <project> "
+                        f"acquire_assets --code ASSET_SELECTION_DARK_FOOTAGE {shot_flags} ...`."
                     ),
                 )
 
