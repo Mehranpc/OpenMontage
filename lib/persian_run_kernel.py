@@ -422,6 +422,7 @@ def load_execution_envelope(
     return _read_json(_envelope_path(state, job_id))
 
 
+@workflow.state_locked
 def _persist_job_causal_span(
     project_id: str,
     envelope: Mapping[str, Any],
@@ -547,6 +548,7 @@ def _reconcile_job_telemetry(
     return True
 
 
+@workflow.state_locked
 def _persist_transition_causal_span(
     project_id: str,
     envelope: Mapping[str, Any],
@@ -1188,16 +1190,17 @@ def run_inline_fixture_media_phase(
             "operationData": operation_data,
         }
         _atomic_json(path, envelope)
-        state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
-        record_causal_interval(
+        with workflow.state_transaction(project_id, pipeline_dir=pipeline_dir):
+          state = workflow.load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+          record_causal_interval(
             state, span_id=f"job:{job_id}", name=f"fixture execution {phase}",
             category="browser_render_execution" if phase != "master_final_candidate" else "machine_local_execution",
             started_at=started, finished_at=finished,
             parent_span_id=causal_phase_span_id(phase, attempt),
             outcome="succeeded", kind="durable_job", count_toward_wall=True,
             fields={"job_id": job_id, "phase": phase, "attempt": attempt},
-        )
-        workflow._write_state(_project_root(state), state)
+          )
+          workflow._write_state(_project_root(state), state)
         envelope["telemetryOutcome"] = "succeeded"
         _atomic_json(path, envelope)
     evidence = dict(evidence_from_data(operation_data))
