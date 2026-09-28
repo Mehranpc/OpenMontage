@@ -281,6 +281,38 @@ def measure_per_second_luma(
     return _per_second_luma(frames), elapsed
 
 
+def measure_source_window_luma(
+    video_path: Path, start_seconds: float, end_seconds: float, *, timeout: int = 180
+) -> list[tuple[float, float]]:
+    """1s-bin YAVG over one source window, relative to the window start (#313).
+
+    Film Type paints footage without a grade, so the source window's luma is what the
+    render shows under the shot. Measuring it at candidate review catches the stretch
+    the post-render gate refused on the f418063 run (YAVG 18.8 under shot-13), before
+    any render.
+    """
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        raise RuntimeError("ffmpeg is not on PATH; the source window cannot be measured")
+    duration = max(0.0, float(end_seconds) - float(start_seconds))
+    completed = subprocess.run(
+        [
+            ffmpeg, "-hide_banner", "-ss", f"{float(start_seconds):.3f}", "-t", f"{duration:.3f}",
+            "-i", str(video_path),
+            "-vf", "signalstats,metadata=print:file=-:key=lavfi.signalstats.YAVG",
+            "-f", "null", "-",
+        ],
+        capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"the source-window luminance pass failed (exit {completed.returncode}): "
+            f"{(completed.stderr or '').strip()[-300:]}"
+        )
+    frames = _parse_signalstats(completed.stdout + "\n" + (completed.stderr or ""))
+    return _per_second_luma(frames)
+
+
 @dataclass
 class RenderQa:
     """The luminance gate's verdict over one finished render."""

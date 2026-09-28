@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import uuid
 from dataclasses import asdict, dataclass
@@ -3721,6 +3722,57 @@ def _refuse_candidate_occupying_declared_band(
             f"(asset-candidate-reject --category technical) or reconcile-plan the band first."
         )
 
+def _refuse_dead_dark_source_window(state: Mapping[str, Any], candidate_id: str) -> None:
+    """Refuse, at candidate review, a source window the render gate would refuse (#313).
+
+    The f418063 run rendered the whole film before the luminance gate refused a
+    near-black stretch under shot-13 (57-59s, YAVG 18.8), and two reviewed windows of
+    the same source were the same dark seconds. Film Type paints footage with no
+    grade, so the window's own luma is the render's luma there. Moment typography can
+    still lift a dark stretch at render, so this refuses only a stretch at least as long
+    as the render gate's minimum that no moment could cover: the whole window. A window
+    that cannot be measured (no ffmpeg, no local file) is not refused; the render gate
+    stays authoritative.
+    """
+    from lib.persian_asset_workspace import load_asset_candidate
+    from lib.persian_render_qa import (
+        DEAD_LUMA_FAIL, DEAD_RUN_MIN_SECONDS, find_dark_runs, measure_source_window_luma,
+    )
+
+    candidate = load_asset_candidate(_project_root(state), candidate_id)
+    window = (candidate.get("identity") or {}).get("sourceWindow") or {}
+    raw_path = str((candidate.get("source") or {}).get("path") or "").strip()
+    if not raw_path:
+        return
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = _project_root(state) / path
+    if not path.is_file() or path.suffix.lower() not in {".mp4", ".mov", ".webm", ".mkv", ".m4v"}:
+        return
+    try:
+        start = float(window.get("startSeconds", 0.0))
+        end = float(window.get("endSeconds", 0.0))
+        per_second = measure_source_window_luma(path, start, end)
+    except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired):
+        return
+    runs = find_dark_runs(per_second, below=DEAD_LUMA_FAIL, min_seconds=DEAD_RUN_MIN_SECONDS)
+    if not runs:
+        return
+    stretches = ", ".join(
+        f"{start + run.start_seconds:.1f}-{start + run.end_seconds:.1f}s (YAVG {run.mean_yavg:.1f})"
+        for run in runs
+    )
+    event_id = str((candidate.get("context") or {}).get("visualEventId") or "")
+    raise PersianVideoWorkflowError(
+        f"[ASSET_SELECTION_DARK_FOOTAGE] {candidate_id} for {event_id}: the source window "
+        f"{start:.2f}-{end:.2f}s has near-black stretches ({stretches}, below YAVG "
+        f"{DEAD_LUMA_FAIL:g} for at least {DEAD_RUN_MIN_SECONDS:g}s) that the render gate would "
+        "refuse. A window overlapping these seconds is the same footage. Stage a window "
+        "outside them or another source, or reject the candidate "
+        "(asset-candidate-reject --category technical)."
+    )
+
+
 def review_workflow_asset_candidate(
     project_id: str, candidate_id: str, input_path: str | Path, *, pipeline_dir: Path | None = None
 ) -> dict[str, Any]:
@@ -3730,6 +3782,7 @@ def review_workflow_asset_candidate(
     source = assert_read_allowed(state, str(input_path))
     review = _read_json(str(source))
     _refuse_candidate_occupying_declared_band(state, candidate_id, review)
+    _refuse_dead_dark_source_window(state, candidate_id)
     return record_candidate_review(
         _project_root(state), candidate_id, review
     )
