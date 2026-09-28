@@ -6,7 +6,7 @@ PIP = $(RUN_PYTHON) -m pip
 
 .DEFAULT_GOAL := setup
 
-.PHONY: setup install install-dev install-gpu test test-contracts lint clean preflight demo demo-list hyperframes-doctor hyperframes-warm venv ensure-venv
+.PHONY: pre-mac setup install install-dev install-gpu test test-contracts lint clean preflight demo demo-list hyperframes-doctor hyperframes-warm venv ensure-venv
 
 # ---- Virtual environment ----
 
@@ -97,6 +97,11 @@ test-contracts: ensure-venv
 	$(RUN_PYTHON) -m pytest tests/contracts/ -v
 
 # ---- Utilities ----
+
+# Before a Mac production run: HEAD must be clean and its CI rehearsal green (#265).
+# SHA=<sha> accepts a specific commit; default is HEAD.
+pre-mac: ensure-venv
+	$(RUN_PYTHON) -m scripts.pre_mac $(if $(SHA),--sha $(SHA),)
 
 preflight: ensure-venv
 	$(RUN_PYTHON) -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu(), indent=2))"

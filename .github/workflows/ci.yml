@@ -4,12 +4,17 @@ on:
   pull_request:
     branches:
       - main
+  # Main's own squash commits get the rehearsal too: `make pre-mac` accepts only a
+  # SHA whose rehearsal passed, and PR heads are never the SHA that lands (#265).
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
