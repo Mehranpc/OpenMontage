@@ -406,7 +406,7 @@ def test_acquire_assets_completion_consumes_workspace_manifest_binding(tmp_path:
     workflow.record_phase_attempt("run", "acquire_assets", pipeline_dir=tmp_path, now=BASE)
     checkpoint = {
         "status": "completed",
-        "artifacts": {"asset_manifest": {"version": "1.0", "assets": []}},
+        "artifacts": {"asset_manifest": {"version": "1.0", "assets": [], "total_cost_usd": 0.0}},
     }
     monkeypatch.setattr(workflow, "read_checkpoint", lambda *args, **kwargs: checkpoint)
     observed = {}
