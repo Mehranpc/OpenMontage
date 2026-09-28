@@ -182,8 +182,12 @@ def test_placement_refusal_names_the_bounded_repair_when_no_option_remains(
 
     with pytest.raises(
         PersianEditWorkspaceError, match=r"bounded repair.*shot\(s\) shot-1"
-    ):
+    ) as excinfo:
         edit_workspace.stage_edit_draft(project, "placement", edit)
+    # The refusal happens before promotion, so the named repair must use the pending
+    # draft; the f418063 run read it as unreachable without this (#178).
+    assert "--edit-draft-json" in str(excinfo.value)
+    assert "--shot-id shot-1" in str(excinfo.value)
 
 
 def test_placement_refusal_stays_plain_without_a_scoped_repair(
@@ -271,6 +275,8 @@ def test_preflight_names_the_bounded_repair_for_exhausted_placement_shots(
     assert named, report["nextActions"]
     assert "shot-4" in named[0]
     assert "beat-4-event-1" in named[0]
+    assert "--edit-draft-json" in named[0]
+    assert "--shot-id shot-4" in named[0]
 
 
 def test_preflight_keeps_the_generic_action_when_no_repair_is_bounded(

@@ -365,5 +365,28 @@ __all__ = [
     "recovery_policy_for_issue",
     "recovery_budget_for_class",
     "shot_local_recovery_plan",
+    "scoped_reacquisition_action",
     "known_recovery_classes",
 ]
+
+
+def scoped_reacquisition_action(plan: Mapping[str, Any]) -> str:
+    """The next action for a ``scoped_asset_reacquisition`` plan, as one runnable line.
+
+    It names the pending-draft form (#178) because the refusals that produce this plan
+    happen before any promotion, so ``artifacts/edit_decisions.json`` does not exist
+    yet. Without it the live f418063 run read the repair as unreachable and proposed
+    dropping a moment instead.
+    """
+    code = str(plan.get("diagnosticCode") or "").strip()
+    shot_ids = [str(item) for item in plan.get("reacquireShotIds") or []]
+    events = ", ".join(str(item) for item in plan.get("reacquireVisualEventIds") or [])
+    flags = " ".join(f"--shot-id {shot}" for shot in shot_ids)
+    return (
+        "bounded repair: same-phase asset options are exhausted for "
+        f"shot(s) {', '.join(shot_ids)} (visual event(s) {events}); scoped re-acquisition "
+        "is allowed and needs no promoted edit: `send-back <project> acquire_assets "
+        f"--code {code} {flags} --edit-draft-json <this pending draft> --reason ...`. "
+        "Open a user-directed revision cycle first only if the edit candidate budget is spent."
+    )
+
