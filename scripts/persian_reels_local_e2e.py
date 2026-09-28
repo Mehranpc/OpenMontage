@@ -701,7 +701,7 @@ def _build_final_review(
         "measurementSource": "rendered_mp4_plus_mix_policy",
         "narration_present": bool(audio),
         "music_present": False,
-        "musicOmittedReason": "Local E2E harness intentionally isolates narration/caption/render gates.",
+        "musicOmittedReason": "Local E2E harness isolates narration/caption/render gates.",
         "unexpected_silence": False,
         "clipping_detected": False,
         "mix_intelligible": True,
