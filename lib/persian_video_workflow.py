@@ -3893,7 +3893,7 @@ def _refuse_declared_negative_space_collisions(state: Mapping[str, Any]) -> None
     exists, with the plan-level remedies.
     """
     from lib.persian_region_commands import (
-        pending_negative_space_collisions, pending_opening_hook_block,
+        pending_negative_space_collisions, pending_opening_hook_block, pending_unplaceable_moments,
     )
 
     hook_block = pending_opening_hook_block(_project_root(state))
@@ -3910,6 +3910,17 @@ def _refuse_declared_negative_space_collisions(state: Mapping[str, Any]) -> None
             "plan_scenes_moments to reorder, or re-source the opening), or correct the "
             "annotations if a region was drawn too large."
         )
+    unplaceable = pending_unplaceable_moments(_project_root(state))
+    if unplaceable:
+        moment_message = (
+            "[MOMENT_UNPLACEABLE] the Film Type layout refuses the moment copy on "
+            + ", ".join(f"{row.get('shotId')} ({row.get('visualEventId')})" for row in unplaceable)
+            + ": no zone is clear of the reviewed hard regions for that copy, which the edit "
+            "stage would rediscover after spending candidates (#312). Re-source that event "
+            "(send-back acquire_assets), move the moment to another carrier with `reconcile-plan`, "
+            "shorten the copy, or correct the annotations if a region was drawn too large."
+        )
+        hook_message = f"{hook_message}\nAlso: {moment_message}" if hook_message else moment_message
     collisions = pending_negative_space_collisions(_project_root(state))
     if not collisions:
         if hook_message:
