@@ -46,7 +46,7 @@ def _synthetic_clip(path: Path, width: int, height: int, duration: float, seed: 
     _ffmpeg([
         # The recorded frame rate is kept: durations are compared exactly downstream,
         # and 9.633s at 30 fps is 9.6s at 5 fps.
-        "-f", "lavfi", "-i", f"color=c=0x{shade:02x}{shade:02x}{shade:02x}:s={width}x{height}:r={fps:g}:d={duration:.6f}",
+        "-f", "lavfi", "-i", f"color=c=0x{shade:02x}{shade:02x}{shade:02x}:s={width}x{height}:r={_rational(fps)}:d={duration:.6f}",
         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "51", "-pix_fmt", "yuv420p", "-an", str(path),
     ])
 
@@ -55,6 +55,15 @@ def _synthetic_audio(path: Path, duration: float, *, tone: bool) -> None:
     source = f"sine=f=220:d={duration:.3f}" if tone else f"anoisesrc=d={duration:.3f}:c=pink:r=44100:a=0.2"
     _ffmpeg(["-f", "lavfi", "-i", source, "-ac", "1", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "64k",
              "-t", f"{duration:.3f}", str(path)])
+
+
+def _rational(fps: float) -> str:
+    """Providers round NTSC rates (23.98, 29.97, 59.94); ffmpeg needs the exact rational
+    or the clip's duration drifts by frames (10.01s became 10.05s at 2398/100)."""
+    for nominal in (24, 30, 60):
+        if abs(fps - nominal * 1000 / 1001) < 0.02:
+            return f"{nominal * 1000}/1001"
+    return f"{fps:g}"
 
 
 def _fps(row: dict | None) -> float:

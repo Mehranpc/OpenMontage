@@ -51,3 +51,18 @@ def test_a_poll_that_never_changes_gives_up(tmp_path: Path, monkeypatch) -> None
     import scripts.persian_run_replay as mod
 
     assert mod.POLL_STALL_SECONDS <= 30
+
+
+def test_a_budget_decision_replays_against_an_aged_window(tmp_path: Path) -> None:
+    """The recorded run decided after a real wall-budget stop; replay runs in seconds,
+    so it ages the window and persists the same stop before the decision."""
+    import json
+
+    from scripts.persian_run_replay import _age_budget_window
+    from tests.lib.test_persian_video_workflow import _bootstrap_to_assets
+
+    _bootstrap_to_assets(tmp_path)
+    project = tmp_path / "run"
+    _age_budget_window(project)
+    state = json.loads((project / "persian-video-workflow.json").read_text(encoding="utf-8"))
+    assert state["budget_stop"]["reason"] == "wall_budget_exceeded"

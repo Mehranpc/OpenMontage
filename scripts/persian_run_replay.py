@@ -95,6 +95,38 @@ def _settled(stdout: str) -> bool:
     return status not in {"queued", "running", "pending", "starting"}
 
 
+def _age_budget_window(project: Path) -> None:
+    from datetime import datetime, timedelta
+
+    path = project / "persian-video-workflow.json"
+    if not path.is_file():
+        return
+    state = json.loads(path.read_text(encoding="utf-8"))
+    if state.get("budget_stop"):
+        return
+    limit = float((state.get("budgets") or {}).get("max_wall_time_minutes") or 45)
+    started = str(state.get("budget_window_started_at") or state.get("created_at") or "")
+    try:
+        at = datetime.fromisoformat(started.replace("Z", "+00:00"))
+    except ValueError:
+        return
+    extended = sum(float(d.get("extension_minutes") or 0) for d in state.get("budget_decisions") or []
+                   if isinstance(d, dict))
+    state["budget_window_started_at"] = (at - timedelta(minutes=limit + extended + 1)).isoformat()
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # The stop itself is persisted by the front-door guard the recorded refusal hit;
+    # call that guard directly so the decision that follows has a stop to act on.
+    code = (
+        "import sys; from pathlib import Path; from lib.persian_video_workflow import "
+        "enforce_front_door_budget, PersianVideoWorkflowError\n"
+        "try: enforce_front_door_budget(sys.argv[1], operation='replay:budget-stop', pipeline_dir=Path(sys.argv[2]))\n"
+        "except PersianVideoWorkflowError: pass"
+    )
+    subprocess.run([sys.executable, "-c", code, project.name, str(project.parent)],
+                   cwd=ROOT, env=dict(os.environ, PYTHONPATH=str(ROOT)),
+                   capture_output=True, text=True, timeout=300)
+
+
 def recorded_commands(project: Path) -> list[dict[str, Any]]:
     """Pair each recorded start edge with its finish edge's exit code."""
     log = project / ".telemetry" / "command-events.jsonl"
@@ -231,6 +263,13 @@ def replay(export: Path, *, until: int | None = None, fixture: Path = DEFAULT_FI
                     first_regression = first_regression or row
                 results.append(row)
                 continue
+            if name == "workflow:budget-decision" and cmd.get("exit_code") == 0:
+                # The recorded run hit its wall budget in real minutes; replay runs the
+                # same commands in seconds and never does. Reproduce the recorded stop by
+                # ageing the replay's budget window past the limit (the rehearsal's own
+                # stand-in for elapsed time, #260 scenario 4), so the decision has a stop
+                # to act on and everything after it sees the same budget state.
+                _age_budget_window(project)
             module = MODULES.get(name.split(":", 1)[0])
             if module is None:
                 results.append({"index": index, "command": name, "skipped": True})
