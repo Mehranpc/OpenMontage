@@ -583,13 +583,65 @@ def _moment_pacing_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnost
         diagnostics.append(ContractDiagnostic("moments.pacing", "/persian/moments", problem, hint))
     return diagnostics
 
+def _design_snapshot_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnostic]:
+    """Resolve the design snapshot with the cheap checks (#263 item G).
+
+    ``resolve_design`` refuses an unsupported profile version, tokens whose hash
+    matches no versioned renderer, or a pinned snapshot whose hash/version disagree;
+    compose ran it only while building render props in the browser pass. It reads
+    the draft and the repo's profile files, nothing else.
+    """
+    raw = persian.get("design")
+    if raw is None:
+        return []
+    from lib.persian_design import resolve_design
+
+    try:
+        resolve_design(raw)
+    except ValueError as exc:
+        return [
+            ContractDiagnostic(
+                "design.snapshot_invalid",
+                "/persian/design",
+                str(exc),
+                "pin a supported profile snapshot unchanged, or drop the pin to resolve the active profile",
+            )
+        ]
+    return []
+
+
+def _runtime_diagnostics(edit: dict[str, Any]) -> list[ContractDiagnostic]:
+    """The Persian composition renders only on Remotion (#263 item C).
+
+    Compose refuses any other ``render_runtime`` when it starts the render, after the
+    edit was promoted and preflighted. The field is in the draft, so the same refusal
+    runs with the cheap checks. An absent runtime is left to the schema (compose
+    defaults it to remotion).
+    """
+    if not isinstance(edit.get("persian"), dict) or "render_runtime" not in edit:
+        return []
+    runtime = str(edit.get("render_runtime") or "").lower()
+    if runtime == "remotion":
+        return []
+    return [
+        ContractDiagnostic(
+            "runtime.not_remotion",
+            "/render_runtime",
+            f"render_runtime is {runtime!r}, but the Persian composition renders only on 'remotion'",
+            "keep render_runtime 'remotion'; raise a structured blocker instead of swapping runtimes",
+        )
+    ]
+
+
 def collect_persian_edit_diagnostics(
     edit: dict[str, Any], *, base_dir: Path | None = None
 ) -> list[ContractDiagnostic]:
     """Return all contract defects that can be established without a browser."""
     diagnostics = _schema_diagnostics(edit)
+    diagnostics.extend(_runtime_diagnostics(edit))
     persian = edit.get("persian")
     if isinstance(persian, dict):
+        diagnostics.extend(_design_snapshot_diagnostics(persian))
         diagnostics.extend(_region_diagnostics(persian))
         diagnostics.extend(_hook_shot_complexity_diagnostics(persian))
         diagnostics.extend(_moment_pacing_diagnostics(persian))
