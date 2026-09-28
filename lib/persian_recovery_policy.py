@@ -198,6 +198,22 @@ def recovery_policy_for_issue(issue: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _window(identity: Mapping[str, Any]) -> tuple[float, float] | None:
+    window = identity.get("sourceWindow")
+    if not isinstance(window, Mapping):
+        return None
+    try:
+        return float(window.get("startSeconds")), float(window.get("endSeconds"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _windows_overlap(left: tuple[float, float] | None, right: tuple[float, float] | None) -> bool:
+    if left is None or right is None:
+        return True  # unknown windows cannot prove they show different seconds
+    return min(left[1], right[1]) - max(left[0], right[0]) > 0
+
+
 def _crop_key(identity: Mapping[str, Any]) -> str:
     """A comparable key for the frame geometry an asset alternate would deliver."""
     crop = identity.get("intendedCrop")
@@ -285,12 +301,14 @@ def shot_local_recovery_plan(
         event_candidates = event_candidates if isinstance(event_candidates, list) else []
         selected_source = ""
         selected_crop = ""
+        selected_identity: dict[str, Any] = {}
         for item in event_candidates:
             if not isinstance(item, Mapping) or str(item.get("candidateId") or "") != selected_id:
                 continue
             identity = item.get("identity") if isinstance(item.get("identity"), Mapping) else {}
             selected_source = str(identity.get("sourceId") or "")
             selected_crop = _crop_key(identity)
+            selected_identity = dict(identity)
             break
         # A hard-region placement collision is a property of the frame's geometry: a
         # subject sits where the type needs to be. An alternate that shares the
@@ -299,6 +317,12 @@ def shot_local_recovery_plan(
         # unfiltered, a 0.1s window shift counted as a repair and the run dead-ended
         # on a reuse strategy that could not possibly succeed (#152).
         geometry_bound = code.startswith("ASSET_SELECTION_HARD_REGION_COLLISION")
+        # Darkness is a property of the source's seconds: an alternate window of the
+        # same source that overlaps the selected one shows the same dark footage, so
+        # it is not a repair option (#313). A same-source window that does not overlap
+        # is different footage and still counts.
+        luminance_bound = code.startswith("ASSET_SELECTION_DARK_FOOTAGE")
+        selected_window = _window(selected_identity) if luminance_bound else None
         alternates: list[dict[str, Any]] = []
         for item in event_candidates:
             if not isinstance(item, Mapping):
@@ -313,6 +337,13 @@ def shot_local_recovery_plan(
                 and selected_source
                 and source_id == selected_source
                 and _crop_key(identity) == selected_crop
+            ):
+                continue
+            if (
+                luminance_bound
+                and selected_source
+                and source_id == selected_source
+                and _windows_overlap(_window(identity), selected_window)
             ):
                 continue
             alternates.append({
