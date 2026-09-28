@@ -4152,6 +4152,44 @@ def _current_final_review_dependency_digests(
     }
 
 
+def _bind_audio_review_to_edit(state: Mapping[str, Any], audio: Mapping[str, Any]) -> None:
+    """Final review's music claim must describe the promoted edit (#263 item F).
+
+    ``musicOmittedReason`` used to be free text at final review: a reviewer could
+    record a reason the edit never made, or report no music for an edit that ships
+    a bed. The edit's own ``omitMusicReason`` and ``musicTrack`` are the decision;
+    the review may only restate it.
+    """
+    path = _project_root(state) / "artifacts" / "edit_decisions.json"
+    if not path.is_file():
+        return
+    edit = _read_json(str(path))
+    persian = edit.get("persian") if isinstance(edit, Mapping) else None
+    if not isinstance(persian, Mapping):
+        return
+    edit_audio = persian.get("audio") if isinstance(persian.get("audio"), Mapping) else {}
+    edit_has_music = bool(persian.get("musicTrack") or edit_audio.get("music"))
+    music_present = audio.get("music_present") is True
+    if edit_has_music and not music_present:
+        raise PersianVideoWorkflowError(
+            "final_review audio_spotcheck reports no music, but the promoted edit ships a "
+            "music bed; the review must describe the rendered edit"
+        )
+    if not edit_has_music:
+        if music_present:
+            raise PersianVideoWorkflowError(
+                "final_review audio_spotcheck reports music, but the promoted edit has no "
+                "music bed"
+            )
+        recorded = str(audio.get("musicOmittedReason") or "").strip()
+        decided = str(persian.get("omitMusicReason") or "").strip()
+        if recorded != decided:
+            raise PersianVideoWorkflowError(
+                "final_review musicOmittedReason must restate the edit's omitMusicReason "
+                f"verbatim; the edit recorded {decided!r}, the review {recorded!r}"
+            )
+
+
 def _validate_final_review_completion(
     state: Mapping[str, Any], evidence: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -4255,6 +4293,7 @@ def _validate_final_review_completion(
         raise PersianVideoWorkflowError(
             f"final_review rendered audio evidence failed: {exc}"
         ) from exc
+    _bind_audio_review_to_edit(state, audio)
 
     promise = checks.get("promise_preservation") or {}
     if promise.get("delivery_promise_honored") is not True:

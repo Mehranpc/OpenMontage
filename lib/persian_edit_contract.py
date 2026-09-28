@@ -15,6 +15,8 @@ import jsonschema
 from lib.paths import REPO_ROOT
 from lib.persian_music import (
     MUSIC_AUDIBILITY_FLOOR_LUFS,
+    audit_music,
+    build_music_track,
     derive_loudness_aware_mix,
     evaluate_music_separation,
     measure_integrated_loudness,
@@ -437,6 +439,45 @@ def _music_diagnostics(
     return diagnostics
 
 
+def _music_audit_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnostic]:
+    """Run compose's music gate on the draft (#263 item F).
+
+    Compose refuses a narrated film with no bed, a deferring ``omitMusicReason``, an
+    incomplete licence record or an unacknowledged risk, but only while it builds
+    render props in the browser pass, after a convergence candidate was spent. Every
+    input is in the draft, so the same ``audit_music`` call runs here on the same
+    fields compose reads.
+    """
+    audio = persian.get("audio") if isinstance(persian.get("audio"), dict) else {}
+    raw_track = persian.get("musicTrack")
+    if raw_track and audio.get("music"):
+        return []  # music.duplicate_owner already names this draft's defect
+    try:
+        track = build_music_track(dict(raw_track)) if isinstance(raw_track, dict) and raw_track else None
+    except ValueError as exc:
+        return [
+            ContractDiagnostic(
+                "music.record_invalid",
+                "/persian/musicTrack",
+                str(exc),
+                "complete the licensed music record (fetch it with `assets music fetch`); compose refuses an incomplete record",
+            )
+        ]
+    audit = audit_music(
+        track=track,
+        narrated=bool(audio.get("narration")),
+        acknowledge_unknown_risk=bool(persian.get("acknowledgeUnknownMusicRisk")),
+        omit_music_reason=str(persian.get("omitMusicReason") or ""),
+    )
+    if track is None:
+        pointer, code = "/persian/omitMusicReason", "music.omission_unjustified"
+        hint = "source a licensed bed as persian.musicTrack, or record why the film is deliberately without one"
+    else:
+        pointer, code = "/persian/musicTrack", "music.licence_refused"
+        hint = "pick a bed whose licence and Content-ID risk the music audit accepts, or record acknowledgeUnknownMusicRisk"
+    return [ContractDiagnostic(code, pointer, problem, hint) for problem in audit.problems]
+
+
 def _path_diagnostics(
     persian: dict[str, Any], *, base_dir: Path | None
 ) -> list[ContractDiagnostic]:
@@ -648,6 +689,7 @@ def collect_persian_edit_diagnostics(
         diagnostics.extend(_shot_source_window_diagnostics(persian))
         diagnostics.extend(_frame_grid_diagnostics(persian))
         diagnostics.extend(_music_diagnostics(persian, base_dir=base_dir))
+        diagnostics.extend(_music_audit_diagnostics(persian))
         diagnostics.extend(_path_diagnostics(persian, base_dir=base_dir))
 
     deduped: list[ContractDiagnostic] = []
