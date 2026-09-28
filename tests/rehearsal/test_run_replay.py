@@ -27,3 +27,27 @@ def test_recorded_rehearsal_replays_with_identical_outcomes(tmp_path: Path, monk
     assert report["ok"], report["first_regression"]
     assert report["first_difference"] is None, report["first_difference"]
     assert report["replayed"] == len(commands)
+
+
+def test_repo_relative_project_paths_land_in_the_replay_project(tmp_path: Path) -> None:
+    """The f418063 run passed `--request projects/<id>/search-request-0.json`; replay
+    left it relative to its own cwd, so asset-search failed at the first search."""
+    from scripts.persian_run_replay import _remap
+
+    old = "/Users/someone/OpenMontage/projects/first-date-message-timing"
+    new = tmp_path / "projects" / "first-date-message-timing"
+    argv = ["asset-search", "first-date-message-timing", "--request",
+            "projects/first-date-message-timing/search-request-0.json", f"--out={old}/x.json"]
+    out = _remap(argv, old, new, {}, tmp_path / "store", tmp_path / "scratch")
+    assert out[3] == str(new / "search-request-0.json")
+    assert out[4] == f"--out={new}/x.json"
+    assert out[1] == "first-date-message-timing"  # the project id itself is not a path
+
+
+def test_a_poll_that_never_changes_gives_up(tmp_path: Path, monkeypatch) -> None:
+    """A recorded poll whose replayed answer never reaches the recorded outcome (a
+    skipped job) spun through thousands of subprocesses; it now stops after the
+    stall window."""
+    import scripts.persian_run_replay as mod
+
+    assert mod.POLL_STALL_SECONDS <= 30
