@@ -777,6 +777,58 @@ def _plan_hook_first_proof(
         )
     return record
 
+def _plan_hook_opening_ceilings(
+    state: Mapping[str, Any], evidence: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Viewer value and semantic tension ceilings, at plan (#298, #263 item K).
+
+    Like the first proof (#262), when the hook's value and its tension are spoken
+    is a fact of the committed word timings, so the plan can name the phrases
+    (`hook_viewer_value` / `hook_semantic_tension`, each `{anchorText, evidence}`)
+    and learn now what the edit precheck would refuse after acquisition. These
+    ceilings hold even for a user-owned hook; only the first proof has an
+    authority exception.
+    """
+    from lib.persian_hook_quality import TENSION_BLOCK_SECONDS, VALUE_BLOCK_SECONDS
+    from lib.persian_sync import TimedWord, find_anchor_span
+
+    fields = (
+        ("hook_viewer_value", "viewer value", VALUE_BLOCK_SECONDS, "HOOK_VALUE_LATE"),
+        ("hook_semantic_tension", "semantic tension", TENSION_BLOCK_SECONDS, "HOOK_TENSION_LATE"),
+    )
+    named = [field for field in fields if evidence.get(field[0]) is not None]
+    if not named:
+        return {}
+    rows = _committed_word_timings(state)
+    if not rows:
+        raise PersianVideoWorkflowError(
+            "hook opening ceilings need the committed script word timings (alignment-commit, #290)"
+        )
+    words = TimedWord.from_dicts(rows)
+    records: dict[str, Any] = {}
+    late: list[str] = []
+    for key, label, ceiling, code in named:
+        raw = evidence.get(key)
+        anchor = str(raw.get("anchorText") or "").strip() if isinstance(raw, Mapping) else ""
+        if not anchor:
+            raise PersianVideoWorkflowError(f"{key}.anchorText must name the spoken {label} phrase")
+        span = find_anchor_span(words, anchor)
+        if span is None:
+            raise PersianVideoWorkflowError(f"{key}.anchorText {anchor!r} is not in the narration word timings")
+        at = round(float(words[span[0]].start), 3)
+        records[key] = {"anchorText": anchor, "atSeconds": at, "blockSeconds": ceiling,
+                        "evidence": str(raw.get("evidence") or "")}
+        if at > ceiling:
+            late.append(f"[{code}] the {label} ({anchor!r}) is spoken at {at:.2f}s, after the {ceiling:.1f}s ceiling")
+    if late:
+        raise PersianVideoWorkflowError(
+            "; ".join(late) + ". The edit precheck refuses this for every hook, user-owned included, "
+            "so change the opening now: move the phrase earlier in the approved script, or pick an "
+            "opening line that carries it."
+        )
+    return records
+
+
 def _validate_scene_plan_duration_binding(
     state: Mapping[str, Any], scene_checkpoint: Mapping[str, Any] | None
 ) -> dict[str, Any]:
@@ -2311,6 +2363,7 @@ def _complete_phase_impl(
         hook_proof = _plan_hook_first_proof(state, phase_evidence)
         if hook_proof is not None:
             phase_evidence["hook_first_proof"] = hook_proof
+        phase_evidence.update(_plan_hook_opening_ceilings(state, phase_evidence))
         # The declared duration-coverage rule, enforced: the plan's beats must cover the
         # authoritative narration within one frame, or the phase refuses to advance.
         phase_evidence.update(_validate_scene_plan_duration_binding(state, checkpoint))
