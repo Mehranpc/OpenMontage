@@ -1,0 +1,5 @@
+{"amendments": [
+  {"visual_event_id": "ev-6",  "set": {"negative_space": "upper_band"}},
+  {"visual_event_id": "ev-12", "set": {"negative_space": "upper_band"}},
+  {"visual_event_id": "ev-13", "set": {"negative_space": "upper_band"}}
+]}

@@ -1,0 +1,16 @@
+{
+  "sourcing_order": ["ev-1","ev-2","ev-6","ev-8","ev-11","ev-12","ev-13","ev-3","ev-4","ev-5","ev-7","ev-9","ev-10"],
+  "hook_viewer_value": {
+    "anchorText": "بعد از یه قرار خوب، گوشی دستت باشه",
+    "evidence": "The opening clause names the exact lived situation the viewer is in — a good first date, phone in hand — so relevance lands before the question is finished."
+  },
+  "hook_semantic_tension": {
+    "anchorText": "الان پیام بدی یا صبر کنی؟",
+    "evidence": "The question states the two competing behaviours as an unanswered choice, which is the question the whole video answers."
+  },
+  "hook_first_proof": {
+    "kind": "result",
+    "anchorText": "بیشترین تمایل به ادامه رابطه",
+    "evidence": "The study's actual answer — most willingness to continue when the message arrived the next morning. Recorded at its true time (25.9s), not moved earlier: the user owns this hook, so the late-proof ceiling is an advisory pending rendered review rather than a licence to restate the finding sooner than the approved narration does."
+  }
+}

@@ -17,6 +17,7 @@ or improved on the recording; 1 = a command now fails that used to pass.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -150,6 +151,18 @@ def recorded_commands(project: Path) -> list[dict[str, Any]]:
     return commands
 
 
+#: Recorded digest -> replay digest for the user's input files. A committed fixture
+#: carries synthetic narration, so every recorded input naming the real file's sha256
+#: (prepare_inputs evidence) must name the stand-in's instead.
+_DIGESTS: dict[str, str] = {}
+
+
+def _swap_digests(text: str) -> str:
+    for old, new in _DIGESTS.items():
+        text = text.replace(old, new)
+    return text
+
+
 def _remap(argv: list[str], old_root: str, new_root: Path, inputs: dict[str, str], store: Path, scratch: Path) -> list[str]:
     """Rewrite project paths and restore each recorded JSON input where it was read.
 
@@ -181,7 +194,8 @@ def _remap(argv: list[str], old_root: str, new_root: Path, inputs: dict[str, str
         target = Path(raw) if raw and Path(raw).is_absolute() and str(Path(raw)).startswith(str(new_root)) \
             else scratch / f"{inputs[flag]}.json"
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(snapshot.read_text(encoding="utf-8").replace(old_root, str(new_root)), encoding="utf-8")
+        target.write_text(_swap_digests(snapshot.read_text(encoding="utf-8").replace(old_root, str(new_root))),
+                          encoding="utf-8")
         if sep:
             out[index] = f"{flag}={target}"
         elif index + 1 < len(out):
@@ -212,9 +226,16 @@ def replay(export: Path, *, until: int | None = None, fixture: Path = DEFAULT_FI
             return {"ok": False, "reason": "this export's command log has no recorded argv; it predates #264"}
         user_inputs = work / "user-inputs"
         user_inputs.mkdir(parents=True)
+        _DIGESTS.clear()
+        recorded_input = state.get("input") if isinstance(state.get("input"), dict) else {}
         for name in ("narration.mp3", "narration.wav", "narration.m4a", "approved_script.txt"):
             if (source / "inputs" / name).is_file():
                 shutil.copyfile(source / "inputs" / name, user_inputs / name)
+                key = "approved_script" if name.endswith(".txt") else "narration"
+                recorded_sha = str((recorded_input.get(key) or {}).get("sha256") or "").lower()
+                actual_sha = hashlib.sha256((user_inputs / name).read_bytes()).hexdigest()
+                if recorded_sha and recorded_sha != actual_sha:
+                    _DIGESTS[recorded_sha] = actual_sha
         scratch = work / "inputs"
         scratch.mkdir()
         env = dict(os.environ, OPENMONTAGE_PROJECTS_DIR=str(projects),
@@ -246,7 +267,7 @@ def replay(export: Path, *, until: int | None = None, fixture: Path = DEFAULT_FI
                 argv = fixed
             if name.startswith("checkpoint:"):
                 snapshot = source / ".telemetry" / "inputs" / f"{(cmd.get('inputs') or {}).get('--checkpoint')}.json"
-                payload = json.loads(snapshot.read_text(encoding="utf-8").replace(old_root, str(project)))
+                payload = json.loads(_swap_digests(snapshot.read_text(encoding="utf-8").replace(old_root, str(project))))
                 code = (
                     "import json,sys; from pathlib import Path; from lib.checkpoint import write_checkpoint;"
                     "p=json.loads(Path(sys.argv[3]).read_text(encoding='utf-8'));"

@@ -1,0 +1,606 @@
+{
+ "shots": [
+  {
+   "shot_id": "ev-1",
+   "observed": "Hand holding a phone with a blank screen against a plain pale wall; subject low in frame, top third clear.",
+   "start": {
+    "position": "start",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 4,
+     "x2": 6,
+     "y2": 9
+    },
+    "face_visible": false
+   },
+   "middle": {
+    "position": "middle",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 4,
+     "x2": 6,
+     "y2": 9
+    },
+    "face_visible": false
+   },
+   "end": {
+    "position": "end",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 4,
+     "x2": 6,
+     "y2": 9
+    },
+    "face_visible": false
+   },
+   "visual_complexity": "simple"
+  },
+  {
+   "shot_id": "ev-2",
+   "observed": "Older woman at an outdoor table reading a phone held in both hands; patio roof above.",
+   "start": {
+    "position": "start",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 4,
+     "x2": 8,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 4,
+     "x2": 6,
+     "y2": 7
+    }
+   },
+   "middle": {
+    "position": "middle",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 4,
+     "x2": 8,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 4,
+     "x2": 6,
+     "y2": 7
+    }
+   },
+   "end": {
+    "position": "end",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 4,
+     "x2": 8,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 4,
+     "x2": 6,
+     "y2": 7
+    }
+   }
+  },
+  {
+   "shot_id": "ev-3",
+   "observed": "Hand holding a lit phone screen in a dark blue-lit room; no person in frame.",
+   "start": {
+    "position": "start",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 1,
+     "x2": 8,
+     "y2": 9
+    },
+    "face_visible": false
+   },
+   "middle": {
+    "position": "middle",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 1,
+     "x2": 8,
+     "y2": 9
+    },
+    "face_visible": false
+   },
+   "end": {
+    "position": "end",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 1,
+     "x2": 8,
+     "y2": 9
+    },
+    "face_visible": false
+   }
+  },
+  {
+   "shot_id": "ev-4",
+   "observed": "Celebration crowd dancing with phones raised under a dark ceiling.",
+   "start": {
+    "position": "start",
+    "priority": "hard",
+    "grid": {
+     "x1": 0,
+     "y1": 4,
+     "x2": 10,
+     "y2": 10
+    },
+    "face": {
+     "x1": 3,
+     "y1": 4,
+     "x2": 7,
+     "y2": 7
+    }
+   },
+   "middle": {
+    "position": "middle",
+    "priority": "hard",
+    "grid": {
+     "x1": 0,
+     "y1": 4,
+     "x2": 10,
+     "y2": 10
+    },
+    "face": {
+     "x1": 3,
+     "y1": 4,
+     "x2": 7,
+     "y2": 7
+    }
+   },
+   "end": {
+    "position": "end",
+    "priority": "hard",
+    "grid": {
+     "x1": 0,
+     "y1": 4,
+     "x2": 10,
+     "y2": 10
+    },
+    "face": {
+     "x1": 3,
+     "y1": 4,
+     "x2": 7,
+     "y2": 7
+    }
+   }
+  },
+  {
+   "shot_id": "ev-5",
+   "observed": "Woman standing against a brick wall with a phone and a paper cup.",
+   "start": {
+    "position": "start",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 2,
+     "x2": 8,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 2,
+     "x2": 6,
+     "y2": 5
+    }
+   },
+   "middle": {
+    "position": "middle",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 2,
+     "x2": 8,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 2,
+     "x2": 6,
+     "y2": 5
+    }
+   },
+   "end": {
+    "position": "end",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 2,
+     "x2": 8,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 2,
+     "x2": 6,
+     "y2": 5
+    }
+   }
+  },
+  {
+   "shot_id": "ev-6",
+   "observed": "Young man reclining on a bed reading his phone; plain white wall above.",
+   "start": {
+    "position": "start",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 4,
+     "x2": 8,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 5,
+     "x2": 6,
+     "y2": 8
+    }
+   },
+   "middle": {
+    "position": "middle",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 4,
+     "x2": 8,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 5,
+     "x2": 6,
+     "y2": 8
+    }
+   },
+   "end": {
+    "position": "end",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 4,
+     "x2": 8,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 5,
+     "x2": 6,
+     "y2": 8
+    }
+   }
+  },
+  {
+   "shot_id": "ev-7",
+   "observed": "Sleeping man under a blanket with a phone lighting up on the nightstand.",
+   "start": {
+    "position": "start",
+    "priority": "hard",
+    "grid": {
+     "x1": 0,
+     "y1": 1,
+     "x2": 10,
+     "y2": 10
+    },
+    "face": {
+     "x1": 3,
+     "y1": 1,
+     "x2": 5,
+     "y2": 4
+    }
+   },
+   "middle": {
+    "position": "middle",
+    "priority": "hard",
+    "grid": {
+     "x1": 0,
+     "y1": 1,
+     "x2": 10,
+     "y2": 10
+    },
+    "face": {
+     "x1": 3,
+     "y1": 1,
+     "x2": 5,
+     "y2": 4
+    }
+   },
+   "end": {
+    "position": "end",
+    "priority": "hard",
+    "grid": {
+     "x1": 0,
+     "y1": 1,
+     "x2": 10,
+     "y2": 10
+    },
+    "face": {
+     "x1": 3,
+     "y1": 1,
+     "x2": 5,
+     "y2": 4
+    }
+   }
+  },
+  {
+   "shot_id": "ev-8",
+   "observed": "Hands holding a phone showing a message thread with the keyboard open; no face in frame.",
+   "start": {
+    "position": "start",
+    "priority": "hard",
+    "grid": {
+     "x1": 1,
+     "y1": 1,
+     "x2": 9,
+     "y2": 9
+    },
+    "face_visible": false
+   },
+   "middle": {
+    "position": "middle",
+    "priority": "hard",
+    "grid": {
+     "x1": 1,
+     "y1": 1,
+     "x2": 9,
+     "y2": 9
+    },
+    "face_visible": false
+   },
+   "end": {
+    "position": "end",
+    "priority": "hard",
+    "grid": {
+     "x1": 1,
+     "y1": 1,
+     "x2": 9,
+     "y2": 9
+    },
+    "face_visible": false
+   }
+  },
+  {
+   "shot_id": "ev-9",
+   "observed": "Young man at night with his face lit from below by the phone screen.",
+   "start": {
+    "position": "start",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 4,
+     "x2": 9,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 4,
+     "x2": 6,
+     "y2": 7
+    }
+   },
+   "middle": {
+    "position": "middle",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 4,
+     "x2": 9,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 4,
+     "x2": 6,
+     "y2": 7
+    }
+   },
+   "end": {
+    "position": "end",
+    "priority": "hard",
+    "grid": {
+     "x1": 2,
+     "y1": 4,
+     "x2": 9,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 4,
+     "x2": 6,
+     "y2": 7
+    }
+   }
+  },
+  {
+   "shot_id": "ev-10",
+   "observed": "A phone on a small round table beside a wooden box under a plain tiled wall; no person.",
+   "start": {
+    "position": "start",
+    "priority": "hard",
+    "grid": {
+     "x1": 3,
+     "y1": 4,
+     "x2": 8,
+     "y2": 10
+    },
+    "face_visible": false
+   },
+   "middle": {
+    "position": "middle",
+    "priority": "hard",
+    "grid": {
+     "x1": 3,
+     "y1": 4,
+     "x2": 8,
+     "y2": 10
+    },
+    "face_visible": false
+   },
+   "end": {
+    "position": "end",
+    "priority": "hard",
+    "grid": {
+     "x1": 3,
+     "y1": 4,
+     "x2": 8,
+     "y2": 10
+    },
+    "face_visible": false
+   }
+  },
+  {
+   "shot_id": "ev-11",
+   "observed": "Woman seated on a bed with a man standing further back, turned away.",
+   "start": {
+    "position": "start",
+    "priority": "hard",
+    "grid": {
+     "x1": 1,
+     "y1": 3,
+     "x2": 10,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 4,
+     "x2": 5,
+     "y2": 6
+    }
+   },
+   "middle": {
+    "position": "middle",
+    "priority": "hard",
+    "grid": {
+     "x1": 1,
+     "y1": 3,
+     "x2": 10,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 4,
+     "x2": 5,
+     "y2": 6
+    }
+   },
+   "end": {
+    "position": "end",
+    "priority": "hard",
+    "grid": {
+     "x1": 1,
+     "y1": 3,
+     "x2": 10,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 4,
+     "x2": 5,
+     "y2": 6
+    }
+   }
+  },
+  {
+   "shot_id": "ev-12",
+   "observed": "Woman on a sofa looking down at a phone held in both hands.",
+   "start": {
+    "position": "start",
+    "priority": "hard",
+    "grid": {
+     "x1": 1,
+     "y1": 4,
+     "x2": 8,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 2,
+     "x2": 6,
+     "y2": 5
+    }
+   },
+   "middle": {
+    "position": "middle",
+    "priority": "hard",
+    "grid": {
+     "x1": 1,
+     "y1": 4,
+     "x2": 8,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 2,
+     "x2": 6,
+     "y2": 5
+    }
+   },
+   "end": {
+    "position": "end",
+    "priority": "hard",
+    "grid": {
+     "x1": 1,
+     "y1": 4,
+     "x2": 8,
+     "y2": 10
+    },
+    "face": {
+     "x1": 4,
+     "y1": 2,
+     "x2": 6,
+     "y2": 5
+    }
+   }
+  },
+  {
+   "shot_id": "ev-13",
+   "observed": "Backlit silhouette of a person holding a phone up against a deep blue-black background; no face visible.",
+   "start": {
+    "position": "start",
+    "priority": "hard",
+    "grid": {
+     "x1": 3,
+     "y1": 4,
+     "x2": 9,
+     "y2": 10
+    },
+    "face_visible": false
+   },
+   "middle": {
+    "position": "middle",
+    "priority": "hard",
+    "grid": {
+     "x1": 3,
+     "y1": 4,
+     "x2": 9,
+     "y2": 10
+    },
+    "face_visible": false
+   },
+   "end": {
+    "position": "end",
+    "priority": "hard",
+    "grid": {
+     "x1": 3,
+     "y1": 4,
+     "x2": 9,
+     "y2": 10
+    },
+    "face_visible": false
+   }
+  }
+ ]
+}

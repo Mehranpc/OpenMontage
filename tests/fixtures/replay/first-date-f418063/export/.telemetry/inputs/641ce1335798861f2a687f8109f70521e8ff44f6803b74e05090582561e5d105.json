@@ -1,0 +1,14 @@
+{
+  "title": "Calm Ambient",
+  "artist": "leberch",
+  "durationSeconds": 119,
+  "license": {
+    "name": "Pixabay Content License",
+    "url": "https://pixabay.com/service/license-summary/",
+    "downloadedAt": "2026-09-28"
+  },
+  "contentIdRisk": {
+    "level": "low",
+    "reason": "Pixabay Content License permits monetized social use; third-party Content-ID claims remain possible but were not observed for this track."
+  }
+}

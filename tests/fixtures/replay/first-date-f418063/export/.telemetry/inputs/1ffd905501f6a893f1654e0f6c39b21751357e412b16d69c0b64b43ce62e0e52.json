@@ -1,0 +1,7 @@
+{"findings": [
+ {"category": "suggestion", "message": "13 of 13 footage events carry one reviewed video asset, no stills, no duplicate clip identity. audit_asset_manifest and the durable workspace check both report clean."},
+ {"category": "suggestion", "message": "Two events could not be served literally within the bounded search: ev-4 (543 people) is a celebration crowd rather than a street crowd, and ev-10 is a lone phone on a table rather than a phone face-down. Both are recorded with fallback_reason instead of being passed off as literal."},
+ {"category": "suggestion", "message": "The opening hook shot was re-sourced after the first pass returned a close-up whose subject filled every serviceable type band; the selected clip leaves the upper band plain wall, which is what the Film Type hook needs."},
+ {"category": "suggestion", "message": "The retry pass budget (1) was fully spent, so no further sourcing was possible; the remaining repairs were made by reconciling the plan to the footage actually on disk rather than by buying more."},
+ {"category": "nitpick", "message": "All footage is Pexels; Pixabay video returned nothing usable for these queries in either pass."}
+]}

@@ -1,0 +1,86 @@
+{
+  "queries": [
+    {
+      "query": "hands holding phone blank screen close up",
+      "slot_id": "ev-1",
+      "kind": "video"
+    },
+    {
+      "query": "woman typing on phone at table wide shot",
+      "slot_id": "ev-2",
+      "kind": "video"
+    },
+    {
+      "query": "smartphone screen close up dark",
+      "slot_id": "ev-3",
+      "kind": "video"
+    },
+    {
+      "query": "crowd young people phones wide shot",
+      "slot_id": "ev-4",
+      "kind": "video"
+    },
+    {
+      "query": "phone beside clock plain table",
+      "slot_id": "ev-5",
+      "kind": "video"
+    },
+    {
+      "query": "man reading phone smiling morning light",
+      "slot_id": "ev-6",
+      "kind": "video"
+    },
+    {
+      "query": "phone nightstand morning sunlight",
+      "slot_id": "ev-7",
+      "kind": "video"
+    },
+    {
+      "query": "thumbs typing phone screen close up",
+      "slot_id": "ev-8",
+      "kind": "video"
+    },
+    {
+      "query": "person waiting staring at phone night",
+      "slot_id": "ev-9",
+      "kind": "video"
+    },
+    {
+      "query": "phone face down plain table wide shot",
+      "slot_id": "ev-10",
+      "kind": "video"
+    },
+    {
+      "query": "two people apart at table phones down",
+      "slot_id": "ev-11",
+      "kind": "video"
+    },
+    {
+      "query": "woman putting phone down table shrug",
+      "slot_id": "ev-12",
+      "kind": "video"
+    },
+    {
+      "query": "person holding phone about to type night",
+      "slot_id": "ev-13",
+      "kind": "video"
+    }
+  ],
+  "sources": [
+    "pexels",
+    "pixabay_video"
+  ],
+  "filters": {
+    "orientation": "portrait",
+    "min_duration": 8,
+    "min_width": 1080,
+    "max_width": 1080
+  },
+  "output_dir": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets",
+  "clips_per_query": 1,
+  "timeout_seconds": 180,
+  "search_cache_ttl_seconds": 21600,
+  "max_candidates_total": 16,
+  "max_bytes_per_clip": 100663296,
+  "max_total_download_bytes": 536870912
+}
