@@ -1,6 +1,6 @@
 {
  "authoritative_script_sha256": "97f0f70c7caac3cb47a965a67f33db350a3e58b417a1868b93beab4e4b259782",
- "narration_sha256": "1eaec85dad2de226885fe77fe9143e1f91f00bfbe3f8bd4f36e65ae900ccc08e",
+ "narration_sha256": "bc80e5dcc5643e78e3d63d164672eb080b4b9f84b0ef732f8ea5a01d4af00b54",
  "input_mode": "approved_script_with_narration",
  "idea_checkpoint": "checkpoint_idea.json (completed)",
  "script_checkpoint": "checkpoint_script.json (completed)",

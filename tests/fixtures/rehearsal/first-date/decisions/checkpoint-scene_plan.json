@@ -476,7 +476,7 @@
     "moment_target": 8,
     "typographic_beat_budget": 2,
     "typographic_beats_used": 0,
-    "narration_sha256": "1eaec85dad2de226885fe77fe9143e1f91f00bfbe3f8bd4f36e65ae900ccc08e",
+    "narration_sha256": "bc80e5dcc5643e78e3d63d164672eb080b4b9f84b0ef732f8ea5a01d4af00b54",
     "word_timings_ref": "artifacts/script-word-timings.json",
     "script_sections_ref": "artifacts/script.json",
     "plan_revision": {
