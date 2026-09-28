@@ -1270,6 +1270,29 @@ def attach_narration(
     return state
 
 
+def _require_recorded_spend(checkpoint: Mapping[str, Any], manifest: Mapping[str, Any]) -> None:
+    """The assets checkpoint must record spend (#263 item L).
+
+    Delivery quality reads spend from this checkpoint and blocks every report when it
+    is absent (#234): the gap surfaced only at stage-candidate, after the render.
+    The asset workspace always writes ``total_cost_usd``; a hand-written manifest may
+    not, and this is where the spend is known.
+    """
+    def _is_number(value: object) -> bool:
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0
+
+    snapshot = checkpoint.get("cost_snapshot")
+    if isinstance(snapshot, Mapping) and _is_number(snapshot.get("total_spent_usd")):
+        return
+    if _is_number(manifest.get("total_cost_usd")):
+        return
+    raise PersianVideoWorkflowError(
+        "completed assets checkpoint must record spend: asset_manifest.total_cost_usd "
+        "(the asset workspace writes it) or cost_snapshot.total_spent_usd. Delivery "
+        "quality blocks every report without it."
+    )
+
+
 def load_workflow_state(
     project_id: str,
     *,
@@ -2394,6 +2417,7 @@ def _complete_phase_impl(
         phase_evidence["assetWorkspaceBinding"] = (
             validate_asset_manifest_against_workspace(_project_root(state), manifest)
         )
+        _require_recorded_spend(checkpoint, manifest)
 
     completed = list(state.get("completed_phases") or [])
     if phase not in completed:

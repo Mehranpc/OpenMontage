@@ -291,7 +291,7 @@ def _asset_manifest(clips: dict[str, Path], *, projected: bool) -> dict[str, Any
             "frame_review": {"start": True, "middle": True, "end": True,
                              "observed": "Synthetic pattern remains present and moving at all three samples."},
         })
-    return {"version": "1.0", "format": "vertical", "assets": assets,
+    return {"version": "1.0", "format": "vertical", "assets": assets, "total_cost_usd": 0.0,
             "metadata": {"trial_fixture": True, "provider_projection": projected,
                          "production_certified": False}}
 
