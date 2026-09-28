@@ -86,3 +86,28 @@ def test_the_lock_file_does_not_count_as_project_progress(tmp_path: Path) -> Non
     with workflow.state_transaction(PROJECT, pipeline_dir=tmp_path):
         pass
     assert workflow._last_project_write(root)[0] == before
+
+
+def _hold(pipeline_dir: str, loaded, release) -> None:
+    with workflow.state_transaction(PROJECT, pipeline_dir=Path(pipeline_dir)):
+        loaded.set()
+        release.wait(10)
+
+
+def test_a_stuck_holder_fails_with_its_identity_instead_of_hanging(tmp_path: Path, monkeypatch) -> None:
+    import pytest
+
+    _state(tmp_path)
+    monkeypatch.setattr(workflow, "STATE_LOCK_TIMEOUT_SECONDS", 0.5)
+    ctx = multiprocessing.get_context("spawn")
+    loaded, release = ctx.Event(), ctx.Event()
+    holder = ctx.Process(target=_hold, args=(str(tmp_path), loaded, release))
+    holder.start()
+    try:
+        assert loaded.wait(10)
+        with pytest.raises(workflow.PersianVideoWorkflowError, match=rf"held by: pid={holder.pid}"):
+            with workflow.state_transaction(PROJECT, pipeline_dir=tmp_path):
+                pass
+    finally:
+        release.set()
+        holder.join(10)

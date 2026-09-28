@@ -17,6 +17,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -1094,6 +1095,10 @@ def _state_path(project_dir: Path) -> Path:
 
 
 STATE_LOCK_FILENAME = ".workflow-state.lock"
+# A state read-modify-write takes milliseconds. A lock held this long is a bug (a
+# holder waiting on a process that needs the same lock); fail with the holder named
+# instead of hanging the run.
+STATE_LOCK_TIMEOUT_SECONDS = float(os.environ.get("OPENMONTAGE_STATE_LOCK_TIMEOUT", "120"))
 _HELD_STATE_LOCKS: ContextVar[tuple[str, ...]] = ContextVar("persian_state_locks", default=())
 
 
@@ -1115,7 +1120,24 @@ def state_transaction(project_id: str, *, pipeline_dir: Path | None = None):
         return
     lock_path = project_dir / STATE_LOCK_FILENAME
     with lock_path.open("a+b") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        deadline = time.monotonic() + STATE_LOCK_TIMEOUT_SECONDS
+        while True:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() > deadline:
+                    handle.seek(0)
+                    holder = handle.read().decode("utf-8", "replace").strip()
+                    raise PersianVideoWorkflowError(
+                        f"workflow state lock was not released within {STATE_LOCK_TIMEOUT_SECONDS:.0f}s; "
+                        f"held by: {holder or 'unknown'}"
+                    ) from None
+                time.sleep(0.05)
+        handle.seek(0)
+        handle.truncate()
+        handle.write(" ".join([f"pid={os.getpid()}", *sys.argv[:4]]).encode("utf-8"))
+        handle.flush()
         token = _HELD_STATE_LOCKS.set(held + (key,))
         try:
             yield
