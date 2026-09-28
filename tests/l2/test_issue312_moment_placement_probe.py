@@ -58,3 +58,21 @@ def test_the_same_moment_places_without_the_hard_face(tmp_path) -> None:
     soft_only = [r for r in SHOT4_REGIONS if r["priority"] == "soft"]
     prepared = prepare_film_type_props(_props(soft_only), _composer_dir(), scratch_dir=tmp_path)
     assert prepared["moments"][0].get("layoutGeometry")
+
+
+def test_region_review_probe_refuses_the_real_carrier() -> None:
+    """The region-review probe itself, on the run's shot-4 timeline and copy."""
+    from lib.persian_region_commands import carrier_moment_placement
+
+    plan = {"beats": [{"id": "b4", "visual_events": [{
+        "id": "ev-4", "carries_moment": True,
+        "moment_copy": [{"role": "hero", "text": "۵۴۳ نفر"}, {"role": "tail", "text": "یک قرار اول را تصور کردند"}],
+    }]}]}
+    shots = [{"shotId": "shot-4", "visualEventId": "ev-4", "timeline": {"startSeconds": 13.34, "endSeconds": 19.37}}]
+    rows = [{"shot_id": "shot-4", "avoidRegions": [
+        {**r, "startSeconds": 13.34, "endSeconds": 19.37} for r in SHOT4_REGIONS]}]
+    result = carrier_moment_placement(plan, shots, rows)
+    assert result["status"] == "refused", result
+    soft_rows = [{"shot_id": "shot-4", "avoidRegions": [
+        {**r, "startSeconds": 13.34, "endSeconds": 19.37} for r in SHOT4_REGIONS if r["priority"] == "soft"]}]
+    assert carrier_moment_placement(plan, shots, soft_rows)["results"][0]["feasible"] is True

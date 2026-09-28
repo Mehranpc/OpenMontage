@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import math
 import os
 import shutil
@@ -1179,6 +1180,115 @@ def opening_hook_placement(
     }
 
 
+_NUMERIC_HERO = re.compile(r"^[۰-۹٠-٩0-9]")
+
+
+def _probe_props(event: Mapping[str, Any], shot: Mapping[str, Any], regions: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
+    """Minimal Film Type props for one carrier: its shot window, reviewed regions, copy."""
+    from lib.persian_design import resolve_design
+
+    segments = [
+        {"role": str(item.get("role") or ""), "text": str(item.get("text") or "")}
+        for item in event.get("moment_copy") or [] if isinstance(item, Mapping) and item.get("text")
+    ]
+    if not segments:
+        return None
+    timeline = shot.get("timeline") or {}
+    start = float(timeline.get("startSeconds", 0.0))
+    end = float(timeline.get("endSeconds", 0.0))
+    if end <= start:
+        return None
+    duration = end - start
+    hero = next((item["text"] for item in segments if item["role"] == "hero"), segments[0]["text"])
+    timed = []
+    for region in regions:
+        if not isinstance(region, Mapping):
+            continue
+        r0 = max(0.0, float(region.get("startSeconds", start)) - start)
+        r1 = min(duration, float(region.get("endSeconds", end)) - start)
+        if r1 <= r0:
+            continue
+        timed.append({
+            "x": float(region.get("x", 0.0)), "y": float(region.get("y", 0.0)),
+            "w": float(region.get("w", 0.0)), "h": float(region.get("h", 0.0)),
+            "priority": "soft" if region.get("priority") == "soft" else "hard",
+            "startSeconds": round(r0, 3), "endSeconds": round(r1, 3),
+        })
+    # The moment's own window inside the shot is chosen at edit; the whole reviewed
+    # dwell is the most conservative stand-in, and a hard region anywhere in it is one
+    # the edit could still move around by timing. Regions are clipped to the window.
+    return {
+        "format": "vertical", "durationSeconds": round(duration, 3),
+        "design": resolve_design({"version": 2, "profile": "film-type", "seed": "region-review"}),
+        "watermark": {"persianText": "طریقت تسلیم", "latinText": "Pathway_of_Surrender"},
+        "typographicBeats": [], "captionMode": "hybrid", "captions": [],
+        "shots": [{"id": str(shot["shotId"]), "source": "unused.mp4", "startSeconds": 0.0,
+                   "endSeconds": round(duration, 3), "avoidRegions": timed}],
+        "moments": [{
+            "id": f"probe-{event.get('id')}", "kind": "figure" if _NUMERIC_HERO.match(hero) else "statement",
+            "startSeconds": 0.0, "endSeconds": round(duration, 3), "segments": segments,
+        }],
+    }
+
+
+def carrier_moment_placement(
+    scene_plan: Mapping[str, Any],
+    canonical_shots: Sequence[Mapping[str, Any]],
+    proposed_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Ask the Film Type browser prepass whether each carrier's moment copy can be placed (#312).
+
+    The f418063 run spent four edit candidates and a revision cycle before the browser
+    said `no safe measured placement remains` for a figure on a crowd shot, although
+    the shot's regions were reviewed here. The prepass needs only props: no media and
+    no render, and it is the same `placeMoment` the edit preflight runs. A refusal that
+    names a hard-region collision is a finding; anything else (no composer, no font,
+    another layout refusal) is ``unknown`` and never blocks, because the edit preflight
+    stays authoritative.
+    """
+    from lib.persian_film_type import FilmTypePreflightError, prepare_film_type_props
+
+    events = {
+        str(event.get("id")): event
+        for beat in scene_plan.get("beats") or [] if isinstance(beat, Mapping)
+        for event in beat.get("visual_events") or []
+        if isinstance(event, Mapping) and event.get("carries_moment") and event.get("moment_copy")
+    }
+    regions_by_shot = {str(row.get("shot_id")): list(row.get("avoidRegions") or []) for row in proposed_rows}
+    try:
+        from tools.video.persian_compose import _composer_dir
+
+        composer = _composer_dir()
+    except Exception:  # noqa: BLE001 - no composer means the probe is unavailable
+        return {"status": "unknown", "reason": "composer_unavailable", "results": []}
+    font = composer / "public" / "fonts" / "kahroba" / "Kahroba-EB-LC.woff2"
+    if not font.is_file() or shutil.which("node") is None:
+        return {"status": "unknown", "reason": "browser_measurement_unavailable", "results": []}
+    results: list[dict[str, Any]] = []
+    for shot in canonical_shots:
+        event = events.get(str(shot.get("visualEventId") or ""))
+        if event is None:
+            continue
+        props = _probe_props(event, shot, regions_by_shot.get(str(shot["shotId"]), []))
+        if props is None:
+            continue
+        row = {"shotId": str(shot["shotId"]), "visualEventId": str(event.get("id"))}
+        try:
+            prepare_film_type_props(props, composer)
+        except FilmTypePreflightError as exc:
+            if exc.code == "ASSET_SELECTION_HARD_REGION_COLLISION":
+                results.append({**row, "feasible": False, "message": str(exc).splitlines()[-1][:400]})
+            else:
+                results.append({**row, "feasible": None, "code": exc.code})
+            continue
+        except (ValueError, OSError) as exc:
+            results.append({**row, "feasible": None, "code": "PROBE_UNAVAILABLE", "message": str(exc)[:200]})
+            continue
+        results.append({**row, "feasible": True})
+    blocked = [row for row in results if row.get("feasible") is False]
+    return {"status": "refused" if blocked else "checked", "results": results}
+
+
 def propose_regions(
     pipeline_dir: Path,
     project_id: str,
@@ -1309,6 +1419,7 @@ def propose_regions(
         scene_plan, canonical_shots, proposed_rows
     )
     hook_placement = opening_hook_placement(canonical_shots, proposed_rows)
+    moment_placement = carrier_moment_placement(scene_plan, canonical_shots, proposed_rows)
 
     evidence = {"shot_regions": proposed_rows}
     try:
@@ -1330,6 +1441,7 @@ def propose_regions(
         "proposedEvidence": normalized,
         "negativeSpaceCollisions": negative_space_collisions,
         "openingHookPlacement": hook_placement,
+        "momentPlacement": moment_placement,
         "scenePlanSha256": input_record["scenePlanSha256"],
     }
     proposal_path = output_root / PROPOSAL_NAME
@@ -1362,6 +1474,21 @@ def pending_opening_hook_block(project: Path) -> dict[str, Any] | None:
     return None
 
 
+def pending_unplaceable_moments(project: Path) -> list[dict[str, Any]]:
+    """Carriers whose moment the Film Type prepass refused on the current proposal (#312)."""
+    proposal_path = project / SHEET_DIR / PROPOSAL_NAME
+    scene_path = materialize_scene_plan(project) or project / "artifacts" / "scene_plan.json"
+    if not proposal_path.is_file() or not scene_path.is_file():
+        return []
+    proposal = _read_object(proposal_path, label="subject-region proposal")
+    if str(proposal.get("scenePlanSha256") or "") != _hash_file(scene_path):
+        return []
+    finding = proposal.get("momentPlacement")
+    if not isinstance(finding, Mapping):
+        return []
+    return [dict(row) for row in finding.get("results") or [] if isinstance(row, Mapping) and row.get("feasible") is False]
+
+
 def pending_negative_space_collisions(project: Path) -> list[dict[str, Any]]:
     """Collisions recorded by the current region proposal, if it matches the current plan.
 
@@ -1386,6 +1513,8 @@ __all__ = [
     "pending_negative_space_collisions",
     "pending_opening_hook_block",
     "opening_hook_placement",
+    "carrier_moment_placement",
+    "pending_unplaceable_moments",
     "build_sheets",
     "propose_regions",
 ]
