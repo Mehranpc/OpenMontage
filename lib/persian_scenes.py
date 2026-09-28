@@ -130,9 +130,28 @@ _FRAMING_QUERY_RE = re.compile(
 )
 
 
+#: Framings that fill the frame with the subject. A carrier query naming one cannot be
+#: the query that asks for clear space: on the f418063 acceptance run both hook queries
+#: asked for a hand-held phone close-up, and the phone crossed every band type may use.
+CLOSE_FRAMING_TERMS = (
+    "close up", "close-up", "closeup", "extreme close", "macro", "detail shot", "tight shot",
+)
+
+_CLOSE_FRAMING_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(term) for term in CLOSE_FRAMING_TERMS) + r")\b"
+)
+
+
 def _asks_for_framing(query: str) -> bool:
-    """Whether a query names the empty surface a moment needs, as whole words."""
-    return _FRAMING_QUERY_RE.search(query.lower()) is not None
+    """Whether a query names the empty surface a moment needs, as whole words.
+
+    A query that also asks for a close framing does not count: the subject fills the
+    frame, whatever surface the query names.
+    """
+    text = query.lower()
+    if _CLOSE_FRAMING_RE.search(text) is not None:
+        return False
+    return _FRAMING_QUERY_RE.search(text) is not None
 
 
 #: Queries per beat. Two, because the third was always a paraphrase of the second — the

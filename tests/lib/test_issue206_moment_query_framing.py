@@ -110,3 +110,25 @@ def test_the_director_prose_names_the_gate() -> None:
     # The rule lived only in prose once; keep prose and gate pointing at each other.
     director = (ROOT / "skills/pipelines/persian-footage/scene-director.md").read_text(encoding="utf-8")
     assert "FRAMING_QUERY_TERMS" in director
+
+
+# A close framing fills the frame with the subject, so it cannot be the framing query
+# (f418063 acceptance run, 2026-09-28: both hook queries asked for a phone close-up).
+import pytest as _pytest
+
+from lib.persian_scenes import _asks_for_framing
+
+
+@_pytest.mark.parametrize("query", [
+    "close up hand holding phone plain wall",
+    "close-up phone on empty table",
+    "phone screen macro blank",
+    "woman texting closeup wall",
+    "extreme close phone message plain",
+])
+def test_a_close_framing_is_not_a_framing_query(query: str) -> None:
+    assert _asks_for_framing(query) is False
+
+
+def test_a_wide_framing_still_counts() -> None:
+    assert _asks_for_framing("lone phone on plain table wide shot") is True
