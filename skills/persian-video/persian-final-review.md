@@ -43,6 +43,14 @@ The artifact contract enforces this in two layers. The persisted `hookQualityAud
 
 The cold-viewer review input must contain only the rendered opening evidence and neutral review instructions. Build it with `lib.persian_rendered_review.build_cold_viewer_review_input`, persist it inside the current project as a JSON artifact, and record `metadata.coldViewerReviewInput.path` plus its exact `sha256`. The reviewer result must repeat that digest as `coldViewer.reviewInputSha256`. Final-review validation re-reads the artifact, re-hashes it, rebuilds the canonical allowlisted payload, and rejects hidden authoring context before presentation. Do not expose approved script, hook metadata, scene-plan labels, author rationale, topic labels, or other hidden production context to that reviewer. `contextIsolated: true` is valid only when this persisted input artifact passes the allowlist validator.
 
+Who the cold viewer is (#323): not the authoring agent, and not the user who approved the script — they know the words, so they are not a cold viewer either. Do not stop the run to ask the user the cold-viewer questions. Instead:
+
+1. `python -m lib.persian_cold_viewer prompt <cold-viewer-input.json>` prints the reviewer prompt, built from the validated artifact alone.
+2. Give exactly that prompt to a fresh sub-agent with no conversation or project context (a new Task/sub-agent session; it may open only the listed frame/excerpt paths). A person who has never seen the script may stand in instead.
+3. Save its JSON answer and run `python -m lib.persian_cold_viewer record <cold-viewer-input.json> --answer-json <answer.json>`; paste the printed object verbatim as `hookQualityReview.coldViewer`. Do not edit the answer; unresolved referents it reports are real findings.
+
+One reviewer, one answer per input. `record` keeps the first answer and refuses a different one for the same input digest. Do not re-word the questions or bring another reviewer to make findings go away; fix the opening (text, crop, shot), re-render, and review the new input. The frames must be the rendered pixels at native resolution; the prompt lists their size and tells the reviewer to open the files themselves, not a downscaled preview.
+
 Do not count setup/authority phrases such as “research shows” as payoff. Timeline metadata cannot certify rendered comprehension. A weak review, failed muted direction, weak visual/voice alignment, non-concrete payoff, digest mismatch, or payoff after the blocking ceiling may be persisted honestly as failed/revise evidence, but it blocks presentation. Historical v1 artifacts remain readable only as history; new productions must use v2.
 
 ## Rendered audio evidence
