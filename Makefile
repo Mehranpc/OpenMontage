@@ -6,7 +6,7 @@ PIP = $(RUN_PYTHON) -m pip
 
 .DEFAULT_GOAL := setup
 
-.PHONY: pre-mac setup install install-dev install-gpu test test-contracts lint clean preflight demo demo-list hyperframes-doctor hyperframes-warm venv ensure-venv
+.PHONY: pre-mac rehearsal setup install install-dev install-gpu test test-contracts lint clean preflight demo demo-list hyperframes-doctor hyperframes-warm venv ensure-venv
 
 # ---- Virtual environment ----
 
@@ -97,6 +97,12 @@ test-contracts: ensure-venv
 	$(RUN_PYTHON) -m pytest tests/contracts/ -v
 
 # ---- Utilities ----
+
+# Offline rehearsal of the recorded first-date run and its scenarios (#260). The
+# browser half (edit preflight → awaiting_human) needs Chromium plus the licensed
+# Kahroba font; set OPENMONTAGE_L2_MEDIA_TESTS=1 where both exist (the L2 CI job).
+rehearsal: ensure-venv
+	$(RUN_PYTHON) -m pytest tests/rehearsal -v
 
 # Before a Mac production run: HEAD must be clean and its CI rehearsal green (#265).
 # SHA=<sha> accepts a specific commit; default is HEAD.
