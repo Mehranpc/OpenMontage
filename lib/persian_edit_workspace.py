@@ -416,8 +416,12 @@ def _typography_payload(edit: Mapping[str, Any]) -> list[dict[str, Any]]:
                 )
             }
             presentation = raw.get("presentation")
-            if isinstance(presentation, Mapping) and "recipeId" in presentation:
-                style["presentation.recipeId"] = presentation.get("recipeId")
+            if isinstance(presentation, Mapping):
+                # Every presentation field is a layout choice the Film Type fitter reads;
+                # only recipeId used to count, so an explicit placement landed in the
+                # unclassified scope and no layout repair could stage it (f418063 run).
+                for key in sorted(presentation):
+                    style[f"presentation.{key}"] = presentation.get(key)
             exact_text = raw.get("exactText")
             if exact_text is not None:
                 style["exactText"] = exact_text
@@ -579,15 +583,6 @@ def _unclassified_payload(edit: Mapping[str, Any]) -> dict[str, Any]:
                 if key not in known_moment
                 and not any(token in str(key).lower() for token in style_tokens)
             }
-            presentation = raw.get("presentation")
-            if isinstance(presentation, Mapping):
-                presentation_unknown = {
-                    str(key): value
-                    for key, value in presentation.items()
-                    if key != "recipeId"
-                }
-                if presentation_unknown:
-                    extras["presentation"] = presentation_unknown
             if extras:
                 moment_unknown.append({"collection": collection, "id": raw.get("id"), **extras})
 
