@@ -3503,7 +3503,12 @@ def record_asset_search_result(
                 )
     if identified_clips:
         workspace_pass = retry_pass
-        if isinstance(scope, Mapping):
+        # A workflow pass number restarts at 0 in every acquisition cycle, but the
+        # workspace's discovery passes are append-only across cycles. Any rewind into
+        # acquisition (scoped, user-directed or automatic) therefore records the next
+        # workspace pass; reusing ``retry_pass`` collided with the earlier cycle's
+        # pass-000 and refused every search of the new cycle (#315).
+        if isinstance(scope, Mapping) or int(usage.get("acquisition_cycle") or 0) > 0:
             workspace_pass = int(
                 asset_workspace_status(project_root).get("discoveryPassCount") or 0
             )
