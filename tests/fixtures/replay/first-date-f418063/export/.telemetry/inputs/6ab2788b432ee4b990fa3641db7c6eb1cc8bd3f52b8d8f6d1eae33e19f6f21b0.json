@@ -1,0 +1,5 @@
+{"amendments": [
+ {"visual_event_id": "ev-12", "set": {"carries_moment": false}},
+ {"visual_event_id": "ev-11", "set": {"carries_moment": true, "negative_space": "upper_band",
+   "moment_copy": [{"role": "lead", "text": "دیر پیام دادن"}, {"role": "hero", "text": "استراتژی خوبی نبود"}]}}
+]}

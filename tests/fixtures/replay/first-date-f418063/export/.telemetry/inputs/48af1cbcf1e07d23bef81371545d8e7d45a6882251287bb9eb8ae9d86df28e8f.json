@@ -1,0 +1,31 @@
+{
+  "queries": [
+    {
+      "query": "person texting phone city lights night",
+      "slot_id": "ev-13",
+      "kind": "video"
+    },
+    {
+      "query": "hands holding phone warm light night bokeh",
+      "slot_id": "ev-13",
+      "kind": "video"
+    }
+  ],
+  "sources": [
+    "pexels",
+    "pixabay_video"
+  ],
+  "filters": {
+    "orientation": "portrait",
+    "min_duration": 7,
+    "min_width": 1080,
+    "max_width": 1080
+  },
+  "output_dir": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets",
+  "clips_per_query": 1,
+  "timeout_seconds": 180,
+  "search_cache_ttl_seconds": 21600,
+  "max_candidates_total": 3,
+  "max_bytes_per_clip": 100663296,
+  "max_total_download_bytes": 300000000
+}

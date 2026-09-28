@@ -141,3 +141,4 @@ remotion-composer/public/fonts/kahroba/*.woff2
 
 # Offline rehearsal fixture clips (#260; temporary per the fixture README)
 !tests/fixtures/rehearsal/*/clips/*.mp4
+!tests/fixtures/replay/*/providers/clips/*.mp4

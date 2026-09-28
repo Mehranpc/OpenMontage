@@ -1,0 +1,9 @@
+{"assets": {
+  "ev-5":  {"fallback_level": "adjacent_metaphor", "fallback_reason": "The clip shows a person with a phone in hand rather than the phone beside a clock; the literal object beat was not available in the pool, so the adjacent human-with-phone metaphor carries it."},
+  "ev-6":  {"fallback_level": "emotional_human", "fallback_reason": "Selected on the human read of reading a message rather than on any literal device framing."},
+  "ev-9":  {"fallback_level": "emotional_human", "fallback_reason": "Selected for the face lit by the screen: the emotion carries the beat, not an object shot."},
+  "ev-10": {"fallback_level": "adjacent_metaphor", "fallback_reason": "A lone phone on a plain surface stands in for the two days of waiting; the literal face-down framing was not in the pool."},
+  "ev-11": {"fallback_level": "emotional_human", "fallback_reason": "Selected for the visible distance between two people rather than a literal table framing."},
+  "ev-12": {"fallback_level": "emotional_human", "fallback_reason": "Selected for the person pausing over the phone rather than a literal shrug-and-set-down action."},
+  "ev-13": {"fallback_level": "emotional_human", "fallback_reason": "Selected for the silhouette at night: the human figure carries the closing question rather than a device close-up."}
+}}

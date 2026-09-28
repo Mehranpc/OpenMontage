@@ -1,0 +1,6 @@
+{"production_mode": "narrated", "format": "vertical", "render_runtime": "remotion",
+ "music": {"provider": "pixabay_music", "track": "Calm Ambient", "artist": "leberch", "duration_seconds": 119,
+           "license": "Pixabay Content License", "path": "assets/music/bed.mp3"},
+ "assets": 13, "still_images": 0, "search_passes": 2, "candidates_considered": 24,
+ "bytes_downloaded": 192379454,
+ "budget_decisions": ["User raised the stock candidate ceiling to 24 mid-run and authorised continuing without further questions."]}

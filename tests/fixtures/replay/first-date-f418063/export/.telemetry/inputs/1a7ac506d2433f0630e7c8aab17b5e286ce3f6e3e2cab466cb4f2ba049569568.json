@@ -1,0 +1,26 @@
+{
+  "queries": [
+    {
+      "query": "people walking phones sky above city",
+      "slot_id": "ev-4",
+      "kind": "video"
+    }
+  ],
+  "sources": [
+    "pexels",
+    "pixabay_video"
+  ],
+  "filters": {
+    "orientation": "portrait",
+    "min_duration": 8,
+    "min_width": 1080,
+    "max_width": 1080
+  },
+  "output_dir": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets",
+  "clips_per_query": 1,
+  "timeout_seconds": 180,
+  "search_cache_ttl_seconds": 21600,
+  "max_candidates_total": 2,
+  "max_bytes_per_clip": 100663296,
+  "max_total_download_bytes": 180000000
+}

@@ -1,0 +1,66 @@
+{
+  "queries": [
+    {
+      "query": "phone in hand plain wall above",
+      "slot_id": "ev-1",
+      "kind": "video"
+    },
+    {
+      "query": "person texting cafe plain wall behind",
+      "slot_id": "ev-2",
+      "kind": "video"
+    },
+    {
+      "query": "people walking phones sky above city",
+      "slot_id": "ev-4",
+      "kind": "video"
+    },
+    {
+      "query": "time passing phone untouched wide shot wall",
+      "slot_id": "ev-5",
+      "kind": "video"
+    },
+    {
+      "query": "hands sending text message plain surface",
+      "slot_id": "ev-8",
+      "kind": "video"
+    },
+    {
+      "query": "face lit by phone screen minimal dark",
+      "slot_id": "ev-9",
+      "kind": "video"
+    },
+    {
+      "query": "lone phone on empty table surface",
+      "slot_id": "ev-10",
+      "kind": "video"
+    },
+    {
+      "query": "couple distance silence wide shot plain room",
+      "slot_id": "ev-11",
+      "kind": "video"
+    },
+    {
+      "query": "texting silhouette night plain dark background",
+      "slot_id": "ev-13",
+      "kind": "video"
+    }
+  ],
+  "sources": [
+    "pexels",
+    "pixabay_video"
+  ],
+  "filters": {
+    "orientation": "portrait",
+    "min_duration": 8,
+    "min_width": 1080,
+    "max_width": 1080
+  },
+  "output_dir": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets",
+  "clips_per_query": 1,
+  "timeout_seconds": 180,
+  "search_cache_ttl_seconds": 21600,
+  "max_candidates_total": 11,
+  "max_bytes_per_clip": 100663296,
+  "max_total_download_bytes": 373000000
+}

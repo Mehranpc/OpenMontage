@@ -1,0 +1,1814 @@
+{
+  "version": "2.0",
+  "film_type_profile_version": "2.16.0",
+  "project_id": "first-date-message-timing",
+  "pipeline_type": "persian-footage",
+  "created_at": "2026-09-28T07:00:33.839693+00:00",
+  "budget_window_started_at": "2026-09-28T09:09:20.292357+00:00",
+  "status": "failed",
+  "completed_phases": [
+    "validate_input",
+    "create_project",
+    "open_backlot",
+    "prepare_inputs",
+    "align_script_timing",
+    "plan_scenes_moments"
+  ],
+  "next_phase": "acquire_assets",
+  "input": {
+    "mode": "approved_script_with_narration",
+    "approved_script": {
+      "sha256": "c7a0aa502126ce247639a861b729f480d4f190c020f20a6ffe0b8fd9d4b0ae94",
+      "source_path": "/Users/operator/OpenMontage/projects/first-date-message-timing/inputs/approved_script.txt"
+    },
+    "narration": {
+      "original_source_path": "/Users/operator/Desktop/Text After a First Date.mp3",
+      "sha256": "1eaec85dad2de226885fe77fe9143e1f91f00bfbe3f8bd4f36e65ae900ccc08e",
+      "source_path": "/Users/operator/OpenMontage/projects/first-date-message-timing/inputs/narration.mp3"
+    },
+    "script_authority": "approved_script"
+  },
+  "hook_selection": {
+    "version": "1.0",
+    "mode": "user_supplied",
+    "text": "تا حالا شده بعد از یه قرار خوب، گوشی دستت باشه و ندونی الان پیام بدی یا صبر کنی؟",
+    "sha256": "a021d6ab26bc7bcbf2f2f4d73f17ae4bd303e904f8210ef8f4d30fedca18c0c6",
+    "authoritative": true,
+    "may_be_replaced_automatically": false,
+    "selection_policy": "retention-first-v1",
+    "corpus": [
+      "docs/reference/persian-hooks/hookbook.md",
+      "docs/reference/persian-hooks/hook-library-fa.md",
+      "docs/reference/persian-hooks/hook-selector-helper.md"
+    ],
+    "source": "user_plan_decision",
+    "revision_cycle": 0,
+    "reason": "کاربر در تصمیم قلاب (plan_scenes_moments) صریحاً انتخاب کرد که جملهٔ اول نریشن به‌عنوان قلاب او ثبت شود، چون اثبات اول در این محتوا دیرتر از سقف ۶ ثانیه گفته می‌شود.",
+    "overrides_sha256": ""
+  },
+  "budgets": {
+    "max_revisions_per_stage": 3,
+    "max_send_backs": 2,
+    "max_wall_time_minutes": 45,
+    "asset_retry_passes": 1,
+    "clips_per_query": 1,
+    "max_candidates_total": 16,
+    "max_bytes_per_clip": 100663296,
+    "max_total_download_bytes": 536870912,
+    "asset_search_timeout_seconds": 180,
+    "asset_search_cache_ttl_seconds": 21600
+  },
+  "attempts": {
+    "prepare_inputs": 1,
+    "align_script_timing": 1,
+    "plan_scenes_moments": 1,
+    "acquire_assets": 2
+  },
+  "send_backs": 0,
+  "recovery_attempts": {},
+  "phase_telemetry": {
+    "prepare_inputs": [
+      {
+        "attempt": 1,
+        "started_at": "2026-09-28T07:00:44.304399+00:00",
+        "finished_at": "2026-09-28T07:02:55.170381+00:00",
+        "duration_seconds": 130.866,
+        "execution_class": "editorial",
+        "outcome": "succeeded",
+        "revision_cycle": 0
+      }
+    ],
+    "align_script_timing": [
+      {
+        "attempt": 1,
+        "started_at": "2026-09-28T07:03:18.312239+00:00",
+        "finished_at": "2026-09-28T07:13:42.654122+00:00",
+        "duration_seconds": 624.342,
+        "execution_class": "external_durable",
+        "outcome": "succeeded",
+        "revision_cycle": 0,
+        "slo_seconds": 480,
+        "slo_exceeded": true
+      }
+    ],
+    "plan_scenes_moments": [
+      {
+        "attempt": 1,
+        "started_at": "2026-09-28T07:13:53.244194+00:00",
+        "finished_at": "2026-09-28T07:19:17.097755+00:00",
+        "duration_seconds": 323.854,
+        "execution_class": "editorial",
+        "outcome": "succeeded",
+        "revision_cycle": 0,
+        "slo_seconds": 300,
+        "slo_exceeded": true
+      }
+    ],
+    "acquire_assets": [
+      {
+        "attempt": 1,
+        "started_at": "2026-09-28T07:20:07.725495+00:00",
+        "finished_at": "2026-09-28T07:34:57.323816+00:00",
+        "duration_seconds": 889.598,
+        "execution_class": "external_durable",
+        "outcome": "superseded",
+        "revision_cycle": 0,
+        "slo_seconds": 600,
+        "slo_exceeded": true
+      },
+      {
+        "attempt": 1,
+        "started_at": "2026-09-28T07:41:55.022992+00:00",
+        "finished_at": "2026-09-28T07:41:55.261375+00:00",
+        "duration_seconds": 0.238,
+        "execution_class": "external_durable",
+        "outcome": "succeeded",
+        "revision_cycle": 0,
+        "slo_seconds": 600,
+        "slo_exceeded": false
+      },
+      {
+        "attempt": 2,
+        "started_at": "2026-09-28T08:29:29.928477+00:00",
+        "finished_at": "2026-09-28T08:32:51.495859+00:00",
+        "duration_seconds": 201.567,
+        "execution_class": "external_durable",
+        "outcome": "superseded",
+        "revision_cycle": 2
+      },
+      {
+        "attempt": 3,
+        "started_at": "2026-09-28T08:32:51.495859+00:00",
+        "finished_at": "2026-09-28T08:32:51.784810+00:00",
+        "duration_seconds": 0.289,
+        "execution_class": "external_durable",
+        "outcome": "succeeded",
+        "revision_cycle": 2,
+        "slo_seconds": 600,
+        "slo_exceeded": false
+      },
+      {
+        "attempt": 4,
+        "started_at": "2026-09-28T08:46:06.142936+00:00",
+        "finished_at": "2026-09-28T08:46:06.404978+00:00",
+        "duration_seconds": 0.262,
+        "execution_class": "external_durable",
+        "outcome": "succeeded",
+        "revision_cycle": 2,
+        "slo_seconds": 600,
+        "slo_exceeded": false
+      },
+      {
+        "attempt": 1,
+        "started_at": "2026-09-28T09:09:35.620540+00:00",
+        "finished_at": "2026-09-28T09:11:11.671950+00:00",
+        "duration_seconds": 96.051,
+        "execution_class": "external_durable",
+        "outcome": "failed",
+        "revision_cycle": 4,
+        "slo_seconds": 600,
+        "slo_exceeded": false,
+        "failure_reason": "max_candidates_total=4 exceeds remaining workflow ceiling 3"
+      },
+      {
+        "attempt": 2,
+        "started_at": "2026-09-28T09:11:39.640945+00:00",
+        "finished_at": null,
+        "duration_seconds": null,
+        "execution_class": "external_durable",
+        "outcome": "running",
+        "revision_cycle": 4
+      }
+    ],
+    "review_subject_regions": [
+      {
+        "attempt": 1,
+        "started_at": "2026-09-28T07:41:09.934249+00:00",
+        "finished_at": "2026-09-28T07:41:10.091162+00:00",
+        "duration_seconds": 0.157,
+        "execution_class": "editorial",
+        "outcome": "failed",
+        "revision_cycle": 0
+      },
+      {
+        "attempt": 1,
+        "started_at": "2026-09-28T07:41:55.415230+00:00",
+        "finished_at": "2026-09-28T07:41:55.566718+00:00",
+        "duration_seconds": 0.151,
+        "execution_class": "editorial",
+        "outcome": "superseded",
+        "revision_cycle": 0
+      },
+      {
+        "attempt": 2,
+        "started_at": "2026-09-28T07:41:55.566718+00:00",
+        "finished_at": "2026-09-28T07:41:55.884712+00:00",
+        "duration_seconds": 0.318,
+        "execution_class": "editorial",
+        "outcome": "succeeded",
+        "revision_cycle": 0
+      },
+      {
+        "attempt": 3,
+        "started_at": "2026-09-28T08:33:04.330251+00:00",
+        "finished_at": "2026-09-28T08:33:04.486731+00:00",
+        "duration_seconds": 0.156,
+        "execution_class": "editorial",
+        "outcome": "superseded",
+        "revision_cycle": 2
+      },
+      {
+        "attempt": 4,
+        "started_at": "2026-09-28T08:33:04.486731+00:00",
+        "finished_at": "2026-09-28T08:33:07.004807+00:00",
+        "duration_seconds": 2.518,
+        "execution_class": "editorial",
+        "outcome": "succeeded",
+        "revision_cycle": 2
+      },
+      {
+        "attempt": 1,
+        "started_at": "2026-09-28T08:47:30.290657+00:00",
+        "finished_at": "2026-09-28T08:47:30.445504+00:00",
+        "duration_seconds": 0.155,
+        "execution_class": "editorial",
+        "outcome": "superseded",
+        "revision_cycle": 3
+      },
+      {
+        "attempt": 2,
+        "started_at": "2026-09-28T08:47:30.445504+00:00",
+        "finished_at": "2026-09-28T08:47:31.054554+00:00",
+        "duration_seconds": 0.609,
+        "execution_class": "editorial",
+        "outcome": "succeeded",
+        "revision_cycle": 3
+      }
+    ],
+    "no_copy_preflight": [
+      {
+        "attempt": 1,
+        "started_at": "2026-09-28T08:33:22.004021+00:00",
+        "finished_at": "2026-09-28T08:40:04.265908+00:00",
+        "duration_seconds": 402.262,
+        "execution_class": "editorial",
+        "outcome": "superseded",
+        "revision_cycle": 2,
+        "slo_seconds": 300,
+        "slo_exceeded": true
+      },
+      {
+        "attempt": 1,
+        "started_at": "2026-09-28T08:48:25.937413+00:00",
+        "finished_at": "2026-09-28T08:48:26.338034+00:00",
+        "duration_seconds": 0.401,
+        "execution_class": "editorial",
+        "outcome": "succeeded",
+        "revision_cycle": 3,
+        "slo_seconds": 300,
+        "slo_exceeded": false
+      }
+    ],
+    "render_opening_candidate": [
+      {
+        "attempt": 1,
+        "started_at": "2026-09-28T08:48:38.638768+00:00",
+        "finished_at": "2026-09-28T08:49:11.901641+00:00",
+        "duration_seconds": 33.263,
+        "execution_class": "external_durable",
+        "outcome": "succeeded",
+        "revision_cycle": 3,
+        "slo_seconds": 240,
+        "slo_exceeded": false
+      }
+    ],
+    "opening_review": [
+      {
+        "attempt": 1,
+        "started_at": "2026-09-28T08:54:52.674995+00:00",
+        "finished_at": "2026-09-28T08:54:52.950321+00:00",
+        "duration_seconds": 0.275,
+        "execution_class": "editorial",
+        "outcome": "failed",
+        "revision_cycle": 3,
+        "slo_seconds": 180,
+        "slo_exceeded": false
+      }
+    ],
+    "render_final_candidate": [
+      {
+        "attempt": 1,
+        "started_at": "2026-09-28T08:55:36.453233+00:00",
+        "finished_at": "2026-09-28T08:59:06.943403+00:00",
+        "duration_seconds": 210.49,
+        "execution_class": "external_durable",
+        "outcome": "failed",
+        "revision_cycle": 3,
+        "slo_seconds": 900,
+        "slo_exceeded": false,
+        "failure_reason": "The render contains a near-black dead stretch and cannot be delivered: 57.0-59.0s (YAVG 18.8). The file is left on disk for inspection. Either restore footage under that stretch or attach typography to it, then re-render."
+      }
+    ]
+  },
+  "causal_telemetry": {
+    "version": 1,
+    "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+    "run_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+    "started_at": "2026-09-28T07:00:33.839693+00:00",
+    "spans": [
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "parent_span_id": null,
+        "name": "persian_production_run",
+        "kind": "run",
+        "category": "workflow_wall",
+        "started_at": "2026-09-28T07:00:33.839693+00:00",
+        "finished_at": "2026-09-28T10:39:56.422818+00:00",
+        "outcome": "needs_decision",
+        "count_toward_wall": false
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase:prepare_inputs:1",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "prepare_inputs attempt 1",
+        "kind": "phase_attempt",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T07:00:44.304399+00:00",
+        "finished_at": "2026-09-28T07:02:55.170381+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "prepare_inputs",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "work:prepare_inputs:1:1",
+        "parent_span_id": "phase:prepare_inputs:1",
+        "name": "prepare_inputs: idea + script artifacts from approved copy",
+        "kind": "explicit_work",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T07:00:44.304399+00:00",
+        "finished_at": "2026-09-28T07:02:55.007019+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "phase": "prepare_inputs",
+        "attempt": 1,
+        "sequence": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:prepare_inputs:1:1",
+        "parent_span_id": "phase:prepare_inputs:1",
+        "name": "prepare_inputs residual work 1",
+        "kind": "phase_residual",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T07:02:55.007019+00:00",
+        "finished_at": "2026-09-28T07:02:55.170381+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "prepare_inputs",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "interphase:align_script_timing:1",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "interphase: read alignment contracts and run alignment-plan",
+        "kind": "explicit_work",
+        "category": "agent_interphase",
+        "started_at": "2026-09-28T07:03:02.610504+00:00",
+        "finished_at": "2026-09-28T07:03:13.606765+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "phase": "align_script_timing",
+        "sequence": 1,
+        "measurement_scope": "interphase",
+        "after_phase": "prepare_inputs"
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase:align_script_timing:1",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "align_script_timing attempt 1",
+        "kind": "phase_attempt",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T07:03:18.312239+00:00",
+        "finished_at": "2026-09-28T07:13:42.654122+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "align_script_timing",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "job:alignment-0f34bc86e0340d98",
+        "parent_span_id": "phase:align_script_timing:1",
+        "name": "durable job alignment-0f34bc86e0340d98",
+        "kind": "durable_job",
+        "category": "machine_local_execution",
+        "started_at": "2026-09-28T07:03:18.366154+00:00",
+        "finished_at": "2026-09-28T07:03:31.447858+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "alignment-0f34bc86e0340d98",
+        "phase": "align_script_timing",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "reconcile:alignment-0f34bc86e0340d98",
+        "parent_span_id": "phase:align_script_timing:1",
+        "name": "reconcile durable job alignment-0f34bc86e0340d98",
+        "kind": "reconciliation",
+        "category": "accounting_reconciliation",
+        "started_at": "2026-09-28T07:03:31.447858+00:00",
+        "finished_at": "2026-09-28T07:03:31.910299+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "alignment-0f34bc86e0340d98",
+        "phase": "align_script_timing",
+        "attempt": 1,
+        "lag_segment_index": 1,
+        "lag_segment_count": 1,
+        "observed_at": "2026-09-28T07:03:31.910299+00:00"
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "transition:alignment-0f34bc86e0340d98:1",
+        "parent_span_id": "phase:align_script_timing:1",
+        "name": "workflow transition alignment-0f34bc86e0340d98 attempt 1",
+        "kind": "workflow_transition",
+        "category": "accounting_reconciliation",
+        "started_at": "2026-09-28T07:03:31.910299+00:00",
+        "finished_at": "2026-09-28T07:13:42.655030+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "job_id": "alignment-0f34bc86e0340d98",
+        "phase": "align_script_timing",
+        "attempt": 1,
+        "transition_attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:align_script_timing:1:1",
+        "parent_span_id": "phase:align_script_timing:1",
+        "name": "align_script_timing residual work 1",
+        "kind": "phase_residual",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T07:03:18.312239+00:00",
+        "finished_at": "2026-09-28T07:03:18.366154+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "align_script_timing",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase:plan_scenes_moments:1",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "plan_scenes_moments attempt 1",
+        "kind": "phase_attempt",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T07:13:53.244194+00:00",
+        "finished_at": "2026-09-28T07:19:17.097755+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "plan_scenes_moments",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "work:plan_scenes_moments:1:1",
+        "parent_span_id": "phase:plan_scenes_moments:1",
+        "name": "plan_scenes_moments: scene plan, hook selection, moments",
+        "kind": "explicit_work",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T07:13:53.244194+00:00",
+        "finished_at": "2026-09-28T07:19:16.841137+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "phase": "plan_scenes_moments",
+        "attempt": 1,
+        "sequence": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:plan_scenes_moments:1:1",
+        "parent_span_id": "phase:plan_scenes_moments:1",
+        "name": "plan_scenes_moments residual work 1",
+        "kind": "phase_residual",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T07:19:16.841137+00:00",
+        "finished_at": "2026-09-28T07:19:17.097755+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "plan_scenes_moments",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase:acquire_assets:1",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "acquire_assets attempt 1",
+        "kind": "phase_attempt",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T09:09:35.620540+00:00",
+        "finished_at": "2026-09-28T09:11:11.671950+00:00",
+        "outcome": "failed",
+        "count_toward_wall": false,
+        "phase": "acquire_assets",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "job:asset-search-0-5ff5243f06b30b89-a0",
+        "parent_span_id": "phase:acquire_assets:1",
+        "name": "durable job asset-search-0-5ff5243f06b30b89-a0",
+        "kind": "durable_job",
+        "category": "provider_network_wait",
+        "started_at": "2026-09-28T07:20:07.776831+00:00",
+        "finished_at": "2026-09-28T07:21:16.142896+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "asset-search-0-5ff5243f06b30b89-a0",
+        "phase": "acquire_assets",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "reconcile:asset-search-0-5ff5243f06b30b89-a0",
+        "parent_span_id": "phase:acquire_assets:1",
+        "name": "reconcile durable job asset-search-0-5ff5243f06b30b89-a0",
+        "kind": "reconciliation",
+        "category": "accounting_reconciliation",
+        "started_at": "2026-09-28T07:21:16.142896+00:00",
+        "finished_at": "2026-09-28T07:21:46.136969+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "asset-search-0-5ff5243f06b30b89-a0",
+        "phase": "acquire_assets",
+        "attempt": 1,
+        "lag_segment_index": 1,
+        "lag_segment_count": 1,
+        "observed_at": "2026-09-28T07:21:46.136969+00:00"
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "job:asset-search-1-c779ffb5ee2db47a-a0",
+        "parent_span_id": "phase:acquire_assets:1",
+        "name": "durable job asset-search-1-c779ffb5ee2db47a-a0",
+        "kind": "durable_job",
+        "category": "provider_network_wait",
+        "started_at": "2026-09-28T07:30:05.931326+00:00",
+        "finished_at": "2026-09-28T07:30:53.193045+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "asset-search-1-c779ffb5ee2db47a-a0",
+        "phase": "acquire_assets",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "reconcile:asset-search-1-c779ffb5ee2db47a-a0",
+        "parent_span_id": "phase:acquire_assets:1",
+        "name": "reconcile durable job asset-search-1-c779ffb5ee2db47a-a0",
+        "kind": "reconciliation",
+        "category": "accounting_reconciliation",
+        "started_at": "2026-09-28T07:30:53.193045+00:00",
+        "finished_at": "2026-09-28T07:31:50.334546+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "asset-search-1-c779ffb5ee2db47a-a0",
+        "phase": "acquire_assets",
+        "attempt": 1,
+        "lag_segment_index": 1,
+        "lag_segment_count": 1,
+        "observed_at": "2026-09-28T07:31:50.334546+00:00"
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:acquire_assets:1:1",
+        "parent_span_id": "phase:acquire_assets:1",
+        "name": "acquire_assets residual work 1",
+        "kind": "phase_residual",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T07:20:07.725495+00:00",
+        "finished_at": "2026-09-28T07:20:07.776831+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "acquire_assets",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:acquire_assets:1:2",
+        "parent_span_id": "phase:acquire_assets:1",
+        "name": "acquire_assets residual work 2",
+        "kind": "phase_residual",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T07:21:46.136969+00:00",
+        "finished_at": "2026-09-28T07:30:05.931326+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "acquire_assets",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:acquire_assets:1:3",
+        "parent_span_id": "phase:acquire_assets:1",
+        "name": "acquire_assets residual work 3",
+        "kind": "phase_residual",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T07:31:50.334546+00:00",
+        "finished_at": "2026-09-28T07:34:57.323816+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "acquire_assets",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase:review_subject_regions:1",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "review_subject_regions attempt 1",
+        "kind": "phase_attempt",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:47:30.290657+00:00",
+        "finished_at": "2026-09-28T08:47:30.445504+00:00",
+        "outcome": "superseded",
+        "count_toward_wall": false,
+        "phase": "review_subject_regions",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:review_subject_regions:1:1",
+        "parent_span_id": "phase:review_subject_regions:1",
+        "name": "review_subject_regions residual work 1",
+        "kind": "phase_residual",
+        "category": "review_evidence_assembly",
+        "started_at": "2026-09-28T07:41:09.934249+00:00",
+        "finished_at": "2026-09-28T07:41:10.091162+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "review_subject_regions",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase:review_subject_regions:2",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "review_subject_regions attempt 2",
+        "kind": "phase_attempt",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:47:30.445504+00:00",
+        "finished_at": "2026-09-28T08:47:31.054554+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "review_subject_regions",
+        "attempt": 2
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:review_subject_regions:2:1",
+        "parent_span_id": "phase:review_subject_regions:2",
+        "name": "review_subject_regions residual work 1",
+        "kind": "phase_residual",
+        "category": "review_evidence_assembly",
+        "started_at": "2026-09-28T07:41:55.566718+00:00",
+        "finished_at": "2026-09-28T07:41:55.884712+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "review_subject_regions",
+        "attempt": 2
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "human-idle:1",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "human idle 1",
+        "kind": "human_idle",
+        "category": "human_idle",
+        "started_at": "2026-09-28T07:46:44.061050+00:00",
+        "finished_at": "2026-09-28T07:46:57.158767+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "reason": "budget decision: continue_with_extension"
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "human-idle:2",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "human idle 2",
+        "kind": "human_idle",
+        "category": "human_idle",
+        "started_at": "2026-09-28T07:49:11.381117+00:00",
+        "finished_at": "2026-09-28T08:14:52.285266+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "reason": "User approved the ev-1 opening-hook field fix"
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "human-idle:3",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "human idle 3",
+        "kind": "human_idle",
+        "category": "human_idle",
+        "started_at": "2026-09-28T08:20:06.681349+00:00",
+        "finished_at": "2026-09-28T08:29:01.486954+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "reason": "User: re-source shot-4 (crowd) only; keep all 8 moments"
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase:acquire_assets:2",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "acquire_assets attempt 2",
+        "kind": "phase_attempt",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T09:11:39.640945+00:00",
+        "finished_at": null,
+        "outcome": "running",
+        "count_toward_wall": false,
+        "phase": "acquire_assets",
+        "attempt": 2
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "job:asset-search-0-1a7ac506d2433f06-a0",
+        "parent_span_id": "phase:acquire_assets:2",
+        "name": "durable job asset-search-0-1a7ac506d2433f06-a0",
+        "kind": "durable_job",
+        "category": "provider_network_wait",
+        "started_at": "2026-09-28T08:29:29.987906+00:00",
+        "finished_at": "2026-09-28T08:29:30.999935+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "asset-search-0-1a7ac506d2433f06-a0",
+        "phase": "acquire_assets",
+        "attempt": 2
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "reconcile:asset-search-0-1a7ac506d2433f06-a0",
+        "parent_span_id": "phase:acquire_assets:2",
+        "name": "reconcile durable job asset-search-0-1a7ac506d2433f06-a0",
+        "kind": "reconciliation",
+        "category": "accounting_reconciliation",
+        "started_at": "2026-09-28T08:29:30.999935+00:00",
+        "finished_at": "2026-09-28T08:30:50.816831+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "asset-search-0-1a7ac506d2433f06-a0",
+        "phase": "acquire_assets",
+        "attempt": 2,
+        "lag_segment_index": 1,
+        "lag_segment_count": 1,
+        "observed_at": "2026-09-28T08:30:50.816831+00:00"
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase:acquire_assets:3",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "acquire_assets attempt 3",
+        "kind": "phase_attempt",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:32:51.495859+00:00",
+        "finished_at": "2026-09-28T08:32:51.784810+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "acquire_assets",
+        "attempt": 3
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:acquire_assets:2:1",
+        "parent_span_id": "phase:acquire_assets:2",
+        "name": "acquire_assets residual work 1",
+        "kind": "phase_residual",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:29:29.928477+00:00",
+        "finished_at": "2026-09-28T08:29:29.987906+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "acquire_assets",
+        "attempt": 2
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:acquire_assets:2:2",
+        "parent_span_id": "phase:acquire_assets:2",
+        "name": "acquire_assets residual work 2",
+        "kind": "phase_residual",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:30:50.816831+00:00",
+        "finished_at": "2026-09-28T08:32:51.495859+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "acquire_assets",
+        "attempt": 2
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:acquire_assets:3:1",
+        "parent_span_id": "phase:acquire_assets:3",
+        "name": "acquire_assets residual work 1",
+        "kind": "phase_residual",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:32:51.495859+00:00",
+        "finished_at": "2026-09-28T08:32:51.784810+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "acquire_assets",
+        "attempt": 3
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase:review_subject_regions:3",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "review_subject_regions attempt 3",
+        "kind": "phase_attempt",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:33:04.330251+00:00",
+        "finished_at": "2026-09-28T08:33:04.486731+00:00",
+        "outcome": "superseded",
+        "count_toward_wall": false,
+        "phase": "review_subject_regions",
+        "attempt": 3
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase:review_subject_regions:4",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "review_subject_regions attempt 4",
+        "kind": "phase_attempt",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:33:04.486731+00:00",
+        "finished_at": "2026-09-28T08:33:07.004807+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "review_subject_regions",
+        "attempt": 4
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:review_subject_regions:3:1",
+        "parent_span_id": "phase:review_subject_regions:3",
+        "name": "review_subject_regions residual work 1",
+        "kind": "phase_residual",
+        "category": "review_evidence_assembly",
+        "started_at": "2026-09-28T08:33:04.330251+00:00",
+        "finished_at": "2026-09-28T08:33:04.486731+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "review_subject_regions",
+        "attempt": 3
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:review_subject_regions:4:1",
+        "parent_span_id": "phase:review_subject_regions:4",
+        "name": "review_subject_regions residual work 1",
+        "kind": "phase_residual",
+        "category": "review_evidence_assembly",
+        "started_at": "2026-09-28T08:33:04.486731+00:00",
+        "finished_at": "2026-09-28T08:33:07.004807+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "review_subject_regions",
+        "attempt": 4
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase:no_copy_preflight:1",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "no_copy_preflight attempt 1",
+        "kind": "phase_attempt",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:48:25.937413+00:00",
+        "finished_at": "2026-09-28T08:48:26.338034+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "no_copy_preflight",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:no_copy_preflight:1:1",
+        "parent_span_id": "phase:no_copy_preflight:1",
+        "name": "no_copy_preflight residual work 1",
+        "kind": "phase_residual",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:33:22.004021+00:00",
+        "finished_at": "2026-09-28T08:40:04.265908+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "no_copy_preflight",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase:acquire_assets:4",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "acquire_assets attempt 4",
+        "kind": "phase_attempt",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:46:06.142936+00:00",
+        "finished_at": "2026-09-28T08:46:06.404978+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "acquire_assets",
+        "attempt": 4
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:acquire_assets:4:1",
+        "parent_span_id": "phase:acquire_assets:4",
+        "name": "acquire_assets residual work 1",
+        "kind": "phase_residual",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:46:06.142936+00:00",
+        "finished_at": "2026-09-28T08:46:06.404978+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "acquire_assets",
+        "attempt": 4
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase:render_opening_candidate:1",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "render_opening_candidate attempt 1",
+        "kind": "phase_attempt",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:48:38.638768+00:00",
+        "finished_at": "2026-09-28T08:49:11.901641+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "render_opening_candidate",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "job:opening-1",
+        "parent_span_id": "phase:render_opening_candidate:1",
+        "name": "durable job opening-1",
+        "kind": "durable_job",
+        "category": "browser_render_execution",
+        "started_at": "2026-09-28T08:48:38.686034+00:00",
+        "finished_at": "2026-09-28T08:49:11.862918+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "opening-1",
+        "phase": "render_opening_candidate",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "reconcile:opening-1",
+        "parent_span_id": "phase:render_opening_candidate:1",
+        "name": "reconcile durable job opening-1",
+        "kind": "reconciliation",
+        "category": "accounting_reconciliation",
+        "started_at": "2026-09-28T08:49:11.862918+00:00",
+        "finished_at": "2026-09-28T08:49:11.887570+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "opening-1",
+        "phase": "render_opening_candidate",
+        "attempt": 1,
+        "lag_segment_index": 1,
+        "lag_segment_count": 1,
+        "observed_at": "2026-09-28T08:49:11.887570+00:00"
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "transition:opening-1:1",
+        "parent_span_id": "phase:render_opening_candidate:1",
+        "name": "workflow transition opening-1 attempt 1",
+        "kind": "workflow_transition",
+        "category": "accounting_reconciliation",
+        "started_at": "2026-09-28T08:49:11.887570+00:00",
+        "finished_at": "2026-09-28T08:49:11.905329+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "job_id": "opening-1",
+        "phase": "render_opening_candidate",
+        "attempt": 1,
+        "transition_attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:render_opening_candidate:1:1",
+        "parent_span_id": "phase:render_opening_candidate:1",
+        "name": "render_opening_candidate residual work 1",
+        "kind": "phase_residual",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:48:38.638768+00:00",
+        "finished_at": "2026-09-28T08:48:38.686034+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "render_opening_candidate",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase:opening_review:1",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "opening_review attempt 1",
+        "kind": "phase_attempt",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:54:52.674995+00:00",
+        "finished_at": "2026-09-28T08:54:52.950321+00:00",
+        "outcome": "failed",
+        "count_toward_wall": false,
+        "phase": "opening_review",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:opening_review:1:1",
+        "parent_span_id": "phase:opening_review:1",
+        "name": "opening_review residual work 1",
+        "kind": "phase_residual",
+        "category": "review_evidence_assembly",
+        "started_at": "2026-09-28T08:54:52.674995+00:00",
+        "finished_at": "2026-09-28T08:54:52.950321+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "opening_review",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase:render_final_candidate:1",
+        "parent_span_id": "run:215feeb451ca4979b1fdf71b01fe74cc",
+        "name": "render_final_candidate attempt 1",
+        "kind": "phase_attempt",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:55:36.453233+00:00",
+        "finished_at": "2026-09-28T08:59:06.943403+00:00",
+        "outcome": "failed",
+        "count_toward_wall": false,
+        "phase": "render_final_candidate",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "job:final-1",
+        "parent_span_id": "phase:render_final_candidate:1",
+        "name": "durable job final-1",
+        "kind": "durable_job",
+        "category": "browser_render_execution",
+        "started_at": "2026-09-28T08:55:36.500957+00:00",
+        "finished_at": "2026-09-28T08:59:06.742492+00:00",
+        "outcome": "failed",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "final-1",
+        "phase": "render_final_candidate",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "reconcile:final-1",
+        "parent_span_id": "phase:render_final_candidate:1",
+        "name": "reconcile durable job final-1",
+        "kind": "reconciliation",
+        "category": "accounting_reconciliation",
+        "started_at": "2026-09-28T08:59:06.742492+00:00",
+        "finished_at": "2026-09-28T08:59:06.935736+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "final-1",
+        "phase": "render_final_candidate",
+        "attempt": 1,
+        "lag_segment_index": 1,
+        "lag_segment_count": 1,
+        "observed_at": "2026-09-28T08:59:06.935736+00:00"
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:render_final_candidate:1:1",
+        "parent_span_id": "phase:render_final_candidate:1",
+        "name": "render_final_candidate residual work 1",
+        "kind": "phase_residual",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:55:36.453233+00:00",
+        "finished_at": "2026-09-28T08:55:36.500957+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "render_final_candidate",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "phase-work:render_final_candidate:1:2",
+        "parent_span_id": "phase:render_final_candidate:1",
+        "name": "render_final_candidate residual work 2",
+        "kind": "phase_residual",
+        "category": "agent_editorial_work",
+        "started_at": "2026-09-28T08:59:06.935736+00:00",
+        "finished_at": "2026-09-28T08:59:06.943403+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": false,
+        "phase": "render_final_candidate",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "job:asset-search-0-859e0db4b2bc0633-a0",
+        "parent_span_id": "phase:acquire_assets:1",
+        "name": "durable job asset-search-0-859e0db4b2bc0633-a0",
+        "kind": "durable_job",
+        "category": "provider_network_wait",
+        "started_at": "2026-09-28T09:09:35.683253+00:00",
+        "finished_at": "2026-09-28T09:09:36.705403+00:00",
+        "outcome": "failed",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "asset-search-0-859e0db4b2bc0633-a0",
+        "phase": "acquire_assets",
+        "attempt": 1
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "reconcile:asset-search-0-859e0db4b2bc0633-a0",
+        "parent_span_id": "phase:acquire_assets:1",
+        "name": "reconcile durable job asset-search-0-859e0db4b2bc0633-a0",
+        "kind": "reconciliation",
+        "category": "accounting_reconciliation",
+        "started_at": "2026-09-28T09:09:36.705403+00:00",
+        "finished_at": "2026-09-28T09:11:11.669156+00:00",
+        "outcome": "succeeded",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "asset-search-0-859e0db4b2bc0633-a0",
+        "phase": "acquire_assets",
+        "attempt": 1,
+        "lag_segment_index": 1,
+        "lag_segment_count": 1,
+        "observed_at": "2026-09-28T09:11:11.669156+00:00"
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "job:asset-search-0-48af1cbcf1e07d23-a0",
+        "parent_span_id": "phase:acquire_assets:2",
+        "name": "durable job asset-search-0-48af1cbcf1e07d23-a0",
+        "kind": "durable_job",
+        "category": "provider_network_wait",
+        "started_at": "2026-09-28T09:11:39.649340+00:00",
+        "finished_at": null,
+        "outcome": "running",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "asset-search-0-48af1cbcf1e07d23-a0",
+        "phase": "acquire_assets",
+        "attempt": 2
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "job:asset-search-0-48af1cbcf1e07d23-a1",
+        "parent_span_id": "phase:acquire_assets:2",
+        "name": "durable job asset-search-0-48af1cbcf1e07d23-a1",
+        "kind": "durable_job",
+        "category": "provider_network_wait",
+        "started_at": "2026-09-28T09:13:23.433323+00:00",
+        "finished_at": null,
+        "outcome": "running",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "asset-search-0-48af1cbcf1e07d23-a1",
+        "phase": "acquire_assets",
+        "attempt": 2
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "job:asset-search-0-7d2f1481c1baf7e0-a0",
+        "parent_span_id": "phase:acquire_assets:2",
+        "name": "durable job asset-search-0-7d2f1481c1baf7e0-a0",
+        "kind": "durable_job",
+        "category": "provider_network_wait",
+        "started_at": "2026-09-28T09:14:52.839505+00:00",
+        "finished_at": null,
+        "outcome": "running",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "asset-search-0-7d2f1481c1baf7e0-a0",
+        "phase": "acquire_assets",
+        "attempt": 2
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "job:asset-search-1-7d2f1481c1baf7e0-a0",
+        "parent_span_id": "phase:acquire_assets:2",
+        "name": "durable job asset-search-1-7d2f1481c1baf7e0-a0",
+        "kind": "durable_job",
+        "category": "provider_network_wait",
+        "started_at": "2026-09-28T09:17:07.077941+00:00",
+        "finished_at": null,
+        "outcome": "running",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "asset-search-1-7d2f1481c1baf7e0-a0",
+        "phase": "acquire_assets",
+        "attempt": 2
+      },
+      {
+        "trace_id": "215feeb451ca4979b1fdf71b01fe74cc",
+        "span_id": "job:asset-search-0-7d2f1481c1baf7e0-a2",
+        "parent_span_id": "phase:acquire_assets:2",
+        "name": "durable job asset-search-0-7d2f1481c1baf7e0-a2",
+        "kind": "durable_job",
+        "category": "provider_network_wait",
+        "started_at": "2026-09-28T09:19:05.934668+00:00",
+        "finished_at": null,
+        "outcome": "running",
+        "count_toward_wall": true,
+        "concurrency_group": "durable_jobs",
+        "job_id": "asset-search-0-7d2f1481c1baf7e0-a2",
+        "phase": "acquire_assets",
+        "attempt": 2
+      }
+    ]
+  },
+  "execution_metadata": {
+    "code_revision": "f418063135d51c106aacc80dcd53659129a0ac08",
+    "runtime": {
+      "python_version": "3.10.13",
+      "python_implementation": "CPython",
+      "node_version": "v22.23.1",
+      "remotion_version": "^4.0.484",
+      "ffmpeg_version": "ffmpeg version 8.1.1 Copyright (c) 2000-2026 the FFmpeg developers",
+      "platform": "macOS-27.0-arm64-arm-64bit"
+    },
+    "hardware": {
+      "system": "Darwin",
+      "release": "27.0.0",
+      "machine": "arm64",
+      "logical_cpu_count": 8
+    },
+    "cache": {
+      "classification": "cold",
+      "project_preflight_entries": 0,
+      "project_search_entries": 0,
+      "shared_clip_entries": 0
+    },
+    "ad_hoc_script_count": 0
+  },
+  "performance_slo": {
+    "phaseSeconds": {
+      "align_script_timing": 480,
+      "plan_scenes_moments": 300,
+      "acquire_assets": 600,
+      "no_copy_preflight": 300,
+      "render_opening_candidate": 240,
+      "opening_review": 180,
+      "render_final_candidate": 900,
+      "master_final_candidate": 300,
+      "final_review": 180
+    },
+    "endToEndSeconds": 2700,
+    "policy": "engineering-target-not-correctness-shortcut"
+  },
+  "alignment_policy": {
+    "mode": "timing_oriented",
+    "scriptAuthority": "approved_script",
+    "primaryModelClass": "smallest_adequate_word_timing",
+    "heavyTranscriptionRecoveryOnly": true
+  },
+  "projects_root": "/Users/operator/OpenMontage/projects",
+  "read_allowlist": {
+    "project_root": "/Users/operator/OpenMontage/projects/first-date-message-timing",
+    "source_paths": [],
+    "repo_paths": [
+      "/Users/operator/OpenMontage/skills/persian-video",
+      "/Users/operator/OpenMontage/skills/pipelines/persian-footage",
+      "/Users/operator/OpenMontage/skills/meta/checkpoint-protocol.md",
+      "/Users/operator/OpenMontage/skills/meta/reviewer.md",
+      "/Users/operator/OpenMontage/pipeline_defs/persian-footage.yaml",
+      "/Users/operator/OpenMontage/styles/persian-footage",
+      "/Users/operator/OpenMontage/docs/reference/persian-hooks",
+      "/Users/operator/OpenMontage/skills/pipelines/persian-footage/film-type.md",
+      "/Users/operator/OpenMontage/docs/persian-film-type-2.16-patch.md",
+      "/Users/operator/OpenMontage/docs/film-type-visual-regression.md",
+      "/Users/operator/OpenMontage/.agents/skills/music",
+      "/Users/operator/OpenMontage/.agents/skills/speech-to-text",
+      "/Users/operator/OpenMontage/.agents/skills/ffmpeg",
+      "/Users/operator/OpenMontage/.agents/skills/video-toolkit"
+    ]
+  },
+  "evidence": {
+    "prepare_inputs": {
+      "authoritative_script_sha256": "c7a0aa502126ce247639a861b729f480d4f190c020f20a6ffe0b8fd9d4b0ae94",
+      "narration_sha256": "1eaec85dad2de226885fe77fe9143e1f91f00bfbe3f8bd4f36e65ae900ccc08e",
+      "input_mode": "approved_script_with_narration",
+      "script_authority": "approved_script"
+    },
+    "align_script_timing": {
+      "script_word_timings_ref": "artifacts/script-word-timings.json",
+      "script_word_timings_sha256": "50b25ae49675edece8e6640f3f8e57db44423a223b61297a0ea8d605d22a9326",
+      "provider_decision": {
+        "attempts": [
+          {
+            "durationSeconds": 10.45,
+            "invoked": true,
+            "model": "base",
+            "profile": "lightweight",
+            "provider": "whisperx",
+            "semanticSuccess": true,
+            "tool": "transcriber"
+          }
+        ],
+        "candidates": [
+          {
+            "availability": "available",
+            "capabilities": [
+              "transcribe",
+              "word_timestamps",
+              "diarization",
+              "language_detection"
+            ],
+            "fit": true,
+            "fitClass": "local_word_timing",
+            "heavyArgs": {
+              "model_size": "large-v3"
+            },
+            "lightweightArgs": {
+              "model_size": "base"
+            },
+            "provider": "whisperx",
+            "rejectionReasons": [],
+            "requiredCapability": "word_timestamps",
+            "runtime": "local",
+            "supportsInputPath": true,
+            "tool": "transcriber"
+          },
+          {
+            "availability": "available",
+            "capabilities": [
+              "transcribe",
+              "word_timestamps",
+              "language_detection"
+            ],
+            "fit": true,
+            "fitClass": "apple_silicon_word_timing",
+            "heavyArgs": {
+              "model": "mlx-community/whisper-large-v3-mlx"
+            },
+            "lightweightArgs": {
+              "model": "mlx-community/whisper-small-mlx"
+            },
+            "provider": "mlx_whisper",
+            "rejectionReasons": [],
+            "requiredCapability": "word_timestamps",
+            "runtime": "local",
+            "supportsInputPath": true,
+            "tool": "mlx_whisper_transcriber"
+          },
+          {
+            "availability": "unavailable",
+            "capabilities": [
+              "transcribe",
+              "word_timestamps",
+              "diarization",
+              "language_detection"
+            ],
+            "fit": false,
+            "fitClass": "cloud_word_timing",
+            "heavyArgs": null,
+            "lightweightArgs": {},
+            "provider": "azure",
+            "rejectionReasons": [
+              "provider_unavailable"
+            ],
+            "requiredCapability": "word_timestamps",
+            "runtime": "api",
+            "supportsInputPath": true,
+            "tool": "azure_stt"
+          }
+        ],
+        "capability": "word_timestamps",
+        "executionDurationSeconds": 10.45,
+        "fallbackHistory": [],
+        "fallbackReason": null,
+        "heavyRecoveryAllowed": true,
+        "heavyRecoveryUsed": false,
+        "mode": "timing_oriented",
+        "primaryProfile": "lightweight",
+        "recoveryReason": null,
+        "scriptAuthority": "approved_script",
+        "selectedModel": "base",
+        "selectedProvider": "whisperx",
+        "selectedTool": "transcriber",
+        "selectionPolicy": "first_available_policy_valid_provider",
+        "semanticOutcome": "succeeded",
+        "version": "1.0"
+      },
+      "word_timing_count": 147,
+      "alignment_mode": "timing_oriented",
+      "provider": "whisperx",
+      "provider_tool": "transcriber",
+      "model": "base",
+      "heavy_recovery_used": false,
+      "alignment_result_path": "/Users/operator/OpenMontage/projects/first-date-message-timing/artifacts/alignment/alignment-result-0f34bc86e0340d98e95f9489ccc9e525201a25a9e76901b8d7e9caf5f88af831.json",
+      "alignment_result_sha256": "a30594a6fad592fd3a27ddcd1460be62200a6c7982d0fb48bad04bc9ca3c40d8",
+      "provider_plan_sha256": "0f34bc86e0340d98e95f9489ccc9e525201a25a9e76901b8d7e9caf5f88af831",
+      "provider_plan_path": "/Users/operator/OpenMontage/projects/first-date-message-timing/artifacts/alignment/provider-plan-0f34bc86e0340d98e95f9489ccc9e525201a25a9e76901b8d7e9caf5f88af831.json",
+      "provider_execution_seconds": 10.45,
+      "provider_fallback_reason": null
+    },
+    "plan_scenes_moments": {
+      "sourcing_order": [
+        "ev-1",
+        "ev-2",
+        "ev-6",
+        "ev-8",
+        "ev-11",
+        "ev-12",
+        "ev-13",
+        "ev-3",
+        "ev-4",
+        "ev-5",
+        "ev-7",
+        "ev-9",
+        "ev-10"
+      ],
+      "hook_viewer_value": {
+        "anchorText": "بعد از یه قرار خوب، گوشی دستت باشه",
+        "atSeconds": 0.597,
+        "blockSeconds": 3.0,
+        "evidence": "The opening clause names the exact lived situation the viewer is in — a good first date, phone in hand — so relevance lands before the question is finished."
+      },
+      "hook_semantic_tension": {
+        "anchorText": "الان پیام بدی یا صبر کنی؟",
+        "atSeconds": 3.392,
+        "blockSeconds": 4.0,
+        "evidence": "The question states the two competing behaviours as an unanswered choice, which is the question the whole video answers."
+      },
+      "hook_first_proof": {
+        "kind": "result",
+        "anchorText": "بیشترین تمایل به ادامه رابطه",
+        "atSeconds": 25.94,
+        "blockSeconds": 6.0,
+        "authoritative": true,
+        "evidence": "The study's actual answer — most willingness to continue when the message arrived the next morning. Recorded at its true time (25.9s), not moved earlier: the user owns this hook, so the late-proof ceiling is an advisory pending rendered review rather than a licence to restate the finding sooner than the approved narration does."
+      },
+      "durationBinding": {
+        "policyVersion": "1.0",
+        "scenePlanEndSeconds": 62.48,
+        "narrationDurationSeconds": 62.48,
+        "deltaSeconds": 0.0,
+        "frameToleranceSeconds": 0.033333,
+        "withinFrameTolerance": true
+      }
+    }
+  },
+  "backlot": {
+    "attempted": true,
+    "exit_code": 0
+  },
+  "hook_selection_history": [
+    {
+      "revision_cycle": 0,
+      "superseded_at": "2026-09-28T07:16:49.633997+00:00",
+      "reason": "کاربر در تصمیم قلاب (plan_scenes_moments) صریحاً انتخاب کرد که جملهٔ اول نریشن به‌عنوان قلاب او ثبت شود، چون اثبات اول در این محتوا دیرتر از سقف ۶ ثانیه گفته می‌شود.",
+      "decision": {
+        "version": "1.0",
+        "mode": "automatic",
+        "authoritative": false,
+        "may_be_replaced_automatically": true,
+        "selection_policy": "retention-first-v1",
+        "corpus": [
+          "docs/reference/persian-hooks/hookbook.md",
+          "docs/reference/persian-hooks/hook-library-fa.md",
+          "docs/reference/persian-hooks/hook-selector-helper.md"
+        ],
+        "status": "selection_required"
+      }
+    }
+  ],
+  "asset_usage": {
+    "completed_passes": [],
+    "candidates_considered": 25,
+    "semantic_candidates_reviewed": 23,
+    "technical_rejects": 2,
+    "duplicate_technical_rejects": 0,
+    "search_cache_hits": 1,
+    "search_cache_misses": 22,
+    "search_timeout_seconds": 180,
+    "search_cache_ttl_seconds": 21600,
+    "bytes_downloaded": 192379454,
+    "workspace_discovery_candidates": 21,
+    "workspace_discovery_passes": 3,
+    "acquisition_cycle": 3,
+    "released_passes": [
+      {
+        "retryPass": 0,
+        "reason": "asset discovery pass identity is immutable; use the next retry pass"
+      },
+      {
+        "retryPass": 0,
+        "reason": "asset discovery pass identity is immutable; use the next retry pass"
+      },
+      {
+        "retryPass": 0,
+        "reason": "asset discovery pass identity is immutable; use the next retry pass"
+      },
+      {
+        "retryPass": 0,
+        "reason": "asset discovery pass identity is immutable; use the next retry pass"
+      }
+    ]
+  },
+  "plan_reconciliations": [],
+  "send_back_history": [
+    {
+      "target_phase": "plan_scenes_moments",
+      "reason": "Footage review found three events whose selected clip fills every serviceable type band: ev-1 (opening hook carrier), ev-8 and ev-13. A hand-held phone at close range occupies the declared band and both columns, so no Persian moment can be placed. The plan asked for close-ups where the hook needs a wide shot with a plain wall or surface carrying the type.",
+      "archived_checkpoints": [
+        "/Users/operator/OpenMontage/projects/first-date-message-timing/history/checkpoint_scene_plan_reconciled_20260928T073457.324035Z.json"
+      ]
+    },
+    {
+      "target_phase": "no_copy_preflight",
+      "reason": "User approved the ev-1 opening-hook field fix",
+      "archived_checkpoints": [],
+      "user_directed_revision": true,
+      "prior_send_backs": 1,
+      "prior_attempts": {
+        "prepare_inputs": 1,
+        "align_script_timing": 1,
+        "plan_scenes_moments": 1,
+        "acquire_assets": 1,
+        "review_subject_regions": 2
+      }
+    },
+    {
+      "target_phase": "no_copy_preflight",
+      "reason": "User: re-source shot-4 (crowd) only; keep all 8 moments",
+      "archived_checkpoints": [],
+      "user_directed_revision": true,
+      "prior_send_backs": 0,
+      "prior_attempts": {
+        "prepare_inputs": 1,
+        "align_script_timing": 1,
+        "plan_scenes_moments": 1,
+        "acquire_assets": 1,
+        "review_subject_regions": 2
+      }
+    },
+    {
+      "target_phase": "acquire_assets",
+      "reason": "shot-4 crowd crosses the upper band in every window",
+      "archived_checkpoints": [
+        "/Users/operator/OpenMontage/projects/first-date-message-timing/history/checkpoint_assets_reconciled_20260928T082913.222798Z.json"
+      ],
+      "diagnostic_code": "ASSET_SELECTION_HARD_REGION_COLLISION",
+      "reason_code": "EXISTING_ASSET_OPTIONS_EXHAUSTED_FOR_SCOPED_SHOTS",
+      "shot_ids": [
+        "shot-4"
+      ],
+      "visual_event_ids": [
+        "ev-4"
+      ]
+    },
+    {
+      "target_phase": "acquire_assets",
+      "reason": "User re-sources ev-4 and re-selects before the edit stage",
+      "archived_checkpoints": [
+        "/Users/operator/OpenMontage/projects/first-date-message-timing/history/checkpoint_assets_reconciled_20260928T084004.292321Z.json"
+      ],
+      "diagnostic_code": "ASSET_SELECTION_HARD_REGION_COLLISION",
+      "reason_code": "EXISTING_ASSET_OPTIONS_EXHAUSTED_FOR_SCOPED_SHOTS",
+      "shot_ids": [
+        "shot-4"
+      ],
+      "visual_event_ids": [
+        "ev-4"
+      ]
+    },
+    {
+      "target_phase": "review_subject_regions",
+      "reason": "User approved dropping moment-3; no reachable footage carries it",
+      "archived_checkpoints": [],
+      "user_directed_revision": true,
+      "prior_send_backs": 2,
+      "prior_attempts": {
+        "prepare_inputs": 1,
+        "align_script_timing": 1,
+        "plan_scenes_moments": 1,
+        "acquire_assets": 4,
+        "review_subject_regions": 4,
+        "no_copy_preflight": 1
+      }
+    },
+    {
+      "target_phase": "acquire_assets",
+      "reason": "User: re-source shot-13 only with a brighter night shot; render fails the luminance gate at 57.0-59.0s",
+      "archived_checkpoints": [
+        "/Users/operator/OpenMontage/projects/first-date-message-timing/history/checkpoint_assets_reconciled_20260928T090920.292469Z.json",
+        "/Users/operator/OpenMontage/projects/first-date-message-timing/history/checkpoint_edit_reconciled_20260928T090920.293317Z.json"
+      ],
+      "user_directed_revision": true,
+      "prior_send_backs": 0,
+      "prior_attempts": {
+        "prepare_inputs": 1,
+        "align_script_timing": 1,
+        "plan_scenes_moments": 1,
+        "acquire_assets": 4,
+        "review_subject_regions": 2,
+        "no_copy_preflight": 1,
+        "render_opening_candidate": 1,
+        "opening_review": 1,
+        "render_final_candidate": 1
+      }
+    }
+  ],
+  "budget_decisions": [
+    {
+      "decision": "continue_with_extension",
+      "reason": "wall_budget_exceeded",
+      "observed_seconds": 2770.221,
+      "threshold_seconds": 2700,
+      "phase": "no_copy_preflight",
+      "decided_at": "2026-09-28T07:46:57.158767+00:00",
+      "extension_minutes": 90
+    }
+  ],
+  "revision_cycle_archive": [
+    {
+      "revision_cycle": 0,
+      "closed_at": "2026-09-28T08:14:52.285266+00:00",
+      "send_backs": 1,
+      "plan_reconciliations": [
+        {
+          "at": "2026-09-28T07:29:16.527443+00:00",
+          "reason": "Frame review of the selected clips measured every hard region against the declared band: ev-6, ev-12 and ev-13 keep the upper band clear (plain wall / plain dark background) while the subject occupies the centre, so the moment belongs in the upper band. The plan declared centre_band before any footage existed.",
+          "phase": "acquire_assets",
+          "event_ids": [
+            "ev-6",
+            "ev-12",
+            "ev-13"
+          ],
+          "outcome": "plan_reconciled",
+          "archived_checkpoints": []
+        },
+        {
+          "at": "2026-09-28T07:36:02.445159+00:00",
+          "reason": "Measured against the clips actually on disk: ev-8's retry clip places the phone's top edge on the upper-band boundary, so its moment moves to ev-9, whose subject sits entirely below 0.4 of the frame. ev-10's clip is a lone phone on a plain table under a plain tiled wall, so the moment belongs in the upper band rather than the centre the phone occupies.",
+          "phase": "acquire_assets",
+          "event_ids": [
+            "ev-8",
+            "ev-9",
+            "ev-10"
+          ],
+          "outcome": "plan_reconciled",
+          "archived_checkpoints": []
+        },
+        {
+          "at": "2026-09-28T07:41:30.051928+00:00",
+          "reason": "Reviewed geometry: ev-12's subject head sits inside the upper third, so its declared band is genuinely occupied and no serviceable alternative exists. The moment moves to ev-11, whose two figures sit below four tenths of the frame with a plain wall above; its annotation is corrected to match the face box already recorded there.",
+          "phase": "review_subject_regions",
+          "event_ids": [
+            "ev-12",
+            "ev-11"
+          ],
+          "outcome": "plan_reconciled_rebuild_manifest",
+          "archived_checkpoints": [
+            "/Users/operator/OpenMontage/projects/first-date-message-timing/history/checkpoint_assets_reconciled_20260928T074130.237965Z.json"
+          ]
+        }
+      ],
+      "recovery_attempts": {},
+      "attempts": {
+        "prepare_inputs": 1,
+        "align_script_timing": 1,
+        "plan_scenes_moments": 1,
+        "acquire_assets": 1,
+        "review_subject_regions": 2
+      }
+    },
+    {
+      "revision_cycle": 1,
+      "closed_at": "2026-09-28T08:29:01.486954+00:00",
+      "send_backs": 0,
+      "plan_reconciliations": [],
+      "recovery_attempts": {},
+      "attempts": {
+        "prepare_inputs": 1,
+        "align_script_timing": 1,
+        "plan_scenes_moments": 1,
+        "acquire_assets": 1,
+        "review_subject_regions": 2
+      }
+    },
+    {
+      "revision_cycle": 2,
+      "closed_at": "2026-09-28T08:47:20.221341+00:00",
+      "send_backs": 2,
+      "plan_reconciliations": [],
+      "recovery_attempts": {},
+      "attempts": {
+        "prepare_inputs": 1,
+        "align_script_timing": 1,
+        "plan_scenes_moments": 1,
+        "acquire_assets": 4,
+        "review_subject_regions": 4,
+        "no_copy_preflight": 1
+      }
+    },
+    {
+      "revision_cycle": 3,
+      "closed_at": "2026-09-28T09:09:20.292357+00:00",
+      "send_backs": 0,
+      "plan_reconciliations": [],
+      "recovery_attempts": {},
+      "attempts": {
+        "prepare_inputs": 1,
+        "align_script_timing": 1,
+        "plan_scenes_moments": 1,
+        "acquire_assets": 4,
+        "review_subject_regions": 2,
+        "no_copy_preflight": 1,
+        "render_opening_candidate": 1,
+        "opening_review": 1,
+        "render_final_candidate": 1
+      }
+    }
+  ],
+  "user_revision_cycles": 4,
+  "phase_failures": [
+    {
+      "phase": "render_final_candidate",
+      "attempt": 1,
+      "reason": "The render contains a near-black dead stretch and cannot be delivered: 57.0-59.0s (YAVG 18.8). The file is left on disk for inspection. Either restore footage under that stretch or attach typography to it, then re-render.",
+      "finished_at": "2026-09-28T08:59:06.943403+00:00"
+    },
+    {
+      "phase": "acquire_assets",
+      "attempt": 1,
+      "reason": "max_candidates_total=4 exceeds remaining workflow ceiling 3",
+      "finished_at": "2026-09-28T09:11:11.671950+00:00"
+    }
+  ],
+  "budget_stop": {
+    "status": "failed",
+    "quality_disposition": "needs_decision",
+    "reason": "wall_budget_exceeded",
+    "stopped_at": "2026-09-28T10:39:56.422818+00:00",
+    "next_phase": "acquire_assets",
+    "remaining_phases": [
+      "acquire_assets",
+      "review_subject_regions",
+      "no_copy_preflight",
+      "render_opening_candidate",
+      "opening_review",
+      "render_final_candidate",
+      "master_final_candidate",
+      "final_review",
+      "awaiting_human"
+    ],
+    "observed_seconds": 5436.13,
+    "threshold_seconds": 2700,
+    "options": [
+      {
+        "action": "continue_with_extension",
+        "minimum_extra_minutes": 46
+      },
+      {
+        "action": "continue_to_preview",
+        "preview_phase": "render_opening_candidate"
+      },
+      {
+        "action": "stop"
+      }
+    ],
+    "boundary_before_operation": "workflow:asset-search",
+    "phase": "acquire_assets",
+    "phase_attempt": 2,
+    "open_work_span_ids": [
+      "job:asset-search-0-48af1cbcf1e07d23-a0",
+      "job:asset-search-0-48af1cbcf1e07d23-a1",
+      "job:asset-search-0-7d2f1481c1baf7e0-a0",
+      "job:asset-search-1-7d2f1481c1baf7e0-a0",
+      "job:asset-search-0-7d2f1481c1baf7e0-a2"
+    ]
+  }
+}

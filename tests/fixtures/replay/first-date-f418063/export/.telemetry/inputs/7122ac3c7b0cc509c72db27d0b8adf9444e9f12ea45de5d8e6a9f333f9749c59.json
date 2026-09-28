@@ -1,0 +1,6 @@
+{"amendments": [
+ {"visual_event_id": "ev-8",  "set": {"carries_moment": false}},
+ {"visual_event_id": "ev-9",  "set": {"carries_moment": true, "negative_space": "upper_band",
+   "moment_copy": [{"role": "lead", "text": "پیام فوری"}, {"role": "hero", "text": "علاقهٔ واضح‌تر"}]}},
+ {"visual_event_id": "ev-10", "set": {"negative_space": "upper_band"}}
+]}

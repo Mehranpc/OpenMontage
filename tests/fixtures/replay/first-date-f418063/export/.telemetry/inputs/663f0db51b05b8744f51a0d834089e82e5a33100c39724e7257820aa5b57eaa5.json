@@ -1,0 +1,36 @@
+{
+  "queries": [
+    {
+      "query": "woman texting on sofa wide shot plain wall",
+      "slot_id": "ev-1",
+      "kind": "video"
+    },
+    {
+      "query": "person typing on phone wide shot plain wall",
+      "slot_id": "ev-8",
+      "kind": "video"
+    },
+    {
+      "query": "person holding phone night wide shot plain dark background",
+      "slot_id": "ev-13",
+      "kind": "video"
+    }
+  ],
+  "sources": [
+    "pexels",
+    "pixabay_video"
+  ],
+  "filters": {
+    "orientation": "portrait",
+    "min_duration": 8,
+    "min_width": 1080,
+    "max_width": 1080
+  },
+  "output_dir": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets",
+  "clips_per_query": 1,
+  "timeout_seconds": 180,
+  "search_cache_ttl_seconds": 21600,
+  "max_candidates_total": 11,
+  "max_bytes_per_clip": 100663296,
+  "max_total_download_bytes": 360000000
+}

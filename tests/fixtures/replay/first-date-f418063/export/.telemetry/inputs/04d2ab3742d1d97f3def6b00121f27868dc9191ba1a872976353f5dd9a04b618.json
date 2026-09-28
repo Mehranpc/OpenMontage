@@ -1,0 +1,1484 @@
+{
+ "version": "1.0",
+ "cuts": [],
+ "render_runtime": "remotion",
+ "composition_mode": "templated",
+ "renderer_family": "persian-footage",
+ "persian": {
+  "format": "vertical",
+  "durationSeconds": 62.48,
+  "platformTarget": "instagram-reels",
+  "captionMode": "hybrid",
+  "shots": [
+   {
+    "id": "shot-1",
+    "source": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets/clips/pexels_9305509.mp4",
+    "startSeconds": 0.0,
+    "endSeconds": 5.16,
+    "sourceInSeconds": 4.685,
+    "camera": "push-in",
+    "attribution": "Video by Monstera Production on Pexels",
+    "transitionIn": "cut",
+    "changeType": "establish",
+    "narrativeRole": "hook",
+    "humanPresence": true,
+    "semanticBeatId": "beat-1",
+    "visualEventId": "ev-1",
+    "visualComplexity": "simple",
+    "avoidRegions": [
+     {
+      "endSeconds": 5.16,
+      "h": 0.5,
+      "priority": "hard",
+      "startSeconds": 0.0,
+      "w": 0.4,
+      "x": 0.2,
+      "y": 0.4
+     }
+    ],
+    "semanticRole": "question_hook",
+    "semanticDirection": "tension_first",
+    "openingSemanticMatch": true,
+    "showsSubject": true,
+    "selectionReason": "A hand holds a phone with a blank screen against a plain pale wall: the phone in hand is visibly what the hook names, and the wall above it is the space the opening moment sits in."
+   },
+   {
+    "id": "shot-2",
+    "source": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets/clips/pexels_8971233.mp4",
+    "startSeconds": 5.16,
+    "endSeconds": 9.42,
+    "sourceInSeconds": 5.45,
+    "camera": "pan-left",
+    "attribution": "Video by SHVETS production on Pexels",
+    "transitionIn": "cut",
+    "changeType": "establish",
+    "narrativeRole": "exposition",
+    "humanPresence": true,
+    "semanticBeatId": "beat-2",
+    "visualEventId": "ev-2",
+    "avoidRegions": [
+     {
+      "endSeconds": 9.42,
+      "h": 0.6,
+      "priority": "hard",
+      "startSeconds": 5.16,
+      "w": 0.6,
+      "x": 0.2,
+      "y": 0.4
+     },
+     {
+      "endSeconds": 9.42,
+      "h": 0.3,
+      "priority": "hard",
+      "startSeconds": 5.16,
+      "w": 0.2,
+      "x": 0.4,
+      "y": 0.4
+     }
+    ]
+   },
+   {
+    "id": "shot-3",
+    "source": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets/clips/pexels_38410501.mp4",
+    "startSeconds": 9.42,
+    "endSeconds": 13.34,
+    "sourceInSeconds": 8.68,
+    "camera": "none",
+    "attribution": "Video by Hamim Rony on Pexels",
+    "transitionIn": "cut",
+    "changeType": "detail",
+    "narrativeRole": "exposition",
+    "humanPresence": false,
+    "semanticBeatId": "beat-2",
+    "visualEventId": "ev-3",
+    "avoidRegions": [
+     {
+      "endSeconds": 13.34,
+      "h": 0.8,
+      "priority": "hard",
+      "startSeconds": 9.42,
+      "w": 0.6,
+      "x": 0.2,
+      "y": 0.1
+     }
+    ]
+   },
+   {
+    "id": "shot-4",
+    "source": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets/clips/pexels_35323911.mp4",
+    "startSeconds": 13.34,
+    "endSeconds": 19.37,
+    "sourceInSeconds": 13.4,
+    "camera": "pan-right",
+    "attribution": "Video by setengah lima sore on Pexels",
+    "transitionIn": "cut",
+    "changeType": "scale_change",
+    "narrativeRole": "exposition",
+    "humanPresence": true,
+    "semanticBeatId": "beat-3",
+    "visualEventId": "ev-4",
+    "avoidRegions": [
+     {
+      "x": 0.0,
+      "y": 0.42,
+      "w": 1.0,
+      "h": 0.58,
+      "priority": "soft",
+      "startSeconds": 13.34,
+      "endSeconds": 19.37
+     },
+     {
+      "x": 0.0,
+      "y": 0.15,
+      "w": 0.35,
+      "h": 0.55,
+      "priority": "soft",
+      "startSeconds": 13.34,
+      "endSeconds": 19.37
+     },
+     {
+      "x": 0.5,
+      "y": 0.42,
+      "w": 0.2,
+      "h": 0.18,
+      "priority": "hard",
+      "startSeconds": 13.34,
+      "endSeconds": 19.37
+     }
+    ]
+   },
+   {
+    "id": "shot-5",
+    "source": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets/clips/pexels_9046186.mp4",
+    "startSeconds": 19.37,
+    "endSeconds": 23.76,
+    "sourceInSeconds": 2.42,
+    "camera": "none",
+    "attribution": "Video by Mike Jones on Pexels",
+    "transitionIn": "cut",
+    "changeType": "action",
+    "narrativeRole": "exposition",
+    "humanPresence": false,
+    "semanticBeatId": "beat-3",
+    "visualEventId": "ev-5",
+    "avoidRegions": [
+     {
+      "endSeconds": 23.76,
+      "h": 0.8,
+      "priority": "hard",
+      "startSeconds": 19.37,
+      "w": 0.6,
+      "x": 0.2,
+      "y": 0.2
+     },
+     {
+      "endSeconds": 23.76,
+      "h": 0.3,
+      "priority": "hard",
+      "startSeconds": 19.37,
+      "w": 0.2,
+      "x": 0.4,
+      "y": 0.2
+     }
+    ]
+   },
+   {
+    "id": "shot-6",
+    "source": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets/clips/pexels_7131713.mp4",
+    "startSeconds": 23.76,
+    "endSeconds": 29.78,
+    "sourceInSeconds": 13.53,
+    "camera": "push-in",
+    "attribution": "Video by KATRIN  BOLOVTSOVA on Pexels",
+    "transitionIn": "cut",
+    "changeType": "reaction",
+    "narrativeRole": "turn",
+    "humanPresence": true,
+    "semanticBeatId": "beat-4",
+    "visualEventId": "ev-6",
+    "avoidRegions": [
+     {
+      "endSeconds": 27.9,
+      "h": 0.6,
+      "priority": "hard",
+      "startSeconds": 23.76,
+      "w": 0.6,
+      "x": 0.2,
+      "y": 0.4
+     },
+     {
+      "endSeconds": 27.9,
+      "h": 0.3,
+      "priority": "hard",
+      "startSeconds": 23.76,
+      "w": 0.2,
+      "x": 0.4,
+      "y": 0.5
+     }
+    ]
+   },
+   {
+    "id": "shot-7",
+    "source": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets/clips/pexels_7593905.mp4",
+    "startSeconds": 29.78,
+    "endSeconds": 31.08,
+    "sourceInSeconds": 3.415,
+    "camera": "none",
+    "attribution": "Video by Miriam Alonso on Pexels",
+    "transitionIn": "cut",
+    "changeType": "detail",
+    "narrativeRole": "exposition",
+    "humanPresence": false,
+    "semanticBeatId": "beat-4",
+    "visualEventId": "ev-7",
+    "avoidRegions": [
+     {
+      "endSeconds": 31.08,
+      "h": 0.9,
+      "priority": "hard",
+      "startSeconds": 29.78,
+      "w": 1.0,
+      "x": 0.0,
+      "y": 0.1
+     },
+     {
+      "endSeconds": 31.08,
+      "h": 0.3,
+      "priority": "hard",
+      "startSeconds": 29.78,
+      "w": 0.2,
+      "x": 0.3,
+      "y": 0.1
+     }
+    ]
+   },
+   {
+    "id": "shot-8",
+    "source": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets/clips/pexels_7362704.mp4",
+    "startSeconds": 31.08,
+    "endSeconds": 35.0,
+    "sourceInSeconds": 7.29,
+    "camera": "none",
+    "attribution": "Video by RDNE Stock project on Pexels",
+    "transitionIn": "cut",
+    "changeType": "action",
+    "narrativeRole": "conflict",
+    "humanPresence": true,
+    "semanticBeatId": "beat-5",
+    "visualEventId": "ev-8",
+    "avoidRegions": [
+     {
+      "endSeconds": 35.0,
+      "h": 0.8,
+      "priority": "hard",
+      "startSeconds": 31.08,
+      "w": 0.8,
+      "x": 0.1,
+      "y": 0.1
+     }
+    ]
+   },
+   {
+    "id": "shot-9",
+    "source": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets/clips/pexels_7942761.mp4",
+    "startSeconds": 35.0,
+    "endSeconds": 38.51,
+    "sourceInSeconds": 4.82,
+    "camera": "push-in",
+    "attribution": "Video by VAZHNIK on Pexels",
+    "transitionIn": "cut",
+    "changeType": "reaction",
+    "narrativeRole": "conflict",
+    "humanPresence": true,
+    "semanticBeatId": "beat-5",
+    "visualEventId": "ev-9",
+    "avoidRegions": [
+     {
+      "endSeconds": 38.36,
+      "h": 0.6,
+      "priority": "hard",
+      "startSeconds": 35.0,
+      "w": 0.7,
+      "x": 0.2,
+      "y": 0.4
+     },
+     {
+      "endSeconds": 38.36,
+      "h": 0.3,
+      "priority": "hard",
+      "startSeconds": 35.0,
+      "w": 0.2,
+      "x": 0.4,
+      "y": 0.4
+     }
+    ]
+   },
+   {
+    "id": "shot-10",
+    "source": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets/clips/pexels_6374206.mp4",
+    "startSeconds": 38.51,
+    "endSeconds": 43.55,
+    "sourceInSeconds": 4.43,
+    "camera": "pull-out",
+    "attribution": "Video by KATRIN  BOLOVTSOVA on Pexels",
+    "transitionIn": "cut",
+    "changeType": "detail",
+    "narrativeRole": "conflict",
+    "humanPresence": false,
+    "semanticBeatId": "beat-6",
+    "visualEventId": "ev-10",
+    "avoidRegions": [
+     {
+      "endSeconds": 43.55,
+      "h": 0.6,
+      "priority": "hard",
+      "startSeconds": 38.51,
+      "w": 0.5,
+      "x": 0.3,
+      "y": 0.4
+     }
+    ]
+   },
+   {
+    "id": "shot-11",
+    "source": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets/clips/pexels_8559173.mp4",
+    "startSeconds": 43.55,
+    "endSeconds": 48.86,
+    "sourceInSeconds": 2.775,
+    "camera": "pan-left",
+    "attribution": "Video by Timur Weber on Pexels",
+    "transitionIn": "cut",
+    "changeType": "reaction",
+    "narrativeRole": "conflict",
+    "humanPresence": true,
+    "semanticBeatId": "beat-6",
+    "visualEventId": "ev-11",
+    "avoidRegions": [
+     {
+      "endSeconds": 48.86,
+      "h": 0.6,
+      "priority": "hard",
+      "startSeconds": 43.6,
+      "w": 0.9,
+      "x": 0.1,
+      "y": 0.4
+     },
+     {
+      "endSeconds": 48.86,
+      "h": 0.2,
+      "priority": "hard",
+      "startSeconds": 43.6,
+      "w": 0.1,
+      "x": 0.4,
+      "y": 0.4
+     }
+    ]
+   },
+   {
+    "id": "shot-12",
+    "source": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets/clips/pexels_4076741.mp4",
+    "startSeconds": 48.86,
+    "endSeconds": 56.33,
+    "sourceInSeconds": 8.125,
+    "camera": "pan-right",
+    "attribution": "Video by KATRIN  BOLOVTSOVA on Pexels",
+    "transitionIn": "cut",
+    "changeType": "reaction",
+    "narrativeRole": "turn",
+    "humanPresence": true,
+    "semanticBeatId": "beat-7",
+    "visualEventId": "ev-12",
+    "avoidRegions": [
+     {
+      "endSeconds": 56.33,
+      "h": 0.6,
+      "priority": "hard",
+      "startSeconds": 48.86,
+      "w": 0.7,
+      "x": 0.1,
+      "y": 0.4
+     },
+     {
+      "endSeconds": 56.33,
+      "h": 0.3,
+      "priority": "hard",
+      "startSeconds": 48.86,
+      "w": 0.2,
+      "x": 0.4,
+      "y": 0.2
+     }
+    ]
+   },
+   {
+    "id": "shot-13",
+    "source": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets/clips/pexels_36644498.mp4",
+    "startSeconds": 56.33,
+    "endSeconds": 62.48,
+    "sourceInSeconds": 4.065,
+    "camera": "push-in",
+    "attribution": "Video by Cemrecan Yurtman on Pexels",
+    "transitionIn": "cut",
+    "changeType": "action",
+    "narrativeRole": "resolution",
+    "humanPresence": true,
+    "semanticBeatId": "beat-8",
+    "visualEventId": "ev-13",
+    "avoidRegions": [
+     {
+      "endSeconds": 62.48,
+      "h": 0.6,
+      "priority": "hard",
+      "startSeconds": 56.33,
+      "w": 0.6,
+      "x": 0.3,
+      "y": 0.4
+     }
+    ]
+   }
+  ],
+  "moments": [
+   {
+    "id": "moment-1",
+    "kind": "hook",
+    "startSeconds": 0.0,
+    "endSeconds": 3.9,
+    "segments": [
+     {
+      "role": "lead",
+      "text": "تا حالا شده",
+      "revealAfterSeconds": 0.0,
+      "semanticRole": "setup"
+     },
+     {
+      "role": "lead",
+      "text": "بعد از یه قرار خوب،",
+      "revealAfterSeconds": 0.0,
+      "semanticRole": "bridge"
+     },
+     {
+      "role": "hero",
+      "text": "گوشی دستت باشه",
+      "revealAfterSeconds": 0.0,
+      "semanticRole": "subject_hero"
+     },
+     {
+      "role": "tail",
+      "text": "و ندونی الان پیام بدی یا صبر کنی؟",
+      "revealAfterSeconds": 0.0,
+      "semanticRole": "payoff"
+     }
+    ],
+    "anchorText": "تا حالا شده بعد از یه قرار خوب، گوشی دستت باشه و ندونی الان پیام بدی یا صبر کنی؟",
+    "purpose": "hook-pattern-interrupt"
+   },
+   {
+    "id": "moment-2",
+    "kind": "statement",
+    "startSeconds": 5.16,
+    "endSeconds": 9.266,
+    "segments": [
+     {
+      "role": "lead",
+      "text": "بعد از قرار اول"
+     },
+     {
+      "role": "hero",
+      "text": "اولین پیام"
+     },
+     {
+      "role": "tail",
+      "text": "کی؟"
+     }
+    ],
+    "anchorText": "پژوهشگرا دقیقاً همین سؤال رو آزمایش کردن"
+   },
+   {
+    "id": "moment-3",
+    "kind": "figure",
+    "startSeconds": 15.26,
+    "endSeconds": 19.37,
+    "segments": [
+     {
+      "role": "hero",
+      "text": "۵۴۳ نفر"
+     },
+     {
+      "role": "tail",
+      "text": "یک قرار اول را تصور کردند"
+     }
+    ],
+    "anchorText": "۵۴۳ نفر تصور کردند",
+    "presentation": {
+     "recipeId": "editorial-hero-compact"
+    }
+   },
+   {
+    "id": "moment-4",
+    "kind": "statement",
+    "startSeconds": 25.94,
+    "endSeconds": 29.777,
+    "segments": [
+     {
+      "role": "lead",
+      "text": "بیشترین تمایل"
+     },
+     {
+      "role": "hero",
+      "text": "پیام صبح روز بعد"
+     }
+    ],
+    "anchorText": "بیشترین تمایل به ادامه رابطه"
+   },
+   {
+    "id": "moment-5",
+    "kind": "statement",
+    "startSeconds": 35.4,
+    "endSeconds": 38.51,
+    "segments": [
+     {
+      "role": "lead",
+      "text": "پیام فوری"
+     },
+     {
+      "role": "hero",
+      "text": "علاقهٔ واضح‌تر"
+     }
+    ],
+    "anchorText": "فرستنده کمی نیازمندتر"
+   },
+   {
+    "id": "moment-6",
+    "kind": "statement",
+    "startSeconds": 39.48,
+    "endSeconds": 42.408,
+    "segments": [
+     {
+      "role": "lead",
+      "text": "دو روز صبر"
+     },
+     {
+      "role": "hero",
+      "text": "شیمی کمتر"
+     }
+    ],
+    "anchorText": "دو روز صبر کردن هم کمکی نکرد"
+   },
+   {
+    "id": "moment-7",
+    "kind": "statement",
+    "startSeconds": 43.8,
+    "endSeconds": 47.546,
+    "segments": [
+     {
+      "role": "hero",
+      "text": "انگیزهٔ کمتر"
+     },
+     {
+      "role": "tail",
+      "text": "برای ادامهٔ ارتباط"
+     }
+    ],
+    "anchorText": "انگیزه کمتری برای ادامه ارتباط"
+   },
+   {
+    "id": "moment-8",
+    "kind": "statement",
+    "startSeconds": 58.556,
+    "endSeconds": 61.016,
+    "segments": [
+     {
+      "role": "hero",
+      "text": "تو کدام را می‌کنی؟"
+     }
+    ],
+    "anchorText": "همون شب پیام میدی"
+   }
+  ],
+  "typographicBeats": [],
+  "audio": {
+   "narration": "/Users/operator/OpenMontage/projects/first-date-message-timing/inputs/narration.mp3",
+   "wordTimings": [
+    {
+     "word": "تا",
+     "start": 0.0,
+     "end": 0.12666666666666668
+    },
+    {
+     "word": "حالا",
+     "start": 0.12666666666666668,
+     "end": 0.38
+    },
+    {
+     "word": "شده",
+     "start": 0.38,
+     "end": 0.5974999999999999
+    },
+    {
+     "word": "بعد",
+     "start": 0.5974999999999999,
+     "end": 0.815
+    },
+    {
+     "word": "از",
+     "start": 0.815,
+     "end": 0.96
+    },
+    {
+     "word": "یه",
+     "start": 0.96,
+     "end": 1.1199999999999999
+    },
+    {
+     "word": "قرار",
+     "start": 1.1199999999999999,
+     "end": 1.44
+    },
+    {
+     "word": "خوب،",
+     "start": 1.44,
+     "end": 1.76
+    },
+    {
+     "word": "گوشی",
+     "start": 1.76,
+     "end": 2.2
+    },
+    {
+     "word": "دستت",
+     "start": 2.2,
+     "end": 2.42
+    },
+    {
+     "word": "باشه",
+     "start": 2.42,
+     "end": 2.9
+    },
+    {
+     "word": "و",
+     "start": 2.9,
+     "end": 2.9819999999999998
+    },
+    {
+     "word": "ندونی",
+     "start": 2.9819999999999998,
+     "end": 3.392
+    },
+    {
+     "word": "الان",
+     "start": 3.392,
+     "end": 3.72
+    },
+    {
+     "word": "پیام",
+     "start": 3.72,
+     "end": 4.1
+    },
+    {
+     "word": "بدی",
+     "start": 4.1,
+     "end": 4.44
+    },
+    {
+     "word": "یا",
+     "start": 4.44,
+     "end": 4.58
+    },
+    {
+     "word": "صبر",
+     "start": 4.58,
+     "end": 4.84
+    },
+    {
+     "word": "کنی؟",
+     "start": 4.84,
+     "end": 5.16
+    },
+    {
+     "word": "پژوهشگرا",
+     "start": 5.16,
+     "end": 6.378461538461538
+    },
+    {
+     "word": "دقیقاً",
+     "start": 6.378461538461538,
+     "end": 7.14
+    },
+    {
+     "word": "همین",
+     "start": 7.14,
+     "end": 7.404
+    },
+    {
+     "word": "سؤال",
+     "start": 7.404,
+     "end": 7.668
+    },
+    {
+     "word": "رو",
+     "start": 7.668,
+     "end": 7.8
+    },
+    {
+     "word": "آزمایش",
+     "start": 7.8,
+     "end": 8.02
+    },
+    {
+     "word": "کردن:",
+     "start": 8.02,
+     "end": 8.64
+    },
+    {
+     "word": "بعد",
+     "start": 8.64,
+     "end": 9.46
+    },
+    {
+     "word": "از",
+     "start": 9.46,
+     "end": 9.6
+    },
+    {
+     "word": "قرار",
+     "start": 9.6,
+     "end": 9.88
+    },
+    {
+     "word": "اول،",
+     "start": 9.88,
+     "end": 10.36
+    },
+    {
+     "word": "چه",
+     "start": 10.36,
+     "end": 10.64
+    },
+    {
+     "word": "زمانی",
+     "start": 10.64,
+     "end": 11.04
+    },
+    {
+     "word": "برای",
+     "start": 11.04,
+     "end": 11.22
+    },
+    {
+     "word": "فرستادن",
+     "start": 11.22,
+     "end": 11.98
+    },
+    {
+     "word": "اولین",
+     "start": 11.98,
+     "end": 12.38
+    },
+    {
+     "word": "پیام",
+     "start": 12.38,
+     "end": 12.68
+    },
+    {
+     "word": "بهتره؟",
+     "start": 12.68,
+     "end": 13.34
+    },
+    {
+     "word": "در",
+     "start": 13.34,
+     "end": 14.28
+    },
+    {
+     "word": "این",
+     "start": 14.28,
+     "end": 14.74
+    },
+    {
+     "word": "مطالعه،",
+     "start": 14.74,
+     "end": 15.26
+    },
+    {
+     "word": "۵۴۳",
+     "start": 15.26,
+     "end": 15.6
+    },
+    {
+     "word": "نفر",
+     "start": 15.6,
+     "end": 16.06
+    },
+    {
+     "word": "تصور",
+     "start": 16.06,
+     "end": 16.52
+    },
+    {
+     "word": "کردند",
+     "start": 16.52,
+     "end": 16.974545454545453
+    },
+    {
+     "word": "یک",
+     "start": 16.974545454545453,
+     "end": 17.156363636363636
+    },
+    {
+     "word": "قرار",
+     "start": 17.156363636363636,
+     "end": 17.52
+    },
+    {
+     "word": "اول",
+     "start": 17.52,
+     "end": 17.736
+    },
+    {
+     "word": "داشتند",
+     "start": 17.736,
+     "end": 18.168
+    },
+    {
+     "word": "و",
+     "start": 18.168,
+     "end": 18.24
+    },
+    {
+     "word": "بعد،",
+     "start": 18.24,
+     "end": 18.48
+    },
+    {
+     "word": "طرف",
+     "start": 18.48,
+     "end": 19.2
+    },
+    {
+     "word": "مقابل",
+     "start": 19.2,
+     "end": 19.82
+    },
+    {
+     "word": "یا",
+     "start": 19.82,
+     "end": 20.16
+    },
+    {
+     "word": "بلافاصله",
+     "start": 20.16,
+     "end": 20.54
+    },
+    {
+     "word": "پیام",
+     "start": 20.54,
+     "end": 20.9
+    },
+    {
+     "word": "می‌داد،",
+     "start": 20.9,
+     "end": 21.3
+    },
+    {
+     "word": "یا",
+     "start": 21.3,
+     "end": 21.9
+    },
+    {
+     "word": "صبح",
+     "start": 21.9,
+     "end": 22.163999999999998
+    },
+    {
+     "word": "روز",
+     "start": 22.163999999999998,
+     "end": 22.428
+    },
+    {
+     "word": "بعد،",
+     "start": 22.428,
+     "end": 22.78
+    },
+    {
+     "word": "یا",
+     "start": 22.78,
+     "end": 23.0
+    },
+    {
+     "word": "دو",
+     "start": 23.0,
+     "end": 23.16888888888889
+    },
+    {
+     "word": "روز",
+     "start": 23.16888888888889,
+     "end": 23.422222222222224
+    },
+    {
+     "word": "بعد.",
+     "start": 23.422222222222224,
+     "end": 23.76
+    },
+    {
+     "word": "جالب‌ترین",
+     "start": 23.76,
+     "end": 24.66
+    },
+    {
+     "word": "نتیجه",
+     "start": 24.66,
+     "end": 25.2225
+    },
+    {
+     "word": "این",
+     "start": 25.2225,
+     "end": 25.56
+    },
+    {
+     "word": "بود",
+     "start": 25.56,
+     "end": 25.74
+    },
+    {
+     "word": "که",
+     "start": 25.74,
+     "end": 25.94
+    },
+    {
+     "word": "بیشترین",
+     "start": 25.94,
+     "end": 26.38
+    },
+    {
+     "word": "تمایل",
+     "start": 26.38,
+     "end": 26.72
+    },
+    {
+     "word": "به",
+     "start": 26.72,
+     "end": 27.0
+    },
+    {
+     "word": "ادامه",
+     "start": 27.0,
+     "end": 27.4
+    },
+    {
+     "word": "رابطه",
+     "start": 27.4,
+     "end": 27.98
+    },
+    {
+     "word": "وقتی",
+     "start": 27.98,
+     "end": 28.44
+    },
+    {
+     "word": "دیده",
+     "start": 28.44,
+     "end": 28.64
+    },
+    {
+     "word": "شد",
+     "start": 28.64,
+     "end": 28.92
+    },
+    {
+     "word": "که",
+     "start": 28.92,
+     "end": 29.08
+    },
+    {
+     "word": "پیام",
+     "start": 29.08,
+     "end": 29.42
+    },
+    {
+     "word": "صبح",
+     "start": 29.42,
+     "end": 29.62
+    },
+    {
+     "word": "روز",
+     "start": 29.62,
+     "end": 29.94
+    },
+    {
+     "word": "بعد",
+     "start": 29.94,
+     "end": 30.46
+    },
+    {
+     "word": "می‌رسید.",
+     "start": 30.46,
+     "end": 31.08
+    },
+    {
+     "word": "پیام",
+     "start": 31.08,
+     "end": 32.12
+    },
+    {
+     "word": "فوری،",
+     "start": 32.12,
+     "end": 32.63666666666666
+    },
+    {
+     "word": "علاقه",
+     "start": 32.63666666666666,
+     "end": 33.153333333333336
+    },
+    {
+     "word": "رو",
+     "start": 33.153333333333336,
+     "end": 33.36
+    },
+    {
+     "word": "واضح‌تر",
+     "start": 33.36,
+     "end": 33.8
+    },
+    {
+     "word": "نشون",
+     "start": 33.8,
+     "end": 34.2
+    },
+    {
+     "word": "می‌داد،",
+     "start": 34.2,
+     "end": 34.8
+    },
+    {
+     "word": "اما",
+     "start": 34.8,
+     "end": 35.4
+    },
+    {
+     "word": "فرستنده",
+     "start": 35.4,
+     "end": 36.14
+    },
+    {
+     "word": "کمی",
+     "start": 36.14,
+     "end": 36.52
+    },
+    {
+     "word": "نیازمندتر",
+     "start": 36.52,
+     "end": 37.38
+    },
+    {
+     "word": "به",
+     "start": 37.38,
+     "end": 37.48
+    },
+    {
+     "word": "نظر",
+     "start": 37.48,
+     "end": 37.84
+    },
+    {
+     "word": "می‌رسید.",
+     "start": 37.84,
+     "end": 38.36
+    },
+    {
+     "word": "از",
+     "start": 38.36,
+     "end": 38.608888888888885
+    },
+    {
+     "word": "اون",
+     "start": 38.608888888888885,
+     "end": 38.98222222222222
+    },
+    {
+     "word": "طرف،",
+     "start": 38.98222222222222,
+     "end": 39.48
+    },
+    {
+     "word": "دو",
+     "start": 39.48,
+     "end": 39.68
+    },
+    {
+     "word": "روز",
+     "start": 39.68,
+     "end": 39.98
+    },
+    {
+     "word": "صبر",
+     "start": 39.98,
+     "end": 40.22
+    },
+    {
+     "word": "کردن",
+     "start": 40.22,
+     "end": 40.62
+    },
+    {
+     "word": "هم",
+     "start": 40.62,
+     "end": 40.78
+    },
+    {
+     "word": "کمکی",
+     "start": 40.78,
+     "end": 41.117777777777775
+    },
+    {
+     "word": "نکرد؛",
+     "start": 41.117777777777775,
+     "end": 41.54
+    },
+    {
+     "word": "افراد",
+     "start": 41.54,
+     "end": 42.5
+    },
+    {
+     "word": "احساس",
+     "start": 42.5,
+     "end": 42.86
+    },
+    {
+     "word": "شیمی",
+     "start": 42.86,
+     "end": 43.4
+    },
+    {
+     "word": "و",
+     "start": 43.4,
+     "end": 43.8
+    },
+    {
+     "word": "انگیزه",
+     "start": 43.8,
+     "end": 44.13818181818182
+    },
+    {
+     "word": "کمتری",
+     "start": 44.13818181818182,
+     "end": 44.42
+    },
+    {
+     "word": "برای",
+     "start": 44.42,
+     "end": 44.73111111111111
+    },
+    {
+     "word": "ادامه",
+     "start": 44.73111111111111,
+     "end": 45.12
+    },
+    {
+     "word": "ارتباط",
+     "start": 45.12,
+     "end": 45.6
+    },
+    {
+     "word": "داشتند",
+     "start": 45.6,
+     "end": 45.96
+    },
+    {
+     "word": "و",
+     "start": 45.96,
+     "end": 46.16
+    },
+    {
+     "word": "طرف",
+     "start": 46.16,
+     "end": 46.54
+    },
+    {
+     "word": "مقابل",
+     "start": 46.54,
+     "end": 46.96
+    },
+    {
+     "word": "رو",
+     "start": 46.96,
+     "end": 47.24
+    },
+    {
+     "word": "کمتر",
+     "start": 47.24,
+     "end": 47.57142857142857
+    },
+    {
+     "word": "قابل‌اعتماد",
+     "start": 47.57142857142857,
+     "end": 48.4
+    },
+    {
+     "word": "می‌دیدند.",
+     "start": 48.4,
+     "end": 48.86
+    },
+    {
+     "word": "یعنی",
+     "start": 48.86,
+     "end": 49.84
+    },
+    {
+     "word": "حداقل",
+     "start": 49.84,
+     "end": 50.1
+    },
+    {
+     "word": "در",
+     "start": 50.1,
+     "end": 50.68
+    },
+    {
+     "word": "این",
+     "start": 50.68,
+     "end": 50.84
+    },
+    {
+     "word": "آزمایش،",
+     "start": 50.84,
+     "end": 51.34909090909091
+    },
+    {
+     "word": "«دیر",
+     "start": 51.34909090909091,
+     "end": 51.64
+    },
+    {
+     "word": "پیام",
+     "start": 51.64,
+     "end": 51.995555555555555
+    },
+    {
+     "word": "بده",
+     "start": 51.995555555555555,
+     "end": 52.26222222222222
+    },
+    {
+     "word": "تا",
+     "start": 52.26222222222222,
+     "end": 52.44
+    },
+    {
+     "word": "مشتاق",
+     "start": 52.44,
+     "end": 52.89
+    },
+    {
+     "word": "به",
+     "start": 52.89,
+     "end": 53.07
+    },
+    {
+     "word": "نظر",
+     "start": 53.07,
+     "end": 53.34
+    },
+    {
+     "word": "نرسی»",
+     "start": 53.34,
+     "end": 53.9
+    },
+    {
+     "word": "استراتژی",
+     "start": 53.9,
+     "end": 54.82
+    },
+    {
+     "word": "خیلی",
+     "start": 54.82,
+     "end": 55.28
+    },
+    {
+     "word": "خوبی",
+     "start": 55.28,
+     "end": 55.64
+    },
+    {
+     "word": "نبود.",
+     "start": 55.64,
+     "end": 56.33090909090909
+    },
+    {
+     "word": "حالا",
+     "start": 56.33090909090909,
+     "end": 56.88363636363636
+    },
+    {
+     "word": "تو",
+     "start": 56.88363636363636,
+     "end": 57.16
+    },
+    {
+     "word": "بگو:",
+     "start": 57.16,
+     "end": 57.46
+    },
+    {
+     "word": "بعد",
+     "start": 57.46,
+     "end": 57.72
+    },
+    {
+     "word": "از",
+     "start": 57.72,
+     "end": 57.86
+    },
+    {
+     "word": "قرار",
+     "start": 57.86,
+     "end": 58.14
+    },
+    {
+     "word": "اول،",
+     "start": 58.14,
+     "end": 58.556
+    },
+    {
+     "word": "همون",
+     "start": 58.556,
+     "end": 58.972
+    },
+    {
+     "word": "شب",
+     "start": 58.972,
+     "end": 59.18
+    },
+    {
+     "word": "پیام",
+     "start": 59.18,
+     "end": 59.6
+    },
+    {
+     "word": "می‌دی،",
+     "start": 59.6,
+     "end": 59.94
+    },
+    {
+     "word": "فردا",
+     "start": 59.94,
+     "end": 61.22
+    },
+    {
+     "word": "صبح",
+     "start": 61.22,
+     "end": 61.46
+    },
+    {
+     "word": "یا",
+     "start": 61.46,
+     "end": 61.92
+    },
+    {
+     "word": "صبر",
+     "start": 61.92,
+     "end": 62.02
+    },
+    {
+     "word": "می‌کنی؟",
+     "start": 62.02,
+     "end": 62.28
+    }
+   ]
+  },
+  "watermark": {
+   "persianText": "طریقت تسلیم",
+   "latinText": "Pathway_of_Surrender"
+  },
+  "design": {
+   "version": 2,
+   "profile": "film-type",
+   "seed": "first-date-message-timing-film-type-01"
+  },
+  "musicTrack": {
+   "attribution": "Calm Ambient — leberch",
+   "contentIdRisk": {
+    "acknowledged": "Content-ID is third-party fingerprinting; no licence binds it, so no automated check can guarantee zero claim risk on Instagram. Provenance is recorded so any claim can be answered with the licence page.",
+    "level": "low",
+    "reason": "Pixabay Content License permits monetized social use; third-party Content-ID claims remain possible but were not observed for this track."
+   },
+   "license": {
+    "downloadedAt": "2026-09-28",
+    "name": "Pixabay Content License",
+    "url": "https://pixabay.com/service/license-summary/"
+   },
+   "path": "/Users/operator/OpenMontage/projects/first-date-message-timing/assets/music/bed.mp3",
+   "source": "pixabay_music"
+  }
+ },
+ "metadata": {
+  "persianSubtitleScript": {
+   "text": "تا حالا شده بعد از یه قرار خوب، گوشی دستت باشه و ندونی الان پیام بدی یا صبر کنی؟ پژوهشگرا دقیقاً همین سؤال رو آزمایش کردن: بعد از قرار اول، چه زمانی برای فرستادن اولین پیام بهتره؟ در این مطالعه، ۵۴۳ نفر تصور کردند یک قرار اول داشتند و بعد، طرف مقابل یا بلافاصله پیام می‌داد، یا صبح روز بعد، یا دو روز بعد. جالب‌ترین نتیجه این بود که بیشترین تمایل به ادامه رابطه وقتی دیده شد که پیام صبح روز بعد می‌رسید. پیام فوری، علاقه رو واضح‌تر نشون می‌داد، اما فرستنده کمی نیازمندتر به نظر می‌رسید. از اون طرف، دو روز صبر کردن هم کمکی نکرد؛ افراد احساس شیمی و انگیزه کمتری برای ادامه ارتباط داشتند و طرف مقابل رو کمتر قابل‌اعتماد می‌دیدند. یعنی حداقل در این آزمایش، «دیر پیام بده تا مشتاق به نظر نرسی» استراتژی خیلی خوبی نبود. حالا تو بگو: بعد از قرار اول، همون شب پیام می‌دی، فردا صبح یا صبر می‌کنی؟",
+   "matchPolicy": "exact",
+   "maxCps": 21,
+   "sha256": "81cb10b1ac4149391edea3671c422a79d51ed470fc555e44ff139e454f2b00fe"
+  },
+  "hookQuality": {
+   "version": "2.0",
+   "viewerValue": {
+    "evidenceId": "opening-value-01",
+    "atSeconds": 0.6,
+    "evidence": "A good first date, phone in hand: the viewer recognises their own evening."
+   },
+   "semanticTension": {
+    "evidenceId": "opening-tension-01",
+    "kind": "question",
+    "atSeconds": 3.39,
+    "evidence": "Message now or wait — the two behaviours are named and left unanswered."
+   },
+   "firstProof": {
+    "evidenceId": "opening-proof-01",
+    "kind": "result",
+    "atSeconds": 25.69,
+    "evidence": "The study's answer: most willingness to continue when the message arrived the next morning."
+   },
+   "sharedEvidenceJustifications": [],
+   "judgements": {
+    "semanticPredictionError": {
+     "level": "strong",
+     "rationale": "Waiting to look less eager is the common expectation, and the video reports it did not help."
+    },
+    "audienceRelevance": {
+     "level": "strong",
+     "rationale": "Anyone who has left a first date recognises the phone-in-hand moment."
+    },
+    "concreteness": {
+     "level": "strong",
+     "rationale": "A specific situation, a specific study size, a specific timing."
+    },
+    "hookBodyAlignment": {
+     "level": "strong",
+     "rationale": "The body answers exactly the question the opening asks."
+    },
+    "visualVoiceAlignment": {
+     "level": "acceptable",
+     "rationale": "The opening shot is a phone in hand, which is what the spoken line describes."
+    }
+   },
+   "flags": {
+    "metaIntroDelay": false,
+    "vagueGap": false,
+    "fullConclusionRevealed": false
+   },
+   "perceptualChanges": [
+    {
+     "kind": "action",
+     "atSeconds": 1.2,
+     "evidence": "The thumb moves across the blank screen."
+    }
+   ],
+   "semanticIntegrity": {
+    "sourceText": "تا حالا شده بعد از یه قرار خوب، گوشی دستت باشه و ندونی الان پیام بدی یا صبر کنی؟",
+    "requiredTopicAnchors": [
+     "گوشی",
+     "قرار"
+    ],
+    "anchorDelivery": "text"
+   }
+  }
+ }
+}
