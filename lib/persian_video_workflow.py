@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import sys
+import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1089,9 +1090,15 @@ def _state_path(project_dir: Path) -> Path:
 
 def _write_state(project_dir: Path, state: Mapping[str, Any]) -> None:
     path = _state_path(project_dir)
-    temp = path.with_suffix(path.suffix + ".tmp")
-    temp.write_text(json.dumps(dict(state), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temp.replace(path)
+    # A unique temp name per writer: the foreground CLI and a durable job both write
+    # this file, and a shared `.tmp` let two writes interleave into one corrupt file
+    # ("Extra data", seen in L2 on 2026-09-28). os.replace stays atomic per writer.
+    temp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+    try:
+        temp.write_text(json.dumps(dict(state), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        temp.replace(path)
+    finally:
+        temp.unlink(missing_ok=True)
 
 
 def _repo_read_allowlist(profile_version: str | None = None) -> list[str]:
