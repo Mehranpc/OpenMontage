@@ -28,7 +28,9 @@ from lib.persian_scenes import _NEGATIVE_SPACE_RECTS
 from lib.persian_preflight import (
     PREFLIGHT_POLICY_VERSION, aggregate_preflight_edit_decisions, extract_edit_decisions,
 )
-from lib.persian_recovery_policy import recovery_policy_for_issue, shot_local_recovery_plan
+from lib.persian_recovery_policy import (
+    recovery_policy_for_issue, scoped_reacquisition_action, shot_local_recovery_plan,
+)
 from lib.persian_edit_contract import _schema_diagnostics
 from lib.persian_asset_workspace import (
     PersianAssetWorkspaceError,
@@ -653,13 +655,7 @@ def _scoped_reacquisition_hint(
         return ""
     if plan.get("decision") != "scoped_asset_reacquisition":
         return ""
-    shots = ", ".join(str(item) for item in (plan.get("reacquireShotIds") or []))
-    events = ", ".join(str(item) for item in (plan.get("reacquireVisualEventIds") or []))
-    return (
-        "\n  bounded repair: same-phase asset options are exhausted for "
-        f"shot(s) {shots} (visual event(s) {events}); scoped re-acquisition is "
-        "allowed - send back to acquire_assets with this code and those shot ids"
-    )
+    return "\n  " + scoped_reacquisition_action(plan)
 
 
 _NAMED_FIELD_KEYS = ("field", "path", "jsonPointer", "json_pointer", "contractField")

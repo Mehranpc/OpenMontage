@@ -29,7 +29,8 @@ from lib.persian_film_type import FilmTypePreflightError
 from lib.persian_geometric_precheck import geometric_hard_region_precheck
 from lib.persian_project_workspace import active_scratch_root, scoped_scratch_root
 from lib.persian_recovery_policy import (
-    recovery_class_for_code, recovery_policy_for_issue, shot_local_recovery_plan,
+    recovery_class_for_code, recovery_policy_for_issue, scoped_reacquisition_action,
+    shot_local_recovery_plan,
 )
 from lib.persian_asset_workspace import asset_workspace_status
 
@@ -607,16 +608,7 @@ def aggregate_preflight_edit_decisions(
                     asset_workspace_status(root),
                 )
                 if scoped.get("decision") == "scoped_asset_reacquisition":
-                    shots = ", ".join(str(s) for s in (scoped.get("reacquireShotIds") or []))
-                    events = ", ".join(
-                        str(e) for e in (scoped.get("reacquireVisualEventIds") or [])
-                    )
-                    asset_recovery = [
-                        "bounded repair: same-phase asset options are exhausted for "
-                        f"shot(s) {shots} (visual event(s) {events}); scoped "
-                        "re-acquisition is allowed - send back to acquire_assets with "
-                        "this code and those shot ids."
-                    ]
+                    asset_recovery = [scoped_reacquisition_action(scoped)]
             except (ValueError, OSError):
                 asset_recovery = []
         actions = (asset_recovery + [
