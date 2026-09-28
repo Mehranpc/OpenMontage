@@ -47,6 +47,8 @@ Do not count setup/authority phrases such as “research shows” as payoff. Tim
 
 ## Rendered audio evidence
 
+Review and report only the file `master_final_candidate` produced: its `candidatePath` / `candidateSha256` (normally `renders/candidate.mp4`). `renders/rendered.mp4` is the pre-mastering mix; the workflow refuses it as the candidate once mastering committed (#327). If the mastered candidate still measures outside the loudness policy, that is a mastering bug — report it, do not hand-tune gain.
+
 `checks.audio_spotcheck` must be evidence-backed; `mix_intelligible: true` by itself is never enough. Persist:
 
 - `policyVersion: "1.0"`;
