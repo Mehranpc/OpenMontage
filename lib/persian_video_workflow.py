@@ -4554,6 +4554,19 @@ def _validate_awaiting_human_candidate(
         raise PersianVideoWorkflowError(
             "final candidate sha256 does not match the exact MP4 bytes"
         )
+    # #327: once mastering committed, only its output may be the candidate. An
+    # unmastered render also hashes correctly, and a review of it measures the
+    # pre-loudnorm mix (−24.7 LUFS on the 2026-09-28 run).
+    mastering = (state.get("evidence") or {}).get("master_final_candidate")
+    if isinstance(mastering, Mapping) and mastering.get("candidateSha256"):
+        mastered_sha = str(mastering.get("candidateSha256") or "").strip().lower()
+        if actual_digest != mastered_sha:
+            raise PersianVideoWorkflowError(
+                f"final candidate {candidate.name} is not the mastered output "
+                f"{Path(str(mastering.get('candidatePath') or '')).name or '?'} "
+                f"(sha256 {actual_digest[:12]}… vs mastered {mastered_sha[:12]}…); "
+                "report and review the file master_final_candidate produced"
+            )
     result = {
         "candidate_path": str(candidate),
         "candidate_sha256": actual_digest,
