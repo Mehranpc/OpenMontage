@@ -558,7 +558,13 @@ def parked_wall_seconds(
         started = _parse(raw.get("started_at"))
         if started is None:
             continue
-        finished = _parse(raw.get("finished_at")) or now
+        finished = _parse(raw.get("finished_at"))
+        if finished is None and raw.get("kind") == "durable_job":
+            # A job launched with ``--no-wait`` keeps an open span until something
+            # reconciles it through the kernel; the durable job itself may have
+            # finished long ago. Its own terminal record is the truth (#344).
+            finished = _durable_job_finished_at(state, raw.get("job_id"))
+        finished = finished or now
         left, right = max(since, started), min(now, finished)
         if right <= left:
             continue
@@ -594,6 +600,33 @@ def parked_wall_seconds(
         "human_idle_seconds": round(human_seconds, 3),
         "silent_seconds": round(silent_seconds, 3),
     }
+
+
+def _durable_job_finished_at(state: Mapping[str, Any], job_id: object) -> datetime | None:
+    """``finishedAt`` from a durable job's own terminal record, when it has one."""
+    if not job_id:
+        return None
+    allowlist = state.get("read_allowlist")
+    root = allowlist.get("project_root") if isinstance(allowlist, Mapping) else None
+    if not root:
+        return None
+    name = str(job_id)
+    if "/" in name or name in {".", ".."}:
+        return None
+    for filename in ("result.json", "state.json"):
+        path = Path(str(root)) / ".jobs" / name / filename
+        try:
+            record = __import__("json").loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(record, Mapping):
+            continue
+        if str(record.get("status") or "") not in {"succeeded", "failed", "interrupted"}:
+            continue
+        finished = _parse(record.get("finishedAt"))
+        if finished is not None:
+            return finished
+    return None
 
 
 def _interval_union_seconds(intervals: list[tuple[datetime, datetime]]) -> float:

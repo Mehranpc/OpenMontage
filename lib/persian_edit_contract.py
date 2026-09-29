@@ -505,7 +505,9 @@ def _path_diagnostics(
                     "path.missing",
                     _pointer(pointer_parts),
                     f"media path does not exist: {resolved}",
-                    "use an existing file path before browser preparation; preflight never downloads or invents assets",
+                    "use an existing file path before browser preparation; preflight never downloads or invents assets. "
+                    "A relative path resolves against the repository root, not the project directory, "
+                    "so name project media by absolute path; placeholders such as '{project}' are never expanded",
                 )
             )
     return diagnostics
