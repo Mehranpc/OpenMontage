@@ -442,6 +442,14 @@ def retime_moments(
     caller still owns the inter-moment rules — run `audit_moments` on the result,
     which will catch any moment the voice pushed into its neighbour.
     """
+    if film_motion is None and simultaneous_hook_typography:
+        # Simultaneous hook typography exists only in Film Type 2.16, so the caller is
+        # retiming a Film Type edit: derive against the floor the precheck and the
+        # browser charge. Without it the plain estimate derives ends short of the Film
+        # Type floor and the precheck refuses the retimed draft (#346).
+        from lib.persian_scenes import _film_motion
+
+        film_motion = _film_motion()
     bindings = anchor_moments(moments, words, film_motion=film_motion)
     retimed: list[PersianMoment] = []
     for moment, binding in zip(moments, bindings):
