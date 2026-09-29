@@ -987,19 +987,24 @@ def _merge_timed_regions(regions: Sequence[Mapping[str, Any]]) -> list[dict[str,
 
 def candidate_band_occupancy(
     subject_grid: Mapping[str, Any], declared_region: str, *, label: str = "frame_review.subject_grid",
-    fmt: str = "vertical",
+    fmt: str = "vertical", alternates: Sequence[str] = (),
 ) -> dict[str, Any]:
-    """Whether a candidate's reviewed hard regions occupy its event's declared band (#261).
+    """Whether a candidate's reviewed hard regions occupy every region its event accepts (#261, #335).
 
     `subject_grid` holds `start`, `middle`, `end` frames in the exact annotation format
     `regions propose` takes. The overlap rule and band rectangles are the ones
     `declared_negative_space_collisions` enforces at region review, so a candidate
     that passes here cannot be refused there for the same geometry.
+
+    An event may accept `alternates` besides its declared region (#335): the moment can
+    sit in any of them, so the candidate is occupied only when none is clear.
     """
     from lib.persian_scenes import _NEGATIVE_SPACE_RECTS, serviceable_negative_space_regions
 
-    if declared_region not in _NEGATIVE_SPACE_RECTS:
-        raise PersianRegionCommandError(f"unknown declared negative_space {declared_region!r}")
+    accepted = [declared_region, *[name for name in alternates if name != declared_region]]
+    for name in accepted:
+        if name not in _NEGATIVE_SPACE_RECTS:
+            raise PersianRegionCommandError(f"unknown declared negative_space {name!r}")
     if not isinstance(subject_grid, Mapping):
         raise PersianRegionCommandError(f"{label} must be an object with start/middle/end frames")
     hard: list[dict[str, Any]] = []
@@ -1010,7 +1015,6 @@ def candidate_band_occupancy(
         for region in _annotation_regions(frame, label=f"{label}.{position}"):
             if region["priority"] == "hard":
                 hard.append({**region, "position": position})
-    rx, ry, rw, rh = _NEGATIVE_SPACE_RECTS[declared_region]
 
     def overlaps(rect: tuple[float, float, float, float], box: Mapping[str, Any]) -> bool:
         fx, fy, fw, fh = rect
@@ -1019,18 +1023,22 @@ def candidate_band_occupancy(
             and min(fy + fh, box["y"] + box["h"]) - max(fy, box["y"]) > 0
         )
 
-    occupying = [box for box in hard if overlaps((rx, ry, rw, rh), box)]
+    def occupiers(name: str) -> list[dict[str, Any]]:
+        return [box for box in hard if overlaps(_NEGATIVE_SPACE_RECTS[name], box)]
+
+    clear_accepted = [name for name in accepted if not occupiers(name)]
+    occupying = occupiers(declared_region)
     # Only regions the profile can lay type out in are offered as the way out: a column
     # or the caption-reserved lower band in Film Type vertical is empty and unusable, and
     # naming it as "clear" sent the run to a declaration the plan audit refuses (#335).
     serviceable = serviceable_negative_space_regions(fmt)
     clear = sorted(
-        name for name, rect in _NEGATIVE_SPACE_RECTS.items()
-        if name not in {declared_region, "full_frame"} and name in serviceable
-        and not any(overlaps(rect, box) for box in hard)
+        name for name in _NEGATIVE_SPACE_RECTS
+        if name not in {declared_region, "full_frame"} and name in serviceable and not occupiers(name)
     )
-    return {"declared": declared_region, "occupied": bool(occupying),
-            "occupying": occupying, "clearRegions": clear}
+    return {"declared": declared_region, "accepted": accepted, "occupied": not clear_accepted,
+            "clearAccepted": clear_accepted, "occupying": occupying, "clearRegions": clear}
+
 
 def declared_negative_space_collisions(
     scene_plan: Mapping[str, Any],
@@ -1047,16 +1055,18 @@ def declared_negative_space_collisions(
     """
     from lib.persian_scenes import _NEGATIVE_SPACE_RECTS
 
-    declared: dict[str, str] = {}
+    from lib.persian_scenes import moment_regions
+
+    declared: dict[str, list[str]] = {}
     for beat in scene_plan.get("beats") or []:
         if not isinstance(beat, Mapping):
             continue
         for event in beat.get("visual_events") or []:
             if isinstance(event, Mapping) and event.get("carries_moment"):
                 event_id = str(event.get("id") or "").strip()
-                region = str(event.get("negative_space") or "").strip()
-                if event_id and region:
-                    declared[event_id] = region
+                regions = moment_regions(event)
+                if event_id and regions:
+                    declared[event_id] = regions
 
     regions_by_shot = {
         str(row.get("shot_id")): list(row.get("avoidRegions") or []) for row in proposed_rows
@@ -1064,25 +1074,33 @@ def declared_negative_space_collisions(
     collisions: list[dict[str, Any]] = []
     for shot in canonical_shots:
         event_id = str(shot.get("visualEventId") or "").strip()
-        region = declared.get(event_id)
-        if not region or region not in _NEGATIVE_SPACE_RECTS:
+        accepted = [name for name in declared.get(event_id, []) if name in _NEGATIVE_SPACE_RECTS]
+        if not accepted:
             continue
-        rx, ry, rw, rh = _NEGATIVE_SPACE_RECTS[region]
-        occupying: list[dict[str, Any]] = []
-        for index, hard in enumerate(regions_by_shot.get(str(shot["shotId"]), [])):
-            if not isinstance(hard, Mapping) or hard.get("priority") == "soft":
-                continue
-            hx, hy = float(hard.get("x", 0.0)), float(hard.get("y", 0.0))
-            hw, hh = float(hard.get("w", 0.0)), float(hard.get("h", 0.0))
-            if min(rx + rw, hx + hw) - max(rx, hx) <= 0 or min(ry + rh, hy + hh) - max(ry, hy) <= 0:
-                continue
-            occupying.append({
-                "regionIndex": index, "x": hx, "y": hy, "w": hw, "h": hh,
-                **({"startSeconds": hard["startSeconds"], "endSeconds": hard["endSeconds"]}
-                   if "startSeconds" in hard else {}),
-            })
-        if not occupying:
+        region = accepted[0]
+        shot_regions = regions_by_shot.get(str(shot["shotId"]), [])
+
+        def occupiers(name: str) -> list[dict[str, Any]]:
+            rx, ry, rw, rh = _NEGATIVE_SPACE_RECTS[name]
+            found: list[dict[str, Any]] = []
+            for index, hard in enumerate(shot_regions):
+                if not isinstance(hard, Mapping) or hard.get("priority") == "soft":
+                    continue
+                hx, hy = float(hard.get("x", 0.0)), float(hard.get("y", 0.0))
+                hw, hh = float(hard.get("w", 0.0)), float(hard.get("h", 0.0))
+                if min(rx + rw, hx + hw) - max(rx, hx) <= 0 or min(ry + rh, hy + hh) - max(ry, hy) <= 0:
+                    continue
+                found.append({
+                    "regionIndex": index, "x": hx, "y": hy, "w": hw, "h": hh,
+                    **({"startSeconds": hard["startSeconds"], "endSeconds": hard["endSeconds"]}
+                       if "startSeconds" in hard else {}),
+                })
+            return found
+
+        # An event that accepts several regions collides only when every one is occupied (#335).
+        if any(not occupiers(name) for name in accepted):
             continue
+        occupying = occupiers(region)
         free = sorted(
             name for name, (fx, fy, fw, fh) in _NEGATIVE_SPACE_RECTS.items()
             if name != region and not any(
@@ -1096,6 +1114,7 @@ def declared_negative_space_collisions(
             "beatId": shot.get("beatId"),
             "visualEventId": event_id,
             "declaredRegion": region,
+            **({"acceptedRegions": accepted} if len(accepted) > 1 else {}),
             "occupiedBy": occupying,
             "regionsClearOfTheseHardRegions": free,
             "remedy": (

@@ -464,7 +464,14 @@
                 "negative_space": {
                   "type": "string",
                   "enum": ["left_column", "right_column", "upper_band", "lower_band", "centre_band", "full_frame"],
-                  "description": "The region the plan keeps clear for the moment this unit carries. Required when carries_moment is true; the asset review must record the same region it actually observed."
+                  "description": "The region the plan keeps clear for the moment this unit carries. Required when carries_moment is true; the asset review must record the region it actually observed, which is this one or one of negative_space_alternates."
+                },
+                "negative_space_alternates": {
+                  "type": "array",
+                  "items": {"type": "string", "enum": ["left_column", "right_column", "upper_band", "lower_band", "centre_band", "full_frame"]},
+                  "uniqueItems": true,
+                  "maxItems": 2,
+                  "description": "Other regions the moment may sit in when the footage leaves negative_space occupied but one of these clear (#335). Each must be usable in the plan's format, so in Film Type vertical only centre_band or upper_band qualify. Optional; only for carries_moment events."
                 }
               },
               "additionalProperties": false

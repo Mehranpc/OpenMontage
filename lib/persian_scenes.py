@@ -411,6 +411,21 @@ def _region_serviceable_span(region: tuple[float, float, float, float],
     return width, height
 
 
+def moment_regions(event: Any) -> list[str]:
+    """Every region a moment-carrying event accepts: the declared one, then its alternates (#335).
+
+    The single reader for "where may this moment sit", so the plan audit, candidate
+    review, region review and the edit preflight cannot drift to different sets.
+    """
+    primary = str(event.get("negative_space") or "").strip()
+    regions = [primary] if primary else []
+    for alternate in event.get("negative_space_alternates") or []:
+        name = str(alternate or "").strip()
+        if name and name not in regions:
+            regions.append(name)
+    return regions
+
+
 def negative_space_unserviceable_reason(region: str, fmt: str) -> str | None:
     """Why a declared region can never host type in `fmt`, or None when it can (#335).
 
@@ -717,6 +732,21 @@ def audit_scene_plan(
                         "still be unusable: declare a region the profile can lay type out "
                         "in (a band, or the full frame)."
                     )
+                for alternate in event.get("negative_space_alternates") or []:
+                    if alternate == declared:
+                        problems.append(
+                            f"{label}: `negative_space_alternates` repeats the declared "
+                            f"{declared!r}; list only other regions."
+                        )
+                        continue
+                    alt_reason = negative_space_unserviceable_reason(
+                        str(alternate), str(scene_plan.get("format") or "vertical")
+                    )
+                    if alt_reason is not None:
+                        problems.append(
+                            f"{label}: `negative_space_alternates` entry {alt_reason}; an "
+                            "alternate that can never hold type is not a way out."
+                        )
 
     # --- Enough moments to be the product ---------------------------------------------
     # Declaring fewer copy-bearing events is the cheapest way to satisfy every placement

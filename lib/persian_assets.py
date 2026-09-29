@@ -105,6 +105,9 @@ def _quality_metadata_problems(
         frame_review = frame_review if isinstance(frame_review, dict) else {}
         observed = str(frame_review.get("placement_space") or "").strip()
         planned = str(requirement.get("negative_space") or "").strip()
+        accepted = [planned, *[
+            str(name) for name in requirement.get("negative_space_alternates") or [] if str(name) != planned
+        ]]
         if not observed:
             problems.append(
                 f"{label}: carries a typographic moment, so the frame review must record "
@@ -112,11 +115,11 @@ def _quality_metadata_problems(
                 "Choosing on subject match alone is how unusable footage reaches an "
                 "authored edit."
             )
-        elif observed != planned:
+        elif observed not in accepted:
             problems.append(
                 f"{label}: frame_review.placement_space is {observed!r} but the plan "
-                f"reserved {planned!r}; the selected footage does not leave the room the "
-                "moment was planned against."
+                f"reserved {' or '.join(repr(name) for name in accepted)}; the selected "
+                "footage does not leave the room the moment was planned against."
             )
 
     if str(requirement.get("narrative_role") or "").strip() == "hook":
@@ -241,6 +244,9 @@ def _scene_asset_requirements(
                         # where the plan says the frame stays clear for it (#164).
                         "carries_moment": bool(event.get("carries_moment")),
                         "negative_space": str(event.get("negative_space") or ""),
+                        "negative_space_alternates": [
+                            str(name) for name in event.get("negative_space_alternates") or []
+                        ],
                     }
                 )
         else:
