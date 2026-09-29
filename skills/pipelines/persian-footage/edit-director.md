@@ -23,6 +23,7 @@ The first moment is the hook, starts by 0.6s, and must be earned by the approved
 Every narrated moment carries spoken-form `anchorText`. Re-derive timings from current word timings; never rescale an old edit by duration ratio. With `simultaneous_hook_typography=True`, each active 2.16 hook remains a complete 3–5 second composition.
 
 ```python
+from lib.persian_scenes import _film_motion
 from lib.persian_sync import TimedWord, audit_sync, retime_moments
 
 words = TimedWord.from_dicts(audio["wordTimings"])
@@ -30,6 +31,7 @@ moments = retime_moments(
     moments,
     words,
     simultaneous_hook_typography=True,
+    film_motion=_film_motion(),  # Film Type reading floor; without it ends fall short
 )
 assert not audit_sync(moments, words).problems
 ```

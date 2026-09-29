@@ -5361,7 +5361,10 @@ def _refuse_cheap_preflight_defects_before_candidate(
     for issue in issues[:12]:
         where = f" {issue['path']}" if issue.get("path") else ""
         line = f"{issue.get('code')}{where}: {issue.get('message')}"
-        if str(issue.get("code") or "").startswith("path.") and issue.get("hint"):
+        if (
+            str(issue.get("code") or "").startswith(("path.", "moments.pacing"))
+            and issue.get("hint")
+        ):
             line += f" ({issue['hint']})"
         if (
             str(issue.get("code") or "").startswith("path.")
