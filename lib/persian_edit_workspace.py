@@ -991,23 +991,19 @@ def _declared_region_is_clear(edit: Mapping[str, Any], plan: Mapping[str, Any]) 
     if not isinstance(shots, list):
         return problems
 
-    declared: dict[str, str] = {}
+    from lib.persian_scenes import moment_regions
+
+    declared: dict[str, list[str]] = {}
     for beat in plan.get("beats") or []:
         for event in beat.get("visual_events") or []:
             if isinstance(event, Mapping) and event.get("carries_moment"):
-                region = str(event.get("negative_space") or "").strip()
                 event_id = str(event.get("id") or "").strip()
-                if event_id and region:
-                    declared[event_id] = region
+                regions = [name for name in moment_regions(event) if name in _NEGATIVE_SPACE_RECTS]
+                if event_id and regions:
+                    declared[event_id] = regions
 
-    for shot in shots:
-        if not isinstance(shot, Mapping):
-            continue
-        event_id = str(shot.get("visualEventId") or "").strip()
-        region = declared.get(event_id)
-        if not region or region not in _NEGATIVE_SPACE_RECTS:
-            continue
-        rx, ry, rw, rh = _NEGATIVE_SPACE_RECTS[region]
+    def occupier(shot: Mapping[str, Any], name: str) -> tuple[int, float, float, float, float] | None:
+        rx, ry, rw, rh = _NEGATIVE_SPACE_RECTS[name]
         for index, hard in enumerate(shot.get("avoidRegions") or []):
             # Soft occupancy (general body) is the fitter's preference, not a refusal, and
             # region review already ignores it; counting it here refused an edit that
@@ -1021,16 +1017,33 @@ def _declared_region_is_clear(edit: Mapping[str, Any], plan: Mapping[str, Any]) 
                 continue
             overlap_w = max(0.0, min(rx + rw, hx + hw) - max(rx, hx))
             overlap_h = max(0.0, min(ry + rh, hy + hh) - max(ry, hy))
-            if overlap_w * overlap_h <= 0.0:
-                continue
-            problems.append(
-                f'{shot.get("id")} ({event_id}): the plan reserves {region!r} for the '
-                f"typographic moment, but reviewed hard region {index} occupies it "
-                f"(x{hx:g} y{hy:g} w{hw:g} h{hh:g}). A declared region has to be clear of "
-                "the subject it sits beside; either re-declare the region against what "
-                "the footage shows, or re-source the shot. Declaring it does not make "
-                "the space free."
-            )
+            if overlap_w * overlap_h > 0.0:
+                return index, hx, hy, hw, hh
+        return None
+
+    for shot in shots:
+        if not isinstance(shot, Mapping):
+            continue
+        event_id = str(shot.get("visualEventId") or "").strip()
+        accepted = declared.get(event_id)
+        if not accepted:
+            continue
+        # An event that accepts several regions is refused only when every one is
+        # occupied (#335).
+        first = occupier(shot, accepted[0])
+        if first is None or any(occupier(shot, name) is None for name in accepted[1:]):
+            continue
+        region = accepted[0]
+        index, hx, hy, hw, hh = first
+        problems.append(
+            f'{shot.get("id")} ({event_id}): the plan reserves '
+            f"{' or '.join(repr(name) for name in accepted)} for the "
+            f"typographic moment, but reviewed hard region {index} occupies "
+            f"{region!r} (x{hx:g} y{hy:g} w{hw:g} h{hh:g}). A declared region has to be clear of "
+            "the subject it sits beside; either re-declare the region against what "
+            "the footage shows, or re-source the shot. Declaring it does not make "
+            "the space free."
+        )
     return problems
 
 

@@ -3014,7 +3014,8 @@ def request_send_back(
 #: Correcting them after acquisition changes no timing, query, id or download; it makes
 #: the plan tell the truth about the reviewed footage (#224).
 _RECONCILABLE_EVENT_FIELDS = frozenset({
-    "shows_subject", "negative_space", "carries_moment", "fallback_level", "moment_copy",
+    "shows_subject", "negative_space", "negative_space_alternates", "carries_moment",
+    "fallback_level", "moment_copy",
 })
 _RECONCILE_PHASES = ("acquire_assets", "review_subject_regions")
 
@@ -3221,7 +3222,7 @@ def reconcile_scene_plan(
     `max_revisions_per_stage` per budget window.
     """
     from lib.persian_assets import audit_asset_manifest
-    from lib.persian_scenes import NEGATIVE_SPACE_REGIONS
+    from lib.persian_scenes import NEGATIVE_SPACE_REGIONS, negative_space_unserviceable_reason
 
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     effective_now = now or datetime.now(timezone.utc)
@@ -3305,6 +3306,17 @@ def reconcile_scene_plan(
                 f"amendment[{index}] ({event_id}): a moment carrier must declare negative_space "
                 f"as one of {sorted(NEGATIVE_SPACE_REGIONS)}"
             )
+        if event.get("carries_moment") and ("negative_space" in fields or "negative_space_alternates" in fields):
+            unusable = None
+            for name in [str(event["negative_space"]), *[str(a) for a in event.get("negative_space_alternates") or []]]:
+                unusable = negative_space_unserviceable_reason(name, str(plan.get("format") or "vertical"))
+                if unusable is not None:
+                    break
+            if unusable is not None:
+                raise PersianVideoWorkflowError(
+                    f"amendment[{index}] ({event_id}): negative_space {unusable}; the plan "
+                    "audit refuses it, so reconciling to it only moves the failure later"
+                )
         record = {"visual_event_id": event_id, "before": before, "after": dict(fields)}
         if appended_queries:
             event["reconciled_queries"] = [*(event.get("reconciled_queries") or []), *appended_queries]
@@ -3928,20 +3940,37 @@ def stage_workflow_asset_candidate(
 
 def _planned_moment_band(state: Mapping[str, Any], visual_event_id: str) -> str | None:
     """The declared negative_space of a moment-carrying event in the current plan."""
+    return _planned_moment_band_and_format(state, visual_event_id)[0]
+
+
+def _planned_moment_band_and_format(
+    state: Mapping[str, Any], visual_event_id: str
+) -> tuple[str | None, str]:
+    band, fmt, _alternates = _planned_moment_regions(state, visual_event_id)
+    return band, fmt
+
+
+def _planned_moment_regions(
+    state: Mapping[str, Any], visual_event_id: str
+) -> tuple[str | None, str, list[str]]:
     from lib.persian_scene_plan_source import materialize_scene_plan
 
     project = _project_root(state)
     path = materialize_scene_plan(project) or project / "artifacts" / "scene_plan.json"
     if not Path(path).is_file():
-        return None
+        return None, "vertical", []
     plan = json.loads(Path(path).read_text(encoding="utf-8"))
+    fmt = str(plan.get("format") or "vertical")
     for beat in plan.get("beats") or []:
         for event in (beat.get("visual_events") or []) if isinstance(beat, Mapping) else []:
             if isinstance(event, Mapping) and str(event.get("id") or "") == visual_event_id:
                 if event.get("carries_moment") and event.get("negative_space"):
-                    return str(event["negative_space"])
-                return None
-    return None
+                    return (
+                        str(event["negative_space"]), fmt,
+                        [str(name) for name in event.get("negative_space_alternates") or []],
+                    )
+                return None, fmt, []
+    return None, fmt, []
 
 
 def _refuse_candidate_occupying_declared_band(
@@ -3959,8 +3988,8 @@ def _refuse_candidate_occupying_declared_band(
 
     candidate = load_asset_candidate(_project_root(state), candidate_id)
     event_id = str((candidate.get("context") or {}).get("visualEventId") or "")
-    band = _planned_moment_band(state, event_id)
-    if band is None or band == "full_frame":
+    band, plan_format, alternates = _planned_moment_regions(state, event_id)
+    if band is None or band == "full_frame" or "full_frame" in alternates:
         return
     frame = review.get("frame_review") if isinstance(review, Mapping) else None
     grid = frame.get("subject_grid") if isinstance(frame, Mapping) else None
@@ -3971,7 +4000,7 @@ def _refuse_candidate_occupying_declared_band(
             "annotation format as regions propose) so the band is judged before selection"
         )
     try:
-        occupancy = candidate_band_occupancy(grid, band)
+        occupancy = candidate_band_occupancy(grid, band, fmt=plan_format, alternates=alternates)
     except PersianRegionCommandError as exc:
         raise PersianVideoWorkflowError(f"[BAND_EVIDENCE_INVALID] {exc}") from exc
     if occupancy["occupied"]:
@@ -3979,7 +4008,8 @@ def _refuse_candidate_occupying_declared_band(
         clear = ", ".join(occupancy["clearRegions"]) or "none"
         raise PersianVideoWorkflowError(
             f"[BAND_OCCUPIED:{band}] {candidate_id} for {event_id}: a reviewed hard region "
-            f"occupies the declared {band} on the {where} frame(s), so region review would "
+            f"occupies {' and '.join(repr(name) for name in occupancy['accepted'])} on the "
+            f"{where} frame(s), so region review would "
             f"refuse this shot. Clear regions on this footage: {clear}. Reject the candidate "
             f"(asset-candidate-reject --category technical) or reconcile-plan the band first."
         )
