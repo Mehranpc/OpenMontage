@@ -217,3 +217,22 @@ def test_reopen_accepts_queries_a_replan_authored_after_the_passes_were_spent(tm
     ev["queries"] = ["phone flat on a plain desk", "person holding phone in a wide cafe"]
     cp.write_text(_json.dumps(data), encoding="utf-8")
     assert reopen_asset_search("run", ["event-0"], reason="y", pipeline_dir=tmp_path, now=BASE)["reopened"] == ["event-0"]
+
+
+def test_reopen_grants_two_candidates_per_event_so_pass_one_is_not_refused(tmp_path: Path) -> None:
+    """#333: a five-event reopen got a grant of 4, so its own pass 1 hit the ceiling."""
+    from lib.persian_video_workflow import _candidate_ceiling, asset_search_policy
+
+    _run_at_acquire(tmp_path)
+    _spend_both_passes(tmp_path)
+    reconcile_scene_plan("run", [{"visual_event_id": "event-0", "queries_append": ["one more framing"]},
+                                 {"visual_event_id": "event-1", "queries_append": ["another framing"]},
+                                 {"visual_event_id": "event-2", "queries_append": ["third framing"]}],
+                         reason="x", pipeline_dir=tmp_path, now=BASE)
+    state = load_workflow_state("run", pipeline_dir=tmp_path)
+    state["asset_usage"]["semantic_candidates_reviewed"] = 40  # far past the policy ceiling
+    workflow._write_state(tmp_path / "run", state)
+    reopen_asset_search("run", ["event-0", "event-1", "event-2"], reason="y", pipeline_dir=tmp_path, now=BASE)
+    state = load_workflow_state("run", pipeline_dir=tmp_path)
+    assert state["asset_reacquisition_grant"]["candidates"] == 6
+    assert _candidate_ceiling(state, asset_search_policy()["max_candidates_total"]) == 46

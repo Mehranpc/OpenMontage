@@ -3158,7 +3158,11 @@ def reopen_asset_search(
     }
     state["asset_reacquisition_scope"] = scope
     state["asset_reacquisition_grant"] = {
-        "candidates": min(_REACQUISITION_CANDIDATE_GRANT, 2 * len(events)),
+        # A reopened cycle has its own two passes and each event runs one query per pass,
+        # so it needs two candidates per event. The scoped-repair cap of 4 left a
+        # five-event reopen with 4 for both passes: pass 0 used 5 and pass 1 was refused
+        # as "budget exhausted" on the 2026-09-29 run (#333).
+        "candidates": max(_REACQUISITION_CANDIDATE_GRANT, 2 * len(events)),
         "visualEventIds": events,
         "grantedAt": effective_now.isoformat(),
         "candidateBaseline": int(
