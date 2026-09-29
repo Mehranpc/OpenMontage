@@ -34,3 +34,23 @@ def test_ceiling_is_two_per_event_never_below_policy_and_capped(tmp_path: Path, 
         _plan(tmp_path, events)
     request = bounded_asset_search_request("run", {}, retry_pass=0, pipeline_dir=tmp_path, now=BASE)
     assert request["max_candidates_total"] == ceiling
+
+
+def test_moment_carriers_count_double_toward_the_ceiling(tmp_path: Path) -> None:
+    """#335: 8 of 11 events carried a moment and 22 candidates were spent before the last
+    carrier was resolved. A carrier needs footage that leaves a band clear, so it weighs 2."""
+    from lib.persian_video_workflow import _planned_footage_events, load_workflow_state
+
+    _bootstrap_to_assets(tmp_path)
+    _plan(tmp_path, 11)
+    path = tmp_path / "run" / "checkpoint_scene_plan.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    events = [e for b in data["artifacts"]["scene_plan"]["beats"] for e in b["visual_events"]]
+    state = load_workflow_state("run", pipeline_dir=tmp_path)
+    assert _planned_footage_events(state) == 11
+    for event in events[:8]:
+        event["carries_moment"] = True
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    assert _planned_footage_events(state) == 19
+    request = bounded_asset_search_request("run", {}, retry_pass=0, pipeline_dir=tmp_path, now=BASE)
+    assert request["max_candidates_total"] == 32  # 2 * 19 = 38, capped at 32
