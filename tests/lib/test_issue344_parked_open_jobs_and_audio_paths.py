@@ -94,3 +94,17 @@ def test_the_refusal_names_the_projects_real_narration(tmp_path, monkeypatch) ->
 def test_shot_source_paths_stay_with_the_asset_binding() -> None:
     """The fixture's /tmp shot sources do not exist; the binding owns them, not this precheck."""
     workflow._refuse_cheap_preflight_defects_before_candidate(_schema_valid_edit(), {"authority": "t"})
+
+
+def test_a_multi_word_accent_is_refused_before_any_candidate(tmp_path, monkeypatch) -> None:
+    """pathfix-01 cleared the path and then died in the browser on accentWords 'پیام بدی'."""
+    payload = _schema_valid_edit()
+    segment = payload["persian"]["moments"][0]["segments"][0]
+    words = segment["text"].split()
+    if len(words) < 2:
+        pytest.skip("fixture hook has a single word")
+    segment["accentWords"] = [f"{words[0]} {words[1]}"]
+    source = _front_door(tmp_path, monkeypatch, payload)
+    with pytest.raises(PersianEditWorkspaceError, match=r"(?s)EDIT_PRECHECK.*moment\.invalid.*accents"):
+        workflow.stage_workflow_edit_draft("run", "base", source, pipeline_dir=tmp_path)
+    assert workspace.convergence_status(tmp_path / "run", revision_cycle=0)["candidateCount"] == 0
