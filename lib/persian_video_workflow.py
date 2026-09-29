@@ -5314,8 +5314,16 @@ def _terminalize_from_convergence_stop(
     return True
 
 
+# Audio inputs have no asset binding: nothing else proves these paths before the
+# browser pass, so a missing one must be refused here, before a candidate (#344).
+_PRECHECKED_MEDIA_POINTERS = ("/persian/audio/narration", "/persian/musicTrack/path")
+
+
 def _refuse_cheap_preflight_defects_before_candidate(
-    payload: Mapping[str, Any], hook_authority: Mapping[str, Any]
+    payload: Mapping[str, Any],
+    hook_authority: Mapping[str, Any],
+    *,
+    narration_path: str | None = None,
 ) -> None:
     """Run every deterministic preflight layer before a draft can become a candidate.
 
@@ -5338,16 +5346,30 @@ def _refuse_cheap_preflight_defects_before_candidate(
     # Schema shape is refused inside `stage_edit_draft` (#212) with alias hints, and media
     # paths are proven by the asset binding. Leave those to their owners so each defect
     # has one refusal path and one message.
+    # Shot sources are proven by the asset binding; audio inputs are not (#344).
     issues = [
         issue for issue in (report.get("blockingIssues") or [])
-        if not str(issue.get("code") or "").startswith(("schema.", "path."))
+        if not str(issue.get("code") or "").startswith("schema.")
+        and not (
+            str(issue.get("code") or "").startswith("path.")
+            and str(issue.get("path") or "") not in _PRECHECKED_MEDIA_POINTERS
+        )
     ]
     if not issues:
         return
     lines = []
     for issue in issues[:12]:
         where = f" {issue['path']}" if issue.get("path") else ""
-        lines.append(f"{issue.get('code')}{where}: {issue.get('message')}")
+        line = f"{issue.get('code')}{where}: {issue.get('message')}"
+        if str(issue.get("code") or "").startswith("path.") and issue.get("hint"):
+            line += f" ({issue['hint']})"
+        if (
+            str(issue.get("code") or "").startswith("path.")
+            and issue.get("path") == "/persian/audio/narration"
+            and narration_path
+        ):
+            line += f" -- use this project's narration by absolute path: {narration_path}"
+        lines.append(line)
     raise PersianEditWorkspaceError(
         "[EDIT_PRECHECK] the draft has deterministic defects; refused before candidate "
         "consumption (no convergence budget spent). Fix and re-stage:\n  - "
@@ -5417,7 +5439,14 @@ def stage_workflow_edit_draft(
         raise PersianVideoWorkflowError(
             "convergence workspace requires human editorial revision before more candidates can be staged"
         )
-    _refuse_cheap_preflight_defects_before_candidate(payload, decision)
+    narration_record = (state.get("input") or {}).get("narration")
+    _refuse_cheap_preflight_defects_before_candidate(
+        payload, decision,
+        narration_path=(
+            str(narration_record.get("source_path") or "") or None
+            if isinstance(narration_record, Mapping) else None
+        ),
+    )
     current_ids = set(str(item) for item in current_convergence.get("candidateIds") or [])
     if parent_attempt_id is None and current_ids and attempt_id not in current_ids:
         raise PersianVideoWorkflowError(

@@ -44,16 +44,18 @@ Every reveal step must satisfy the canonical reading model; moments remain 2.4â€
 
 ```json
 "musicTrack": {
-  "path": "assets/music/track.mp3",
+  "path": "/abs/path/to/projects/<project-id>/assets/music/track.mp3",
   "source": "pixabay_music",
   "license": {"name": "Pixabay Content License", "url": "https://pixabay.com/service/license-summary/", "downloadedAt": "2026-09-02"},
   "contentIdRisk": {"level": "low", "reason": "licensed use; third-party claims remain possible"}
 }
 ```
 
+Media paths are absolute. A relative path resolves against the repository root, not the project, and no placeholder (such as `{project}`) is expanded; the narration is the `input.narration.source_path` that `status --json` reports.
+
 ```json
 "audio": {
-    "narration": "assets/audio/voiceover.mp3",
+    "narration": "/abs/path/to/projects/<project-id>/inputs/narration.mp3",
     "wordTimings": []
 }
 ```

@@ -505,7 +505,9 @@ def _path_diagnostics(
                     "path.missing",
                     _pointer(pointer_parts),
                     f"media path does not exist: {resolved}",
-                    "use an existing file path before browser preparation; preflight never downloads or invents assets",
+                    "use an existing file path before browser preparation; preflight never downloads or invents assets. "
+                    "A relative path resolves against the repository root, not the project directory, "
+                    "so name project media by absolute path; placeholders such as '{project}' are never expanded",
                 )
             )
     return diagnostics
@@ -562,6 +564,35 @@ def _hook_shot_complexity_diagnostics(persian: dict[str, Any]) -> list[ContractD
             )
         )
     return diagnostics
+
+def _moment_copy_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnostic]:
+    """Moment copy rules the schema cannot see, before a candidate is spent (#344).
+
+    An accent word that is not one of its segment's own words, too many accents, a
+    phrase lock that is not in the text: `build_moments` refuses these, but only the
+    browser pass ran it, so a run spent a convergence candidate on accentWords
+    'پیام بدی' (two words; accents are single words).
+    """
+    authored = persian.get("moments")
+    if not isinstance(authored, list) or not authored:
+        return []
+    from lib.persian_moments import build_moments
+
+    try:
+        build_moments(authored)
+    except ValueError as exc:
+        return [
+            ContractDiagnostic(
+                "moment.invalid",
+                "/persian/moments",
+                str(exc),
+                "fix the moment copy fields named in the message; accentWords are single words of the segment's own text",
+            )
+        ]
+    except (TypeError, KeyError):
+        return []  # malformed moments are the schema layer's refusal
+    return []
+
 
 def _moment_pacing_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnostic]:
     """Film Type reading floors, checked before a candidate is spent (#271).
@@ -737,6 +768,7 @@ def collect_persian_edit_diagnostics(
         diagnostics.extend(_region_diagnostics(persian))
         diagnostics.extend(_hook_shot_complexity_diagnostics(persian))
         diagnostics.extend(_opening_semantic_diagnostics(persian))
+        diagnostics.extend(_moment_copy_diagnostics(persian))
         diagnostics.extend(_moment_pacing_diagnostics(persian))
         diagnostics.extend(_shot_source_window_diagnostics(persian))
         diagnostics.extend(_frame_grid_diagnostics(persian))
