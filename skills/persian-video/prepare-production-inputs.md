@@ -24,6 +24,8 @@ Technical corrections are limited to what the canonical subtitle contract permit
 
 Run the canonical `idea` stage from the approved content so later visual planning has a valid brief. Then persist the canonical `script` artifact/checkpoint from the authoritative text. The fact that the pipeline needs these artifacts does not reopen the copy for editorial revision.
 
+The shapes are the schemas, not examples (#329): the brief is `schemas/artifacts/brief.schema.json`, the script `schemas/artifacts/script.schema.json`, the decision log `schemas/artifacts/decision_log.schema.json`, and every checkpoint `schemas/checkpoints/checkpoint.schema.json`, written through `lib.checkpoint.write_checkpoint`, which validates against them.
+
 ### Narration-only input
 
 Transcribe the supplied narration faithfully with word-level timings. The audio, not ASR spelling, is the authority. Review uncertain ASR words against the recording and correct transcription errors to what was actually spoken; do not improve what the speaker said.

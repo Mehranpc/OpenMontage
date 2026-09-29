@@ -11,6 +11,8 @@ This skill does not write, translate, improve, or rewrite narration. Text-only P
 
 The ordered workflow, retry/send-back limits, stock-download ceilings, read isolation, and terminal state are owned by `lib/persian_video_workflow.py`. Do not reproduce or reorder its phase list in prose. Canonical production-stage contracts remain in `pipeline_defs/persian-footage.yaml` and `skills/pipelines/persian-footage/`.
 
+Read scope (#329): during a production, read only the current project, its inputs, and the repo paths listed in the project's `workflow_state.json` under `read_allowlist.repo_paths` (skills, pipeline definition, styles, hook references, Film Type contract, and `schemas/`). `tests/`, `tests/fixtures/` and rehearsal decisions are off-limits: they are a previous run's recorded creative choices, clip picks and review answers, not contracts. A run that copies them is not independent, and its acceptance evidence is void. Artifact shapes come from `schemas/`.
+
 ## Production input boundary
 
 A fresh production may start from:
