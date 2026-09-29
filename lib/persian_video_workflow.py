@@ -1584,7 +1584,11 @@ def _planned_footage_events(state: Mapping[str, Any]) -> int:
     if not isinstance(plan, Mapping):
         return 0
     requirements, _, _ = scene_asset_requirements(dict(plan))
-    return len(requirements)
+    # A moment carrier needs footage whose subject leaves a band clear, which stock
+    # search returns far less often than footage that merely fits the action (5 of 8
+    # carriers failed on the first pass of the 2026-09-29 run, #335). Weight it so its
+    # own review budget covers a second and a third look.
+    return len(requirements) + sum(1 for item in requirements if item.get("carries_moment"))
 
 
 def _scaled_policy_total(state: Mapping[str, Any], policy_total: int) -> int:
