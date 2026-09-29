@@ -411,6 +411,41 @@ def _region_serviceable_span(region: tuple[float, float, float, float],
     return width, height
 
 
+def negative_space_unserviceable_reason(region: str, fmt: str) -> str | None:
+    """Why a declared region can never host type in `fmt`, or None when it can (#335).
+
+    The one definition of "usable": the plan audit refuses a declaration by it, and
+    the candidate-review and reconcile-plan paths use it too, so a region is never
+    offered as the way out of a collision that the plan audit would itself refuse.
+    """
+    rect = _NEGATIVE_SPACE_RECTS.get(region)
+    if rect is None:
+        return f"{region!r} is not one of {sorted(NEGATIVE_SPACE_REGIONS)}"
+    safe = _editorial_safe_area(fmt or "vertical")
+    if safe is None:
+        return None
+    usable_w, usable_h = _region_serviceable_span(rect, safe)
+    if usable_w * usable_h < _MIN_SERVICEABLE_REGION_AREA:
+        return (
+            f"{region!r} lies outside the profile's editorial safe area, so type cannot be "
+            "placed there at all"
+        )
+    if usable_w < _MIN_RECIPE_COLUMN_FRACTION * safe[2]:
+        return (
+            f"{region!r} is only {usable_w:.2f} of the frame wide inside the safe area, but "
+            f"the profile's narrowest curated column is {_MIN_RECIPE_COLUMN_FRACTION} of the "
+            f"safe width ({_MIN_RECIPE_COLUMN_FRACTION * safe[2]:.2f})"
+        )
+    return None
+
+
+def serviceable_negative_space_regions(fmt: str) -> frozenset[str]:
+    """The declared regions that can host a moment in `fmt` (#335)."""
+    return frozenset(
+        name for name in _NEGATIVE_SPACE_RECTS if negative_space_unserviceable_reason(name, fmt) is None
+    )
+
+
 def scene_plan_duration_tolerance_seconds(fps: float = 30.0) -> float:
     """One frame at `fps`: the tolerance that binds a plan's beats to its narration.
 
@@ -673,29 +708,15 @@ def audit_scene_plan(
                         "wall or sky filling the band) using one of "
                         f"{list(FRAMING_QUERY_TERMS)}."
                     )
-                safe = _editorial_safe_area(str(scene_plan.get("format") or "vertical"))
-                if safe is not None:
-                    usable_w, usable_h = _region_serviceable_span(
-                        _NEGATIVE_SPACE_RECTS[declared], safe
+                reason = negative_space_unserviceable_reason(
+                    declared, str(scene_plan.get("format") or "vertical")
+                )
+                if reason is not None:
+                    problems.append(
+                        f"{label}: `negative_space` {reason}. A region can be clear and "
+                        "still be unusable: declare a region the profile can lay type out "
+                        "in (a band, or the full frame)."
                     )
-                    if usable_w * usable_h < _MIN_SERVICEABLE_REGION_AREA:
-                        problems.append(
-                            f"{label}: `negative_space` {declared!r} lies outside the "
-                            "profile's editorial safe area, so type cannot be placed there "
-                            "at all -- a region can be clear and still be unusable. The "
-                            "profile reserves that part of the frame; declare a region with "
-                            "safe-area room instead."
-                        )
-                    elif usable_w < _MIN_RECIPE_COLUMN_FRACTION * safe[2]:
-                        problems.append(
-                            f"{label}: `negative_space` {declared!r} is only "
-                            f"{usable_w:.2f} of the frame wide inside the safe area, but the "
-                            "profile's narrowest curated column is "
-                            f"{_MIN_RECIPE_COLUMN_FRACTION} of the safe width "
-                            f"({_MIN_RECIPE_COLUMN_FRACTION * safe[2]:.2f}). Type cannot be "
-                            "laid out there at all, so declaring it guarantees a placement "
-                            "refusal later. Use a band or the full frame instead."
-                        )
 
     # --- Enough moments to be the product ---------------------------------------------
     # Declaring fewer copy-bearing events is the cheapest way to satisfy every placement

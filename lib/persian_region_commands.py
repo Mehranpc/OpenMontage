@@ -987,6 +987,7 @@ def _merge_timed_regions(regions: Sequence[Mapping[str, Any]]) -> list[dict[str,
 
 def candidate_band_occupancy(
     subject_grid: Mapping[str, Any], declared_region: str, *, label: str = "frame_review.subject_grid",
+    fmt: str = "vertical",
 ) -> dict[str, Any]:
     """Whether a candidate's reviewed hard regions occupy its event's declared band (#261).
 
@@ -995,7 +996,7 @@ def candidate_band_occupancy(
     `declared_negative_space_collisions` enforces at region review, so a candidate
     that passes here cannot be refused there for the same geometry.
     """
-    from lib.persian_scenes import _NEGATIVE_SPACE_RECTS
+    from lib.persian_scenes import _NEGATIVE_SPACE_RECTS, serviceable_negative_space_regions
 
     if declared_region not in _NEGATIVE_SPACE_RECTS:
         raise PersianRegionCommandError(f"unknown declared negative_space {declared_region!r}")
@@ -1019,9 +1020,14 @@ def candidate_band_occupancy(
         )
 
     occupying = [box for box in hard if overlaps((rx, ry, rw, rh), box)]
+    # Only regions the profile can lay type out in are offered as the way out: a column
+    # or the caption-reserved lower band in Film Type vertical is empty and unusable, and
+    # naming it as "clear" sent the run to a declaration the plan audit refuses (#335).
+    serviceable = serviceable_negative_space_regions(fmt)
     clear = sorted(
         name for name, rect in _NEGATIVE_SPACE_RECTS.items()
-        if name not in {declared_region, "full_frame"} and not any(overlaps(rect, box) for box in hard)
+        if name not in {declared_region, "full_frame"} and name in serviceable
+        and not any(overlaps(rect, box) for box in hard)
     )
     return {"declared": declared_region, "occupied": bool(occupying),
             "occupying": occupying, "clearRegions": clear}

@@ -3221,7 +3221,7 @@ def reconcile_scene_plan(
     `max_revisions_per_stage` per budget window.
     """
     from lib.persian_assets import audit_asset_manifest
-    from lib.persian_scenes import NEGATIVE_SPACE_REGIONS
+    from lib.persian_scenes import NEGATIVE_SPACE_REGIONS, negative_space_unserviceable_reason
 
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     effective_now = now or datetime.now(timezone.utc)
@@ -3305,6 +3305,15 @@ def reconcile_scene_plan(
                 f"amendment[{index}] ({event_id}): a moment carrier must declare negative_space "
                 f"as one of {sorted(NEGATIVE_SPACE_REGIONS)}"
             )
+        if event.get("carries_moment") and "negative_space" in fields:
+            unusable = negative_space_unserviceable_reason(
+                str(event["negative_space"]), str(plan.get("format") or "vertical")
+            )
+            if unusable is not None:
+                raise PersianVideoWorkflowError(
+                    f"amendment[{index}] ({event_id}): negative_space {unusable}; the plan "
+                    "audit refuses it, so reconciling to it only moves the failure later"
+                )
         record = {"visual_event_id": event_id, "before": before, "after": dict(fields)}
         if appended_queries:
             event["reconciled_queries"] = [*(event.get("reconciled_queries") or []), *appended_queries]
@@ -3928,20 +3937,27 @@ def stage_workflow_asset_candidate(
 
 def _planned_moment_band(state: Mapping[str, Any], visual_event_id: str) -> str | None:
     """The declared negative_space of a moment-carrying event in the current plan."""
+    return _planned_moment_band_and_format(state, visual_event_id)[0]
+
+
+def _planned_moment_band_and_format(
+    state: Mapping[str, Any], visual_event_id: str
+) -> tuple[str | None, str]:
     from lib.persian_scene_plan_source import materialize_scene_plan
 
     project = _project_root(state)
     path = materialize_scene_plan(project) or project / "artifacts" / "scene_plan.json"
     if not Path(path).is_file():
-        return None
+        return None, "vertical"
     plan = json.loads(Path(path).read_text(encoding="utf-8"))
+    fmt = str(plan.get("format") or "vertical")
     for beat in plan.get("beats") or []:
         for event in (beat.get("visual_events") or []) if isinstance(beat, Mapping) else []:
             if isinstance(event, Mapping) and str(event.get("id") or "") == visual_event_id:
                 if event.get("carries_moment") and event.get("negative_space"):
-                    return str(event["negative_space"])
-                return None
-    return None
+                    return str(event["negative_space"]), fmt
+                return None, fmt
+    return None, fmt
 
 
 def _refuse_candidate_occupying_declared_band(
@@ -3959,7 +3975,7 @@ def _refuse_candidate_occupying_declared_band(
 
     candidate = load_asset_candidate(_project_root(state), candidate_id)
     event_id = str((candidate.get("context") or {}).get("visualEventId") or "")
-    band = _planned_moment_band(state, event_id)
+    band, plan_format = _planned_moment_band_and_format(state, event_id)
     if band is None or band == "full_frame":
         return
     frame = review.get("frame_review") if isinstance(review, Mapping) else None
@@ -3971,7 +3987,7 @@ def _refuse_candidate_occupying_declared_band(
             "annotation format as regions propose) so the band is judged before selection"
         )
     try:
-        occupancy = candidate_band_occupancy(grid, band)
+        occupancy = candidate_band_occupancy(grid, band, fmt=plan_format)
     except PersianRegionCommandError as exc:
         raise PersianVideoWorkflowError(f"[BAND_EVIDENCE_INVALID] {exc}") from exc
     if occupancy["occupied"]:
