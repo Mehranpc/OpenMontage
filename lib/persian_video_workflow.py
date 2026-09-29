@@ -1130,6 +1130,10 @@ def _repo_read_allowlist(profile_version: str | None = None) -> list[str]:
         (REPO_ROOT / "skills" / "meta" / "checkpoint-protocol.md").resolve(),
         (REPO_ROOT / "skills" / "meta" / "reviewer.md").resolve(),
         (REPO_ROOT / "pipeline_defs" / "persian-footage.yaml").resolve(),
+        # The artifact/checkpoint shapes a phase must write (#329). Without these the
+        # only examples an agent could find were the recorded rehearsal fixtures.
+        (REPO_ROOT / "schemas" / "artifacts").resolve(),
+        (REPO_ROOT / "schemas" / "checkpoints").resolve(),
         (REPO_ROOT / "styles" / "persian-footage").resolve(),
         (REPO_ROOT / "docs" / "reference" / "persian-hooks").resolve(),
         *film_type_contract_paths(profile_version, repo_root=REPO_ROOT),
