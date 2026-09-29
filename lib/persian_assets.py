@@ -79,7 +79,9 @@ def _quality_metadata_problems(
     query = str(entry.get("query") or "").strip()
     if not query:
         problems.append(f"{label}: missing query used to acquire the selected candidate")
-    elif query not in [str(q) for q in requirement.get("queries") or []]:
+    elif query not in [
+        str(q) for q in [*(requirement.get("queries") or []), *(requirement.get("reconciled_queries") or [])]
+    ]:
         problems.append(f"{label}: selected query {query!r} is not one of the authored event queries")
 
     rank = entry.get("candidate_rank")
@@ -226,6 +228,7 @@ def _scene_asset_requirements(
                         "duration_seconds": event.get("duration_seconds"),
                         "narration_span": event.get("narration_span"),
                         "queries": list(event.get("queries") or []),
+                        "reconciled_queries": list(event.get("reconciled_queries") or []),
                         "desired_affect": event.get("desired_affect"),
                         "human_presence": event.get("human_presence"),
                         "shows_subject": event.get("shows_subject"),
