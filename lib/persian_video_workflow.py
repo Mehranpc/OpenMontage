@@ -94,6 +94,7 @@ from lib.persian_workflow_telemetry import (
     finish_causal_span,
     finish_phase_attempt_span,
     new_causal_trace,
+    parked_wall_seconds,
     record_causal_interval,
     record_command_event,
     record_human_idle_and_reopen_run,
@@ -1662,13 +1663,41 @@ def _granted_extension_seconds(
     return max(0.0, total)
 
 
+def _open_phase_attempt_started_at(state: Mapping[str, Any], phase: str) -> datetime | None:
+    """Start of the live cycle's latest attempt of ``phase`` while it is still open."""
+    telemetry = state.get("phase_telemetry")
+    entries = telemetry.get(phase) if isinstance(telemetry, Mapping) else None
+    if not isinstance(entries, list):
+        return None
+    cycle = _revision_cycle(state)
+    scoped = [
+        entry for entry in entries
+        if isinstance(entry, Mapping) and _entry_revision_cycle(entry) == cycle
+    ]
+    if not scoped or scoped[-1].get("duration_seconds") is not None:
+        return None
+    started_at = scoped[-1].get("started_at")
+    if not started_at:
+        return None
+    try:
+        return _parse_timestamp(str(started_at))
+    except PersianVideoWorkflowError:
+        return None
+
+
 def _budget_stop_payload(
     state: Mapping[str, Any], completed_phase: str, *, now: datetime
 ) -> dict[str, Any] | None:
     window_started = _parse_timestamp(
         str(state.get("budget_window_started_at") or state.get("created_at") or "")
     )
-    wall_seconds = max(0.0, (now - window_started).total_seconds())
+    window_seconds = max(0.0, (now - window_started).total_seconds())
+    # Parked time -- a human wait, or a silence no command or job filled -- is not
+    # spent by the pipeline, so it is not charged to the wall budget (#342).
+    parked = parked_wall_seconds(
+        state, since=window_started, now=now, silence_seconds=IDLE_STALL_SECONDS
+    )
+    wall_seconds = max(0.0, window_seconds - parked["parked_seconds"])
     # A resolved decision extends only the budget it was granted for; an
     # extension must never leak into the other budget.
     wall_limit_seconds = int((state.get("budgets") or {}).get("max_wall_time_minutes", 0)) * 60
@@ -1676,6 +1705,14 @@ def _budget_stop_payload(
         state, reason="wall_budget_exceeded", since=window_started
     )
     phase_seconds = _phase_elapsed_seconds(state, completed_phase, now=now)
+    phase_started = _open_phase_attempt_started_at(state, completed_phase)
+    if phase_started is not None:
+        # The same parked time is not charged to the phase that sat waiting (#342).
+        phase_parked = parked_wall_seconds(
+            state, since=max(phase_started, window_started), now=now,
+            silence_seconds=IDLE_STALL_SECONDS,
+        )
+        phase_seconds = max(0.0, phase_seconds - phase_parked["parked_seconds"])
     phase_limit = int(PHASE_SLO_SECONDS.get(completed_phase, 0))
     phase_threshold = 2 * phase_limit + _granted_extension_seconds(
         state, reason="phase_budget_exceeded", since=window_started
@@ -1706,6 +1743,8 @@ def _budget_stop_payload(
         "remaining_phases": remaining,
         "observed_seconds": round(observed_seconds, 3),
         "threshold_seconds": int(threshold_seconds),
+        "window_seconds": round(window_seconds, 3),
+        "parked_seconds": parked["parked_seconds"],
         "options": [
             {"action": "continue_with_extension", "minimum_extra_minutes": minimum_extra_minutes},
             {"action": "continue_to_preview", "preview_phase": "render_opening_candidate"},
@@ -5001,6 +5040,12 @@ def workflow_status(
         else 0.0
     )
     budget_seconds = int((state.get("budgets") or {}).get("max_wall_time_minutes", 0)) * 60
+    parked_seconds = 0.0
+    if window_raw:
+        parked_seconds = parked_wall_seconds(
+            state, since=_parse_timestamp(window_raw), now=current,
+            silence_seconds=IDLE_STALL_SECONDS,
+        )["parked_seconds"]
     last_path, last_at = _last_project_write(_project_root(state))
     idle_seconds = _idle_seconds_since(last_at, now=current)
     activity = "idle" if idle_seconds is None or idle_seconds >= IDLE_STALL_SECONDS else "progressing"
@@ -5033,6 +5078,9 @@ def workflow_status(
             "phase": phase,
             "phase_elapsed_seconds": round(phase_elapsed, 3),
             "total_elapsed_seconds": round(total_elapsed, 3),
+            # What the wall budget is charged: elapsed minus parked time (#342).
+            "parked_seconds": round(parked_seconds, 3),
+            "charged_wall_seconds": round(max(0.0, total_elapsed - parked_seconds), 3),
             "wall_budget_seconds": budget_seconds,
             "last_written_file": last_path,
             "last_write_at": last_at.isoformat() if last_at else None,
@@ -5119,6 +5167,7 @@ def format_status_line(status: Mapping[str, Any]) -> str:
         f"phase_elapsed={summary.get('phase_elapsed_seconds', 0):.3f}s "
         f"total={summary.get('total_elapsed_seconds', 0):.3f}/"
         f"{summary.get('wall_budget_seconds', 0)}s "
+        f"charged={summary.get('charged_wall_seconds', 0):.3f}s "
         f"last_write={summary.get('last_written_file') or '-'} "
         f"activity={summary.get('activity') or 'idle'}"
         + _acquisition_suffix(status.get("acquisition"))

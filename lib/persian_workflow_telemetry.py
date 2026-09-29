@@ -227,6 +227,16 @@ COMMAND_CADENCE_CATEGORY = "agent_command_activity"
 
 COMMAND_EVENTS_RELATIVE_PATH = Path(".telemetry") / "command-events.jsonl"
 
+# Read-only commands: they look at a run and never move it (#342).
+OBSERVATION_COMMANDS = frozenset({
+    "workflow:status",
+    "workflow:guard-read",
+    "workflow:job-status",
+    "workflow:alignment-status",
+    "workflow:edit-compare",
+    "run-kernel:status",
+})
+
 
 def command_events_path(project_root: Path) -> Path:
     return Path(project_root) / COMMAND_EVENTS_RELATIVE_PATH
@@ -512,6 +522,78 @@ def finish_phase_attempt_span(
     if not any(isinstance(item, Mapping) and item.get("span_id") == span_id for item in spans):
         return
     finish_causal_span(state, span_id, finished_at=finished_at, outcome=outcome)
+
+
+def parked_wall_seconds(
+    state: Mapping[str, Any],
+    *,
+    since: datetime,
+    now: datetime,
+    silence_seconds: float,
+) -> dict[str, float]:
+    """Wall time inside ``[since, now]`` in which the run was parked, not worked (#342).
+
+    Two kinds of interval are parked:
+
+    * a recorded human wait (``human_idle`` spans: a budget question, an approval);
+    * a silence between two consecutive pipeline commands longer than
+      ``silence_seconds`` that no measured work span (durable job, explicit work)
+      overlaps. Nothing ran and nobody drove the pipeline: the run sat waiting on a
+      person, a decision, or a code fix. ``resume`` already treats the same silence
+      as idle and opens a fresh window; the budget now applies that rule itself, so
+      an unattended pause no longer turns into a wall-budget stop.
+
+    A command's own execution (its start edge followed by its finish edge) is never
+    silence, however long it runs.
+    """
+    trace = state.get("causal_telemetry")
+    spans = list((trace or {}).get("spans") or []) if isinstance(trace, Mapping) else []
+    work: list[tuple[datetime, datetime]] = []
+    human: list[tuple[datetime, datetime]] = []
+    for raw in spans:
+        if not isinstance(raw, Mapping) or not raw.get("count_toward_wall"):
+            continue
+        if raw.get("kind") in {"run", "phase_attempt"}:
+            continue
+        started = _parse(raw.get("started_at"))
+        if started is None:
+            continue
+        finished = _parse(raw.get("finished_at")) or now
+        left, right = max(since, started), min(now, finished)
+        if right <= left:
+            continue
+        if raw.get("category") == "human_idle":
+            human.append((left, right))
+        else:
+            work.append((left, right))
+
+    events: list[tuple[datetime, str, str]] = []
+    for raw in _command_events(state):
+        # Looking at a parked run (``status`` from a person or a helper) does not
+        # drive it, so an observation must not break the silence it observes.
+        if str(raw.get("command") or "") in OBSERVATION_COMMANDS:
+            continue
+        at = _parse(raw.get("at"))
+        if at is not None:
+            events.append((at, str(raw.get("command") or ""), str(raw.get("edge") or "")))
+    events.sort(key=lambda item: item[0])
+    silent: list[tuple[datetime, datetime]] = []
+    for left, right in zip(events, events[1:]):
+        if left[2] == "start" and right[2] == "finish" and left[1] == right[1]:
+            continue
+        start, end = max(since, left[0]), min(now, right[0])
+        if (end - start).total_seconds() <= silence_seconds:
+            continue
+        silent.extend(_complement_intervals(start, end, work))
+
+    human_seconds = _interval_union_seconds(human)
+    silent_seconds = _interval_union_seconds(silent)
+    total = _interval_union_seconds(human + silent)
+    return {
+        "parked_seconds": round(total, 3),
+        "human_idle_seconds": round(human_seconds, 3),
+        "silent_seconds": round(silent_seconds, 3),
+    }
 
 
 def _interval_union_seconds(intervals: list[tuple[datetime, datetime]]) -> float:
@@ -848,6 +930,7 @@ __all__ = [
     "CAUSAL_CATEGORIES",
     "COMMAND_CADENCE_CATEGORY",
     "COMMAND_CADENCE_MAX_GAP_SECONDS",
+    "OBSERVATION_COMMANDS",
     "command_events_path",
     "record_command_event",
     "TERMINAL_ATTEMPT_OUTCOMES",
@@ -858,6 +941,7 @@ __all__ = [
     "finish_causal_span",
     "finish_phase_attempt_span",
     "new_causal_trace",
+    "parked_wall_seconds",
     "record_causal_interval",
     "record_human_idle_and_reopen_run",
     "record_phase_attempt_span",

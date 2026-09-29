@@ -61,7 +61,12 @@ phase, phase elapsed time, wall time versus budget, last written file, and
 when routing by `next_phase` or inspecting telemetry. Before a supported front-door
 command admits new active work, before a new durable run-kernel execution starts, and
 at safe checkpoints while a durable child is running, the same wall/SLO policy is
-enforced. An overrun persists `status=failed`,
+enforced. The wall and phase budgets charge only time the run was worked: recorded
+human waits and any silence of more than 15 minutes between pipeline commands (with
+no durable job running; read-only commands such as `status` do not break it) are
+parked time and are not charged (`operational_summary.parked_seconds` /
+`charged_wall_seconds`). A run left parked while waiting on a decision or a code fix
+therefore does not come back as a budget stop. An overrun persists `status=failed`,
 `quality_disposition=needs_decision`, stable budget evidence, current phase/work
 identity, and the blocked operation before new expensive work continues. Existing
 status/reconciliation paths and external asset-result settlement stay usable so
