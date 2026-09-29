@@ -2944,6 +2944,31 @@ def request_send_back(
     else:
         state.pop("asset_reacquisition_scope", None)
         state.pop("asset_reacquisition_grant", None)
+        if target_index < _phase_index("acquire_assets"):
+            # A replan rewinds *through* acquisition, so it starts a fresh cycle too (#331).
+            # Left alone, the spent passes [0, 1] outlived the replan and its new queries
+            # could never run: pass 0 "was already recorded", and no rewind target could
+            # reset it because the run was already at acquire_assets. Selections and the
+            # workspace stay; only the pass counter restarts, and the candidate ceiling
+            # gets headroom for the events that still have no footage.
+            usage = dict(state.get("asset_usage") or {})
+            if usage.get("completed_passes"):
+                unresolved = (acquisition_status({**state, "next_phase": "acquire_assets"}) or {}).get(
+                    "unresolvedEvents"
+                ) or []
+                state["asset_reacquisition_grant"] = {
+                    "candidates": max(_REACQUISITION_CANDIDATE_GRANT, 2 * len(unresolved)),
+                    "visualEventIds": list(unresolved),
+                    "grantedAt": effective_now.isoformat(),
+                    "candidateBaseline": int(
+                        usage.get("semantic_candidates_reviewed", usage.get("candidates_considered", 0))
+                    ),
+                }
+                usage["completed_passes"] = []
+                usage["acquisition_cycle"] = int(usage.get("acquisition_cycle") or 0) + 1
+                for key in ("pending_pass", "pending_output_dir", "pending_limits"):
+                    usage.pop(key, None)
+                state["asset_usage"] = usage
 
     state["status"] = "active"
     state["next_phase"] = target_phase
@@ -2985,6 +3010,175 @@ _RECONCILABLE_EVENT_FIELDS = frozenset({
 })
 _RECONCILE_PHASES = ("acquire_assets", "review_subject_regions")
 
+
+#: New queries one reconciliation may add to one event (#331). Append-only: the
+#: event's authored queries stay, so selections already audited against them hold.
+MAX_APPENDED_QUERIES_PER_EVENT = 2
+
+
+def _validated_query_append(
+    amendment: Mapping[str, Any], event: Mapping[str, Any] | None, index: int, event_id: str,
+    *, prior_appended: int = 0,
+) -> list[str]:
+    """Queries a reconciliation adds to one event, so a scoped reacquisition can run them.
+
+    Footage review showed the authored queries return frames the plan cannot use
+    (the 2026-09-29 run: carriers whose upper band was never clear). Changing timing
+    or identity is still a replan; adding a query for the same event and span is not.
+    """
+    raw = amendment.get("queries_append")
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or not raw or any(not isinstance(item, str) for item in raw):
+        raise PersianVideoWorkflowError(
+            f"amendment[{index}] ({event_id}): queries_append must be a non-empty list of strings"
+        )
+    existing = {
+        str(item).strip().casefold()
+        for item in [*((event or {}).get("queries") or []), *((event or {}).get("reconciled_queries") or [])]
+    }
+    added: list[str] = []
+    for item in raw:
+        text = " ".join(item.split())
+        if not text:
+            raise PersianVideoWorkflowError(f"amendment[{index}] ({event_id}): empty query")
+        if text.casefold() in existing or text in added:
+            raise PersianVideoWorkflowError(
+                f"amendment[{index}] ({event_id}): query {text!r} is already authored for this event"
+            )
+        added.append(text)
+    if len(added) + prior_appended > MAX_APPENDED_QUERIES_PER_EVENT:
+        raise PersianVideoWorkflowError(
+            f"amendment[{index}] ({event_id}): at most {MAX_APPENDED_QUERIES_PER_EVENT} queries "
+            "may be appended to one event; the footage does not support this event, so replan it "
+            "(send-back plan_scenes_moments)"
+        )
+    return added
+
+
+
+@state_locked
+def reopen_asset_search(
+    project_id: str,
+    visual_event_ids: Sequence[str],
+    *,
+    reason: str,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Re-source named events inside acquire_assets once the retry pass is spent (#331).
+
+    The only route used to be a send-back to plan_scenes_moments: the manifest accepts
+    only authored queries, and the scoped acquire_assets send-back needs an edit
+    artifact that exists a phase later. This consumes one send-back, scopes the new
+    cycle to the named events, and requires each to carry a query appended by
+    reconcile-plan that no pass has run yet.
+    """
+    effective_now = now or datetime.now(timezone.utc)
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    assert_within_wall_time(state, now=effective_now)
+    if state.get("status") != "active" or state.get("next_phase") != "acquire_assets":
+        raise PersianVideoWorkflowError("reopen-asset-search is allowed only during active acquire_assets")
+    if not str(reason or "").strip():
+        raise PersianVideoWorkflowError("reopen-asset-search requires a non-empty reason")
+    usage = dict(state.get("asset_usage") or {})
+    if usage.get("pending_pass") is not None:
+        raise PersianVideoWorkflowError("asset search result accounting must complete before reopening search")
+    acquisition = acquisition_status(state) or {}
+    if acquisition.get("remainingPasses"):
+        raise PersianVideoWorkflowError(
+            f"retry pass {acquisition['remainingPasses'][0]} is still available; run it before reopening search"
+        )
+    events = list(dict.fromkeys(str(item).strip() for item in visual_event_ids if str(item).strip()))
+    if not events:
+        raise PersianVideoWorkflowError("reopen-asset-search requires at least one --visual-event-id")
+    unresolved = set(acquisition.get("unresolvedEvents") or [])
+    resolved = [event for event in events if event not in unresolved]
+    if resolved:
+        raise PersianVideoWorkflowError(
+            f"events already have a selection and cannot be re-sourced here: {resolved}"
+        )
+    checkpoint = read_checkpoint(_project_root(state).parent, project_id, "scene_plan") or {}
+    plan = (checkpoint.get("artifacts") or {}).get("scene_plan") or {}
+    requirements, _, _ = scene_asset_requirements(dict(plan))
+    plan_queries = {
+        str(item.get("visual_event_id")): [
+            *(str(q).strip() for q in item.get("queries") or []),
+            *(str(q).strip() for q in item.get("reconciled_queries") or []),
+        ]
+        for item in requirements
+    }
+    # A query is fresh when no discovery pass has run it for that event. That covers a
+    # reconcile-plan append and also queries a replan authored after the passes were
+    # spent (the 2026-09-29 run was already parked there when this route was added).
+    searched: dict[str, set[str]] = {}
+    for path in sorted((_project_root(state) / ".asset-workspace" / "discovery" / "candidates").glob("*.json")):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        searched.setdefault(str(record.get("slotId") or ""), set()).add(str(record.get("query") or "").strip())
+    # Only an event with recorded discovery has a known search history; for any other
+    # the authored queries may have run with zero results, so they never count as fresh.
+    appended = {
+        event: [
+            q for q in plan_queries.get(event, [])
+            if q and searched.get(event) and q not in searched[event]
+        ] or [
+            q for q in (next((i.get("reconciled_queries") for i in requirements
+                              if str(i.get("visual_event_id")) == event), None) or [])
+            if q not in searched.get(event, set())
+        ]
+        for event in events
+    }
+    missing = [event for event in events if not appended.get(event)]
+    if missing:
+        raise PersianVideoWorkflowError(
+            "reopen-asset-search needs a query no pass has run yet for each event; "
+            f"reconcile-plan queries_append first for: {missing}"
+        )
+    used = int(state.get("send_backs", 0)) + 1
+    limit = int(state["budgets"]["max_send_backs"])
+    if used > limit:
+        raise PersianVideoWorkflowError(
+            f"send-back budget exhausted: {used} requested > {limit} allowed; this needs a user decision"
+        )
+    state["send_backs"] = used
+    scope = {
+        "version": "1.0",
+        "diagnosticCode": "ASSET_QUERY_EXHAUSTED",
+        "reasonCode": "ASSET_QUERY_EXHAUSTED",
+        "shotIds": [],
+        "visualEventIds": events,
+        "reason": reason.strip(),
+    }
+    state["asset_reacquisition_scope"] = scope
+    state["asset_reacquisition_grant"] = {
+        "candidates": min(_REACQUISITION_CANDIDATE_GRANT, 2 * len(events)),
+        "visualEventIds": events,
+        "grantedAt": effective_now.isoformat(),
+        "candidateBaseline": int(
+            usage.get("semantic_candidates_reviewed", usage.get("candidates_considered", 0))
+        ),
+    }
+    usage["completed_passes"] = []
+    usage["acquisition_cycle"] = int(usage.get("acquisition_cycle") or 0) + 1
+    state["asset_usage"] = usage
+    history = list(state.get("send_back_history") or [])
+    history.append({
+        "target_phase": "acquire_assets",
+        "reason": reason.strip(),
+        "at": effective_now.isoformat(),
+        "reopened_asset_search": {"visual_event_ids": events, "appended_queries": {e: appended[e] for e in events}},
+    })
+    state["send_back_history"] = history
+    _write_state(_project_root(state), state)
+    return {
+        "reopened": events,
+        "sendBacks": used,
+        "maxSendBacks": limit,
+        "nextStep": "run asset-search --retry-pass 0 with only the appended queries for these events",
+    }
 
 @state_locked
 def reconcile_scene_plan(
@@ -3064,9 +3258,22 @@ def reconcile_scene_plan(
             raise PersianVideoWorkflowError(
                 f"amendment[{index}]: unknown visual_event_id {event_id!r}"
             )
+        appended_queries = _validated_query_append(
+            amendment, events.get(event_id), index, event_id,
+            prior_appended=sum(
+                len(item.get("queries_appended") or [])
+                for record in (checkpoint.get("metadata") or {}).get("plan_reconciliations") or []
+                for item in record.get("amendments") or []
+                if item.get("visual_event_id") == event_id
+            ),
+        )
         fields = amendment.get("set")
-        if not isinstance(fields, Mapping) or not fields:
-            raise PersianVideoWorkflowError(f"amendment[{index}].set must be a non-empty object")
+        if appended_queries and fields is None:
+            fields = {}
+        if not isinstance(fields, Mapping) or (not fields and not appended_queries):
+            raise PersianVideoWorkflowError(
+                f"amendment[{index}].set must be a non-empty object (or give queries_append)"
+            )
         illegal = sorted(set(fields) - _RECONCILABLE_EVENT_FIELDS)
         if illegal:
             raise PersianVideoWorkflowError(
@@ -3086,7 +3293,11 @@ def reconcile_scene_plan(
                 f"amendment[{index}] ({event_id}): a moment carrier must declare negative_space "
                 f"as one of {sorted(NEGATIVE_SPACE_REGIONS)}"
             )
-        applied.append({"visual_event_id": event_id, "before": before, "after": dict(fields)})
+        record = {"visual_event_id": event_id, "before": before, "after": dict(fields)}
+        if appended_queries:
+            event["reconciled_queries"] = [*(event.get("reconciled_queries") or []), *appended_queries]
+            record["queries_appended"] = list(appended_queries)
+        applied.append(record)
 
     try:
         validate_artifact("scene_plan", plan)
@@ -3285,7 +3496,8 @@ def bounded_asset_search_request(
         requirements, _, _ = scene_asset_requirements(dict(scene_plan))
         authored_queries = {
             str(requirement.get("visual_event_id") or ""): [
-                str(value) for value in requirement.get("queries") or []
+                str(value)
+                for value in [*(requirement.get("queries") or []), *(requirement.get("reconciled_queries") or [])]
             ]
             for requirement in requirements
             if str(requirement.get("visual_event_id") or "")
@@ -4767,6 +4979,7 @@ def workflow_status(
         ),
         "asset_usage": state.get("asset_usage", {}),
         "asset_workspace": asset_workspace_status(_project_root(state)),
+        "acquisition": acquisition_status(state),
         "alignment_policy": state.get("alignment_policy") or alignment_execution_policy(state),
         "causal_trace_id": (state.get("causal_telemetry") or {}).get("trace_id"),
         "execution_metadata": state.get("execution_metadata"),
@@ -4787,6 +5000,75 @@ def workflow_status(
     }
 
 
+def acquisition_status(state: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Remaining search budget and the one next step while acquiring assets (#331).
+
+    On the 2026-09-29 run the agent could not see that the retry pass was unspent,
+    declared the search budget exhausted, and asked the user a routine recovery
+    question. Recovery inside the pass budget is the agent's job; only a spent
+    retry that still leaves events unresolved needs a send-back.
+    """
+    if state.get("next_phase") != "acquire_assets":
+        return None
+    from lib.persian_scene_plan_source import materialize_scene_plan
+
+    usage = dict(state.get("asset_usage") or {})
+    completed = sorted(int(item) for item in usage.get("completed_passes") or [])
+    pending = usage.get("pending_pass")
+    max_retry = int(asset_search_policy()["max_retry_passes"])
+    all_passes = list(range(0, max_retry + 1))
+    remaining = [item for item in all_passes if item not in completed and item != pending]
+    next_pass = remaining[0] if remaining else None
+    root = _project_root(state)
+    plan_path = materialize_scene_plan(root) or root / "artifacts" / "scene_plan.json"
+    events: list[str] = []
+    if Path(plan_path).is_file():
+        try:
+            plan = json.loads(Path(plan_path).read_text(encoding="utf-8"))
+            requirements, _, _ = scene_asset_requirements(plan)
+            events = [str(item["visual_event_id"]) for item in requirements if item.get("visual_event_id")]
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            events = []
+    selected = set((asset_workspace_status(root).get("selectedCandidateIds") or {}))
+    unresolved = [event for event in events if event not in selected]
+
+    if pending is not None:
+        step = f"asset search pass {pending} is running; reconcile it before anything else"
+    elif not completed and selected and unresolved:
+        step = (
+            "a replan opened a fresh search cycle: run asset-search --retry-pass 0 with the plan's "
+            f"queries for only the unresolved events ({', '.join(unresolved)}); selected events keep their clips"
+        )
+    elif not completed:
+        step = "run asset-search --retry-pass 0 for every footage event"
+    elif not unresolved:
+        step = "every footage event has a selection; build the manifest and complete acquire_assets"
+    elif next_pass is not None:
+        step = (
+            "review or reject every candidate of the unresolved events with its measured reason; "
+            "reconcile-plan a declared band the footage does not keep clear where another clear "
+            f"region exists; then run asset-search --retry-pass {next_pass} with new queries for "
+            "the events still without a candidate. This is routine recovery, not a user decision"
+        )
+    else:
+        step = (
+            "the retry pass is spent. For each unresolved event: reconcile-plan it if reviewed "
+            "footage already has a usable clear region; otherwise reconcile-plan "
+            "queries_append with new queries for that event, then reopen-asset-search "
+            "--visual-event-id <id> for exactly those events (one send-back). This is the only "
+            "in-budget route, not a user decision; ask only if the send-back budget is spent"
+        )
+    return {
+        "completedPasses": completed,
+        "pendingPass": pending,
+        "maxRetryPasses": max_retry,
+        "remainingPasses": remaining,
+        "nextPass": next_pass,
+        "unresolvedEvents": unresolved,
+        "nextStep": step,
+    }
+
+
 def format_status_line(status: Mapping[str, Any]) -> str:
     summary = status.get("operational_summary") or {}
     return (
@@ -4797,6 +5079,19 @@ def format_status_line(status: Mapping[str, Any]) -> str:
         f"{summary.get('wall_budget_seconds', 0)}s "
         f"last_write={summary.get('last_written_file') or '-'} "
         f"activity={summary.get('activity') or 'idle'}"
+        + _acquisition_suffix(status.get("acquisition"))
+    )
+
+
+def _acquisition_suffix(acquisition: Any) -> str:
+    if not isinstance(acquisition, Mapping):
+        return ""
+    remaining = acquisition.get("remainingPasses") or []
+    unresolved = acquisition.get("unresolvedEvents") or []
+    return (
+        f" passes_left={','.join(str(item) for item in remaining) or 'none'}"
+        f" unresolved={','.join(unresolved) or 'none'}"
+        f"\nnext: {acquisition.get('nextStep')}"
     )
 
 
@@ -5335,6 +5630,13 @@ def build_parser() -> argparse.ArgumentParser:
                            help='{"amendments":[{"visual_event_id":"ve-4","set":{"shows_subject":false}}]}')
     reconcile.add_argument("--reason", required=True)
     send_back = sub.add_parser("send-back", help="rewind within the send-back budget")
+    reopen = sub.add_parser(
+        "reopen-asset-search",
+        help="re-source named unresolved events with reconciled queries once the retry is spent (one send-back)",
+    )
+    reopen.add_argument("project_id")
+    reopen.add_argument("--visual-event-id", dest="visual_event_ids", action="append", default=[])
+    reopen.add_argument("--reason", required=True)
     send_back.add_argument("project_id")
     send_back.add_argument("target_phase")
     send_back.add_argument("--reason", required=True)
@@ -5780,6 +6082,10 @@ def _main(args: argparse.Namespace) -> int:
             _print_json(reconcile_scene_plan(
                 args.project_id, list((payload or {}).get("amendments") or []),
                 reason=args.reason,
+            ))
+        elif args.command == "reopen-asset-search":
+            _print_json(reopen_asset_search(
+                args.project_id, list(args.visual_event_ids), reason=args.reason,
             ))
         elif args.command == "send-back":
             _print_json(
