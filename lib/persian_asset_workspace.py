@@ -399,6 +399,16 @@ def _validate_review(review: Mapping[str, Any]) -> dict[str, Any]:
     for field in ("relevance_reason", "selection_reason"):
         if not str(result.get(field) or "").strip():
             raise PersianAssetWorkspaceError(f"{field} must be non-empty")
+    if "placement_space" in frame:
+        from lib.persian_scenes import NEGATIVE_SPACE_REGIONS
+
+        placement = frame.get("placement_space")
+        if placement not in NEGATIVE_SPACE_REGIONS:
+            raise PersianAssetWorkspaceError(
+                f"frame_review.placement_space {placement!r} is not one of "
+                f"{sorted(NEGATIVE_SPACE_REGIONS)}; omit the field for an event that carries "
+                "no typographic moment instead of writing a placeholder such as 'none' (#337)"
+            )
     geometry = result.get("geometry_review")
     if not isinstance(geometry, Mapping):
         raise PersianAssetWorkspaceError("candidate review requires geometry_review")
@@ -570,6 +580,23 @@ def _manifest_binding(candidate: Mapping[str, Any]) -> dict[str, Any]:
 
 
 
+def _manifest_frame_review(raw: object) -> dict[str, Any]:
+    """The review's frame evidence as the manifest carries it.
+
+    Review evidence is immutable, and before #337 a review could persist
+    ``placement_space: "none"`` for an event with no moment. The manifest schema accepts
+    only a real region there, so the whole build was refused and the only repair was a
+    full send-back. A placeholder was never evidence of a clear region: leave it out. A
+    carrier that lacks a real one still fails the carrier check, which asks for it.
+    """
+    from lib.persian_scenes import NEGATIVE_SPACE_REGIONS
+
+    frame = dict(raw) if isinstance(raw, Mapping) else {}
+    if "placement_space" in frame and frame["placement_space"] not in NEGATIVE_SPACE_REGIONS:
+        frame.pop("placement_space")
+    return frame
+
+
 def _manifest_evidence(candidate: Mapping[str, Any]) -> dict[str, Any]:
     context = candidate.get("context") if isinstance(candidate.get("context"), Mapping) else {}
     review = candidate.get("review") if isinstance(candidate.get("review"), Mapping) else {}
@@ -585,7 +612,7 @@ def _manifest_evidence(candidate: Mapping[str, Any]) -> dict[str, Any]:
         "staged_stock_risk": str(review.get("staged_stock_risk") or ""),
         "human_presence": review.get("human_presence"),
         "shows_subject": review.get("shows_subject"),
-        "frame_review": dict(review.get("frame_review") or {}),
+        "frame_review": _manifest_frame_review(review.get("frame_review")),
     }
 
 
