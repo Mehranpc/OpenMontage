@@ -4200,20 +4200,21 @@ def review_workflow_asset_candidate(
 
 def reject_workflow_asset_candidate(
     project_id: str, candidate_id: str, *, category: str, reason: str,
-    pipeline_dir: Path | None = None,
+    pipeline_dir: Path | None = None, expected_readiness_sha256: str | None = None,
 ) -> dict[str, Any]:
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     _require_asset_candidate_phase(state)
     _scope_allows_candidate(state, candidate_id)
     return reject_asset_candidate(
-        _project_root(state), candidate_id, category=category, reason=reason
+        _project_root(state), candidate_id, category=category, reason=reason,
+        expected_readiness_sha256=expected_readiness_sha256,
     )
 
 
 def select_workflow_asset_candidate(
     project_id: str, visual_event_id: str, candidate_id: str, *,
     rejected_alternatives: Mapping[str, str], replace_existing: bool = False,
-    pipeline_dir: Path | None = None,
+    pipeline_dir: Path | None = None, expected_readiness_sha256: str | None = None,
 ) -> dict[str, Any]:
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     _require_asset_candidate_phase(state)
@@ -4231,6 +4232,7 @@ def select_workflow_asset_candidate(
         _project_root(state), event_id, candidate_id,
         rejected_alternatives=rejected_alternatives,
         replace_existing=replace_existing,
+        expected_readiness_sha256=expected_readiness_sha256,
     )
 
 
@@ -5115,9 +5117,48 @@ def _idle_seconds_since(last_at: datetime | None, *, now: datetime) -> float | N
     return max(0.0, (now - last_at).total_seconds())
 
 
+def _work_span_view(state: Mapping[str, Any]) -> dict[str, Any]:
+    """Live open work spans versus the open-span IDs a stop recorded (#360).
+
+    ``budget_stop.open_work_span_ids`` is a snapshot from when the stop was
+    persisted. Reading it as current state is how an already-finished span was
+    reported as an accounting defect; this view says which snapshot IDs are now
+    finished and which are still open.
+    """
+    trace = state.get("causal_telemetry")
+    spans = {
+        str(span.get("span_id")): span
+        for span in (trace.get("spans") if isinstance(trace, Mapping) else None) or []
+        if isinstance(span, Mapping) and span.get("span_id")
+    }
+    live = sorted(str(span["span_id"]) for span in _open_countable_work_spans(state) if span.get("span_id"))
+    stop = state.get("budget_stop") if isinstance(state.get("budget_stop"), Mapping) else {}
+    snapshot = [str(item) for item in stop.get("open_work_span_ids") or []]
+    finished = {
+        span_id: {
+            "finished_at": spans[span_id].get("finished_at"),
+            "outcome": spans[span_id].get("outcome"),
+        }
+        for span_id in snapshot
+        if span_id in spans and spans[span_id].get("finished_at")
+    }
+    return {
+        "live_open_span_ids": live,
+        "stop_snapshot_open_span_ids": snapshot,
+        "stop_snapshot_since_finished": finished,
+        "stop_snapshot_still_open": [span_id for span_id in snapshot if span_id in live],
+        "note": (
+            "stop_snapshot_* is historical evidence from the persisted stop; only "
+            "live_open_span_ids are open now. Finishing an already-finished span returns "
+            "it unchanged; abandon only a span whose end is actually unknown."
+        ),
+    }
+
+
 def workflow_status(
     project_id: str, *, pipeline_dir: Path | None = None, now: datetime | None = None
 ) -> dict[str, Any]:
+    diagnostic_started = time.perf_counter()
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     current = now or datetime.now(timezone.utc)
     input_record = dict(state.get("input") or {})
@@ -5143,7 +5184,7 @@ def workflow_status(
     last_path, last_at = _last_project_write(_project_root(state))
     idle_seconds = _idle_seconds_since(last_at, now=current)
     activity = "idle" if idle_seconds is None or idle_seconds >= IDLE_STALL_SECONDS else "progressing"
-    return {
+    status = {
         "project_id": state["project_id"],
         "status": state["status"],
         "next_phase": state.get("next_phase"),
@@ -5168,6 +5209,7 @@ def workflow_status(
         "performance_slo": state.get("performance_slo"),
         "performance_summary": state.get("performance_summary"),
         "budget_stop": state.get("budget_stop"),
+        "work_spans": _work_span_view(state),
         "operational_summary": {
             "phase": phase,
             "phase_elapsed_seconds": round(phase_elapsed, 3),
@@ -5182,6 +5224,10 @@ def workflow_status(
             "activity": activity,
         },
     }
+    # Read-only diagnosis cost, reported beside the run's work spans and never
+    # subtracted from wall or phase time (#360).
+    status["diagnostic_elapsed_seconds"] = round(time.perf_counter() - diagnostic_started, 6)
+    return status
 
 
 def acquisition_status(state: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -5287,7 +5333,63 @@ def acquisition_status(state: Mapping[str, Any]) -> dict[str, Any] | None:
         "invalidEvents": readiness["invalidEvents"],
         "staleEvents": readiness["staleEvents"],
         "readiness": readiness,
+        "preparation": _acquisition_preparation(
+            state, readiness, unresolved=unresolved, blocked=blocked,
+            remaining=remaining, next_pass=next_pass,
+        ),
         "nextStep": step,
+    }
+
+
+def _acquisition_preparation(
+    state: Mapping[str, Any], readiness: Mapping[str, Any], *, unresolved: list[str],
+    blocked: list[str], remaining: list[int], next_pass: int | None,
+) -> dict[str, Any]:
+    """One derived view to prepare from before acting or asking for time (#360).
+
+    Derived from state and recorded evidence, never a second source of truth. A
+    decision is required only for a persisted budget stop or when both the retry pass
+    and the send-back budget are spent while events still need footage.
+    """
+    budgets = state.get("budgets") if isinstance(state.get("budgets"), Mapping) else {}
+    send_backs_left = max(0, int(budgets.get("max_send_backs") or 0) - int(state.get("send_backs") or 0))
+    scope = state.get("asset_reacquisition_scope")
+    scoped = sorted(str(item) for item in (scope or {}).get("visualEventIds") or []) if isinstance(scope, Mapping) else None
+    disposition = str(readiness.get("disposition") or "")
+    operations: list[str] = []
+    if blocked:
+        operations += ["asset-candidate-select --replace-existing (reviewed alternate)",
+                       "reconcile-plan (evidence-backed declaration)",
+                       "asset-candidate-reject (reopens the event)"]
+    if unresolved:
+        operations.append(
+            f"asset-search --retry-pass {next_pass}" if next_pass is not None
+            else "reconcile-plan queries_append + reopen-asset-search --visual-event-id"
+        )
+    if disposition == "ready_for_manifest_with_declarations":
+        operations.append("assets build-manifest --overrides-json (declare fallback)")
+    if disposition == "ready_for_manifest":
+        operations.append("assets build-manifest")
+    stop = state.get("budget_stop")
+    decision = None
+    if isinstance(stop, Mapping) and stop:
+        decision = {"kind": "budget_stop", "reason": stop.get("reason"),
+                    "operation": stop.get("boundary_before_operation")}
+    elif (blocked or unresolved) and next_pass is None and send_backs_left == 0:
+        decision = {"kind": "send_back_budget_spent", "events": sorted({*blocked, *unresolved})}
+    return {
+        "contract": "skills/pipelines/persian-footage/asset-director.md (Selection admission)",
+        "readinessInputsSha256": readiness.get("inputsSha256"),
+        "blockers": {
+            event: sorted({str(item.get("code")) for item in readiness.get("diagnostics", {}).get(event, [])})
+            for event in blocked
+        },
+        "unresolvedEvents": list(unresolved),
+        "remainingRetryPasses": list(remaining),
+        "sendBacksRemaining": send_backs_left,
+        "reacquisitionScope": scoped,
+        "legalOperations": operations,
+        "decisionRequired": decision,
     }
 
 
@@ -6044,6 +6146,10 @@ def build_parser() -> argparse.ArgumentParser:
     asset_candidate_reject.add_argument("candidate_id")
     asset_candidate_reject.add_argument("--category", choices=["technical", "semantic", "editorial"], required=True)
     asset_candidate_reject.add_argument("--reason", required=True)
+    asset_candidate_reject.add_argument(
+        "--expect-readiness", metavar="SHA256",
+        help="refuse unless status acquisition.readiness.inputsSha256 still equals this value",
+    )
 
     asset_candidate_select = sub.add_parser("asset-candidate-select", help="select one reviewed candidate for a visual event")
     asset_candidate_select.add_argument("project_id")
@@ -6051,6 +6157,10 @@ def build_parser() -> argparse.ArgumentParser:
     asset_candidate_select.add_argument("candidate_id")
     asset_candidate_select.add_argument("--rejections-json", metavar="PATH")
     asset_candidate_select.add_argument("--replace-existing", action="store_true")
+    asset_candidate_select.add_argument(
+        "--expect-readiness", metavar="SHA256",
+        help="refuse unless status acquisition.readiness.inputsSha256 still equals this value",
+    )
 
     edit_stage = sub.add_parser("edit-stage", help="stage an immutable edit draft inside the project")
     edit_stage.add_argument("project_id")
@@ -6471,6 +6581,7 @@ def _main(args: argparse.Namespace) -> int:
             _print_json(reject_workflow_asset_candidate(
                 args.project_id, args.candidate_id,
                 category=args.category, reason=args.reason,
+                expected_readiness_sha256=args.expect_readiness,
             ))
         elif args.command == "asset-candidate-select":
             rejections = _read_json(args.rejections_json) if args.rejections_json else {}
@@ -6478,6 +6589,7 @@ def _main(args: argparse.Namespace) -> int:
                 args.project_id, args.visual_event_id, args.candidate_id,
                 rejected_alternatives={str(k): str(v) for k, v in rejections.items()},
                 replace_existing=args.replace_existing,
+                expected_readiness_sha256=args.expect_readiness,
             ))
         elif args.command == "edit-stage":
             _print_json(stage_workflow_edit_draft(

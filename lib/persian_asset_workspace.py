@@ -31,6 +31,13 @@ class PersianAssetWorkspaceError(ValueError):
     pass
 
 
+def _implementation_sha() -> str:
+    """The checked-out code revision readiness is bound to (#360)."""
+    from lib.persian_workflow_telemetry import _code_revision
+
+    return _code_revision(Path(__file__).resolve().parents[1])
+
+
 class AssetAdmissionRefused(PersianAssetWorkspaceError):
     """Selection refused before any write; ``diagnostics`` lists every known blocker (#360)."""
 
@@ -509,7 +516,9 @@ def reject_asset_candidate(
     *,
     category: str,
     reason: str,
+    expected_readiness_sha256: str | None = None,
 ) -> dict[str, Any]:
+    require_current_preparation(project_dir, expected_readiness_sha256)
     candidate = load_asset_candidate(project_dir, candidate_id)
     normalized_category = str(category or "").strip().lower()
     if normalized_category not in _REJECTION_CATEGORIES:
@@ -1125,7 +1134,9 @@ def select_asset_candidate(
     *,
     rejected_alternatives: Mapping[str, str],
     replace_existing: bool = False,
+    expected_readiness_sha256: str | None = None,
 ) -> dict[str, Any]:
+    require_current_preparation(project_dir, expected_readiness_sha256)
     event_id = str(visual_event_id or "").strip()
     candidate = load_asset_candidate(project_dir, candidate_id)
     if str((candidate.get("context") or {}).get("visualEventId") or "") != event_id:
@@ -1482,6 +1493,7 @@ def selection_readiness(project_dir: Path) -> dict[str, Any]:
     else:
         disposition = "ready_for_manifest"
     inputs = {
+        "implementationSha": _implementation_sha(),
         "policyVersion": ASSET_ADMISSION_POLICY_VERSION,
         "scenePlanSha256": _sha256(plan) if plan is not None else None,
         "selections": bound,
@@ -1502,8 +1514,32 @@ def selection_readiness(project_dir: Path) -> dict[str, Any]:
         },
         "declarationsRequired": {event: declarations[event] for event in sorted(declarations)},
         "policyVersion": ASSET_ADMISSION_POLICY_VERSION,
+        "implementationSha": inputs["implementationSha"],
         "inputsSha256": _sha256(inputs),
     }
+
+
+def require_current_preparation(project_dir: Path, expected_inputs_sha256: str | None) -> None:
+    """Refuse a mutation prepared against readiness inputs that have since changed (#360).
+
+    A cached readiness result is never authorisation: the plan, a selection, a review,
+    the policy or the code revision may have moved since it was computed.
+    """
+    if expected_inputs_sha256 is None:
+        return
+    expected = str(expected_inputs_sha256).strip()
+    current = selection_readiness(project_dir)["inputsSha256"]
+    if expected != current:
+        raise AssetAdmissionRefused(
+            "stale preparation: readiness inputs changed since the supplied snapshot; "
+            "nothing was written. Re-read status and prepare again",
+            [{
+                "code": "STALE_PREPARATION", "ruleClass": "preparation", "visualEventId": None,
+                "field": "readiness.inputsSha256", "expected": expected, "observed": current,
+                "message": "readiness inputs changed since the supplied snapshot",
+                "recovery": ["refresh_status"],
+            }],
+        )
 
 
 def asset_workspace_status(project_dir: Path) -> dict[str, Any]:
@@ -1569,6 +1605,7 @@ __all__ = [
     "record_candidate_review",
     "record_discovery_pass",
     "reject_asset_candidate",
+    "require_current_preparation",
     "reusable_asset_candidates",
     "select_asset_candidate",
     "selection_readiness",
