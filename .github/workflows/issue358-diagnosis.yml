@@ -15,4 +15,4 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements-dev.txt
-      - run: python -m pytest tests/lib/test_issue358_frame_review_contract.py tests/lib/test_issue337_placement_space_placeholder.py tests/lib/test_issue35_asset_candidate_workspace.py tests/lib/test_persian_asset_commands.py -q
+      - run: python -m pytest tests/lib/test_issue358_frame_review_contract.py tests/rehearsal/test_frame_review_contract_scenario.py tests/lib/test_issue337_placement_space_placeholder.py tests/lib/test_issue35_asset_candidate_workspace.py tests/lib/test_persian_asset_commands.py -q
