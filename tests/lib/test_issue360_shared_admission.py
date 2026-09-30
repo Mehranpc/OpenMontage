@@ -160,7 +160,10 @@ def test_unreviewed_fallback_is_a_declaration_the_build_must_make(tmp_path: Path
 def test_partial_selection_is_admitted_but_completion_still_requires_every_event(tmp_path: Path) -> None:
     project = tmp_path / "run"
     _plan(project)
-    assert _select(project, "event-a", _candidate(project, "event-a", "only"))["selected"] is True
+    selected = _select(project, "event-a", _candidate(project, "event-a", "only"))
+    assert selected["selected"] is True
+    # The build's exact_literal default already satisfies a literal plan.
+    assert selected["declarationsRequired"] == []
     with pytest.raises(commands.PersianAssetCommandError, match="event-b: no asset"):
         commands.build_manifest(project.parent, project.name)
     assert set(ASSET_RULE_CLASSES) == {"event_local", "current_set", "manifest_declaration", "completion"}

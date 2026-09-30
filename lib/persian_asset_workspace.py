@@ -1032,8 +1032,12 @@ def assess_candidate_admission(
     declarations: list[dict[str, Any]] = []
     if requirement is not None:
         row = _manifest_row(candidate)
-        if "fallback_level" not in _reviewed_fallback(candidate.get("review") or {}):
-            # The build's exact_literal default is a declaration, not reviewed evidence.
+        if (
+            "fallback_level" not in _reviewed_fallback(candidate.get("review") or {})
+            and str(requirement.get("fallback_level") or "").strip() != "exact_literal"
+        ):
+            # The build's exact_literal default is a declaration, not reviewed evidence;
+            # it satisfies only a literal plan.
             row.pop("fallback_level", None)
         assessed = assess_selection_entry(row, requirement)
         diagnostics.extend(assessed["diagnostics"])
