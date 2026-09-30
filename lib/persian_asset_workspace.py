@@ -949,6 +949,8 @@ def select_asset_candidate(
     if candidate.get("disposition") == "rejected":
         raise PersianAssetWorkspaceError("rejected asset candidate cannot be selected")
     _validate_selectable(candidate)
+    # Admission must precede every selection/candidate write, including legacy records.
+    manifest_evidence = _manifest_evidence(candidate)
 
     selections = _read_selections(project_dir)
     existing = selections.get(event_id)
@@ -956,7 +958,7 @@ def select_asset_candidate(
         return {
             "selected": False, "idempotent": True, "selection": existing,
             "manifestBinding": _manifest_binding(candidate),
-            "manifestEvidence": _manifest_evidence(candidate),
+            "manifestEvidence": manifest_evidence,
         }
     if existing and not replace_existing:
         raise PersianAssetWorkspaceError(
