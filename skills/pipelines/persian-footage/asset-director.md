@@ -1,6 +1,6 @@
 # Asset Director — Persian Footage Pipeline
 
-Read the assets phase card first. Load `references/asset-acquisition.md` only for provider-budget, candidate-workspace, music, or alignment details needed by the current event.
+Read the assets phase card first. Load `references/asset-acquisition.md` only for provider-budget, candidate-workspace/admission, music, or alignment details needed by the current event.
 
 ## Output contract
 
@@ -44,21 +44,6 @@ Run the bounded pass with `asset-search` (which owns `asset-request` → `direct
 Select each valid reviewed candidate when accepted; review-before-retry does not require deferring valid selections until every search pass finishes. Retry only unresolved events, while preserving the requirement to review or reject every primary-pass candidate first.
 
 Selection must copy returned `manifestBinding` and `manifestEvidence` into the canonical row. Do not recreate the pool in chat, rename files to invent identity, or use `.workspace/*.py` as a ledger.
-
-## Selection admission (#360)
-
-`asset-candidate-select` checks the candidate against its planned visual event in the effective scene plan with the manifest audit's own rules, before anything is written. A refusal lists every blocker it can already prove at once — stable `code`, `field`, planned `expected`, reviewed `observed`, `recovery` categories — as JSON on stdout (`{"refused": true, "diagnostics": [...]}`) and as `[CODE] message` text; the ledger, dispositions and reviews stay unchanged. Replacement and re-selecting the current pick are admitted by the same rules. No plan, an unreadable plan, or an event missing from the plan refuses (`PLAN_MISSING`, `PLAN_INVALID`, `EVENT_NOT_IN_PLAN`).
-
-| Rule class | Checked | Rules |
-| --- | --- | --- |
-| `event_local` | at selection | provenance, allowlist, path; usable duration; beat/span/query/rank; reasoning; affect; staged risk; human presence; subject continuity; reviewed fallback; start/middle/end frames; opening-hook frames; carrier `placement_space`; crop safety |
-| `current_set` | at selection | overlapping source window with another selected event |
-| `manifest_declaration` | returned as `declarationsRequired`, audited at build | fallback or opening semantic fields the review did not record |
-| `completion` | build-manifest / checkpoint | every planned event has exactly one row; typographic beats carry no footage |
-
-Record the treatment you actually see in the review when it is not the literal one: `"fallback_level": "adjacent_metaphor", "fallback_reason": "..."` (a reason is required for every non-literal level). Admission then compares it with the planned level, and the manifest carries it; a build override cannot contradict it. Without it, the row defaults to `exact_literal` and a non-literal plan returns a `FALLBACK_UNDECLARED` declaration you must make at build or `reconcile-plan` with evidence. `human_presence` is never reconciled away to fit a clip: pick a reviewed alternate or reject and retry.
-
-`status` checks the recorded selections against the current plan with the same rules, and it is read-only: it does not materialise the plan, spend a pass or write anything. `acquisition.recordedSelectionCount` is how many events have a selection. `validSelectionCount` is how many of those still pass. `invalidEvents` and `staleEvents` name the rest, and `readiness.diagnostics` gives the reasons. `unresolvedEvents` still means events with no selection. `readiness.inputsSha256` changes when the plan, a selection, a review or the policy changes. Build the manifest only when `readiness.disposition` is `ready_for_manifest` (or `..._with_declarations`, after making the named declarations). If an existing selection no longer passes, you can reject it directly with `asset-candidate-reject`. That releases the selection, records the admission codes, and puts the event back into `unresolvedEvents` for the normal retry route. A selection that still passes must be replaced, as before.
 
 ## Band evidence at candidate review (#261)
 
