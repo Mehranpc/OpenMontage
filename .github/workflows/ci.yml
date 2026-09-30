@@ -80,7 +80,9 @@ jobs:
   issue138-targeted-media-smoke:
     name: P4 stabilization L2 (Chromium + FFmpeg)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Real Chromium rehearsals can exceed 30m on hosted runners (#355).
+    # Keep the full suite and evidence gates; allow the same bound as main CI.
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
