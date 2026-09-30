@@ -65,6 +65,9 @@ def test_revalidate_stop_preserves_real_budgets_and_reopens_only_stale_stop(
         assert after["budget_stop"] == original_stop
         assert audit["outcome"] == "still_exceeded"
         assert audit["current_stop"]["reason"] == "wall_budget_exceeded"
+        assert workflow.revalidate_budget_stop(
+            "run", pipeline_dir=tmp_path, now=now + timedelta(minutes=5)
+        ) == after
 
 
 def test_revalidation_checks_phase_budget_even_when_wall_stop_was_stale(
@@ -89,6 +92,9 @@ def test_revalidation_checks_phase_budget_even_when_wall_stop_was_stale(
         )
     state = workflow.load_workflow_state("run", pipeline_dir=tmp_path)
     state["budget_stop"]["reason"] = "wall_budget_exceeded"
+    state["next_phase"] = "render_opening_candidate"
+    state["budget_stop"]["next_phase"] = "render_opening_candidate"
+    state["budget_stop"]["phase"] = "no_copy_preflight"
     workflow._write_state(root, state)
     result = workflow.revalidate_budget_stop(
         "run", pipeline_dir=tmp_path, now=BASE + timedelta(hours=3),
@@ -106,3 +112,30 @@ def test_budget_revalidation_cli_is_exempt_from_the_stop_guard(monkeypatch) -> N
     monkeypatch.setattr(workflow, "record_cli_command_edge", lambda *a, **kw: None)
     assert workflow.main(["budget-revalidate", "run"]) == 0
     assert called == ["run"]
+
+
+@pytest.mark.parametrize("field,value", [
+    ("reason", "unknown_stop"),
+    ("stopped_at", "not-a-timestamp"),
+    ("next_phase", "final_review"),
+    ("phase", "not-a-phase"),
+])
+def test_malformed_stop_fails_closed(tmp_path: Path, monkeypatch, field, value) -> None:
+    root, _ = _setup(tmp_path)
+    with monkeypatch.context() as old:
+        old.setattr(workflow, "parked_wall_seconds",
+                    lambda *a, **kw: {"parked_seconds": 0})
+        with pytest.raises(workflow.PersianVideoWorkflowError):
+            workflow.enforce_front_door_budget(
+                "run", operation="workflow:work-start", pipeline_dir=tmp_path,
+                now=BASE + timedelta(seconds=7200),
+            )
+    state = workflow.load_workflow_state("run", pipeline_dir=tmp_path)
+    state["budget_stop"][field] = value
+    workflow._write_state(root, state)
+    before = (root / workflow.STATE_FILENAME).read_bytes()
+    with pytest.raises(workflow.PersianVideoWorkflowError):
+        workflow.revalidate_budget_stop(
+            "run", pipeline_dir=tmp_path, now=BASE + timedelta(hours=3),
+        )
+    assert (root / workflow.STATE_FILENAME).read_bytes() == before
