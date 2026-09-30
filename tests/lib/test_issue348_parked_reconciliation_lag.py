@@ -73,6 +73,9 @@ def test_reconciled_job_lag_does_not_charge_a_parked_run(
         assert status["time_accounting"]["accounting_lag_seconds"] == pytest.approx(7140)
         assert status["operational_summary"]["parked_seconds"] == pytest.approx(7140)
         assert status["operational_summary"]["charged_wall_seconds"] == pytest.approx(80)
+        workflow.enforce_front_door_budget(
+            "run", operation="workflow:work-start", pipeline_dir=tmp_path, now=now,
+        )
         span = workflow.start_explicit_work_span(
             "run", category="agent_editorial_work", name="new active work",
             pipeline_dir=tmp_path, now=now,
