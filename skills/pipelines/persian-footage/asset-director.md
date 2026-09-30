@@ -14,7 +14,7 @@ Use `direct_clip_search` with `kind: "video"`, sources exactly `pexels` and `pix
 
 When the retry is spent and events still lack usable footage, the plan's queries are the problem, not its timing. `reconcile-plan` accepts `{"visual_event_id":"ve-7","queries_append":["phone resting on table, plain wall above"]}`: it records at most two new queries per event as `reconciled_queries`, and keeps the authored `queries` so existing selections stay valid. Then run `python -m lib.persian_video_workflow reopen-asset-search <project-id> --visual-event-id ve-7 [...] --reason "..."`. It spends one send-back, scopes a fresh pass cycle to exactly those events and stays in acquire_assets. A manifest row may cite an appended query. That needs no replan and no user decision; ask only when the send-back budget is spent.
 
-A normal project-local request supplies queries and filters, leaving the destination and download ceilings to the durable front door's remaining-budget clamp:
+Supply queries and filters in the project-local request; the durable front door owns the destination and remaining download ceilings:
 
 ```json
 {
@@ -23,7 +23,7 @@ A normal project-local request supplies queries and filters, leaving the destina
 }
 ```
 
-Do not prepend manual admission to `asset-search`: it owns that handshake. If an exceptional direct-provider path supplies `output_dir`, use an absolute current-project path; a relative path is resolved beneath the project root.
+`asset-search` owns admission; do not admit manually first. Exceptional direct-provider `output_dir` must be an absolute current-project path; relative paths resolve beneath the project root.
 
 Provider-search metadata is cached under the project for 6 hours using source + query + filters as the key. An identical retry reuses the cached candidate list without another provider API search or cache rewrite; filter changes or expiry re-query the provider. Cached search metadata never becomes selection truth: media still passes validation and candidate review/selection remains in the durable asset workspace.
 
