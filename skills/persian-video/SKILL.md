@@ -71,8 +71,21 @@ therefore does not come back as a budget stop. An overrun persists `status=faile
 identity, and the blocked operation before new expensive work continues. Existing
 status/reconciliation paths and external asset-result settlement stay usable so
 durable evidence is not lost.
-Phase completion keeps the same boundary stop policy. Resume only after an explicit
-budget decision; never bypass the persisted stop.
+Phase completion keeps the same boundary stop policy. A genuine overrun resumes only
+after an explicit budget decision; never bypass the persisted stop.
+
+After a GitHub accounting correction, explicitly revalidate an older persisted stop
+before choosing an extension based on its historical amount:
+
+```bash
+python -m lib.persian_video_workflow budget-revalidate <project-id>
+```
+
+This audits the original stopped instant with current accounting. It releases only a
+disproven overrun, preserving the original stop in `budget_stop_revalidations`; genuine
+wall or phase overruns remain stopped and require `budget-decision`. It grants no
+extension, skips no phase, and resets no window or retry counter. `status` remains
+read-only. Repeating a released recovery is a no-op.
 
 ## Route only by code state
 
