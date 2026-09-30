@@ -71,6 +71,9 @@ jobs:
         working-directory: remotion-composer
         run: npm ci
 
+      - name: Focused fresh-run diagnostic loop
+        run: .venv/bin/python -m pytest tests/contracts/test_issue353_acquisition_entry_point.py tests/lib/test_issue152_revision_budget_decisions.py tests/lib/test_issue188_durable_asset_search.py tests/lib/test_issue250_budget_wait_is_human_idle.py -q
+
       - name: Run lint smoke checks
         run: make lint
 
