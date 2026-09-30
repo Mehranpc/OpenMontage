@@ -100,7 +100,7 @@ def test_the_scope_still_refuses_replacing_an_event_it_did_not_name(
 
     with pytest.raises(PersianVideoWorkflowError, match="outside scoped reacquisition"):
         select_workflow_asset_candidate(
-            "run", event_id, replacement, rejected_alternatives={}, replace_existing=True,
+            "run", event_id, replacement, rejected_alternatives={first: "prefer replacement"}, replace_existing=True,
             pipeline_dir=tmp_path,
         )
 
