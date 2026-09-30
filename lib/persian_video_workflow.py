@@ -1797,12 +1797,15 @@ def revalidate_budget_stop(
             or stop.get("reason") not in {"wall_budget_exceeded", "phase_budget_exceeded"}
             or stop.get("next_phase") != phase):
         raise PersianVideoWorkflowError("budget stop cannot be safely revalidated")
+    budget_phase = str(stop.get("phase") or stop.get("boundary_after_phase") or phase)
+    if budget_phase not in PHASES:
+        raise PersianVideoWorkflowError("budget stop has an invalid phase")
     stopped_at = _parse_timestamp(str(stop.get("stopped_at") or ""))
     effective_now = now or datetime.now(timezone.utc)
     if effective_now < stopped_at:
         raise PersianVideoWorkflowError("budget revalidation precedes the stop")
     assert_within_wall_time(state, now=stopped_at)
-    current_stop = _budget_stop_payload(state, phase, now=stopped_at)
+    current_stop = _budget_stop_payload(state, budget_phase, now=stopped_at)
     record = {
         "original_stop": dict(stop),
         "current_stop": current_stop,
@@ -1823,7 +1826,7 @@ def revalidate_budget_stop(
             state, resumed_at=effective_now, reason="explicit budget-stop accounting revalidation",
         )
         # The same admission oracle must still approve the resumed instant.
-        _enforce_phase_boundary_budget(state, phase, now=effective_now)
+        _enforce_phase_boundary_budget(state, budget_phase, now=effective_now)
     _write_state(_project_root(state), state)
     return state
 
