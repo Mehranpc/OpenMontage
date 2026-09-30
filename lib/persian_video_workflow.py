@@ -1826,7 +1826,9 @@ def revalidate_budget_stop(
             state, resumed_at=effective_now, reason="explicit budget-stop accounting revalidation",
         )
         # The same admission oracle must still approve the resumed instant.
-        _enforce_phase_boundary_budget(state, budget_phase, now=effective_now)
+        if _enforce_phase_boundary_budget(state, budget_phase, now=effective_now):
+            record["outcome"] = "restopped"
+            record["current_stop"] = dict(state["budget_stop"])
     _write_state(_project_root(state), state)
     return state
 
