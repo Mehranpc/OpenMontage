@@ -377,6 +377,20 @@ def _candidate_records(project_dir: Path) -> list[dict[str, Any]]:
     return records
 
 
+def _validate_manifest_frame_review(frame: Mapping[str, Any]) -> None:
+    """Use the canonical frame contract for admission and legacy projection (#358)."""
+    from jsonschema import ValidationError, validate
+    from schemas.artifacts import load_schema
+
+    schema = load_schema("asset_manifest")["properties"]["assets"]["items"]["properties"]["frame_review"]
+    try:
+        validate(instance=dict(frame), schema=schema)
+    except ValidationError as exc:
+        raise PersianAssetWorkspaceError(
+            f"frame_review violates the asset_manifest contract: {exc.message}"
+        ) from exc
+
+
 def _validate_review(review: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(review, Mapping):
         raise PersianAssetWorkspaceError("candidate review must be an object")
@@ -422,6 +436,7 @@ def _validate_review(review: Mapping[str, Any]) -> dict[str, Any]:
             "resolution_quality must be strong, acceptable, or weak"
         )
     result["resolution_quality"] = resolution
+    _validate_manifest_frame_review(frame)
     return result
 
 
@@ -594,6 +609,14 @@ def _manifest_frame_review(raw: object) -> dict[str, Any]:
     frame = dict(raw) if isinstance(raw, Mapping) else {}
     if "placement_space" in frame and frame["placement_space"] not in NEGATIVE_SPACE_REGIONS:
         frame.pop("placement_space")
+    if "face_visible" in frame:
+        # Older admission accepted this subject-region annotation here. Preserve
+        # raw review bytes/hash; it is not canonical frame evidence or a substitute
+        # for the later subject-region review. Unknown fields remain hard errors.
+        if not isinstance(frame["face_visible"], bool):
+            raise PersianAssetWorkspaceError("legacy frame_review.face_visible must be boolean")
+        frame.pop("face_visible")
+    _validate_manifest_frame_review(frame)
     return frame
 
 
