@@ -38,7 +38,7 @@ def test_revalidate_stop_preserves_real_budgets_and_reopens_only_stale_stop(
     now = stopped + timedelta(hours=4)
     after = workflow.revalidate_budget_stop("run", pipeline_dir=tmp_path, now=now)
     assert after["budget_window_started_at"] == before["budget_window_started_at"]
-    for key in ("budgets", "budget_decisions", "send_backs", "phase_attempts", "next_phase"):
+    for key in ("budgets", "budget_decisions", "send_backs", "attempts", "next_phase"):
         assert after.get(key) == before.get(key)
     audit = after["budget_stop_revalidations"][-1]
     assert audit["original_stop"] == original_stop
@@ -139,3 +139,37 @@ def test_malformed_stop_fails_closed(tmp_path: Path, monkeypatch, field, value) 
             "run", pipeline_dir=tmp_path, now=BASE + timedelta(hours=3),
         )
     assert (root / workflow.STATE_FILENAME).read_bytes() == before
+
+
+def test_work_continuing_after_old_stop_is_checked_before_admission(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from lib.persian_workflow_telemetry import record_causal_interval
+
+    root, _ = _setup(tmp_path)
+    _commands(root, ("workflow:asset-search", 0, 10),
+              ("workflow:asset-candidate-stage", 7190, 7200))
+    with monkeypatch.context() as old:
+        old.setattr(workflow, "parked_wall_seconds",
+                    lambda *a, **kw: {"parked_seconds": 0})
+        with pytest.raises(workflow.PersianVideoWorkflowError):
+            workflow.enforce_front_door_budget(
+                "run", operation="workflow:work-start", pipeline_dir=tmp_path,
+                now=BASE + timedelta(seconds=7200),
+            )
+    state = workflow.load_workflow_state("run", pipeline_dir=tmp_path)
+    record_causal_interval(
+        state, span_id="job:continuing", name="actual ongoing local execution",
+        category="machine_local_execution", kind="durable_job",
+        started_at=BASE + timedelta(seconds=7190), finished_at=None,
+        parent_span_id=state["causal_telemetry"]["run_span_id"],
+        count_toward_wall=True, outcome="running",
+    )
+    workflow._write_state(root, state)
+    result = workflow.revalidate_budget_stop(
+        "run", pipeline_dir=tmp_path, now=BASE + timedelta(hours=3),
+    )
+    assert result["status"] == "failed"
+    assert result["budget_stop"]["reason"] == "wall_budget_exceeded"
+    assert result["budget_stop_revalidations"][-1]["outcome"] == "restopped"
+    assert not result.get("budget_decisions")
