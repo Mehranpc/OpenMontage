@@ -553,7 +553,10 @@ def parked_wall_seconds(
     for raw in spans:
         if not isinstance(raw, Mapping) or not raw.get("count_toward_wall"):
             continue
-        if raw.get("kind") in {"run", "phase_attempt"}:
+        if raw.get("kind") in {"run", "phase_attempt", "reconciliation"}:
+            # Reconciliation spans measure finish-to-observation reporting lag,
+            # not continuous work. Keep that diagnostic in causal accounting,
+            # but do not let delayed reporting erase parked command silence (#348).
             continue
         started = _parse(raw.get("started_at"))
         if started is None:
