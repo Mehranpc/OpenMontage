@@ -14,20 +14,16 @@ Use `direct_clip_search` with `kind: "video"`, sources exactly `pexels` and `pix
 
 When the retry is spent and events still lack usable footage, the plan's queries are the problem, not its timing. `reconcile-plan` accepts `{"visual_event_id":"ve-7","queries_append":["phone resting on table, plain wall above"]}`: it records at most two new queries per event as `reconciled_queries`, and keeps the authored `queries` so existing selections stay valid. Then run `python -m lib.persian_video_workflow reopen-asset-search <project-id> --visual-event-id ve-7 [...] --reason "..."`. It spends one send-back, scopes a fresh pass cycle to exactly those events and stays in acquire_assets. A manifest row may cite an appended query. That needs no replan and no user decision; ask only when the send-back budget is spent.
 
-```python
-result = registry.get("direct_clip_search").execute({
-    "queries": [{"query": "close up pouring coffee morning", "slot_id": "beat-1-event-1", "kind": "video"}],
-    "sources": ["pexels", "pixabay_video"],
-    "filters": {"orientation": "portrait", "min_duration": 6, "min_width": 1080, "max_width": 1080},
-    "output_dir": str(project_dir / "assets"),
-    "clips_per_query": 1,
-    "timeout_seconds": 180,
-    "search_cache_ttl_seconds": 21600,
-    "max_candidates_total": 16,
-    "max_bytes_per_clip": 100663296,
-    "max_total_download_bytes": 536870912,
-})
+Supply queries and filters in the project-local request; the durable front door owns the destination and remaining download ceilings:
+
+```json
+{
+  "queries": [{"query": "close up pouring coffee morning", "slot_id": "beat-1-event-1", "kind": "video"}],
+  "filters": {"orientation": "portrait", "min_duration": 6, "min_width": 1080, "max_width": 1080}
+}
 ```
+
+`asset-search` owns admission; do not admit manually first. Exceptional direct-provider `output_dir` must be an absolute current-project path; relative paths resolve beneath the project root.
 
 Provider-search metadata is cached under the project for 6 hours using source + query + filters as the key. An identical retry reuses the cached candidate list without another provider API search or cache rewrite; filter changes or expiry re-query the provider. Cached search metadata never becomes selection truth: media still passes validation and candidate review/selection remains in the durable asset workspace.
 
@@ -44,6 +40,8 @@ Follow the ordered fallback ladder: exact literal → emotional human → adjace
 ## Durable candidate lifecycle
 
 Run the bounded pass with `asset-search` (which owns `asset-request` → `direct_clip_search` → `asset-result` as one durable execution), then stage/review/reject/select candidates through the official candidate commands. The durable pass is measured work, not phase advancement: the phase still completes through `complete --phase acquire_assets`. Identity is provider/source + exact source window + intended crop. Review the actual crop/window at start, middle, and end; persist subject/human continuity, affect, semantics, crop safety, staged-stock risk, and resolution.
+
+Select each valid reviewed candidate when accepted; review-before-retry does not require deferring valid selections until every search pass finishes. Retry only unresolved events, while preserving the requirement to review or reject every primary-pass candidate first.
 
 Selection must copy returned `manifestBinding` and `manifestEvidence` into the canonical row. Do not recreate the pool in chat, rename files to invent identity, or use `.workspace/*.py` as a ledger.
 
