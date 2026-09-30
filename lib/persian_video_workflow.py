@@ -5841,7 +5841,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     budget_decision = sub.add_parser(
         "budget-decision",
-    "budget-revalidate",
         help="enact one advertised decision for a stopped run and release the stop",
     )
     budget_decision.add_argument("project_id")
@@ -6069,8 +6068,9 @@ _BUDGET_GUARD_EXEMPT_COMMANDS = frozenset({
     "complete",
     "alignment-commit",
     "reconcile-approval",
-    # The command that exists to satisfy the stop must not be blocked by it.
+    # The commands that satisfy or revalidate a stop must not be blocked by it.
     "budget-decision",
+    "budget-revalidate",
     # Releasing a failed pass is what makes the run recoverable; blocking it on the very
     # budget stop the run is stuck behind would recreate the dead end it exists to close.
     "asset-search-release",
