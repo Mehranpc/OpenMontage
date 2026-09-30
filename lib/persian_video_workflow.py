@@ -4224,10 +4224,11 @@ def select_workflow_asset_candidate(
     # completion that manifest blocks, so a scoped reopen over a subset makes the phase
     # unreachable. Selections already made stay protected from a repair that did not
     # name them, which is the boundary the scope exists to draw.
-    if visual_event_id in _selected_visual_event_ids(state):
-        _scope_allows_visual_event(state, visual_event_id)
+    event_id = str(visual_event_id or "").strip()
+    if event_id in _selected_visual_event_ids(state):
+        _scope_allows_visual_event(state, event_id)
     return select_asset_candidate(
-        _project_root(state), visual_event_id, candidate_id,
+        _project_root(state), event_id, candidate_id,
         rejected_alternatives=rejected_alternatives,
         replace_existing=replace_existing,
     )
