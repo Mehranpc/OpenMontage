@@ -1773,6 +1773,62 @@ _BUDGET_DECISIONS = ("continue_with_extension", "continue_to_preview", "stop")
 
 
 @state_locked
+def revalidate_budget_stop(
+    project_id: str,
+    *,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Release only a budget stop disproven by current accounting (#350).
+
+    Recheck the original stop instant, not the time spent waiting for recovery.
+    No budget grant, phase skip, window reset or retry reset is involved.
+    """
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    stop = state.get("budget_stop")
+    history = list(state.get("budget_stop_revalidations") or [])
+    if not isinstance(stop, Mapping) or not stop:
+        if (state.get("status") == "active" and history
+                and history[-1].get("outcome") == "released"):
+            return state
+        raise PersianVideoWorkflowError("no budget stop is pending revalidation")
+    phase = str(state.get("next_phase") or "")
+    if (state.get("status") != "failed" or phase not in PHASES
+            or stop.get("reason") not in {"wall_budget_exceeded", "phase_budget_exceeded"}
+            or stop.get("next_phase") != phase):
+        raise PersianVideoWorkflowError("budget stop cannot be safely revalidated")
+    stopped_at = _parse_timestamp(str(stop.get("stopped_at") or ""))
+    effective_now = now or datetime.now(timezone.utc)
+    if effective_now < stopped_at:
+        raise PersianVideoWorkflowError("budget revalidation precedes the stop")
+    assert_within_wall_time(state, now=stopped_at)
+    current_stop = _budget_stop_payload(state, phase, now=stopped_at)
+    record = {
+        "original_stop": dict(stop),
+        "current_stop": current_stop,
+        "revalidated_at": effective_now.isoformat(),
+        "outcome": "still_exceeded" if current_stop else "released",
+    }
+    # A repeated blocked check adds no duplicate durable evidence.
+    if history and all(history[-1].get(key) == record[key] for key in (
+        "original_stop", "current_stop", "outcome",
+    )):
+        return state
+    history.append(record)
+    state["budget_stop_revalidations"] = history
+    if current_stop is None:
+        state["status"] = "active"
+        state.pop("budget_stop", None)
+        record_human_idle_and_reopen_run(
+            state, resumed_at=effective_now, reason="explicit budget-stop accounting revalidation",
+        )
+        # The same admission oracle must still approve the resumed instant.
+        _enforce_phase_boundary_budget(state, phase, now=effective_now)
+    _write_state(_project_root(state), state)
+    return state
+
+
+@state_locked
 def resolve_budget_stop(
     project_id: str,
     *,
@@ -5775,8 +5831,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="start a fresh bounded revision cycle after explicit new user feedback",
     )
 
+    budget_revalidate = sub.add_parser(
+        "budget-revalidate", help="recheck a persisted stop without granting an extension",
+    )
+    budget_revalidate.add_argument("project_id")
+
     budget_decision = sub.add_parser(
         "budget-decision",
+    "budget-revalidate",
         help="enact one advertised decision for a stopped run and release the stop",
     )
     budget_decision.add_argument("project_id")
@@ -6223,6 +6285,8 @@ def _main(args: argparse.Namespace) -> int:
                     edit_draft_json=getattr(args, "edit_draft_json", None),
                 )
             )
+        elif args.command == "budget-revalidate":
+            _print_json(revalidate_budget_stop(args.project_id))
         elif args.command == "budget-decision":
             _print_json(resolve_budget_stop(
                 args.project_id,
