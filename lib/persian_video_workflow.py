@@ -4174,10 +4174,28 @@ def review_workflow_asset_candidate(
     source = assert_read_allowed(state, str(input_path))
     review = _read_json(str(source))
     _refuse_candidate_occupying_declared_band(state, candidate_id, review)
+    from lib.persian_region_commands import candidate_carrier_placement
+    from lib.persian_scene_plan_source import materialize_scene_plan
+
+    project = _project_root(state)
+    plan_path = materialize_scene_plan(project) or project / "artifacts" / "scene_plan.json"
+    plan = _read_json(str(plan_path)) if Path(plan_path).is_file() else {}
+    measurement = candidate_carrier_placement(
+        plan, load_asset_candidate(project, candidate_id),
+        (review.get("frame_review") or {}).get("subject_grid") or {},
+    )
+    if measurement["status"] == "refused":
+        raise PersianVideoWorkflowError(
+            "[CARRIER_COPY_UNPLACEABLE] candidate moment copy collides with reviewed hard "
+            "regions: reject this candidate before selection or retry expenditure; "
+            + "; ".join(row.get("message", "") for row in measurement["results"]
+                        if row.get("feasible") is False)
+        )
     _refuse_dead_dark_source_window(state, candidate_id)
-    return record_candidate_review(
+    result = record_candidate_review(
         _project_root(state), candidate_id, review
     )
+    return {**result, "carrierPremeasure": measurement}
 
 
 def reject_workflow_asset_candidate(

@@ -1208,7 +1208,10 @@ def opening_hook_placement(
 _NUMERIC_HERO = re.compile(r"^[۰-۹٠-٩0-9]")
 
 
-def _probe_props(event: Mapping[str, Any], shot: Mapping[str, Any], regions: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
+def _probe_props(
+    event: Mapping[str, Any], shot: Mapping[str, Any], regions: Sequence[Mapping[str, Any]],
+    *, fmt: str = "vertical",
+) -> dict[str, Any] | None:
     """Minimal Film Type props for one carrier: its shot window, reviewed regions, copy."""
     from lib.persian_design import resolve_design
 
@@ -1243,7 +1246,7 @@ def _probe_props(event: Mapping[str, Any], shot: Mapping[str, Any], regions: Seq
     # dwell is the most conservative stand-in, and a hard region anywhere in it is one
     # the edit could still move around by timing. Regions are clipped to the window.
     return {
-        "format": "vertical", "durationSeconds": round(duration, 3),
+        "format": fmt, "durationSeconds": round(duration, 3),
         "design": resolve_design({"version": 2, "profile": "film-type", "seed": "region-review"}),
         "watermark": {"persianText": "طریقت تسلیم", "latinText": "Pathway_of_Surrender"},
         "typographicBeats": [], "captionMode": "hybrid", "captions": [],
@@ -1294,7 +1297,10 @@ def carrier_moment_placement(
         event = events.get(str(shot.get("visualEventId") or ""))
         if event is None:
             continue
-        props = _probe_props(event, shot, regions_by_shot.get(str(shot["shotId"]), []))
+        props = _probe_props(
+            event, shot, regions_by_shot.get(str(shot["shotId"]), []),
+            fmt=str(scene_plan.get("format") or "vertical"),
+        )
         if props is None:
             continue
         row = {"shotId": str(shot["shotId"]), "visualEventId": str(event.get("id"))}
@@ -1312,6 +1318,50 @@ def carrier_moment_placement(
         results.append({**row, "feasible": True})
     blocked = [row for row in results if row.get("feasible") is False]
     return {"status": "refused" if blocked else "checked", "results": results}
+
+
+def candidate_carrier_placement(
+    scene_plan: Mapping[str, Any], candidate: Mapping[str, Any], subject_grid: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Probe reviewed candidate geometry before selection, without media/render work."""
+    event_id = str((candidate.get("context") or {}).get("visualEventId") or "")
+    event = next((
+        event for beat in scene_plan.get("beats") or [] if isinstance(beat, Mapping)
+        for event in beat.get("visual_events") or []
+        if isinstance(event, Mapping) and str(event.get("id") or "") == event_id
+    ), None)
+    if not event or not event.get("carries_moment"):
+        return {"status": "not_applicable", "results": []}
+    if not event.get("moment_copy"):
+        return {"status": "unknown", "reason": "moment_copy_unavailable", "results": []}
+    if not subject_grid:
+        return {"status": "unknown", "reason": "subject_grid_unavailable", "results": []}
+    window = (candidate.get("identity") or {}).get("sourceWindow") or {}
+    duration = _positive_duration(
+        _number(window.get("endSeconds"), label="candidate end")
+        - _number(window.get("startSeconds"), label="candidate start"),
+        label="candidate duration",
+    )
+    regions = []
+    # Sample annotations conservatively protect the whole selected dwell, as at region review.
+    for position in FRAME_POSITIONS:
+        frame = subject_grid.get(position)
+        if not isinstance(frame, Mapping):
+            raise PersianRegionCommandError(f"subject_grid.{position} is required")
+        regions.extend({**region, "startSeconds": 0.0, "endSeconds": duration}
+                       for region in _annotation_regions(frame, label=f"subject_grid.{position}"))
+    shot_id = str(candidate["candidateId"])
+    result = carrier_moment_placement(
+        scene_plan,
+        [{"shotId": shot_id, "visualEventId": event_id,
+          "timeline": {"startSeconds": 0.0, "endSeconds": duration}}],
+        [{"shot_id": shot_id, "avoidRegions": regions}],
+    )
+    if result["status"] == "checked" and not any(
+        row.get("feasible") is True for row in result["results"]
+    ):
+        result = {**result, "status": "unknown"}
+    return result
 
 
 def propose_regions(

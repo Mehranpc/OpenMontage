@@ -15,6 +15,7 @@ import pytest
 
 from lib.persian_design import resolve_design
 from lib.persian_film_type import FilmTypePreflightError, prepare_film_type_props
+from lib.persian_region_commands import candidate_carrier_placement
 from tools.video.persian_compose import _composer_dir
 
 pytestmark = pytest.mark.skipif(
@@ -34,6 +35,22 @@ MOMENT3 = {
     "anchorText": "۵۴۳ نفر تصور کردند",
     "presentation": {"recipeId": "editorial-hero-compact"},
 }
+
+
+@pytest.mark.parametrize("blocked", [True, False])
+def test_candidate_premeasure_uses_real_browser_before_selection(blocked) -> None:
+    frame = ({"priority": "hard", "grid": {"x1": 0, "y1": 0, "x2": 10, "y2": 10}}
+             if blocked else {"clear": True})
+    result = candidate_carrier_placement(
+        {"format": "vertical", "beats": [{"visual_events": [{
+            "id": "carrier", "carries_moment": True, "moment_copy": MOMENT3["segments"],
+        }]}]},
+        {"candidateId": "candidate", "context": {"visualEventId": "carrier"},
+         "identity": {"sourceWindow": {"startSeconds": 10.0, "endSeconds": 16.03}}},
+        {position: dict(frame) for position in ("start", "middle", "end")},
+    )
+    assert result["status"] == ("refused" if blocked else "checked")
+    assert result["results"][0]["feasible"] is (not blocked)
 
 
 def _props(regions: list[dict]) -> dict:
