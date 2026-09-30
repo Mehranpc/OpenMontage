@@ -188,7 +188,7 @@ def test_bounded_recovery_cycle_leaves_the_repository_root_clean(
     from lib import persian_preflight as preflight
     from lib import persian_video_workflow as workflow
     from lib.paths import REPO_ROOT
-    from tests.lib.test_issue35_asset_candidate_workspace import _discovered, _review
+    from tests.lib.test_issue35_asset_candidate_workspace import _discovered, _ensure_plan, _review
     from tests.lib.test_issue35_convergence_workspace import _schema_valid_edit as _edit
     from tests.lib.test_persian_video_workflow import BASE, _advance_to, _bootstrap
 
@@ -245,6 +245,7 @@ def test_bounded_recovery_cycle_leaves_the_repository_root_clean(
     report = workflow.preflight_workflow_edit_draft("run", "recovery-1", pipeline_dir=tmp_path)
     assert report["ok"] is True
 
+    _ensure_plan(project, "event-1", narration="جملهٔ نمونه")
     discovery_id = assets.record_discovery_pass(
         project, 0, [_discovered(project)]
     )["candidateIds"][0]

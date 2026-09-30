@@ -27,7 +27,7 @@ from lib.persian_video_workflow import (
     reopen_asset_search,
     select_workflow_asset_candidate,
 )
-from tests.lib.test_issue224_plan_reconcile import _run_at_acquire
+from tests.lib.test_issue224_plan_reconcile import _event, _plan, _run_at_acquire
 from tests.lib.test_issue331_acquisition_next_step import _spend_both_passes
 from tests.lib.test_issue35_asset_candidate_workspace import _discovered, _review
 from tests.lib.test_persian_video_workflow import BASE
@@ -46,24 +46,32 @@ def _reopened_scope(tmp_path: Path, events: list[str]) -> None:
 
 
 def _reviewed_candidate(tmp_path: Path, event: str, source_id: str, *, discovery_pass: int = 0) -> str:
+    """A candidate that matches its planned event, so admission (#360) accepts it."""
     project = tmp_path / "run"
+    plan = _plan(tmp_path)
+    beat = next(b for b in plan["beats"] if any(e["id"] == event for e in b.get("visual_events") or []))
+    planned = _event(plan, event)
     discovery = workspace.record_discovery_pass(
         project, discovery_pass,
-        [_discovered(project, source_id=source_id, name=f"{source_id}.mp4", slot_id=event)],
+        [_discovered(project, source_id=source_id, name=f"{source_id}.mp4", slot_id=event,
+                     duration=max(12.0, float(planned["duration_seconds"]) + 1.0))],
     )
     candidate = workspace.stage_asset_candidate(
         project,
         discovery_id=discovery["candidateIds"][0],
         visual_event_id=event,
-        semantic_beat_id="beat-1",
+        semantic_beat_id=beat["id"],
         source_in_seconds=0.0,
         duration_seconds=4.0,
         intended_crop={"mode": "full_frame"},
         candidate_rank=1,
-        query="person thinking at desk",
-        narration_span="این یک جمله نمونه است",
+        query=planned["queries"][0],
+        narration_span=planned["narration_span"],
     )
-    workspace.record_candidate_review(project, candidate["candidateId"], _review())
+    review = _review()
+    if planned.get("carries_moment"):
+        review["frame_review"]["placement_space"] = planned["negative_space"]
+    workspace.record_candidate_review(project, candidate["candidateId"], review)
     return candidate["candidateId"]
 
 

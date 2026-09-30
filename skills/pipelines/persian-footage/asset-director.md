@@ -45,6 +45,19 @@ Select each valid reviewed candidate when accepted; review-before-retry does not
 
 Selection must copy returned `manifestBinding` and `manifestEvidence` into the canonical row. Do not recreate the pool in chat, rename files to invent identity, or use `.workspace/*.py` as a ledger.
 
+## Selection admission (#360)
+
+`asset-candidate-select` checks the candidate against its planned visual event in the effective scene plan with the manifest audit's own rules, before anything is written. A refusal lists every blocker it can already prove at once — stable `code`, `field`, planned `expected`, reviewed `observed`, `recovery` categories — as JSON on stdout (`{"refused": true, "diagnostics": [...]}`) and as `[CODE] message` text; the ledger, dispositions and reviews stay unchanged. Replacement and re-selecting the current pick are admitted by the same rules. No plan, an unreadable plan, or an event missing from the plan refuses (`PLAN_MISSING`, `PLAN_INVALID`, `EVENT_NOT_IN_PLAN`).
+
+| Rule class | Checked | Rules |
+| --- | --- | --- |
+| `event_local` | at selection | provenance, allowlist, path; usable duration; beat/span/query/rank; reasoning; affect; staged risk; human presence; subject continuity; reviewed fallback; start/middle/end frames; opening-hook frames; carrier `placement_space`; crop safety |
+| `current_set` | at selection | overlapping source window with another selected event |
+| `manifest_declaration` | returned as `declarationsRequired`, audited at build | fallback or opening semantic fields the review did not record |
+| `completion` | build-manifest / checkpoint | every planned event has exactly one row; typographic beats carry no footage |
+
+Record the treatment you actually see in the review when it is not the literal one: `"fallback_level": "adjacent_metaphor", "fallback_reason": "..."` (a reason is required for every non-literal level). Admission then compares it with the planned level, and the manifest carries it; a build override cannot contradict it. Without it, the row defaults to `exact_literal` and a non-literal plan returns a `FALLBACK_UNDECLARED` declaration you must make at build or `reconcile-plan` with evidence. `human_presence` is never reconciled away to fit a clip: pick a reviewed alternate or reject and retry.
+
 ## Band evidence at candidate review (#261)
 
 For every `carries_moment` event, `asset-candidate-review` requires `frame_review.subject_grid`: the selected window's `start`, `middle` and `end` frames in the same 10×10 annotation format `regions propose` takes (`{"priority":"hard","grid":{...}}`, `{"regions":[...]}`, or `{"clear":true}`). A hard region that overlaps the event's declared `negative_space` (and every `negative_space_alternates` entry) is refused as `[BAND_OCCUPIED:<band>]`; when the footage leaves an alternate clear, record that region as `frame_review.placement_space`, by the same rule region review enforces. The message lists the regions that stay clear *and* can host type in the plan's format (#335): in Film Type vertical that is only `centre_band`, because columns are narrower than the narrowest curated column and the lower band is the caption reserve. `none` means the footage has no usable way out; reject it. Reject that candidate (`asset-candidate-reject --category technical`), or `reconcile-plan` the band, before you select. Reuse the same grid when you annotate `regions propose` for that shot.

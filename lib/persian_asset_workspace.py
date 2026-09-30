@@ -31,6 +31,14 @@ class PersianAssetWorkspaceError(ValueError):
     pass
 
 
+class AssetAdmissionRefused(PersianAssetWorkspaceError):
+    """Selection refused before any write; ``diagnostics`` lists every known blocker (#360)."""
+
+    def __init__(self, message: str, diagnostics: Sequence[Mapping[str, Any]]):
+        super().__init__(message)
+        self.diagnostics = [dict(item) for item in diagnostics]
+
+
 def _root(project_dir: Path) -> Path:
     return project_dir.expanduser().resolve() / ".asset-workspace"
 
@@ -436,6 +444,26 @@ def _validate_review(review: Mapping[str, Any]) -> dict[str, Any]:
             "resolution_quality must be strong, acceptable, or weak"
         )
     result["resolution_quality"] = resolution
+    if "fallback_level" in result or "fallback_reason" in result:
+        # The treatment level is observed from the clip, so it may be reviewed evidence
+        # that admission compares with the plan instead of a build-time label (#360).
+        from lib.persian_scenes import FALLBACK_LEVELS
+
+        level = str(result.get("fallback_level") or "").strip()
+        if level not in FALLBACK_LEVELS:
+            raise PersianAssetWorkspaceError(
+                f"fallback_level must be one of {', '.join(FALLBACK_LEVELS)}"
+            )
+        result["fallback_level"] = level
+        reason = str(result.get("fallback_reason") or "").strip()
+        if level != "exact_literal" and not reason:
+            raise PersianAssetWorkspaceError(
+                "non-literal fallback_level requires fallback_reason documenting why earlier levels failed"
+            )
+        if reason:
+            result["fallback_reason"] = reason
+        else:
+            result.pop("fallback_reason", None)
     _validate_manifest_frame_review(frame)
     return result
 
@@ -560,20 +588,10 @@ def _windows_overlap(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
     return end - start > _EPSILON
 
 
-def _validate_selectable(candidate: Mapping[str, Any]) -> None:
+def _require_reviewed(candidate: Mapping[str, Any]) -> None:
     review = candidate.get("review")
     if not isinstance(review, Mapping) or not candidate.get("reviewSha256"):
         raise PersianAssetWorkspaceError("asset candidate must be reviewed before selection")
-    if review.get("affect_match") is not True:
-        raise PersianAssetWorkspaceError("asset candidate affect_match must be true before selection")
-    if str(review.get("staged_stock_risk") or "") == "high":
-        raise PersianAssetWorkspaceError("high staged_stock_risk candidate cannot be selected")
-    geometry = review.get("geometry_review") or {}
-    if geometry.get("crop_safe") is not True:
-        raise PersianAssetWorkspaceError("asset candidate crop must be reviewed as safe before selection")
-    if not str(review.get("relevance_reason") or "").strip():
-        raise PersianAssetWorkspaceError("asset candidate requires semantic relevance evidence")
-
 
 
 def _manifest_binding(candidate: Mapping[str, Any]) -> dict[str, Any]:
@@ -639,7 +657,22 @@ def _manifest_evidence(candidate: Mapping[str, Any]) -> dict[str, Any]:
         "human_presence": review.get("human_presence"),
         "shows_subject": review.get("shows_subject"),
         "frame_review": _manifest_frame_review(review.get("frame_review")),
+        **_reviewed_fallback(review),
     }
+
+
+def _reviewed_fallback(review: Mapping[str, Any]) -> dict[str, Any]:
+    """Fallback evidence recorded in the review, if any; legacy reviews record none."""
+    from lib.persian_scenes import FALLBACK_LEVELS
+
+    level = str(review.get("fallback_level") or "").strip()
+    if level not in FALLBACK_LEVELS:
+        return {}
+    evidence: dict[str, Any] = {"fallback_level": level}
+    reason = str(review.get("fallback_reason") or "").strip()
+    if reason:
+        evidence["fallback_reason"] = reason
+    return evidence
 
 
 
@@ -912,6 +945,11 @@ def validate_asset_manifest_against_workspace(
                 raise PersianAssetWorkspaceError(
                     f"asset_manifest {event_id!r} {field} does not match persisted candidate review"
                 )
+        for field in ("fallback_level", "fallback_reason"):
+            if field in expected_evidence and row.get(field) != expected_evidence[field]:
+                raise PersianAssetWorkspaceError(
+                    f"asset_manifest {event_id!r} {field} does not match persisted candidate review"
+                )
         if row.get("frame_review") != expected_evidence["frame_review"]:
             raise PersianAssetWorkspaceError(
                 f"asset_manifest {event_id!r} frame_review does not match persisted candidate review"
@@ -937,6 +975,124 @@ def validate_asset_manifest_against_workspace(
 
 
 
+def _admission_requirement(
+    project_dir: Path, event_id: str
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    """The planned requirement for ``event_id`` from the effective plan, read-only (#360)."""
+    from lib.persian_assets import recovery_options, scene_asset_requirements
+    from lib.persian_scene_plan_source import ScenePlanUnreadable, load_effective_scene_plan
+
+    def refusal(code: str, message: str) -> list[dict[str, Any]]:
+        item = {
+            "code": code, "ruleClass": "event_local", "visualEventId": event_id,
+            "field": None, "expected": None, "observed": None, "message": message,
+        }
+        return [{**item, "recovery": recovery_options(item)}]
+
+    try:
+        plan = load_effective_scene_plan(project_dir)
+    except ScenePlanUnreadable as exc:
+        return None, refusal("PLAN_INVALID", f"{event_id}: {exc}; admission cannot check the plan")
+    if plan is None:
+        return None, refusal(
+            "PLAN_MISSING",
+            f"{event_id}: no completed scene plan; a selection cannot be checked against "
+            "its planned visual event",
+        )
+    try:
+        requirements, typographic_ids, _ = scene_asset_requirements(plan)
+    except (AttributeError, TypeError, ValueError) as exc:
+        return None, refusal("PLAN_INVALID", f"{event_id}: scene plan is malformed ({exc})")
+    for requirement in requirements:
+        if str(requirement.get("visual_event_id") or "") == event_id:
+            return requirement, []
+    return None, refusal(
+        "EVENT_NOT_IN_PLAN", f"visual_event_id {event_id!r} is not present in the scene plan"
+    )
+
+
+def assess_candidate_admission(
+    project_dir: Path,
+    visual_event_id: str,
+    candidate: Mapping[str, Any],
+    *,
+    selections: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Every blocker already provable for selecting ``candidate``; never writes (#360).
+
+    Uses the manifest audit's own rules on the row the build would produce, plus the
+    current-set source-window rule. Missing future events are completion rules and are
+    not checked here.
+    """
+    from lib.persian_assets import assess_selection_entry, recovery_options
+
+    event_id = str(visual_event_id or "").strip()
+    candidate_id = str(candidate.get("candidateId") or "")
+    requirement, diagnostics = _admission_requirement(project_dir, event_id)
+    declarations: list[dict[str, Any]] = []
+    if requirement is not None:
+        row = _manifest_row(candidate)
+        if "fallback_level" not in _reviewed_fallback(candidate.get("review") or {}):
+            # The build's exact_literal default is a declaration, not reviewed evidence.
+            row.pop("fallback_level", None)
+        assessed = assess_selection_entry(row, requirement)
+        diagnostics.extend(assessed["diagnostics"])
+        declarations = assessed["declarationsRequired"]
+    review = candidate.get("review") if isinstance(candidate.get("review"), Mapping) else {}
+    geometry = review.get("geometry_review") if isinstance(review.get("geometry_review"), Mapping) else {}
+    if geometry.get("crop_safe") is not True:
+        item = {
+            "code": "CROP_UNSAFE", "ruleClass": "event_local", "visualEventId": event_id,
+            "field": "geometry_review.crop_safe", "expected": True,
+            "observed": geometry.get("crop_safe"),
+            "message": f"{event_id}: asset candidate crop must be reviewed as safe before selection",
+        }
+        diagnostics.append({**item, "recovery": recovery_options(item)})
+    for other_event, selection in sorted(selections.items()):
+        if other_event == event_id:
+            continue
+        other = load_asset_candidate(project_dir, str(selection.get("candidateId") or ""))
+        left = candidate.get("identity") or {}
+        right = other.get("identity") or {}
+        if (
+            left.get("provider") == right.get("provider")
+            and left.get("sourceId") == right.get("sourceId")
+            and _windows_overlap(left, right)
+        ):
+            item = {
+                "code": "SOURCE_WINDOW_OVERLAP", "ruleClass": "current_set",
+                "visualEventId": event_id, "field": "identity.sourceWindow",
+                "expected": "non-overlapping window",
+                "observed": {"conflictsWith": other_event, "candidateId": other.get("candidateId")},
+                "message": (
+                    "visible source-window overlap with already selected candidate "
+                    f"for {other_event!r}"
+                ),
+            }
+            diagnostics.append({**item, "recovery": recovery_options(item)})
+    from lib.persian_assets import _diagnostic_sort_key
+
+    for item in [*diagnostics, *declarations]:
+        item["candidateId"] = candidate_id
+        item["reviewSha256"] = str(candidate.get("reviewSha256") or "")
+    diagnostics.sort(key=_diagnostic_sort_key)
+    return {
+        "visualEventId": event_id,
+        "candidateId": candidate_id,
+        "admissible": not diagnostics,
+        "diagnostics": diagnostics,
+        "declarationsRequired": declarations,
+    }
+
+
+def _refuse(event_id: str, candidate_id: str, diagnostics: Sequence[Mapping[str, Any]]) -> None:
+    raise AssetAdmissionRefused(
+        f"asset selection refused for {event_id!r} ({candidate_id}); nothing was written: "
+        + " | ".join(f"[{item['code']}] {item['message']}" for item in diagnostics),
+        diagnostics,
+    )
+
+
 def select_asset_candidate(
     project_dir: Path,
     visual_event_id: str,
@@ -951,38 +1107,18 @@ def select_asset_candidate(
         raise PersianAssetWorkspaceError("candidate visual event does not match selection target")
     if candidate.get("disposition") == "rejected":
         raise PersianAssetWorkspaceError("rejected asset candidate cannot be selected")
-    _validate_selectable(candidate)
+    _require_reviewed(candidate)
     # Admission must precede every selection/candidate write, including legacy records.
     manifest_evidence = _manifest_evidence(candidate)
 
     selections = _read_selections(project_dir)
     existing = selections.get(event_id)
-    if existing and existing.get("candidateId") == candidate_id:
-        return {
-            "selected": False, "idempotent": True, "selection": existing,
-            "manifestBinding": _manifest_binding(candidate),
-            "manifestEvidence": manifest_evidence,
-        }
-    if existing and not replace_existing:
-        raise PersianAssetWorkspaceError(
-            f"visual event {event_id!r} already has a selected candidate; use replace_existing"
-        )
-
-    for other_event, selection in selections.items():
-        if other_event == event_id:
-            continue
-        other = load_asset_candidate(project_dir, str(selection.get("candidateId") or ""))
-        left = candidate.get("identity") or {}
-        right = other.get("identity") or {}
-        if (
-            left.get("provider") == right.get("provider")
-            and left.get("sourceId") == right.get("sourceId")
-            and _windows_overlap(left, right)
-        ):
-            raise PersianAssetWorkspaceError(
-                "visible source-window overlap with already selected candidate "
-                f"for {other_event!r}"
-            )
+    # Idempotent and replacement paths are admitted by the same rules: re-selecting an
+    # incompatible legacy selection must not read as a clean no-op (#360).
+    admission = assess_candidate_admission(
+        project_dir, event_id, candidate, selections=selections
+    )
+    diagnostics = list(admission["diagnostics"])
 
     provided = {
         str(key): str(reason or "").strip()
@@ -1006,10 +1142,31 @@ def select_asset_candidate(
             missing.append(alternate_id)
         else:
             rejected_reasons[alternate_id] = reason
-    if missing:
+    is_idempotent = bool(existing and existing.get("candidateId") == candidate_id)
+    if missing and not is_idempotent:
+        diagnostics.append({
+            "code": "ALTERNATE_REASONS_MISSING", "ruleClass": "selection_protocol",
+            "visualEventId": event_id, "candidateId": candidate_id,
+            "field": "rejected_alternatives", "expected": sorted(missing), "observed": sorted(provided),
+            "message": (
+                "reviewed alternatives require rejection reasons before selection: "
+                + ", ".join(sorted(missing))
+            ),
+            "recovery": ["record_alternate_rejection_reasons"],
+        })
+    if diagnostics:
+        _refuse(event_id, candidate_id, diagnostics)
+
+    if is_idempotent:
+        return {
+            "selected": False, "idempotent": True, "selection": existing,
+            "manifestBinding": _manifest_binding(candidate),
+            "manifestEvidence": manifest_evidence,
+            "declarationsRequired": admission["declarationsRequired"],
+        }
+    if existing and not replace_existing:
         raise PersianAssetWorkspaceError(
-            "reviewed alternatives require rejection reasons before selection: "
-            + ", ".join(sorted(missing))
+            f"visual event {event_id!r} already has a selected candidate; use replace_existing"
         )
 
     previous_candidate_id = str((existing or {}).get("candidateId") or "")
@@ -1036,8 +1193,50 @@ def select_asset_candidate(
         "selected": True, "idempotent": False, "selection": selection,
         "manifestBinding": _manifest_binding(candidate),
         "manifestEvidence": manifest_evidence,
+        "declarationsRequired": admission["declarationsRequired"],
     }
 
+
+def _manifest_row(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    """The canonical row a selected candidate becomes, before build overrides (#360).
+
+    Admission audits exactly this row, so selection and the manifest cannot disagree
+    about a fact the durable candidate already records.
+    """
+    source = candidate.get("source") if isinstance(candidate.get("source"), Mapping) else {}
+    evidence = _manifest_evidence(candidate)
+    binding = _manifest_binding(candidate)
+    provider = str(binding["provider"])
+    creator = str(source.get("creator") or "").strip()
+    provider_label = "Pexels" if provider == "pexels" else "Pixabay"
+    raw_license = source.get("license")
+    if isinstance(raw_license, Mapping):
+        license_name = str(raw_license.get("name") or "").strip()
+    else:
+        license_name = str(raw_license or "").strip()
+    if not license_name:
+        license_name = f"{provider_label} License"
+    row: dict[str, Any] = {
+        **binding,
+        **evidence,
+        "id": binding["asset_candidate_id"],
+        "type": "video",
+        "kind": "video",
+        "source_tool": "direct_clip_search",
+        "scene_id": evidence["semantic_beat_id"],
+        "beat_id": evidence["semantic_beat_id"],
+        "path": str(source.get("path") or ""),
+        "width": int(source.get("width") or 0),
+        "height": int(source.get("height") or 0),
+        "original_url": str(source.get("originalUrl") or ""),
+        "license": license_name,
+        "attribution": (
+            f"Video by {creator} on {provider_label}"
+            if creator else f"Video on {provider_label}"
+        ),
+        "fallback_level": evidence.get("fallback_level", "exact_literal"),
+    }
+    return row
 
 
 def build_asset_manifest_from_workspace(
@@ -1071,39 +1270,8 @@ def build_asset_manifest_from_workspace(
         candidate = load_asset_candidate(
             project_dir, str(selection.get("candidateId") or "")
         )
-        source = candidate.get("source") if isinstance(candidate.get("source"), Mapping) else {}
         evidence = _manifest_evidence(candidate)
-        binding = _manifest_binding(candidate)
-        provider = str(binding["provider"])
-        creator = str(source.get("creator") or "").strip()
-        provider_label = "Pexels" if provider == "pexels" else "Pixabay"
-        raw_license = source.get("license")
-        if isinstance(raw_license, Mapping):
-            license_name = str(raw_license.get("name") or "").strip()
-        else:
-            license_name = str(raw_license or "").strip()
-        if not license_name:
-            license_name = f"{provider_label} License"
-        row: dict[str, Any] = {
-            **binding,
-            **evidence,
-            "id": binding["asset_candidate_id"],
-            "type": "video",
-            "kind": "video",
-            "source_tool": "direct_clip_search",
-            "scene_id": evidence["semantic_beat_id"],
-            "beat_id": evidence["semantic_beat_id"],
-            "path": str(source.get("path") or ""),
-            "width": int(source.get("width") or 0),
-            "height": int(source.get("height") or 0),
-            "original_url": str(source.get("originalUrl") or ""),
-            "license": license_name,
-            "attribution": (
-                f"Video by {creator} on {provider_label}"
-                if creator else f"Video on {provider_label}"
-            ),
-            "fallback_level": "exact_literal",
-        }
+        row = _manifest_row(candidate)
         event_override = per_event.get(event_id, {})
         if not isinstance(event_override, Mapping):
             raise PersianAssetWorkspaceError(
@@ -1119,6 +1287,12 @@ def build_asset_manifest_from_workspace(
                 f"manifest override for {event_id!r} cannot replace canonical fields: "
                 + ", ".join(unsupported_fields)
             )
+        for field in ("fallback_level", "fallback_reason"):
+            if field in evidence and field in event_override and event_override[field] != evidence[field]:
+                raise PersianAssetWorkspaceError(
+                    f"manifest override for {event_id!r} cannot replace reviewed {field} "
+                    f"{evidence[field]!r}; reconcile-plan the event or select another candidate"
+                )
         row.update({str(key): value for key, value in event_override.items()})
         assets.append(row)
 
@@ -1247,7 +1421,9 @@ def asset_workspace_status(project_dir: Path) -> dict[str, Any]:
 
 
 __all__ = [
+    "AssetAdmissionRefused",
     "PersianAssetWorkspaceError",
+    "assess_candidate_admission",
     "asset_workspace_status",
     "build_asset_manifest_from_workspace",
     "load_asset_candidate",

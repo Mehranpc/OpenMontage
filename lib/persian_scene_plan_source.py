@@ -33,6 +33,38 @@ def _checkpoint_plan(project: Path) -> dict[str, Any] | None:
     return plan if isinstance(plan, dict) and plan else None
 
 
+class ScenePlanUnreadable(ValueError):
+    """The effective scene plan exists but cannot be read as an object."""
+
+
+def load_effective_scene_plan(project: Path) -> dict[str, Any] | None:
+    """The plan ``materialize_scene_plan`` would publish, read without writing (#360).
+
+    Admission and read-only readiness need the plan but must not touch project files.
+    ``None`` means no plan at all; an unreadable plan raises instead of reading as empty.
+    """
+    project = Path(project)
+    checkpoint = project / "checkpoint_scene_plan.json"
+    if checkpoint.is_file():
+        try:
+            json.loads(checkpoint.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ScenePlanUnreadable(f"scene-plan checkpoint is unreadable: {checkpoint}") from exc
+    plan = _checkpoint_plan(project)
+    if plan is not None:
+        return plan
+    artifact = project / SCENE_PLAN_ARTIFACT
+    if not artifact.is_file():
+        return None
+    try:
+        value = json.loads(artifact.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ScenePlanUnreadable(f"scene-plan artifact is unreadable: {artifact}") from exc
+    if not isinstance(value, dict) or not value:
+        raise ScenePlanUnreadable(f"scene-plan artifact is not a plan object: {artifact}")
+    return value
+
+
 def materialize_scene_plan(project: Path) -> Path | None:
     """Return the scene-plan artifact path, written from the completed checkpoint.
 

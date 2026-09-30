@@ -59,6 +59,32 @@ def _review(*, relevance: str = "The visible action matches the beat.", resoluti
     }
 
 
+def _ensure_plan(
+    project: Path, *events: str, beat: str = "beat-1",
+    narration: str = "این یک جمله نمونه است",
+) -> None:
+    """Selection is admitted against the effective scene plan (#360); give fixtures one."""
+    import json as _json
+
+    if (project / "checkpoint_scene_plan.json").is_file() or (project / "artifacts" / "scene_plan.json").is_file():
+        return
+    from tests.lib.test_issue35_semantic_scene_plan_checkpoint import _event
+
+    visuals = [
+        {**_event(event, 4.0), "narration_span": narration,
+         "queries": ["person thinking at desk", "person at desk wide shot"]}
+        for event in events
+    ]
+    plan = {"version": "2.0", "format": "vertical", "subject": "sample",
+            "target_duration_seconds": 4.0 * len(visuals),
+            "beats": [{"id": beat, "intent_fa": "نمونه", "script_line_fa": narration,
+                       "duration_seconds": 4.0 * len(visuals), "typographic": False,
+                       "visual_events": visuals}]}
+    artifact = project / "artifacts" / "scene_plan.json"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_text(_json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+
+
 def test_candidate_identity_binds_provider_source_window_and_crop(tmp_path: Path) -> None:
     project = tmp_path / "project"
     discovery = workspace.record_discovery_pass(project, 0, [_discovered(project)])
@@ -94,6 +120,7 @@ def test_review_evidence_is_bound_once_to_candidate_identity_and_reused(tmp_path
 
 def test_overlapping_same_source_windows_are_rejected_but_nonoverlap_is_legal(tmp_path: Path) -> None:
     project = tmp_path / "project"
+    _ensure_plan(project, "event-1", "event-2", "event-3")
     discovery_id = workspace.record_discovery_pass(project, 0, [_discovered(project, duration=14.0)])["candidateIds"][0]
     first = _stage(project, discovery_id, event="event-1", start=0.0, duration=4.0)
     overlap = _stage(project, discovery_id, event="event-2", start=3.0, duration=4.0)
@@ -129,6 +156,7 @@ def test_rejection_taxonomy_distinguishes_technical_semantic_and_editorial(tmp_p
 
 def test_selected_candidate_records_reasons_for_reviewed_alternates(tmp_path: Path) -> None:
     project = tmp_path / "project"
+    _ensure_plan(project, "event-1")
     discovery_ids = workspace.record_discovery_pass(
         project, 0,
         [
@@ -154,6 +182,7 @@ def test_selected_candidate_records_reasons_for_reviewed_alternates(tmp_path: Pa
 
 def test_reviewed_alternate_can_be_reused_without_rediscovery_or_rereview(tmp_path: Path) -> None:
     project = tmp_path / "project"
+    _ensure_plan(project, "event-1")
     discovery_ids = workspace.record_discovery_pass(
         project, 0,
         [
@@ -181,6 +210,7 @@ def test_reviewed_alternate_can_be_reused_without_rediscovery_or_rereview(tmp_pa
 
 def test_weak_resolution_selection_is_visible_before_asset_completion(tmp_path: Path) -> None:
     project = tmp_path / "project"
+    _ensure_plan(project, "ending-event", beat="ending-beat", narration="پایان")
     discovery_id = workspace.record_discovery_pass(project, 0, [_discovered(project)])["candidateIds"][0]
     candidate = workspace.stage_asset_candidate(
         project,
@@ -282,6 +312,8 @@ def test_front_door_exposes_asset_candidate_lifecycle_commands() -> None:
 
 
 def _selected_candidate(project: Path, *, event: str = "event-1") -> tuple[dict, dict]:
+    if not (project / "checkpoint_scene_plan.json").is_file():
+        _write_matching_scene_plan(project, event=event)
     discovery_id = workspace.record_discovery_pass(
         project, 0, [_discovered(project, source_id="selected", name="selected.mp4", slot_id=event)]
     )["candidateIds"][0]
@@ -492,6 +524,7 @@ def test_workspace_bound_manifest_rejects_unselected_visual_event_rows(tmp_path:
 
 def test_status_surfaces_reviewed_reusable_candidates_by_visual_event(tmp_path: Path) -> None:
     project = tmp_path / "project"
+    _ensure_plan(project, "event-1")
     discovery_ids = workspace.record_discovery_pass(
         project, 0,
         [
