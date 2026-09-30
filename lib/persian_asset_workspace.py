@@ -603,6 +603,9 @@ def _manifest_frame_review(raw: object) -> dict[str, Any]:
     only a real region there, so the whole build was refused and the only repair was a
     full send-back. A placeholder was never evidence of a clear region: leave it out. A
     carrier that lacks a real one still fails the carrier check, which asks for it.
+    Before #358, misplaced boolean ``face_visible`` was also admitted here; it
+    belongs to subject-region review. Project it out without rewriting durable
+    evidence, then validate every remaining field against the canonical schema.
     """
     from lib.persian_scenes import NEGATIVE_SPACE_REGIONS
 
@@ -1032,7 +1035,7 @@ def select_asset_candidate(
     return {
         "selected": True, "idempotent": False, "selection": selection,
         "manifestBinding": _manifest_binding(candidate),
-        "manifestEvidence": _manifest_evidence(candidate),
+        "manifestEvidence": manifest_evidence,
     }
 
 
