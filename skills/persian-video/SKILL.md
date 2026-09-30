@@ -168,6 +168,10 @@ python -m lib.persian_video_workflow asset-candidate-select <project-id> <visual
   A busy `pending_pass` is refused by `complete`, so a latched pass is what makes a run unable to finish: neither command is optional when a pass fails.
 - The pass **does not advance the phase**. Staging, review, rejection, selection, `assets build-manifest` and `assets write-checkpoint` remain your work, and `complete --phase acquire_assets` is still what advances it. Use `--no-wait` when the session cannot block, then reconcile with `status` as above.
 
+Close a prospectively measured agent work span with `work-finish` before starting durable `asset-search`. After the durable result is reconciled, open a new work span for actual staging/review/selection and close it before a provider execution or human wait. Do not leave one work span covering search, downloads, review, and user waits; abandoned spans remain unverified and cannot be retroactively credited.
+
+A wall-budget extension and a phase-budget decision are separate. Inspect the current `budget_stop` reason and threshold before recording a decision: extending the whole run does not clear an independent phase overrun. Report that distinction before asking for another grant; never reset counters or imply that a grant proves the phase meets its SLO.
+
 `asset-request` and `asset-result` remain the underlying handshake, and remain correct to use directly only for a provider path `asset-search` cannot take.
 
 `asset-candidate-select` returns `manifestBinding` and `manifestEvidence`; use those exact fields in the canonical `asset_manifest` row. Once asset workspace state exists, `complete --phase acquire_assets` enforces that every workspace-bound visual event has exactly one selected row with matching identity and review evidence. `status.asset_workspace` is the durable source for candidate/reuse/rejection/weak-resolution state. `asset_manifest` remains the canonical selected artifact; the workspace is durable discovery/review history.

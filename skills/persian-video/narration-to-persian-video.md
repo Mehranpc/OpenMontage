@@ -9,17 +9,14 @@ New scene plans separate semantic narration beats from shot-level `visual_events
 
 For new short-form production, the edit stage must author top-level `metadata.hookQuality` according to `hook-quality.md` before no-copy preflight. The record separates measured timing/perceptual facts from explicit semantic judgements with rationale. Frame zero is not a visual change, typography is not automatically equivalent to an action/cut/reveal, and the evidence must not silently rewrite authoritative narration. If hook quality cannot be repaired honestly within the existing editorial authority, use the workflow revision path rather than weakening the gate.
 
-For acquisition, read `asset-director.md`. Every `direct_clip_search` call must first be passed through the code-owned budget clamp:
+For acquisition, read `asset-director.md`. Run the normal stock pass through the durable front door:
 
 ```bash
-python -m lib.persian_video_workflow asset-request <project-id> --retry-pass 0 --json request.json
+python -m lib.persian_video_workflow asset-search <project-id> --retry-pass 0 --request <project>/search-request-0.json
 ```
 
-Execute exactly the returned request. Then account the tool's `result.data` before another pass:
+Write a project-local request containing the event queries and required filters. Omit `output_dir` and explicit download ceilings to use the code-owned project destination and remaining budget. The durable command owns admission, provider execution, and result accounting; do not run `asset-request` before it or `asset-result` after it. Direct handshake commands are only for a provider path the durable front door cannot take.
 
-```bash
-python -m lib.persian_video_workflow asset-result <project-id> --retry-pass 0 --json result-data.json
-```
 The automatic path is exactly one primary pass plus at most one alternate-query retry. Provider set, candidate count, per-clip bytes, aggregate bytes, and clips per query come from `lib.persian_video_workflow`, not from agent judgment. Never raise a ceiling to make a difficult beat succeed. Persist the scene audit's `sourcing_order` in the planning-phase evidence. On retry pass 1, `bounded_asset_search_request` itself reorders unresolved query slots to that saved importance order and refuses unknown slot IDs; importance therefore prioritizes the bounded retry and never expands it.
 
 Before accepting assets, inspect the intended crop/window at start, middle, and end and persist the canonical `frame_review` evidence. Preserve planned human/subject presence, reject high staged-stock risk or affect mismatch, and record the authored query, candidate rank, semantic relevance, and fallback provenance. A relevance score, filename, or one provider thumbnail is not visual review.
