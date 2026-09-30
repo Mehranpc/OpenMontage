@@ -108,3 +108,29 @@ def test_all_canonical_optional_frame_fields_survive_projection() -> None:
     }
     assert workspace._validate_review({**_review(), "frame_review": frame})["frame_review"] == frame
     assert workspace._manifest_evidence({"review": {"frame_review": frame}})["frame_review"] == frame
+
+
+@pytest.mark.parametrize("extra", [
+    {"unknown_evidence": True}, {"face_visible": "false"}, {"at_3_seconds": "yes"},
+])
+def test_invalid_legacy_evidence_cannot_partially_commit_a_selection(tmp_path: Path, extra: dict) -> None:
+    project = tmp_path / "run"
+    discovery = workspace.record_discovery_pass(project, 0, [_discovered(project)])
+    staged = _stage(project, discovery["candidateIds"][0])
+    workspace.record_candidate_review(project, staged["candidateId"], _review())
+    path = workspace._candidate_path(project, staged["candidateId"])
+    candidate = json.loads(path.read_text())
+    candidate["review"]["frame_review"].update(extra)
+    candidate["reviewSha256"] = workspace._sha256({
+        "candidateIdentitySha256": candidate["identitySha256"],
+        "candidateContext": candidate.get("context") or {},
+        "review": candidate["review"],
+    })
+    workspace._atomic_json(path, candidate)
+    before = path.read_bytes()
+    with pytest.raises(workspace.PersianAssetWorkspaceError, match="frame_review"):
+        workspace.select_asset_candidate(
+            project, "event-1", staged["candidateId"], rejected_alternatives={},
+        )
+    assert not workspace._selections_path(project).exists()
+    assert path.read_bytes() == before
