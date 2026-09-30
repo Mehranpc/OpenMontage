@@ -4217,12 +4217,27 @@ def select_workflow_asset_candidate(
 ) -> dict[str, Any]:
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     _require_asset_candidate_phase(state)
-    _scope_allows_visual_event(state, visual_event_id)
+    # The reacquisition scope bounds what a scoped repair may *re-source* (#331), and
+    # that is all it may bound. Applied to an event that has no selection yet it
+    # strands every event the repair did not name: the canonical manifest needs a row
+    # for every visual event, and the scope is popped only by the `acquire_assets`
+    # completion that manifest blocks, so a scoped reopen over a subset makes the phase
+    # unreachable. Selections already made stay protected from a repair that did not
+    # name them, which is the boundary the scope exists to draw.
+    event_id = str(visual_event_id or "").strip()
+    if event_id in _selected_visual_event_ids(state):
+        _scope_allows_visual_event(state, event_id)
     return select_asset_candidate(
-        _project_root(state), visual_event_id, candidate_id,
+        _project_root(state), event_id, candidate_id,
         rejected_alternatives=rejected_alternatives,
         replace_existing=replace_existing,
     )
+
+
+def _selected_visual_event_ids(state: Mapping[str, Any]) -> set[str]:
+    """Visual events that already hold a selection in the durable asset workspace."""
+    selections = asset_workspace_status(_project_root(state)).get("selectedCandidateIds")
+    return {str(event_id) for event_id in (selections or {})}
 
 
 
