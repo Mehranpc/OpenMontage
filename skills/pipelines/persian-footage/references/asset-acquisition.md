@@ -36,3 +36,5 @@ Pixabay music is the approved provider and the default; do not ask the user unle
 | `completion` | build-manifest / checkpoint | every planned event has exactly one row; typographic beats carry no footage |
 
 Record the treatment you actually see in the review when it is not the literal one: `"fallback_level": "adjacent_metaphor", "fallback_reason": "..."` (a reason is required for every non-literal level). Admission then compares it with the planned level, and the manifest carries it; a build override cannot contradict it. Without it, the row defaults to `exact_literal` and a non-literal plan returns a `FALLBACK_UNDECLARED` declaration you must make at build or `reconcile-plan` with evidence. `human_presence` is never reconciled away to fit a clip: pick a reviewed alternate or reject and retry.
+
+When the review records `opening_semantic_match`, `semantic_role` or `semantic_direction`, admission checks that recorded evidence immediately. The manifest preserves it, and build overrides cannot contradict it. Only absent fields remain manifest declarations; a recorded negative opening match must be repaired by choosing suitable footage.
