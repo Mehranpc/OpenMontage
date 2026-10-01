@@ -52,6 +52,7 @@ def test_public_status_reports_stale_selected_evidence_without_repairing_it(
     assert acquisition["validSelectionCount"] == 1
     assert acquisition["unresolvedEvents"] == ["event-2"]
     assert acquisition["staleEvents"] == ["event-0"]
+    assert acquisition["invalidEvents"] == []
     assert acquisition["readiness"]["disposition"] == "stale_selections"
     [diagnostic] = acquisition["readiness"]["diagnostics"]["event-0"]
     assert diagnostic["code"] == "SELECTION_CANDIDATE_MISSING"
@@ -66,6 +67,12 @@ def test_public_status_reports_stale_selected_evidence_without_repairing_it(
         assert acquisition["preparation"]["decisionRequired"]["kind"] == "budget_stop"
     else:
         assert acquisition["preparation"]["decisionRequired"] is None
+    assert _project_bytes(project) == durable
+
+    # Read-only diagnosis must not weaken mutation admission: the full ledger's
+    # unknown source window still refuses an otherwise idempotent selection.
+    with pytest.raises(workspace.PersianAssetWorkspaceError, match="does not exist|unreadable"):
+        workspace.select_asset_candidate(project, "event-1", good, rejected_alternatives={})
     assert _project_bytes(project) == durable
 
     monkeypatch.setattr(workflow, "PROJECTS_DIR", tmp_path)
