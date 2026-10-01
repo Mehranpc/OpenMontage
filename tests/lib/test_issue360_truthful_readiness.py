@@ -240,3 +240,6 @@ def test_readiness_binds_the_ledger_and_actual_immutable_evidence(
     assert event in after["staleEvents"]
     assert after["validSelectionCount"] == 0
     assert _project_bytes(project) == durable
+    with pytest.raises(PersianAssetWorkspaceError, match="STALE"):
+        workspace.select_asset_candidate(project, event, candidate_id, rejected_alternatives={})
+    assert _project_bytes(project) == durable
