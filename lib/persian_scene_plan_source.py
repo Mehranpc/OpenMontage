@@ -37,22 +37,53 @@ class ScenePlanUnreadable(ValueError):
     """The effective scene plan exists but cannot be read as an object."""
 
 
-def load_effective_scene_plan(project: Path) -> dict[str, Any] | None:
-    """The plan ``materialize_scene_plan`` would publish, read without writing (#360).
+def _readable_plan(value: object, source: Path) -> dict[str, Any]:
+    """Require an actual requirements graph, not merely a nonempty JSON object."""
+    if not isinstance(value, dict) or not value:
+        raise ScenePlanUnreadable(f"scene plan is not a plan object: {source}")
+    beats = value.get("beats")
+    if beats is None:
+        metadata = value.get("metadata")
+        beats = metadata.get("beats") if isinstance(metadata, dict) else None
+    if not isinstance(beats, list) or not beats:
+        raise ScenePlanUnreadable(f"scene plan has no readable beat requirements: {source}")
+    for beat in beats:
+        if not isinstance(beat, dict) or not isinstance(beat.get("id"), str) or not beat["id"].strip():
+            raise ScenePlanUnreadable(f"scene plan has a malformed beat: {source}")
+        events = beat.get("visual_events")
+        if events is not None and (
+            not isinstance(events, list) or any(
+                not isinstance(event, dict)
+                or not isinstance(event.get("id"), str)
+                or not event["id"].strip()
+                for event in events
+            )
+        ):
+            raise ScenePlanUnreadable(f"scene plan has malformed visual-event requirements: {source}")
+    return value
 
-    Admission and read-only readiness need the plan but must not touch project files.
-    ``None`` means no plan at all; an unreadable plan raises instead of reading as empty.
+
+def load_effective_scene_plan(project: Path) -> dict[str, Any] | None:
+    """Read the effective plan without materialising it; malformed truth fails closed.
+
+    A completed checkpoint is authoritative even when malformed: do not silently
+    replace it with an older artifact. With no completed checkpoint, retain the
+    supported artifact-only legacy path. Neither read writes any project file.
     """
     project = Path(project)
     checkpoint = project / "checkpoint_scene_plan.json"
     if checkpoint.is_file():
         try:
-            json.loads(checkpoint.read_text(encoding="utf-8"))
+            record = json.loads(checkpoint.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise ScenePlanUnreadable(f"scene-plan checkpoint is unreadable: {checkpoint}") from exc
-    plan = _checkpoint_plan(project)
-    if plan is not None:
-        return plan
+        if not isinstance(record, dict):
+            raise ScenePlanUnreadable(f"scene-plan checkpoint is not an object: {checkpoint}")
+        if record.get("status") == "completed":
+            artifacts = record.get("artifacts")
+            if not isinstance(artifacts, dict):
+                raise ScenePlanUnreadable(f"scene-plan checkpoint artifacts are malformed: {checkpoint}")
+            return _readable_plan(artifacts.get("scene_plan"), checkpoint)
     artifact = project / SCENE_PLAN_ARTIFACT
     if not artifact.is_file():
         return None
@@ -60,9 +91,7 @@ def load_effective_scene_plan(project: Path) -> dict[str, Any] | None:
         value = json.loads(artifact.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ScenePlanUnreadable(f"scene-plan artifact is unreadable: {artifact}") from exc
-    if not isinstance(value, dict) or not value:
-        raise ScenePlanUnreadable(f"scene-plan artifact is not a plan object: {artifact}")
-    return value
+    return _readable_plan(value, artifact)
 
 
 def materialize_scene_plan(project: Path) -> Path | None:

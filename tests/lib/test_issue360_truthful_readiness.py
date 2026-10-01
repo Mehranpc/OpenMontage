@@ -205,3 +205,85 @@ def test_an_unreadable_plan_is_never_a_clean_readiness(tmp_path: Path) -> None:
     assert acquisition["readiness"]["planProblem"]["code"] == "PLAN_INVALID"
     assert "cannot be built" in acquisition["nextStep"]
     assert json.loads(json.dumps(acquisition)) == acquisition
+
+
+@pytest.mark.parametrize("dependency", ["selection_binding", "identity", "review", "context"])
+def test_readiness_binds_the_ledger_and_actual_immutable_evidence(
+    tmp_path: Path, dependency: str,
+) -> None:
+    _run_at_acquire(tmp_path)
+    project = tmp_path / "run"
+    event = next(iter(_plan(tmp_path)["beats"][0]["visual_events"]))["id"]
+    candidate_id = _candidate(tmp_path, event, "bound-evidence")
+    select_workflow_asset_candidate(
+        "run", event, candidate_id, rejected_alternatives={}, pipeline_dir=tmp_path,
+    )
+    before = workspace.selection_readiness(project)
+    if dependency == "selection_binding":
+        selections = workspace._read_selections(project)
+        selections[event]["reviewSha256"] = "0" * 64
+        workspace._write_selections(project, selections)
+    else:
+        candidate = workspace.load_asset_candidate(project, candidate_id)
+        if dependency == "identity":
+            candidate["identity"]["sourceWindow"]["startSeconds"] += 0.25
+            candidate["identity"]["sourceWindow"]["endSeconds"] += 0.25
+        elif dependency == "review":
+            candidate["review"]["shows_subject"] = not candidate["review"]["shows_subject"]
+        else:
+            candidate["context"]["query"] = "changed without a new immutable review"
+        # Model a torn/legacy record: claimed hashes were not refreshed.
+        workspace._atomic_json(workspace._candidate_path(project, candidate_id), candidate)
+    durable = _project_bytes(project)
+    after = workspace.selection_readiness(project)
+    assert after["inputsSha256"] != before["inputsSha256"]
+    assert event in after["staleEvents"]
+    assert after["validSelectionCount"] == 0
+    assert _project_bytes(project) == durable
+    with pytest.raises(PersianAssetWorkspaceError, match="STALE"):
+        workspace.select_asset_candidate(project, event, candidate_id, rejected_alternatives={})
+    assert _project_bytes(project) == durable
+
+
+@pytest.mark.parametrize("shape", ["missing_beats", "empty_beats", "malformed_artifacts", "missing_completed_plan", "nonobject_checkpoint"])
+def test_malformed_plan_shape_is_diagnosed_without_clean_readiness(
+    tmp_path: Path, shape: str,
+) -> None:
+    project = _run_at_acquire(tmp_path)
+    path = project / "checkpoint_scene_plan.json"
+    checkpoint = json.loads(path.read_text(encoding="utf-8"))
+    artifact = project / "artifacts" / "scene_plan.json"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_text(json.dumps(checkpoint["artifacts"]["scene_plan"]), encoding="utf-8")
+    if shape == "nonobject_checkpoint":
+        checkpoint = ["not a checkpoint object"]
+    elif shape == "missing_completed_plan":
+        checkpoint["artifacts"] = {}
+    elif shape == "malformed_artifacts":
+        checkpoint["artifacts"] = ["not an artifact mapping"]
+    else:
+        checkpoint["artifacts"]["scene_plan"] = (
+            {"version": "2.0"} if shape == "missing_beats" else {"version": "2.0", "beats": []}
+        )
+    path.write_text(json.dumps(checkpoint), encoding="utf-8")
+    before = _project_bytes(project)
+    acquisition = workflow_status("run", pipeline_dir=tmp_path, now=BASE)["acquisition"]
+    assert acquisition["readiness"]["disposition"] == "plan_unavailable"
+    assert acquisition["readiness"]["planProblem"]["code"] == "PLAN_INVALID"
+    assert acquisition["validSelectionCount"] == 0
+    assert "every footage event has a selection" not in acquisition["nextStep"]
+    assert _project_bytes(project) == before
+
+
+def test_readiness_retains_valid_artifact_only_legacy_plans(tmp_path: Path) -> None:
+    project = _run_at_acquire(tmp_path)
+    artifact = project / "artifacts" / "scene_plan.json"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_text(json.dumps(_plan(tmp_path)), encoding="utf-8")
+    (project / "checkpoint_scene_plan.json").unlink()
+    before = _project_bytes(project)
+    readiness = workspace.selection_readiness(project)
+    assert readiness["disposition"] == "incomplete"
+    assert readiness["requiredEventCount"] == 3
+    assert readiness["unresolvedEvents"] == ["event-0", "event-1", "event-2"]
+    assert _project_bytes(project) == before

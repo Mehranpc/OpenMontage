@@ -109,3 +109,24 @@ def test_the_reward_hook_subject_is_not_reconcilable(tmp_path: Path, monkeypatch
     with pytest.raises(PersianVideoWorkflowError, match="must show its subject"):
         _reconcile(tmp_path, "event-0", {"shows_subject": False}, evidence_candidate_id=without)
     assert project.is_dir()
+
+
+@pytest.mark.parametrize("dependency", ["identity", "review", "context"])
+def test_torn_evidence_cannot_lower_scene_intent(tmp_path: Path, dependency: str) -> None:
+    project = _run_at_acquire(tmp_path)
+    candidate_id = _candidate(tmp_path, "event-0", "torn", shows_subject=False)
+    candidate = workspace.load_asset_candidate(project, candidate_id)
+    if dependency == "identity":
+        candidate["identity"]["sourceWindow"]["startSeconds"] += 0.25
+        candidate["identity"]["sourceWindow"]["endSeconds"] += 0.25
+    elif dependency == "review":
+        candidate["review"]["notes"] = "changed after immutable review"
+    else:
+        candidate["context"]["query"] = "changed without a new review"
+    workspace._atomic_json(workspace._candidate_path(project, candidate_id), candidate)
+    before = _project_bytes(project)
+    with pytest.raises(PersianVideoWorkflowError, match="CANDIDATE_EVIDENCE_STALE"):
+        _reconcile(tmp_path, "event-0", {"shows_subject": False},
+                   evidence_candidate_id=candidate_id)
+    assert _project_bytes(project) == before
+    assert _event(_plan(tmp_path), "event-0")["shows_subject"] is True

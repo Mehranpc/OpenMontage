@@ -25,6 +25,10 @@ _REJECTION_CATEGORIES = {"technical", "semantic", "editorial"}
 _STAGED_STOCK_RISKS = {"low", "medium", "high"}
 _RESOLUTION_QUALITIES = {"strong", "acceptable", "weak"}
 _EPSILON = 1e-9
+_REVIEWED_DECLARATION_FIELDS = (
+    "fallback_level", "fallback_reason", "semantic_role", "semantic_direction",
+    "opening_semantic_match",
+)
 
 
 class PersianAssetWorkspaceError(ValueError):
@@ -471,6 +475,11 @@ def _validate_review(review: Mapping[str, Any]) -> dict[str, Any]:
             result["fallback_reason"] = reason
         else:
             result.pop("fallback_reason", None)
+    for field in ("semantic_role", "semantic_direction"):
+        if field in result and (not isinstance(result[field], str) or not result[field].strip()):
+            raise PersianAssetWorkspaceError(f"{field} must be a non-empty string")
+    if "opening_semantic_match" in result and not isinstance(result["opening_semantic_match"], bool):
+        raise PersianAssetWorkspaceError("opening_semantic_match must be boolean")
     _validate_manifest_frame_review(frame)
     return result
 
@@ -688,6 +697,9 @@ def _manifest_evidence(candidate: Mapping[str, Any]) -> dict[str, Any]:
         "shows_subject": review.get("shows_subject"),
         "frame_review": _manifest_frame_review(review.get("frame_review")),
         **_reviewed_fallback(review),
+        **{field: review[field] for field in (
+            "semantic_role", "semantic_direction", "opening_semantic_match",
+        ) if field in review},
     }
 
 
@@ -704,6 +716,65 @@ def _reviewed_fallback(review: Mapping[str, Any]) -> dict[str, Any]:
         evidence["fallback_reason"] = reason
     return evidence
 
+
+
+def _candidate_evidence_snapshot(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    """Bind claimed hashes to the actual immutable bytes using canonical digests."""
+    return {
+        "candidateId": candidate.get("candidateId"),
+        "candidateIdentitySha256": candidate.get("identitySha256"),
+        "reviewSha256": candidate.get("reviewSha256"),
+        "actualIdentitySha256": _sha256(candidate.get("identity")),
+        "actualReviewSha256": _sha256({
+            "candidateIdentitySha256": candidate.get("identitySha256"),
+            "candidateContext": candidate.get("context") or {},
+            "review": candidate.get("review"),
+        }),
+        "sourceSha256": _sha256(candidate.get("source")),
+        "disposition": candidate.get("disposition"),
+    }
+
+
+def _candidate_binding_diagnostics(
+    candidate: Mapping[str, Any], event_id: str,
+    selection: Mapping[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    snapshot = _candidate_evidence_snapshot(candidate)
+    candidate_id = str(candidate.get("candidateId") or "")
+    if (
+        snapshot["actualIdentitySha256"] != candidate.get("identitySha256")
+        or snapshot["actualReviewSha256"] != candidate.get("reviewSha256")
+        or candidate_id != _candidate_id(candidate.get("identity") or {})
+        or candidate.get("disposition") == "rejected"
+    ):
+        return [{
+            "code": "CANDIDATE_EVIDENCE_STALE", "ruleClass": "event_local",
+            "candidateId": candidate_id, "visualEventId": event_id,
+            "field": "candidate.identity/context/review",
+            "expected": {"identitySha256": candidate.get("identitySha256"),
+                         "reviewSha256": candidate.get("reviewSha256")},
+            "observed": {"identitySha256": snapshot["actualIdentitySha256"],
+                         "reviewSha256": snapshot["actualReviewSha256"],
+                         "disposition": candidate.get("disposition")},
+            "message": f"{event_id}: candidate no longer binds its immutable identity/context/review",
+            "recovery": ["reuse_reviewed_alternate", "reject_and_retry"],
+        }]
+    if selection is not None and (
+        selection.get("candidateIdentitySha256") != candidate.get("identitySha256")
+        or selection.get("reviewSha256") != candidate.get("reviewSha256")
+    ):
+        return [{
+            "code": "SELECTION_STALE", "ruleClass": "event_local",
+            "candidateId": candidate_id, "visualEventId": event_id,
+            "field": "selection.identity/review",
+            "expected": {"candidateIdentitySha256": selection.get("candidateIdentitySha256"),
+                         "reviewSha256": selection.get("reviewSha256")},
+            "observed": {"candidateIdentitySha256": candidate.get("identitySha256"),
+                         "reviewSha256": candidate.get("reviewSha256")},
+            "message": f"{event_id}: selection no longer binds its candidate's identity/review",
+            "recovery": ["reuse_reviewed_alternate", "reject_and_retry"],
+        }]
+    return []
 
 
 def _same_number(left: object, right: object) -> bool:
@@ -975,7 +1046,7 @@ def validate_asset_manifest_against_workspace(
                 raise PersianAssetWorkspaceError(
                     f"asset_manifest {event_id!r} {field} does not match persisted candidate review"
                 )
-        for field in ("fallback_level", "fallback_reason"):
+        for field in _REVIEWED_DECLARATION_FIELDS:
             if field in expected_evidence and row.get(field) != expected_evidence[field]:
                 raise PersianAssetWorkspaceError(
                     f"asset_manifest {event_id!r} {field} does not match persisted candidate review"
@@ -1059,6 +1130,11 @@ def assess_candidate_admission(
     event_id = str(visual_event_id or "").strip()
     candidate_id = str(candidate.get("candidateId") or "")
     requirement, diagnostics = _admission_requirement(project_dir, event_id)
+    existing_binding = selections.get(event_id)
+    diagnostics.extend(_candidate_binding_diagnostics(
+        candidate, event_id,
+        existing_binding if existing_binding and existing_binding.get("candidateId") == candidate_id else None,
+    ))
     declarations: list[dict[str, Any]] = []
     if requirement is not None:
         row = _manifest_row(candidate)
@@ -1323,7 +1399,7 @@ def build_asset_manifest_from_workspace(
                 f"manifest override for {event_id!r} cannot replace canonical fields: "
                 + ", ".join(unsupported_fields)
             )
-        for field in ("fallback_level", "fallback_reason"):
+        for field in _REVIEWED_DECLARATION_FIELDS:
             if field in evidence and field in event_override and event_override[field] != evidence[field]:
                 raise PersianAssetWorkspaceError(
                     f"manifest override for {event_id!r} cannot replace reviewed {field} "
@@ -1435,32 +1511,26 @@ def selection_readiness(project_dir: Path) -> dict[str, Any]:
     invalid: dict[str, list[dict[str, Any]]] = {}
     stale: dict[str, list[dict[str, Any]]] = {}
     declarations: dict[str, list[dict[str, Any]]] = {}
-    bound: dict[str, dict[str, str]] = {}
+    bound: dict[str, dict[str, Any]] = {}
     for event_id, selection in sorted(selections.items()):
         candidate_id = str(selection.get("candidateId") or "")
+        bound[event_id] = {
+            "selection": {
+                "candidateId": candidate_id,
+                "candidateIdentitySha256": selection.get("candidateIdentitySha256"),
+                "reviewSha256": selection.get("reviewSha256"),
+            },
+        }
         try:
             candidate = load_asset_candidate(project_dir, candidate_id)
         except PersianAssetWorkspaceError as exc:
             stale[event_id] = [{"code": "SELECTION_CANDIDATE_MISSING", "candidateId": candidate_id,
                                 "message": str(exc)}]
             continue
-        bound[event_id] = {
-            "candidateId": candidate_id,
-            "candidateIdentitySha256": str(candidate.get("identitySha256") or ""),
-            "reviewSha256": str(candidate.get("reviewSha256") or ""),
-        }
-        if (
-            selection.get("candidateIdentitySha256") != candidate.get("identitySha256")
-            or selection.get("reviewSha256") != candidate.get("reviewSha256")
-        ):
-            stale[event_id] = [{
-                "code": "SELECTION_STALE", "candidateId": candidate_id,
-                "expected": {"candidateIdentitySha256": selection.get("candidateIdentitySha256"),
-                             "reviewSha256": selection.get("reviewSha256")},
-                "observed": {"candidateIdentitySha256": candidate.get("identitySha256"),
-                             "reviewSha256": candidate.get("reviewSha256")},
-                "message": f"{event_id}: selection no longer binds its candidate's identity/review",
-            }]
+        bound[event_id]["candidate"] = _candidate_evidence_snapshot(candidate)
+        binding_problems = _candidate_binding_diagnostics(candidate, event_id, selection)
+        if binding_problems:
+            stale[event_id] = binding_problems
             continue
         if plan_problem is not None:
             continue

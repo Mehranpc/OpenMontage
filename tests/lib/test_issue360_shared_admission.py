@@ -61,8 +61,10 @@ def _candidate(project: Path, event: str, source_id: str, *, start: float = 0.0,
 
 
 def _durable_bytes(project: Path) -> dict[str, bytes]:
-    root = project / ".workspace"
-    return {str(path.relative_to(project)): path.read_bytes() for path in sorted(root.rglob("*.json"))}
+    root = project / ".asset-workspace"
+    snapshot = {str(path.relative_to(project)): path.read_bytes() for path in sorted(root.rglob("*.json"))}
+    assert snapshot, "atomicity must inspect the durable candidate workspace"
+    return snapshot
 
 
 def _select(project: Path, event: str, candidate: str, **kwargs):
@@ -272,3 +274,67 @@ def test_front_door_prints_machine_readable_refusal(
     assert [item["code"] for item in payload["diagnostics"]] == ["SUBJECT_CONTINUITY_LOST"]
     assert "SUBJECT_CONTINUITY_LOST" in captured.err
     assert workspace.asset_workspace_status(project)["selectedCount"] == 0
+
+
+@pytest.mark.parametrize(("field", "value", "code"), [
+    ("opening_semantic_match", False, "HOOK_OPENING_MATCH"),
+    ("semantic_role", "different_role", "HOOK_SEMANTIC_ROLE"),
+    ("semantic_direction", "different_direction", "HOOK_SEMANTIC_DIRECTION"),
+])
+def test_recorded_opening_failure_is_refused_before_selection(
+    tmp_path: Path, field: str, value: object, code: str,
+) -> None:
+    project = tmp_path / "run"
+    _plan(project, event_a={"narrative_role": "hook", "semantic_role": "human_anchor",
+                           "semantic_direction": "toward_subject"})
+    review = {"opening_semantic_match": True, "semantic_role": "human_anchor",
+              "semantic_direction": "toward_subject", field: value}
+    candidate = _candidate(project, "event-a", "opening", **review)
+    before = _durable_bytes(project)
+    with pytest.raises(AssetAdmissionRefused) as refused:
+        _select(project, "event-a", candidate)
+    assert code in [item["code"] for item in refused.value.diagnostics]
+    assert _durable_bytes(project) == before
+
+
+def test_recorded_opening_evidence_is_preserved_and_cannot_be_overridden(tmp_path: Path) -> None:
+    project = tmp_path / "run"
+    _plan(project, event_a={"narrative_role": "hook", "semantic_role": "human_anchor",
+                           "semantic_direction": "toward_subject"})
+    evidence = {"opening_semantic_match": True, "semantic_role": "human_anchor",
+                "semantic_direction": "toward_subject"}
+    candidate = _candidate(project, "event-a", "opening", **evidence)
+    assert _select(project, "event-a", candidate)["declarationsRequired"] == []
+    manifest = workspace.build_asset_manifest_from_workspace(project)
+    row = manifest["assets"][0]
+    for field, value in evidence.items():
+        assert row[field] == value
+        changed = False if field == "opening_semantic_match" else "different"
+        with pytest.raises(PersianAssetWorkspaceError, match="cannot replace reviewed"):
+            workspace.build_asset_manifest_from_workspace(
+                project, overrides={"assets": {"event-a": {field: changed}}},
+            )
+        tampered = json.loads(json.dumps(manifest))
+        tampered["assets"][0][field] = changed
+        with pytest.raises(PersianAssetWorkspaceError, match="persisted candidate review"):
+            workspace.validate_asset_manifest_against_workspace(project, tampered)
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("opening_semantic_match", "yes"), ("semantic_role", " "), ("semantic_direction", ""),
+])
+def test_malformed_opening_evidence_is_refused_at_review(tmp_path: Path, field: str, value: object) -> None:
+    project = tmp_path / "run"
+    _plan(project, event_a={"narrative_role": "hook", "semantic_role": "human_anchor",
+                           "semantic_direction": "toward_subject"})
+    with pytest.raises(PersianAssetWorkspaceError, match=field):
+        _candidate(project, "event-a", "opening", **{field: value})
+
+
+def test_legacy_review_without_opening_evidence_still_needs_declarations(tmp_path: Path) -> None:
+    project = tmp_path / "run"
+    _plan(project, event_a={"narrative_role": "hook", "semantic_role": "human_anchor",
+                           "semantic_direction": "toward_subject"})
+    candidate = _candidate(project, "event-a", "opening")
+    required = {item["field"] for item in _select(project, "event-a", candidate)["declarationsRequired"]}
+    assert required == {"opening_semantic_match", "semantic_role", "semantic_direction"}

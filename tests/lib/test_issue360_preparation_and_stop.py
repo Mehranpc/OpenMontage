@@ -151,12 +151,13 @@ def test_a_stop_snapshot_is_not_live_work_and_finishing_twice_is_idempotent(tmp_
     ended = BASE + timedelta(minutes=20)
     finished = workflow.finish_explicit_work_span("run", span_id, pipeline_dir=tmp_path, now=ended)
     assert finished["outcome"] == "succeeded" and finished["count_toward_wall"] is True
-    state_bytes = (project / "workflow_state.json").read_bytes() if (project / "workflow_state.json").is_file() else None
+    state_path = project / workflow.STATE_FILENAME
+    assert state_path.is_file()
+    state_bytes = state_path.read_bytes()
     assert workflow.finish_explicit_work_span(
         "run", span_id, pipeline_dir=tmp_path, now=ended + timedelta(hours=1),
     ) == finished
-    if state_bytes is not None:
-        assert (project / "workflow_state.json").read_bytes() == state_bytes
+    assert state_path.read_bytes() == state_bytes
 
     view = workflow.workflow_status("run", pipeline_dir=tmp_path, now=ended)["work_spans"]
     assert view["live_open_span_ids"] == []
