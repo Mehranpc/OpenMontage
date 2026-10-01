@@ -10,11 +10,12 @@ from lib import persian_asset_workspace as assets
 from lib import persian_edit_workspace as edits
 from lib.persian_edit_workspace import PersianEditWorkspaceError
 from tests.fixture_support.p4_failed_shadow import load_issue138_fixture
-from tests.lib.test_issue35_asset_candidate_workspace import _discovered, _review, _stage
+from tests.lib.test_issue35_asset_candidate_workspace import _discovered, _ensure_plan, _review, _stage
 from tests.lib.test_issue35_convergence_workspace import _edit
 
 
 def _reviewed_window(project: Path, *, start: float, duration: float) -> dict:
+    _ensure_plan(project, "event-1")
     discovery_ids = assets.record_discovery_pass(
         project, 0, [_discovered(project, source_id="6115070", duration=30.0)]
     )["candidateIds"]
@@ -121,6 +122,7 @@ def test_asset_recovery_requires_explicit_reviewed_binding_before_candidate_coun
 
 def test_exact_reviewed_binding_is_immutable_and_promotion_requires_manifest_rebind(tmp_path: Path) -> None:
     project = tmp_path / "project"
+    _ensure_plan(project, "event-1")
     discovery_id = assets.record_discovery_pass(
         project, 0, [_discovered(project, source_id="6115070", duration=30.0)]
     )["candidateIds"][0]

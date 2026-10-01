@@ -56,6 +56,8 @@ def test_a_complete_manifest_still_builds_and_the_plan_is_materialised(tmp_path:
 def test_no_scene_plan_at_all_is_refused_not_audited_clean(tmp_path: Path) -> None:
     project = tmp_path / "run"
     _selected_candidate(project)
+    # Admission needs the plan (#360); a legacy state can still lose it afterwards.
+    (project / "checkpoint_scene_plan.json").unlink()
     with pytest.raises(commands.PersianAssetCommandError, match="no completed scene plan"):
         commands.build_manifest(tmp_path, "run")
 

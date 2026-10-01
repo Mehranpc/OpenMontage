@@ -54,47 +54,67 @@ ALLOWED_PERSIAN_VIDEO_PROVIDERS = frozenset({"pexels", "pixabay_video"})
 STAGED_STOCK_RISKS = frozenset({"low", "medium", "high"})
 
 
-def _quality_metadata_problems(
+def _quality_metadata_diagnostics(
     entry: dict[str, Any], requirement: dict[str, Any]
-) -> list[str]:
-    """Validate new visual-event selection evidence without breaking legacy manifests."""
+) -> list[dict[str, Any]]:
+    """Event-local requirement rules as structured diagnostics (#360).
+
+    One policy for selection admission, readiness and the manifest audit: each
+    diagnostic carries a stable ``code``, the checked ``field`` and the planned
+    (``expected``) and recorded (``observed``) values. ``message`` is the exact text
+    the manifest audit has always reported.
+    """
     event_id = str(requirement.get("visual_event_id") or "")
     if not event_id:
         return []
     label = event_id
-    problems: list[str] = []
+    diagnostics: list[dict[str, Any]] = []
+
+    def add(code: str, field: str, message: str, *, expected: Any = None, observed: Any = None) -> None:
+        diagnostics.append({
+            "code": code, "ruleClass": "event_local", "visualEventId": event_id,
+            "field": field, "expected": expected, "observed": observed, "message": message,
+        })
 
     semantic_beat_id = str(entry.get("semantic_beat_id") or "").strip()
     if semantic_beat_id != str(requirement.get("beat_id") or ""):
-        problems.append(
-            f"{label}: semantic_beat_id must equal {requirement.get('beat_id')!r}"
-        )
+        add("BEAT_MISMATCH", "semantic_beat_id",
+            f"{label}: semantic_beat_id must equal {requirement.get('beat_id')!r}",
+            expected=requirement.get("beat_id"), observed=semantic_beat_id)
 
     narration_span = str(entry.get("narration_span") or "").strip()
     if narration_span != str(requirement.get("narration_span") or "").strip():
-        problems.append(
-            f"{label}: narration_span must preserve the visual event's source span exactly"
-        )
+        add("NARRATION_SPAN_MISMATCH", "narration_span",
+            f"{label}: narration_span must preserve the visual event's source span exactly",
+            expected=requirement.get("narration_span"), observed=narration_span)
 
     query = str(entry.get("query") or "").strip()
-    if not query:
-        problems.append(f"{label}: missing query used to acquire the selected candidate")
-    elif query not in [
+    authored_queries = [
         str(q) for q in [*(requirement.get("queries") or []), *(requirement.get("reconciled_queries") or [])]
-    ]:
-        problems.append(f"{label}: selected query {query!r} is not one of the authored event queries")
+    ]
+    if not query:
+        add("QUERY_MISSING", "query",
+            f"{label}: missing query used to acquire the selected candidate",
+            expected=authored_queries, observed=query)
+    elif query not in authored_queries:
+        add("QUERY_NOT_AUTHORED", "query",
+            f"{label}: selected query {query!r} is not one of the authored event queries",
+            expected=authored_queries, observed=query)
 
     rank = entry.get("candidate_rank")
     if isinstance(rank, bool) or not isinstance(rank, int) or rank < 1:
-        problems.append(f"{label}: candidate_rank must be an integer >= 1")
+        add("CANDIDATE_RANK_INVALID", "candidate_rank",
+            f"{label}: candidate_rank must be an integer >= 1", expected=">=1", observed=rank)
 
     for field in ("source_in_seconds", "duration_seconds"):
         if field not in entry:
-            problems.append(f"{label}: missing {field}; selected window timing must be explicit")
+            add("WINDOW_TIMING_MISSING", field,
+                f"{label}: missing {field}; selected window timing must be explicit")
 
     for field in ("selection_reason", "relevance_reason"):
         if not str(entry.get(field) or "").strip():
-            problems.append(f"{label}: missing {field}; selected footage needs inspectable reasoning")
+            add("REASONING_MISSING", field,
+                f"{label}: missing {field}; selected footage needs inspectable reasoning")
 
     # A unit that has to carry typography must be chosen with an eye to where that
     # typography can go. Without this the reviewer judges subject match alone, and
@@ -109,92 +129,130 @@ def _quality_metadata_problems(
             str(name) for name in requirement.get("negative_space_alternates") or [] if str(name) != planned
         ]]
         if not observed:
-            problems.append(
+            add("PLACEMENT_SPACE_MISSING", "frame_review.placement_space",
                 f"{label}: carries a typographic moment, so the frame review must record "
                 "where the frame is actually clear (`frame_review.placement_space`). "
                 "Choosing on subject match alone is how unusable footage reaches an "
-                "authored edit."
-            )
+                "authored edit.", expected=accepted, observed=None)
         elif observed not in accepted:
-            problems.append(
+            add("PLACEMENT_SPACE_MISMATCH", "frame_review.placement_space",
                 f"{label}: frame_review.placement_space is {observed!r} but the plan "
                 f"reserved {' or '.join(repr(name) for name in accepted)}; the selected "
-                "footage does not leave the room the moment was planned against."
-            )
+                "footage does not leave the room the moment was planned against.",
+                expected=accepted, observed=observed)
 
     if str(requirement.get("narrative_role") or "").strip() == "hook":
         expected_role = str(requirement.get("semantic_role") or "").strip()
         expected_direction = str(requirement.get("semantic_direction") or "").strip()
         if str(entry.get("semantic_role") or "").strip() != expected_role:
-            problems.append(f"{label}: semantic_role must preserve the opening event's authored role")
+            add("HOOK_SEMANTIC_ROLE", "semantic_role",
+                f"{label}: semantic_role must preserve the opening event's authored role",
+                expected=expected_role, observed=entry.get("semantic_role"))
         if str(entry.get("semantic_direction") or "").strip() != expected_direction:
-            problems.append(f"{label}: semantic_direction must preserve the opening event's authored direction")
+            add("HOOK_SEMANTIC_DIRECTION", "semantic_direction",
+                f"{label}: semantic_direction must preserve the opening event's authored direction",
+                expected=expected_direction, observed=entry.get("semantic_direction"))
         if entry.get("opening_semantic_match") is not True:
-            problems.append(f"{label}: opening_semantic_match must be true after inspecting the selected window")
+            add("HOOK_OPENING_MATCH", "opening_semantic_match",
+                f"{label}: opening_semantic_match must be true after inspecting the selected window",
+                expected=True, observed=entry.get("opening_semantic_match"))
 
     if not isinstance(entry.get("affect_match"), bool):
-        problems.append(f"{label}: affect_match must be true or false")
+        add("AFFECT_INVALID", "affect_match", f"{label}: affect_match must be true or false",
+            expected=True, observed=entry.get("affect_match"))
     elif not entry.get("affect_match"):
-        problems.append(
+        add("AFFECT_MISMATCH", "affect_match",
             f"{label}: affect_match is false; a selected clip may not contradict desired_affect "
-            f"{requirement.get('desired_affect')!r}"
-        )
+            f"{requirement.get('desired_affect')!r}", expected=True, observed=False)
 
     risk = str(entry.get("staged_stock_risk") or "").strip().lower()
     if risk not in STAGED_STOCK_RISKS:
-        problems.append(f"{label}: staged_stock_risk must be low, medium, or high")
+        add("STAGED_RISK_INVALID", "staged_stock_risk",
+            f"{label}: staged_stock_risk must be low, medium, or high", observed=risk)
     elif risk == "high":
-        problems.append(f"{label}: staged_stock_risk is high; reject the generic/staged candidate")
+        add("STAGED_RISK_HIGH", "staged_stock_risk",
+            f"{label}: staged_stock_risk is high; reject the generic/staged candidate",
+            expected="low or medium", observed=risk)
 
     if not isinstance(entry.get("human_presence"), bool):
-        problems.append(f"{label}: human_presence must be true or false")
+        add("HUMAN_PRESENCE_INVALID", "human_presence", f"{label}: human_presence must be true or false",
+            expected=requirement.get("human_presence"), observed=entry.get("human_presence"))
     elif requirement.get("human_presence") and not entry.get("human_presence"):
-        problems.append(f"{label}: scene plan requires human presence but the selected clip has none")
+        add("HUMAN_PRESENCE_MISSING", "human_presence",
+            f"{label}: scene plan requires human presence but the selected clip has none",
+            expected=True, observed=False)
 
     if not isinstance(entry.get("shows_subject"), bool):
-        problems.append(f"{label}: shows_subject must be true or false on the inspected clip")
+        add("SUBJECT_INVALID", "shows_subject",
+            f"{label}: shows_subject must be true or false on the inspected clip",
+            expected=requirement.get("shows_subject"), observed=entry.get("shows_subject"))
     elif requirement.get("shows_subject") and not entry.get("shows_subject"):
-        problems.append(f"{label}: subject continuity was lost during asset selection")
+        add("SUBJECT_CONTINUITY_LOST", "shows_subject",
+            f"{label}: subject continuity was lost during asset selection",
+            expected=True, observed=False)
 
     fallback = str(entry.get("fallback_level") or "").strip()
     expected_fallback = str(requirement.get("fallback_level") or "").strip()
     if fallback not in FALLBACK_LEVELS:
-        problems.append(f"{label}: asset fallback_level must be one of {', '.join(FALLBACK_LEVELS)}")
+        add("FALLBACK_INVALID" if fallback else "FALLBACK_UNDECLARED", "fallback_level",
+            f"{label}: asset fallback_level must be one of {', '.join(FALLBACK_LEVELS)}",
+            expected=expected_fallback, observed=fallback or None)
     elif fallback != expected_fallback:
-        problems.append(
-            f"{label}: asset fallback_level {fallback!r} does not match planned level {expected_fallback!r}"
-        )
+        add("FALLBACK_MISMATCH", "fallback_level",
+            f"{label}: asset fallback_level {fallback!r} does not match planned level {expected_fallback!r}",
+            expected=expected_fallback, observed=fallback)
     if fallback and fallback != "exact_literal" and not str(entry.get("fallback_reason") or "").strip():
-        problems.append(
-            f"{label}: non-literal fallback requires fallback_reason documenting why earlier levels failed"
-        )
+        add("FALLBACK_REASON_MISSING", "fallback_reason",
+            f"{label}: non-literal fallback requires fallback_reason documenting why earlier levels failed",
+            observed=None)
     if fallback == "emotional_human" and entry.get("human_presence") is False:
-        problems.append(f"{label}: emotional_human fallback cannot select a clip with no human presence")
+        add("FALLBACK_EMOTIONAL_NO_HUMAN", "fallback_level",
+            f"{label}: emotional_human fallback cannot select a clip with no human presence",
+            expected=True, observed=False)
 
     frame_review = entry.get("frame_review")
     if not isinstance(frame_review, dict):
-        problems.append(f"{label}: missing frame_review evidence for start/middle/end inspection")
+        add("FRAME_REVIEW_MISSING", "frame_review",
+            f"{label}: missing frame_review evidence for start/middle/end inspection")
     else:
         for key in ("start", "middle", "end"):
             if frame_review.get(key) is not True:
-                problems.append(f"{label}: frame_review.{key} must be true after inspecting the clip")
+                add("FRAME_REVIEW_INCOMPLETE", f"frame_review.{key}",
+                    f"{label}: frame_review.{key} must be true after inspecting the clip",
+                    expected=True, observed=frame_review.get(key))
         if str(requirement.get("semantic_role") or "").strip() == "reward_problem_hook":
             for key in ("midpoint_before_1_5", "at_3_seconds"):
                 if frame_review.get(key) is not True:
-                    problems.append(f"{label}: frame_review.{key} must be true for reward_problem_hook opening review")
+                    add("OPENING_FRAME_REVIEW_INCOMPLETE", f"frame_review.{key}",
+                        f"{label}: frame_review.{key} must be true for reward_problem_hook opening review",
+                        expected=True, observed=frame_review.get(key))
         if not str(frame_review.get("observed") or "").strip():
-            problems.append(f"{label}: frame_review.observed must state what was actually seen")
+            add("FRAME_OBSERVED_MISSING", "frame_review.observed",
+                f"{label}: frame_review.observed must state what was actually seen")
 
     if str(requirement.get("semantic_role") or "").strip() == "reward_problem_hook":
         direction = str(entry.get("semantic_direction") or "").strip()
         if direction not in REWARD_OPENING_DIRECTIONS:
-            problems.append(f"{label}: reward_problem_hook has an invalid semantic_direction")
+            add("REWARD_DIRECTION_INVALID", "semantic_direction",
+                f"{label}: reward_problem_hook has an invalid semantic_direction",
+                expected=sorted(REWARD_OPENING_DIRECTIONS), observed=direction or None)
         if entry.get("shows_subject") is not True:
-            problems.append(f"{label}: reward_problem_hook must visibly show the subject")
+            add("REWARD_SUBJECT_MISSING", "shows_subject",
+                f"{label}: reward_problem_hook must visibly show the subject",
+                expected=True, observed=entry.get("shows_subject"))
         if entry.get("human_presence") is not True:
-            problems.append(f"{label}: reward_problem_hook requires visible human presence")
+            add("REWARD_HUMAN_MISSING", "human_presence",
+                f"{label}: reward_problem_hook requires visible human presence",
+                expected=True, observed=entry.get("human_presence"))
 
-    return problems
+    return diagnostics
+
+
+def _quality_metadata_problems(
+    entry: dict[str, Any], requirement: dict[str, Any]
+) -> list[str]:
+    """Validate new visual-event selection evidence without breaking legacy manifests."""
+    return [item["message"] for item in _quality_metadata_diagnostics(entry, requirement)]
 
 
 def _scene_asset_requirements(
@@ -402,6 +460,198 @@ def _source_reuse_problems(assets: list[dict[str, Any]]) -> list[str]:
     return problems
 
 
+def _entry_provenance_diagnostics(entry: dict[str, Any], label: str) -> list[dict[str, Any]]:
+    """Licence/provider/path rules for one asset row, shared by admission and audit (#360)."""
+    diagnostics: list[dict[str, Any]] = []
+    event_id = str(entry.get("visual_event_id") or "") or None
+
+    def _add(code: str, field: str | None, message: str) -> None:
+        diagnostics.append({
+            "code": code, "ruleClass": "event_local", "visualEventId": event_id,
+            "field": field, "expected": None, "observed": entry.get(field) if field else None,
+            "message": message,
+        })
+
+    for field in ("provider", "original_url", "license", "attribution"):
+        if not entry.get(field):
+            _add("PROVENANCE_MISSING", field, f"{label}: missing {field} — required by the stock licence")
+
+    provider = str(entry.get("provider") or "").strip().lower()
+    normalized_provider = _PERSIAN_VIDEO_PROVIDER_ALIASES.get(provider)
+    if provider and normalized_provider not in ALLOWED_PERSIAN_VIDEO_PROVIDERS:
+        allowed = ", ".join(sorted(ALLOWED_PERSIAN_VIDEO_PROVIDERS))
+        _add(
+            "PROVIDER_NOT_ALLOWED", "provider",
+            f"{label}: provider {provider!r} is outside the Persian production "
+            f"allowlist ({allowed})"
+        )
+
+    # The clip has to be findable, and "findable" means on disk at the recorded
+    # path. It deliberately does NOT mean `public_path`.
+    #
+    # This check used to require `public_path`, on the reasoning that Remotion
+    # resolves media through `staticFile()` so every clip must already sit under
+    # `remotion-composer/public/`. That was true of an earlier design and is false
+    # of this one: `persian_compose._stage()` copies each shot's `source` into
+    # `public/persian/<run-id>/` at render time and deletes the directory
+    # afterwards, and it reads `source`, never `public_path`. Nothing in the
+    # rendering path consumes the field.
+    #
+    # The evidence it was inert: the coffee run recorded `clips/pexels_*.mp4` for
+    # all twelve assets, nothing was ever written to `public/clips/`, and the video
+    # rendered correctly anyway. A required field that no consumer reads teaches the
+    # stage to satisfy a check instead of a need — and it crowds out the check that
+    # matters, since a `path` pointing at nothing is exactly the fault that produces
+    # the black beat this warning described.
+    paths = _entry_paths(entry)
+    declared = str(entry.get("path") or "").strip()
+    if not paths:
+        _add(
+            "PATH_MISSING", "path",
+            f"{label}: no path. `persian_compose` stages each shot's source into "
+            "public/ at render time, so the manifest must say where the file is."
+        )
+    elif declared and not Path(declared).expanduser().exists():
+        # Only `path` is resolved, not every path-like field. `_entry_paths` collects
+        # all of them so the image gate cannot be evaded by renaming a key, but
+        # existence is a different question: `public_path` is relative to the
+        # composer's public dir and would fail this check by construction.
+        _add(
+            "PATH_NOT_FOUND", "path",
+            f"{label}: path {declared!r} does not exist. A missing file is the "
+            "black-beat fault: `persian_compose` refuses it with "
+            "FileNotFoundError, but only after the edit stage has been approved."
+        )
+    return diagnostics
+
+
+def _entry_duration_diagnostics(
+    entry: dict[str, Any], requirement: dict[str, Any], label: str
+) -> list[dict[str, Any]]:
+    source_duration = float(entry.get("duration_seconds") or 0.0)
+    source_in = float(entry.get("source_in_seconds") or 0.0)
+    usable = source_duration - source_in
+    needed = float(requirement.get("duration_seconds") or 0.0)
+    if needed > 0 and usable > 0 and usable < needed:
+        return [{
+            "code": "DURATION_SHORT", "ruleClass": "event_local",
+            "visualEventId": requirement.get("visual_event_id"), "field": "duration_seconds",
+            "expected": round(needed, 6), "observed": round(usable, 6),
+            "message": (
+                f"{label}: clip provides {usable:.2f}s from its in-point but "
+                f"the visual unit needs {needed:.2f}s — the tail renders black"
+            ),
+        }]
+    return []
+
+
+#: Version of the shared asset-admission policy; readiness snapshots bind to it (#360).
+ASSET_ADMISSION_POLICY_VERSION = "360.1"
+
+#: Row fields a manifest build may still declare through ``overrides.assets``. A rule on
+#: one of these that the reviewed evidence does not supply is a declaration the build
+#: must make, not a property of the footage that admission can refute (#360).
+MANIFEST_DECLARATION_FIELDS = frozenset({
+    "fallback_level", "fallback_reason", "opening_semantic_match",
+    "semantic_direction", "semantic_role",
+})
+
+#: Rule families by when they become provable. Admission refuses every rule that the
+#: candidate alone, or the current selection set, already proves; completion rules need
+#: the whole set and run only at manifest/checkpoint time.
+ASSET_RULE_CLASSES = {
+    "event_local": (
+        "provenance, provider allowlist and file path; usable duration from the in-point; "
+        "beat/narration/query/rank identity; selection and relevance reasoning; affect; "
+        "staged-stock risk; human presence; subject continuity; reviewed fallback level "
+        "and reason; start/middle/end frame review; opening-hook evidence; carrier "
+        "placement_space; crop safety; the event exists in the effective plan"
+    ),
+    "current_set": "overlapping source windows with another selected event",
+    "manifest_declaration": (
+        "fallback_level/fallback_reason and opening semantic fields not recorded in the "
+        "review; declared through build-manifest overrides and audited there"
+    ),
+    "completion": (
+        "every planned event has exactly one row; typographic beats carry no footage; "
+        "no row names an event outside the plan; full-set workspace binding"
+    ),
+}
+
+_RECOVERY_BY_CODE = {
+    "SUBJECT_CONTINUITY_LOST": ("reuse_reviewed_alternate", "reject_and_retry", "reconcile_plan"),
+    "FALLBACK_MISMATCH": ("reconcile_plan", "reuse_reviewed_alternate", "reject_and_retry"),
+    "PLACEMENT_SPACE_MISSING": ("reuse_reviewed_alternate", "reject_and_retry", "reconcile_plan"),
+    "PLACEMENT_SPACE_MISMATCH": ("reconcile_plan", "reuse_reviewed_alternate", "reject_and_retry"),
+    "SOURCE_WINDOW_OVERLAP": ("stage_distinct_window", "reuse_reviewed_alternate", "reject_and_retry"),
+    "EVENT_NOT_IN_PLAN": ("select_for_planned_event",),
+    "PLAN_MISSING": ("complete_scene_plan",),
+    "PLAN_INVALID": ("complete_scene_plan",),
+}
+_DECLARATION_RECOVERY = {
+    "fallback_level": ("declare_at_manifest_build", "reconcile_plan"),
+    "fallback_reason": ("declare_at_manifest_build",),
+}
+
+
+def recovery_options(diagnostic: dict[str, Any]) -> list[str]:
+    """Legal recovery categories for one diagnostic; human presence is never reconciled away."""
+    if diagnostic.get("ruleClass") == "manifest_declaration":
+        return list(_DECLARATION_RECOVERY.get(str(diagnostic.get("field")), ("declare_at_manifest_build",)))
+    return list(_RECOVERY_BY_CODE.get(
+        str(diagnostic.get("code")), ("reuse_reviewed_alternate", "reject_and_retry")
+    ))
+
+
+def _diagnostic_sort_key(item: dict[str, Any]) -> tuple[str, ...]:
+    return (
+        str(item.get("visualEventId") or ""), str(item.get("candidateId") or ""),
+        str(item.get("code") or ""), str(item.get("field") or ""), str(item.get("message") or ""),
+    )
+
+
+def assess_selection_entry(
+    entry: dict[str, Any], requirement: dict[str, Any]
+) -> dict[str, list[dict[str, Any]]]:
+    """Every event-local rule the audit applies to ``entry``, knowable before selection (#360).
+
+    ``entry`` is the manifest row the workspace would build for the candidate, without
+    build-time overrides. Returns ``diagnostics`` (blocking) and ``declarationsRequired``
+    (rules on fields the build still has to declare). Same rules, same messages as
+    ``audit_asset_manifest`` — never a second policy.
+    """
+    event_id = str(requirement.get("visual_event_id") or "")
+    beat_id = str(requirement.get("beat_id") or "")
+    found: list[dict[str, Any]] = []
+    if str(entry.get("beat_id") or "") != beat_id:
+        found.append({
+            "code": "EVENT_BEAT_MISMATCH", "ruleClass": "event_local", "visualEventId": event_id,
+            "field": "beat_id", "expected": beat_id, "observed": entry.get("beat_id"),
+            "message": (
+                f"{event_id}: asset beat_id {entry.get('beat_id')!r} does not match "
+                f"its semantic beat {beat_id!r}"
+            ),
+        })
+    found.extend(_entry_provenance_diagnostics(entry, entry.get("beat_id") or event_id))
+    found.extend(_entry_duration_diagnostics(entry, requirement, event_id))
+    found.extend(_quality_metadata_diagnostics(entry, requirement))
+    blocking: list[dict[str, Any]] = []
+    declarations: list[dict[str, Any]] = []
+    for item in found:
+        item = {**item, "visualEventId": event_id}
+        if item.get("field") in MANIFEST_DECLARATION_FIELDS and item["field"] not in entry:
+            item["ruleClass"] = "manifest_declaration"
+            item["recovery"] = recovery_options(item)
+            declarations.append(item)
+        else:
+            item["recovery"] = recovery_options(item)
+            blocking.append(item)
+    return {
+        "diagnostics": sorted(blocking, key=_diagnostic_sort_key),
+        "declarationsRequired": sorted(declarations, key=_diagnostic_sort_key),
+    }
+
+
 def audit_asset_manifest(
     manifest: dict[str, Any],
     scene_plan: Optional[dict[str, Any]] = None,
@@ -423,53 +673,7 @@ def audit_asset_manifest(
     # cannot be attributed must not ship.
     for index, entry in enumerate(assets):
         label = entry.get("beat_id") or f"asset[{index}]"
-        for field in ("provider", "original_url", "license", "attribution"):
-            if not entry.get(field):
-                problems.append(f"{label}: missing {field} — required by the stock licence")
-
-        provider = str(entry.get("provider") or "").strip().lower()
-        normalized_provider = _PERSIAN_VIDEO_PROVIDER_ALIASES.get(provider)
-        if provider and normalized_provider not in ALLOWED_PERSIAN_VIDEO_PROVIDERS:
-            allowed = ", ".join(sorted(ALLOWED_PERSIAN_VIDEO_PROVIDERS))
-            problems.append(
-                f"{label}: provider {provider!r} is outside the Persian production "
-                f"allowlist ({allowed})"
-            )
-
-        # The clip has to be findable, and "findable" means on disk at the recorded
-        # path. It deliberately does NOT mean `public_path`.
-        #
-        # This check used to require `public_path`, on the reasoning that Remotion
-        # resolves media through `staticFile()` so every clip must already sit under
-        # `remotion-composer/public/`. That was true of an earlier design and is false
-        # of this one: `persian_compose._stage()` copies each shot's `source` into
-        # `public/persian/<run-id>/` at render time and deletes the directory
-        # afterwards, and it reads `source`, never `public_path`. Nothing in the
-        # rendering path consumes the field.
-        #
-        # The evidence it was inert: the coffee run recorded `clips/pexels_*.mp4` for
-        # all twelve assets, nothing was ever written to `public/clips/`, and the video
-        # rendered correctly anyway. A required field that no consumer reads teaches the
-        # stage to satisfy a check instead of a need — and it crowds out the check that
-        # matters, since a `path` pointing at nothing is exactly the fault that produces
-        # the black beat this warning described.
-        paths = _entry_paths(entry)
-        declared = str(entry.get("path") or "").strip()
-        if not paths:
-            problems.append(
-                f"{label}: no path. `persian_compose` stages each shot's source into "
-                "public/ at render time, so the manifest must say where the file is."
-            )
-        elif declared and not Path(declared).expanduser().exists():
-            # Only `path` is resolved, not every path-like field. `_entry_paths` collects
-            # all of them so the image gate cannot be evaded by renaming a key, but
-            # existence is a different question: `public_path` is relative to the
-            # composer's public dir and would fail this check by construction.
-            problems.append(
-                f"{label}: path {declared!r} does not exist. A missing file is the "
-                "black-beat fault: `persian_compose` refuses it with "
-                "FileNotFoundError, but only after the edit stage has been approved."
-            )
+        problems.extend(item["message"] for item in _entry_provenance_diagnostics(entry, label))
 
     # Source reuse is window-aware. Distinct non-overlapping windows from one long
     # stock source are legal; overlapping or unverifiable reuse is not.
@@ -529,15 +733,9 @@ def audit_asset_manifest(
                         f"{label}: asset beat_id {entry.get('beat_id')!r} does not match "
                         f"its semantic beat {beat_id!r}"
                     )
-                source_duration = float(entry.get("duration_seconds") or 0.0)
-                source_in = float(entry.get("source_in_seconds") or 0.0)
-                usable = source_duration - source_in
-                needed = float(requirement.get("duration_seconds") or 0.0)
-                if needed > 0 and usable > 0 and usable < needed:
-                    problems.append(
-                        f"{label}: clip provides {usable:.2f}s from its in-point but "
-                        f"the visual unit needs {needed:.2f}s — the tail renders black"
-                    )
+                problems.extend(
+                    item["message"] for item in _entry_duration_diagnostics(entry, requirement, label)
+                )
                 problems.extend(_quality_metadata_problems(entry, requirement))
 
     return problems
@@ -579,6 +777,11 @@ def assert_orientation(manifest: dict[str, Any], video_format: str) -> list[str]
 
 __all__ = [
     "ALLOWED_PERSIAN_VIDEO_PROVIDERS",
+    "ASSET_ADMISSION_POLICY_VERSION",
+    "ASSET_RULE_CLASSES",
+    "MANIFEST_DECLARATION_FIELDS",
+    "assess_selection_entry",
+    "recovery_options",
     "STAGED_STOCK_RISKS",
     "ImageFootageRejected",
     "assert_video_only",

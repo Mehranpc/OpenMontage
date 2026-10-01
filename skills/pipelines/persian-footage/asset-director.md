@@ -1,6 +1,6 @@
 # Asset Director — Persian Footage Pipeline
 
-Read the assets phase card first. Load `references/asset-acquisition.md` only for provider-budget, candidate-workspace, music, or alignment details needed by the current event.
+Read the assets phase card first. Load `references/asset-acquisition.md` only for provider-budget, candidate-workspace/admission, music, or alignment details needed by the current event.
 
 ## Output contract
 

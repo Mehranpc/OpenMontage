@@ -6478,6 +6478,10 @@ def _main(args: argparse.Namespace) -> int:
             _print_json(reconcile_workflow_job(args.project_id, args.job_id))
         return 0
     except (PersianVideoWorkflowError, PersianAssetCommandError, PersianMusicCommandError, PersianRegionCommandError, PersianAssetWorkspaceError, PersianEditWorkspaceError, DurableJobError, CheckpointValidationError) as exc:
+        diagnostics = getattr(exc, "diagnostics", None)
+        if diagnostics:
+            # Machine-readable blockers for a refused admission (#360); stderr keeps the text.
+            _print_json({"refused": True, "diagnostics": diagnostics})
         parser = build_parser()
         parser.error(str(exc))
     return 2
