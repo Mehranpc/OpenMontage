@@ -165,3 +165,35 @@ def test_a_stop_snapshot_is_not_live_work_and_finishing_twice_is_idempotent(tmp_
     assert view["stop_snapshot_since_finished"][span_id]["outcome"] == "succeeded"
     assert view["stop_snapshot_still_open"] == []
     assert json.loads(json.dumps(view)) == view
+
+
+@pytest.mark.parametrize("reusable", [True, False])
+def test_exhausted_search_does_not_require_a_decision_for_a_reviewed_alternate(
+    tmp_path: Path, reusable: bool,
+) -> None:
+    from tests.lib.test_issue331_acquisition_next_step import _spend_both_passes
+    from tests.lib.test_issue360_truthful_readiness import _legacy_select
+
+    project = _run_at_acquire(tmp_path)
+    _spend_both_passes(tmp_path)
+    bad = _candidate(tmp_path, "event-0", "bad", shows_subject=False)
+    _legacy_select(project, "event-0", bad)
+    alternate = _candidate(tmp_path, "event-0", "alternate") if reusable else None
+    for event in ("event-1", "event-2"):
+        _select(tmp_path, event, _candidate(tmp_path, event, event))
+    state_path = project / workflow.STATE_FILENAME
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["send_backs"] = state["budgets"]["max_send_backs"]
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    before = _project_bytes(project)
+    preparation = workflow.workflow_status("run", pipeline_dir=tmp_path, now=BASE)["acquisition"]["preparation"]
+    assert _project_bytes(project) == before
+    if reusable:
+        assert preparation["decisionRequired"] is None
+        _select(tmp_path, "event-0", alternate, replace_existing=True,
+                rejected={bad: "subject is missing"})
+        assert workflow.load_workflow_state("run", pipeline_dir=tmp_path)["send_backs"] == state["send_backs"]
+    else:
+        assert preparation["decisionRequired"] == {
+            "kind": "send_back_budget_spent", "events": ["event-0"],
+        }
