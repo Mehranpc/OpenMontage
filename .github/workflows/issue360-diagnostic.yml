@@ -13,4 +13,4 @@ jobs:
         with:
           python-version: "3.11"
       - run: make install-dev
-      - run: .venv/bin/python -m pytest tests/lib/test_issue360_reconcile_evidence.py tests/lib/test_issue360_preparation_and_stop.py -q
+      - run: .venv/bin/python -m pytest tests/lib/test_issue360_shared_admission.py tests/lib/test_issue360_truthful_readiness.py tests/lib/test_issue360_reconcile_evidence.py tests/lib/test_issue360_preparation_and_stop.py tests/lib/test_issue224_plan_reconcile.py tests/lib/test_issue331_acquisition_next_step.py tests/rehearsal/test_issue360_admission_recovery_scenario.py -q
