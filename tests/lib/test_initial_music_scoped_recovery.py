@@ -223,3 +223,20 @@ def test_music_manifest_still_rejects_malformed_or_unknown_risk_fields(
     with pytest.raises(assets.PersianAssetCommandError):
         assets.build_manifest(tmp_path, "run", overrides={music_field: track})
     assert (project / "artifacts/asset_manifest.json").read_bytes() == before
+
+
+def test_late_scoped_fetch_refuses_before_unrelated_cache_lookup(tmp_path: Path, monkeypatch):
+    project, candidate, request, metadata, tool = _prepared(tmp_path, monkeypatch)
+    state_path = project / workflow.STATE_FILENAME
+    state = json.loads(state_path.read_text())
+    state["asset_reacquisition_scope"]["diagnosticCode"] = "ASSET_SELECTION_HARD_REGION_COLLISION"
+    state["asset_reacquisition_scope"]["shotIds"] = ["shot-1"]
+    state_path.write_text(json.dumps(state))
+    before = {str(p.relative_to(project)): p.read_bytes()
+              for p in project.rglob("*") if p.is_file()}
+    with pytest.raises(workflow.PersianVideoWorkflowError, match="music acquisition is forbidden"):
+        workflow.fetch_workflow_music("run", "music-" + "a" * 24, metadata,
+                                      pipeline_dir=tmp_path)
+    assert tool.calls == 0
+    assert before == {str(p.relative_to(project)): p.read_bytes()
+                      for p in project.rglob("*") if p.is_file()}

@@ -4073,6 +4073,7 @@ def _scope_allows_candidate(state: Mapping[str, Any], candidate_id: str) -> None
 
 def _require_music_not_scoped(
     state: Mapping[str, Any], *, provider: str | None = None,
+    search_id: str | None = None,
 ) -> None:
     scope = state.get("asset_reacquisition_scope")
     if not isinstance(scope, Mapping):
@@ -4095,10 +4096,20 @@ def _require_music_not_scoped(
         or (state.get("asset_usage") or {}).get("pending_pass") is not None
         or (state.get("evidence") or {}).get("acquire_assets") is not None
         or "acquire_assets" in (state.get("completed_phases") or [])
-        or provider != "pixabay_music"
     ):
         refuse()
     project = _project_root(state)
+    # Reject late/shot-scoped recovery before touching unrelated music cache.
+    # Early initial acquisition must still prove the cached provider at fetch.
+    if search_id is not None:
+        if re.fullmatch(r"music-[0-9a-f]{24}", str(search_id)) is None:
+            raise PersianVideoWorkflowError("invalid music search id")
+        record = _read_json(str(
+            project / ".asset-workspace" / "music" / "searches" / f"{search_id}.json"
+        ))
+        provider = str(record.get("provider") or "")
+    if provider != "pixabay_music":
+        refuse()
     checkpoint_path = project / "checkpoint_assets.json"
     if checkpoint_path.is_file():
         checkpoint = _read_json(str(checkpoint_path))
@@ -4428,13 +4439,7 @@ def fetch_workflow_music(
     _require_asset_candidate_phase(state)
     source = assert_read_allowed(state, str(metadata_path))
     project_root = _project_root(state)
-    if isinstance(state.get("asset_reacquisition_scope"), Mapping):
-        if re.fullmatch(r"music-[0-9a-f]{24}", str(search_id)) is None:
-            raise PersianVideoWorkflowError("invalid music search id")
-        record = _read_json(str(
-            project_root / ".asset-workspace" / "music" / "searches" / f"{search_id}.json"
-        ))
-        _require_music_not_scoped(state, provider=str(record.get("provider") or ""))
+    _require_music_not_scoped(state, search_id=search_id)
     return fetch_music_command(
         project_root.parent, project_root.name, search_id, _read_json(str(source)),
         output_path=output_path,
