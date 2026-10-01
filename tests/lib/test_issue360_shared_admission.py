@@ -318,3 +318,23 @@ def test_recorded_opening_evidence_is_preserved_and_cannot_be_overridden(tmp_pat
         tampered["assets"][0][field] = changed
         with pytest.raises(PersianAssetWorkspaceError, match="persisted candidate review"):
             workspace.validate_asset_manifest_against_workspace(project, tampered)
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("opening_semantic_match", "yes"), ("semantic_role", " "), ("semantic_direction", ""),
+])
+def test_malformed_opening_evidence_is_refused_at_review(tmp_path: Path, field: str, value: object) -> None:
+    project = tmp_path / "run"
+    _plan(project, event_a={"narrative_role": "hook", "semantic_role": "human_anchor",
+                           "semantic_direction": "toward_subject"})
+    with pytest.raises(PersianAssetWorkspaceError, match=field):
+        _candidate(project, "event-a", "opening", **{field: value})
+
+
+def test_legacy_review_without_opening_evidence_still_needs_declarations(tmp_path: Path) -> None:
+    project = tmp_path / "run"
+    _plan(project, event_a={"narrative_role": "hook", "semantic_role": "human_anchor",
+                           "semantic_direction": "toward_subject"})
+    candidate = _candidate(project, "event-a", "opening")
+    required = {item["field"] for item in _select(project, "event-a", candidate)["declarationsRequired"]}
+    assert required == {"opening_semantic_match", "semantic_role", "semantic_direction"}
