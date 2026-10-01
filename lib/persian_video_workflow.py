@@ -5447,7 +5447,32 @@ def _acquisition_preparation(
         decision = {"kind": "budget_stop", "reason": stop.get("reason"),
                     "operation": stop.get("boundary_before_operation")}
     elif (blocked or unresolved) and next_pass is None and send_backs_left == 0:
-        decision = {"kind": "send_back_budget_spent", "events": sorted({*blocked, *unresolved})}
+        # Exhausted search is not an exhausted recovery path: reviewed footage may
+        # already satisfy the current plan without a new pass or send-back (#360).
+        from lib.persian_asset_workspace import (
+            _read_selections, assess_candidate_admission, reusable_asset_candidates,
+        )
+
+        root = _project_root(state)
+        selections = _read_selections(root)
+        needs_footage = []
+        for event_id in sorted({*blocked, *unresolved}):
+            reusable = False
+            for item in reusable_asset_candidates(root, visual_event_id=event_id):
+                try:
+                    candidate = load_asset_candidate(root, str(item["candidateId"]))
+                    assessment = assess_candidate_admission(
+                        root, event_id, candidate, selections=selections,
+                    )
+                except (PersianAssetWorkspaceError, TypeError, ValueError):
+                    continue
+                if assessment["admissible"]:
+                    reusable = True
+                    break
+            if not reusable:
+                needs_footage.append(event_id)
+        if needs_footage:
+            decision = {"kind": "send_back_budget_spent", "events": needs_footage}
     return {
         "contract": "skills/pipelines/persian-footage/asset-director.md (Selection admission)",
         "readinessInputsSha256": readiness.get("inputsSha256"),
