@@ -13,4 +13,4 @@ jobs:
         with:
           python-version: "3.11"
       - run: make install-dev
-      - run: .venv/bin/python -m pytest tests/lib/test_initial_music_scoped_recovery.py tests/lib/test_persian_asset_commands.py tests/lib/test_persian_music_commands.py -q
+      - run: .venv/bin/python -m pytest tests/lib/test_initial_music_scoped_recovery.py tests/lib/test_persian_asset_commands.py tests/lib/test_persian_music_commands.py tests/lib/test_issue331_acquisition_next_step.py tests/lib/test_scoped_reopen_gap_selection.py tests/lib/test_issue360_truthful_readiness.py tests/lib/test_issue360_preparation_and_stop.py -q

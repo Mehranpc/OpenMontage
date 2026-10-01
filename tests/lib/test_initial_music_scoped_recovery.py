@@ -11,7 +11,7 @@ from lib import persian_music_commands as music
 from lib import persian_video_workflow as workflow
 from tests.lib.test_issue35_asset_candidate_workspace import _selected_candidate
 from tests.lib.test_persian_music_commands import _FakeMusicTool, _metadata, _request
-from tests.lib.test_persian_video_workflow import BASE, _bootstrap_to_assets
+from tests.lib.test_persian_video_workflow import _bootstrap_to_assets
 
 
 def _prepared(tmp_path, monkeypatch):
@@ -66,10 +66,17 @@ def test_initial_music_after_complete_early_visual_repair_keeps_scope_and_bindin
     assert fetched["track"]["source"] == "pixabay_music"
     assert _protected_bytes(project) == before
     # The exception must not release visual scope or admit an unrelated selection.
+    unrelated = project / "unrelated-stage.json"
+    record = workspace.load_asset_candidate(project, candidate["candidateId"])
+    unrelated.write_text(json.dumps({
+        "discovery_id": record["discoveryId"], "visual_event_id": "unrelated",
+        "semantic_beat_id": "beat-1", "source_in_seconds": 1.0,
+        "duration_seconds": 4.0, "intended_crop": record["identity"]["intendedCrop"],
+        "candidate_rank": 1, "query": "person thinking at desk",
+        "narration_span": "این یک جمله نمونه است",
+    }))
     with pytest.raises(workflow.PersianVideoWorkflowError, match="outside scoped"):
-        workflow.select_workflow_asset_candidate(
-            "run", "unrelated", candidate["candidateId"],
-            rejected_alternatives={}, pipeline_dir=tmp_path)
+        workflow.stage_workflow_asset_candidate("run", unrelated, pipeline_dir=tmp_path)
     overrides = project / "manifest-with-music.json"
     overrides.write_text(json.dumps({"musicTrack": fetched["track"]}))
     workflow.build_workflow_asset_manifest(
