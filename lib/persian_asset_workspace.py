@@ -1512,6 +1512,7 @@ def selection_readiness(project_dir: Path) -> dict[str, Any]:
     stale: dict[str, list[dict[str, Any]]] = {}
     declarations: dict[str, list[dict[str, Any]]] = {}
     bound: dict[str, dict[str, Any]] = {}
+    assessable_candidates: dict[str, dict[str, Any]] = {}
     for event_id, selection in sorted(selections.items()):
         candidate_id = str(selection.get("candidateId") or "")
         bound[event_id] = {
@@ -1532,11 +1533,22 @@ def selection_readiness(project_dir: Path) -> dict[str, Any]:
         if binding_problems:
             stale[event_id] = binding_problems
             continue
+        assessable_candidates[event_id] = candidate
+
+    # A missing/stale neighbour blocks set readiness through staleEvents. Assess the
+    # intact selections against other intact evidence, so the same missing record
+    # does not become an event-local failure on every otherwise valid clip (#368).
+    # Mutation admission still checks the entire ledger and fails closed.
+    assessable_selections = {
+        event: selections[event] for event in assessable_candidates
+    }
+    for event_id, candidate in assessable_candidates.items():
+        candidate_id = str(candidate.get("candidateId") or "")
         if plan_problem is not None:
             continue
         try:
             admission = assess_candidate_admission(
-                project_dir, event_id, candidate, selections=selections
+                project_dir, event_id, candidate, selections=assessable_selections
             )
         except PersianAssetWorkspaceError as exc:
             invalid[event_id] = [{"code": "EVIDENCE_UNPROJECTABLE", "candidateId": candidate_id,
@@ -1628,7 +1640,12 @@ def asset_workspace_status(project_dir: Path) -> dict[str, Any]:
 
     weak_warnings: list[dict[str, Any]] = []
     for event_id, selection in selections.items():
-        candidate = load_asset_candidate(project_dir, str(selection.get("candidateId") or ""))
+        try:
+            candidate = load_asset_candidate(project_dir, str(selection.get("candidateId") or ""))
+        except PersianAssetWorkspaceError:
+            # Optional weak-resolution warnings need readable evidence. Keep the
+            # ledger visible; selection_readiness diagnoses the stale record (#368).
+            continue
         role = str((candidate.get("context") or {}).get("narrativeRole") or "").strip().lower()
         review = candidate.get("review") or {}
         if role in {"resolution", "ending", "closing"} and review.get("resolution_quality") == "weak":
