@@ -529,13 +529,34 @@ def reject_asset_candidate(
     if not clean_reason:
         raise PersianAssetWorkspaceError("candidate rejection requires a reason")
     selections = _read_selections(project_dir)
-    if any(item.get("candidateId") == candidate_id for item in selections.values()):
-        raise PersianAssetWorkspaceError("selected candidate must be replaced before rejection")
+    selected_events = sorted(
+        event for event, item in selections.items() if item.get("candidateId") == candidate_id
+    )
+    released: list[str] = []
+    if selected_events:
+        # A selection the admission rules now refuse may be rejected directly, which
+        # reopens its event for the retry route; a valid one must still be replaced (#360).
+        try:
+            admission = assess_candidate_admission(
+                project_dir, selected_events[0], candidate, selections=selections
+            )
+            failing = admission["diagnostics"]
+        except PersianAssetWorkspaceError as exc:
+            failing = [{"code": "EVIDENCE_UNPROJECTABLE", "message": str(exc)}]
+        if not failing:
+            raise PersianAssetWorkspaceError("selected candidate must be replaced before rejection")
+        released = selected_events
+        for event in released:
+            selections.pop(event)
+        _write_selections(project_dir, selections)
     candidate["rejection"] = {
         "category": normalized_category,
         "reason": clean_reason,
         "at": datetime.now(timezone.utc).isoformat(),
     }
+    if released:
+        candidate["rejection"]["releasedSelections"] = released
+        candidate["rejection"]["admissionCodes"] = sorted({str(item.get("code")) for item in failing})
     candidate["disposition"] = "rejected"
     candidate["updatedAt"] = datetime.now(timezone.utc).isoformat()
     _atomic_json(_candidate_path(project_dir, candidate_id), candidate)
@@ -686,6 +707,65 @@ def _reviewed_fallback(review: Mapping[str, Any]) -> dict[str, Any]:
         evidence["fallback_reason"] = reason
     return evidence
 
+
+
+def _candidate_evidence_snapshot(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    """Bind claimed hashes to the actual immutable bytes using canonical digests."""
+    return {
+        "candidateId": candidate.get("candidateId"),
+        "candidateIdentitySha256": candidate.get("identitySha256"),
+        "reviewSha256": candidate.get("reviewSha256"),
+        "actualIdentitySha256": _sha256(candidate.get("identity")),
+        "actualReviewSha256": _sha256({
+            "candidateIdentitySha256": candidate.get("identitySha256"),
+            "candidateContext": candidate.get("context") or {},
+            "review": candidate.get("review"),
+        }),
+        "sourceSha256": _sha256(candidate.get("source")),
+        "disposition": candidate.get("disposition"),
+    }
+
+
+def _candidate_binding_diagnostics(
+    candidate: Mapping[str, Any], event_id: str,
+    selection: Mapping[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    snapshot = _candidate_evidence_snapshot(candidate)
+    candidate_id = str(candidate.get("candidateId") or "")
+    if (
+        snapshot["actualIdentitySha256"] != candidate.get("identitySha256")
+        or snapshot["actualReviewSha256"] != candidate.get("reviewSha256")
+        or candidate_id != _candidate_id(candidate.get("identity") or {})
+        or candidate.get("disposition") == "rejected"
+    ):
+        return [{
+            "code": "CANDIDATE_EVIDENCE_STALE", "ruleClass": "event_local",
+            "candidateId": candidate_id, "visualEventId": event_id,
+            "field": "candidate.identity/context/review",
+            "expected": {"identitySha256": candidate.get("identitySha256"),
+                         "reviewSha256": candidate.get("reviewSha256")},
+            "observed": {"identitySha256": snapshot["actualIdentitySha256"],
+                         "reviewSha256": snapshot["actualReviewSha256"],
+                         "disposition": candidate.get("disposition")},
+            "message": f"{event_id}: candidate no longer binds its immutable identity/context/review",
+            "recovery": ["reuse_reviewed_alternate", "reject_and_retry"],
+        }]
+    if selection is not None and (
+        selection.get("candidateIdentitySha256") != candidate.get("identitySha256")
+        or selection.get("reviewSha256") != candidate.get("reviewSha256")
+    ):
+        return [{
+            "code": "SELECTION_STALE", "ruleClass": "event_local",
+            "candidateId": candidate_id, "visualEventId": event_id,
+            "field": "selection.identity/review",
+            "expected": {"candidateIdentitySha256": selection.get("candidateIdentitySha256"),
+                         "reviewSha256": selection.get("reviewSha256")},
+            "observed": {"candidateIdentitySha256": candidate.get("identitySha256"),
+                         "reviewSha256": candidate.get("reviewSha256")},
+            "message": f"{event_id}: selection no longer binds its candidate's identity/review",
+            "recovery": ["reuse_reviewed_alternate", "reject_and_retry"],
+        }]
+    return []
 
 
 def _same_number(left: object, right: object) -> bool:
@@ -1041,6 +1121,11 @@ def assess_candidate_admission(
     event_id = str(visual_event_id or "").strip()
     candidate_id = str(candidate.get("candidateId") or "")
     requirement, diagnostics = _admission_requirement(project_dir, event_id)
+    existing_binding = selections.get(event_id)
+    diagnostics.extend(_candidate_binding_diagnostics(
+        candidate, event_id,
+        existing_binding if existing_binding and existing_binding.get("candidateId") == candidate_id else None,
+    ))
     declarations: list[dict[str, Any]] = []
     if requirement is not None:
         row = _manifest_row(candidate)
@@ -1383,6 +1468,114 @@ def retry_readiness(project_dir: Path) -> dict[str, Any]:
             "rejectedOnlyEventIds": blocked}
 
 
+def selection_readiness(project_dir: Path) -> dict[str, Any]:
+    """Recorded versus currently valid selections against the effective plan (#360).
+
+    Read-only: evaluates recorded evidence with the admission rules and never touches
+    the plan, ledger, candidates or artifacts. Counts are unique planned events. A
+    ``ready_for_manifest*`` disposition needs every deterministic prerequisite passed.
+    """
+    from lib.persian_assets import ASSET_ADMISSION_POLICY_VERSION, scene_asset_requirements
+    from lib.persian_scene_plan_source import ScenePlanUnreadable, load_effective_scene_plan
+
+    selections = _read_selections(project_dir)
+    plan_problem: dict[str, Any] | None = None
+    plan: dict[str, Any] | None = None
+    try:
+        plan = load_effective_scene_plan(project_dir)
+    except ScenePlanUnreadable as exc:
+        plan_problem = {"code": "PLAN_INVALID", "message": str(exc)}
+    required: list[str] = []
+    if plan is not None:
+        try:
+            requirements, _, _ = scene_asset_requirements(plan)
+            required = sorted({
+                str(item["visual_event_id"]) for item in requirements if item.get("visual_event_id")
+            })
+        except (AttributeError, TypeError, ValueError) as exc:
+            plan_problem = {"code": "PLAN_INVALID", "message": f"scene plan is malformed ({exc})"}
+    elif plan_problem is None:
+        plan_problem = {"code": "PLAN_MISSING", "message": "no completed scene plan"}
+
+    invalid: dict[str, list[dict[str, Any]]] = {}
+    stale: dict[str, list[dict[str, Any]]] = {}
+    declarations: dict[str, list[dict[str, Any]]] = {}
+    bound: dict[str, dict[str, Any]] = {}
+    for event_id, selection in sorted(selections.items()):
+        candidate_id = str(selection.get("candidateId") or "")
+        bound[event_id] = {
+            "selection": {
+                "candidateId": candidate_id,
+                "candidateIdentitySha256": selection.get("candidateIdentitySha256"),
+                "reviewSha256": selection.get("reviewSha256"),
+            },
+        }
+        try:
+            candidate = load_asset_candidate(project_dir, candidate_id)
+        except PersianAssetWorkspaceError as exc:
+            stale[event_id] = [{"code": "SELECTION_CANDIDATE_MISSING", "candidateId": candidate_id,
+                                "message": str(exc)}]
+            continue
+        bound[event_id]["candidate"] = _candidate_evidence_snapshot(candidate)
+        binding_problems = _candidate_binding_diagnostics(candidate, event_id, selection)
+        if binding_problems:
+            stale[event_id] = binding_problems
+            continue
+        if plan_problem is not None:
+            continue
+        try:
+            admission = assess_candidate_admission(
+                project_dir, event_id, candidate, selections=selections
+            )
+        except PersianAssetWorkspaceError as exc:
+            invalid[event_id] = [{"code": "EVIDENCE_UNPROJECTABLE", "candidateId": candidate_id,
+                                  "visualEventId": event_id, "message": str(exc),
+                                  "recovery": ["reuse_reviewed_alternate", "reject_and_retry"]}]
+            continue
+        if admission["diagnostics"]:
+            invalid[event_id] = admission["diagnostics"]
+        if admission["declarationsRequired"]:
+            declarations[event_id] = admission["declarationsRequired"]
+
+    unresolved = [event for event in required if event not in selections]
+    valid = [event for event in required if event in selections and event not in invalid and event not in stale]
+    if plan_problem is not None:
+        disposition = "plan_unavailable"
+    elif stale:
+        disposition = "stale_selections"
+    elif invalid:
+        disposition = "invalid_selections"
+    elif unresolved:
+        disposition = "incomplete"
+    elif declarations:
+        disposition = "ready_for_manifest_with_declarations"
+    else:
+        disposition = "ready_for_manifest"
+    inputs = {
+        "policyVersion": ASSET_ADMISSION_POLICY_VERSION,
+        "scenePlanSha256": _sha256(plan) if plan is not None else None,
+        "selections": bound,
+    }
+    return {
+        "disposition": disposition,
+        "requiredEventCount": len(required),
+        "recordedSelectionCount": len(selections),
+        "validSelectionCount": len(valid),
+        "unresolvedEvents": unresolved,
+        "invalidEvents": sorted(invalid),
+        "staleEvents": sorted(stale),
+        "declarationEvents": sorted(declarations),
+        "planProblem": plan_problem,
+        "diagnostics": {
+            event: [*stale.get(event, []), *invalid.get(event, [])]
+            for event in sorted({*invalid, *stale})
+        },
+        "declarationsRequired": {event: declarations[event] for event in sorted(declarations)},
+        "policyVersion": ASSET_ADMISSION_POLICY_VERSION,
+        "inputsSha256": _sha256(inputs),
+    }
+
+
 def asset_workspace_status(project_dir: Path) -> dict[str, Any]:
     root = _root(project_dir)
     passes = sorted((_discovery_root(project_dir) / "passes").glob("pass-*.json")) if root.exists() else []
@@ -1448,6 +1641,7 @@ __all__ = [
     "reject_asset_candidate",
     "reusable_asset_candidates",
     "select_asset_candidate",
+    "selection_readiness",
     "stage_asset_candidate",
     "validate_asset_manifest_against_workspace",
     "validate_edit_asset_bindings",

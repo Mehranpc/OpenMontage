@@ -5194,7 +5194,8 @@ def acquisition_status(state: Mapping[str, Any]) -> dict[str, Any] | None:
     """
     if state.get("next_phase") != "acquire_assets":
         return None
-    from lib.persian_scene_plan_source import materialize_scene_plan
+    from lib.persian_asset_workspace import selection_readiness
+    from lib.persian_scene_plan_source import ScenePlanUnreadable, load_effective_scene_plan
 
     usage = dict(state.get("asset_usage") or {})
     completed = sorted(int(item) for item in usage.get("completed_passes") or [])
@@ -5204,20 +5205,44 @@ def acquisition_status(state: Mapping[str, Any]) -> dict[str, Any] | None:
     remaining = [item for item in all_passes if item not in completed and item != pending]
     next_pass = remaining[0] if remaining else None
     root = _project_root(state)
-    plan_path = materialize_scene_plan(root) or root / "artifacts" / "scene_plan.json"
+    # Status is read-only (#360): read the effective plan without materialising it.
     events: list[str] = []
-    if Path(plan_path).is_file():
-        try:
-            plan = json.loads(Path(plan_path).read_text(encoding="utf-8"))
+    try:
+        plan = load_effective_scene_plan(root)
+        if plan is not None:
             requirements, _, _ = scene_asset_requirements(plan)
             events = [str(item["visual_event_id"]) for item in requirements if item.get("visual_event_id")]
-        except (OSError, json.JSONDecodeError, TypeError, ValueError):
-            events = []
+    except (ScenePlanUnreadable, AttributeError, TypeError, ValueError):
+        events = []
     selected = set((asset_workspace_status(root).get("selectedCandidateIds") or {}))
     unresolved = [event for event in events if event not in selected]
+    readiness = selection_readiness(root)
+    blocked = [*readiness["staleEvents"], *[
+        event for event in readiness["invalidEvents"] if event not in readiness["staleEvents"]
+    ]]
 
     if pending is not None:
         step = f"asset search pass {pending} is running; reconcile it before anything else"
+    elif readiness["disposition"] == "plan_unavailable":
+        step = (
+            f"the effective scene plan is unavailable ({readiness['planProblem']['message']}); "
+            "selections cannot be checked and the manifest cannot be built until plan_scenes_moments "
+            "has a completed, readable scene plan"
+        )
+    elif blocked:
+        step = (
+            f"{len(blocked)} selected event(s) fail the asset contract: {', '.join(blocked)} "
+            "(see readiness.diagnostics). Do not build the manifest yet. For each: select a "
+            "qualifying reviewed alternate with asset-candidate-select --replace-existing; "
+            "reconcile-plan a declaration the reviewed evidence proves wrong; or "
+            "asset-candidate-reject the selection, which reopens the event"
+            + (
+                f"; retry pass {next_pass} is unspent for reopened events"
+                if next_pass is not None else "; the retry pass is spent, so a reopened event needs "
+                "reconcile-plan queries_append and reopen-asset-search for exactly those events"
+            )
+            + ". This is routine recovery, not a user decision"
+        )
     elif not completed and selected and unresolved:
         step = (
             "a replan opened a fresh search cycle: run asset-search --retry-pass 0 with the plan's "
@@ -5225,6 +5250,13 @@ def acquisition_status(state: Mapping[str, Any]) -> dict[str, Any] | None:
         )
     elif not completed:
         step = "run asset-search --retry-pass 0 for every footage event"
+    elif not unresolved and readiness["disposition"] == "ready_for_manifest_with_declarations":
+        step = (
+            "every footage event has a valid selection; build the manifest with overrides declaring "
+            "the planned fallback_level and a fallback_reason for "
+            f"{', '.join(readiness['declarationEvents'])} (or reconcile-plan with evidence), "
+            "then complete acquire_assets"
+        )
     elif not unresolved:
         step = "every footage event has a selection; build the manifest and complete acquire_assets"
     elif next_pass is not None:
@@ -5249,6 +5281,12 @@ def acquisition_status(state: Mapping[str, Any]) -> dict[str, Any] | None:
         "remainingPasses": remaining,
         "nextPass": next_pass,
         "unresolvedEvents": unresolved,
+        # Additive (#360): recorded is not valid; counts are unique planned events.
+        "recordedSelectionCount": readiness["recordedSelectionCount"],
+        "validSelectionCount": readiness["validSelectionCount"],
+        "invalidEvents": readiness["invalidEvents"],
+        "staleEvents": readiness["staleEvents"],
+        "readiness": readiness,
         "nextStep": step,
     }
 
@@ -5273,10 +5311,15 @@ def _acquisition_suffix(acquisition: Any) -> str:
         return ""
     remaining = acquisition.get("remainingPasses") or []
     unresolved = acquisition.get("unresolvedEvents") or []
+    invalid = [*(acquisition.get("staleEvents") or []), *(acquisition.get("invalidEvents") or [])]
     return (
         f" passes_left={','.join(str(item) for item in remaining) or 'none'}"
         f" unresolved={','.join(unresolved) or 'none'}"
-        f"\nnext: {acquisition.get('nextStep')}"
+        + (
+            f" valid={acquisition.get('validSelectionCount')}/{acquisition.get('recordedSelectionCount')}"
+            f" invalid={','.join(dict.fromkeys(invalid))}" if invalid else ""
+        )
+        + f"\nnext: {acquisition.get('nextStep')}"
     )
 
 
