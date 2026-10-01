@@ -43,11 +43,33 @@ def _event(plan: dict, event_id: str) -> dict:
     return next(e for b in plan["beats"] for e in b["visual_events"] if e["id"] == event_id)
 
 
+def _reviewed_without_subject(tmp_path: Path, event_id: str) -> str:
+    """A reviewed candidate whose frames show the plan's subject is absent (#360 evidence)."""
+    from lib import persian_asset_workspace as workspace
+    from tests.lib.test_issue35_asset_candidate_workspace import _discovered, _review
+
+    project = tmp_path / "run"
+    planned = _event(_plan(tmp_path), event_id)
+    discovery = workspace.record_discovery_pass(
+        project, workspace.asset_workspace_status(project)["discoveryPassCount"],
+        [_discovered(project, source_id=f"nosubject-{event_id}", name=f"nosubject-{event_id}.mp4", slot_id=event_id)],
+    )["candidateIds"][0]
+    candidate = workspace.stage_asset_candidate(
+        project, discovery_id=discovery, visual_event_id=event_id, semantic_beat_id="beat-0",
+        source_in_seconds=0.0, duration_seconds=4.0, intended_crop={"mode": "full_frame"},
+        candidate_rank=1, query=planned["queries"][0], narration_span=planned["narration_span"],
+    )["candidateId"]
+    workspace.record_candidate_review(project, candidate, {**_review(), "shows_subject": False})
+    return candidate
+
+
 def test_reconcile_corrects_declarations_without_spending_a_send_back(tmp_path: Path) -> None:
     _run_at_acquire(tmp_path)
+    evidence = _reviewed_without_subject(tmp_path, "event-0")
     result = reconcile_scene_plan(
         "run",
-        [{"visual_event_id": "event-0", "set": {"shows_subject": False, "carries_moment": False}},
+        [{"visual_event_id": "event-0", "set": {"shows_subject": False, "carries_moment": False},
+          "evidence_candidate_id": evidence},
          {"visual_event_id": "event-1", "set": {"negative_space": "centre_band"}}],
         reason="footage has no phone in event-0; event-1 is clear in the centre",
         pipeline_dir=tmp_path, now=BASE,
@@ -65,6 +87,7 @@ def test_reconcile_corrects_declarations_without_spending_a_send_back(tmp_path: 
     assert _event(plan, "event-1")["queries"][0] == "phone on plain table wide shot"
     record = read_checkpoint(tmp_path, "run", "scene_plan")["metadata"]["plan_reconciliations"]
     assert record[-1]["amendments"][0]["before"] == {"shows_subject": True, "carries_moment": True}
+    assert record[-1]["amendments"][0]["evidence"]["candidateId"] == evidence
 
 
 def test_timing_queries_and_identity_are_refused(tmp_path: Path) -> None:
