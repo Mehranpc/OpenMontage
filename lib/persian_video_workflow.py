@@ -3344,6 +3344,14 @@ def _weakening_evidence(
             f"{label}: evidence candidate {candidate_id!r} must be a reviewed, unrejected "
             "candidate of this visual event"
         )
+    from lib.persian_asset_workspace import _candidate_binding_diagnostics
+
+    integrity = _candidate_binding_diagnostics(candidate, event_id)
+    if integrity:
+        raise PersianVideoWorkflowError(
+            f"{label}: [CANDIDATE_EVIDENCE_STALE] evidence candidate {candidate_id!r} "
+            "no longer binds its immutable identity/context/review"
+        )
     for field, value in sorted(weakened.items()):
         if review.get(field) != value:
             raise PersianVideoWorkflowError(
