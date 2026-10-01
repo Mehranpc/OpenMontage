@@ -13,7 +13,9 @@ from lib.persian_asset_workspace import (
     validate_asset_manifest_against_workspace,
 )
 from lib.persian_assets import assert_video_only, audit_asset_manifest
-from lib.persian_scene_plan_source import materialize_scene_plan
+from lib.persian_scene_plan_source import (
+    ScenePlanUnreadable, load_effective_scene_plan, materialize_scene_plan,
+)
 from schemas.artifacts import validate_artifact
 
 
@@ -50,15 +52,16 @@ def _atomic_stable_json(path: Path, value: Mapping[str, Any]) -> bool:
     return True
 
 
-def _validate_manifest(project_dir: Path, manifest: dict[str, Any]) -> dict[str, Any]:
-    scene_path = materialize_scene_plan(project_dir)
-    if scene_path is None:
-        # Auditing without the plan skips every plan-dependent rule and reports a
-        # manifest that is missing whole events as clean (#238). Refuse instead.
+def validate_manifest(project_dir: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    """Read-only full contract check against the current authoritative plan."""
+    try:
+        scene_plan = load_effective_scene_plan(project_dir)
+    except ScenePlanUnreadable as exc:
+        raise PersianAssetCommandError(str(exc)) from exc
+    if scene_plan is None:
         raise PersianAssetCommandError(
             "no completed scene plan: the asset manifest cannot be audited against the plan"
         )
-    scene_plan = _read_object(scene_path, label="scene plan")
     try:
         validate_artifact("asset_manifest", manifest)
         assert_video_only(manifest)
@@ -71,6 +74,13 @@ def _validate_manifest(project_dir: Path, manifest: dict[str, Any]) -> dict[str,
             "asset manifest audit failed: " + " | ".join(audit_problems)
         )
     return workspace_check
+
+
+def _validate_manifest(project_dir: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    # Existing build/checkpoint commands still materialise the canonical plan for
+    # downstream consumers. Admission of unrelated work uses the read-only oracle.
+    materialize_scene_plan(project_dir)
+    return validate_manifest(project_dir, manifest)
 
 
 def build_manifest(
@@ -179,6 +189,7 @@ def write_assets_checkpoint(
 
 
 __all__ = [
+    "validate_manifest",
     "PersianAssetCommandError",
     "build_manifest",
     "write_assets_checkpoint",

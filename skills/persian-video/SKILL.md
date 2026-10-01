@@ -148,6 +148,17 @@ python -m lib.persian_video_workflow asset-candidate-reject <project-id> <candid
 python -m lib.persian_video_workflow asset-candidate-select <project-id> <visual-event-id> <candidate-id> --rejections-json /project/rejections.json
 ```
 
+Initial music after early visual recovery (#370): when `reopen-asset-search` was
+needed before the first assets checkpoint, finish the scoped visual repair and build
+the complete audited manifest first. The normal `assets music search/fetch` front
+door then permits the still-missing approved Pixabay instrumental bed. It rechecks
+the current plan, selections/reviews and canonical manifest before each operation;
+pending/invalid/stale visuals, existing music, earlier completed assets and late
+edit-recovery scopes still refuse. This does not clear visual scope, grant time,
+reset counters or permit unrelated candidate changes. After a successful fetch,
+use its persisted `artifacts/music_track.json` in the manifest overrides and build
+the full assets checkpoint; do not fetch again to replace that initial bed.
+
 `asset-result` imports provider/source discoveries into project-local durable state. Candidate identity is provider/source ID + exact source-time window + intended crop; review evidence is immutable for that identity. Overlapping reuse of the same source window is blocked, while distinct non-overlapping windows remain legal. Reviewed alternates remain reusable after send-back without reacquisition/re-review when identity is unchanged.
 
 `asset-search` runs the whole bounded pass — `asset-request` → `direct_clip_search` → `asset-result`, and no arithmetic of its own — as **one durable, measured execution** under the current phase attempt, charged to `provider_network_wait`. Two consequences matter to the operator:

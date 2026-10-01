@@ -47,6 +47,7 @@ from lib.persian_assets import scene_asset_requirements
 from lib.persian_scenes import scene_plan_duration_tolerance_seconds
 from lib.persian_asset_commands import (
     PersianAssetCommandError,
+    validate_manifest as validate_asset_manifest_command,
     build_manifest as build_asset_manifest_command,
     write_assets_checkpoint as write_assets_checkpoint_command,
 )
@@ -68,6 +69,7 @@ from lib.persian_asset_workspace import (
     record_discovery_pass,
     reject_asset_candidate,
     retry_readiness,
+    selection_readiness,
     select_asset_candidate,
     stage_asset_candidate,
     validate_asset_manifest_against_workspace,
@@ -4069,11 +4071,72 @@ def _scope_allows_candidate(state: Mapping[str, Any], candidate_id: str) -> None
     _scope_allows_visual_event(state, str(context.get("visualEventId") or ""))
 
 
-def _require_music_not_scoped(state: Mapping[str, Any]) -> None:
-    if isinstance(state.get("asset_reacquisition_scope"), Mapping):
+def _require_music_not_scoped(
+    state: Mapping[str, Any], *, provider: str | None = None,
+    search_id: str | None = None,
+) -> None:
+    scope = state.get("asset_reacquisition_scope")
+    if not isinstance(scope, Mapping):
+        return
+
+    def refuse() -> None:
         raise PersianVideoWorkflowError(
-            "music acquisition is forbidden during shot-scoped asset reacquisition"
+            "music acquisition is forbidden during shot-scoped asset reacquisition; "
+            "initial approved music is allowed only after complete early visual repair "
+            "with a current audited manifest and no existing music"
         )
+
+    # Early query recovery can happen before the first assets checkpoint (#370).
+    # Once its visuals are genuinely repaired, acquiring the original approved bed
+    # completes initial acquisition; it is not a music replacement or scope release.
+    if (
+        scope.get("diagnosticCode") != "ASSET_QUERY_EXHAUSTED"
+        or scope.get("shotIds")
+        or not scope.get("visualEventIds")
+        or (state.get("asset_usage") or {}).get("pending_pass") is not None
+        or (state.get("evidence") or {}).get("acquire_assets") is not None
+        or "acquire_assets" in (state.get("completed_phases") or [])
+    ):
+        refuse()
+    project = _project_root(state)
+    # Reject late/shot-scoped recovery before touching unrelated music cache.
+    # Early initial acquisition must still prove the cached provider at fetch.
+    if search_id is not None:
+        if re.fullmatch(r"music-[0-9a-f]{24}", str(search_id)) is None:
+            raise PersianVideoWorkflowError("invalid music search id")
+        record = _read_json(str(
+            project / ".asset-workspace" / "music" / "searches" / f"{search_id}.json"
+        ))
+        provider = str(record.get("provider") or "")
+    if provider != "pixabay_music":
+        refuse()
+    checkpoint_path = project / "checkpoint_assets.json"
+    if checkpoint_path.is_file():
+        checkpoint = _read_json(str(checkpoint_path))
+        if checkpoint.get("status") != "failed":
+            refuse()
+    brief = _read_json(str(project / "artifacts" / "brief.json"))
+    metadata = brief.get("metadata")
+    if (
+        not isinstance(metadata, Mapping)
+        or not str(metadata.get("music_plan") or "").strip()
+        or not isinstance((state.get("input") or {}).get("narration"), Mapping)
+        or (project / "artifacts" / "music_track.json").exists()
+        or any((project / "assets" / "music").glob("*"))
+    ):
+        refuse()
+    manifest = _read_json(str(project / "artifacts" / "asset_manifest.json"))
+    if "musicTrack" in manifest or "music" in manifest:
+        refuse()
+    readiness = selection_readiness(project)
+    if (
+        not str(readiness.get("disposition") or "").startswith("ready_for_manifest")
+        or int(readiness.get("requiredEventCount") or 0) < 1
+    ):
+        refuse()
+    binding = validate_asset_manifest_command(project, manifest)
+    if not binding.get("enforced"):
+        refuse()
 
 
 def _require_asset_candidate_phase(state: Mapping[str, Any]) -> None:
@@ -4358,11 +4421,12 @@ def search_workflow_music(
 ) -> dict[str, Any]:
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     _require_asset_candidate_phase(state)
-    _require_music_not_scoped(state)
     source = assert_read_allowed(state, str(input_path))
+    payload = _read_json(str(source))
+    _require_music_not_scoped(state, provider=str(payload.get("provider") or ""))
     project_root = _project_root(state)
     return search_music_command(
-        project_root.parent, project_root.name, _read_json(str(source))
+        project_root.parent, project_root.name, payload
     )
 
 
@@ -4373,9 +4437,9 @@ def fetch_workflow_music(
 ) -> dict[str, Any]:
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     _require_asset_candidate_phase(state)
-    _require_music_not_scoped(state)
     source = assert_read_allowed(state, str(metadata_path))
     project_root = _project_root(state)
+    _require_music_not_scoped(state, search_id=search_id)
     return fetch_music_command(
         project_root.parent, project_root.name, search_id, _read_json(str(source)),
         output_path=output_path,

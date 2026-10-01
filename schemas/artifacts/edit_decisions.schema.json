@@ -1281,6 +1281,11 @@
                 "reason": {
                   "type": "string",
                   "description": "The judgement's evidence, so a later reader can disagree informed."
+                },
+                "acknowledged": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The producer's recorded Content-ID limitation acknowledgement."
                 }
               }
             }
