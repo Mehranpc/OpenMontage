@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from lib.checkpoint import write_checkpoint
 from lib import persian_asset_commands as assets
 from lib import persian_asset_workspace as workspace
 from lib import persian_music_commands as music
@@ -18,6 +19,25 @@ def _prepared(tmp_path, monkeypatch):
     _bootstrap_to_assets(tmp_path)
     project = tmp_path / "run"
     candidate, _ = _selected_candidate(project)
+    plan = json.loads((project / "checkpoint_scene_plan.json").read_text())["artifacts"]["scene_plan"]
+    brief = {
+        "version": "1.0", "title": "Sample", "hook": "نمونه",
+        "key_points": ["نمونه"], "tone": "conversational", "style": "real footage",
+        "target_platform": "instagram-reels", "target_duration_seconds": 4.0,
+        "metadata": {"music_plan": "warm minimal instrumental beneath narration"},
+    }
+    script = {
+        "version": "1.0", "title": "Sample", "total_duration_seconds": 4.0,
+        "sections": [{"id": "beat-1", "text": "این یک جمله نمونه است",
+                      "start_seconds": 0.0, "end_seconds": 4.0}],
+    }
+    for stage, artifacts in [
+        ("idea", {"brief": brief}), ("script", {"script": script}),
+        ("scene_plan", {"scene_plan": plan}),
+    ]:
+        write_checkpoint(tmp_path, "run", stage, "completed", artifacts,
+                         pipeline_type="persian-footage")
+    (project / "artifacts" / "brief.json").write_text(json.dumps(brief))
     assets.build_manifest(tmp_path, "run")
     assets.write_assets_checkpoint(tmp_path, "run", tool_gap="MUSIC_MISSING_SCOPED_RECOVERY")
     state = workflow.load_workflow_state("run", pipeline_dir=tmp_path)
@@ -29,9 +49,6 @@ def _prepared(tmp_path, monkeypatch):
     state["asset_usage"] = {"completed_passes": [0, 1], "pending_pass": None}
     state["send_backs"] = 1
     (project / workflow.STATE_FILENAME).write_text(json.dumps(state))
-    (project / "artifacts" / "brief.json").write_text(json.dumps({
-        "metadata": {"music_plan": "warm minimal instrumental beneath narration"}
-    }))
     request = project / "music-request.json"
     request.write_text(json.dumps(_request()))
     metadata = project / "music-metadata.json"
