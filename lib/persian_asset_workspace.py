@@ -1436,20 +1436,53 @@ def selection_readiness(project_dir: Path) -> dict[str, Any]:
     invalid: dict[str, list[dict[str, Any]]] = {}
     stale: dict[str, list[dict[str, Any]]] = {}
     declarations: dict[str, list[dict[str, Any]]] = {}
-    bound: dict[str, dict[str, str]] = {}
+    bound: dict[str, dict[str, Any]] = {}
     for event_id, selection in sorted(selections.items()):
         candidate_id = str(selection.get("candidateId") or "")
+        bound[event_id] = {
+            "selection": {
+                "candidateId": candidate_id,
+                "candidateIdentitySha256": selection.get("candidateIdentitySha256"),
+                "reviewSha256": selection.get("reviewSha256"),
+            },
+        }
         try:
             candidate = load_asset_candidate(project_dir, candidate_id)
         except PersianAssetWorkspaceError as exc:
             stale[event_id] = [{"code": "SELECTION_CANDIDATE_MISSING", "candidateId": candidate_id,
                                 "message": str(exc)}]
             continue
-        bound[event_id] = {
-            "candidateId": candidate_id,
-            "candidateIdentitySha256": str(candidate.get("identitySha256") or ""),
-            "reviewSha256": str(candidate.get("reviewSha256") or ""),
+        actual_identity_sha = _sha256(candidate.get("identity"))
+        actual_review_sha = _sha256({
+            "candidateIdentitySha256": candidate.get("identitySha256"),
+            "candidateContext": candidate.get("context") or {},
+            "review": candidate.get("review"),
+        })
+        bound[event_id]["candidate"] = {
+            "candidateIdentitySha256": candidate.get("identitySha256"),
+            "reviewSha256": candidate.get("reviewSha256"),
+            "actualIdentitySha256": actual_identity_sha,
+            "actualReviewSha256": actual_review_sha,
+            "sourceSha256": _sha256(candidate.get("source")),
+            "disposition": candidate.get("disposition"),
         }
+        if (
+            actual_identity_sha != candidate.get("identitySha256")
+            or actual_review_sha != candidate.get("reviewSha256")
+            or candidate.get("disposition") == "rejected"
+        ):
+            stale[event_id] = [{
+                "code": "CANDIDATE_EVIDENCE_STALE", "candidateId": candidate_id,
+                "visualEventId": event_id,
+                "expected": {"identitySha256": candidate.get("identitySha256"),
+                             "reviewSha256": candidate.get("reviewSha256")},
+                "observed": {"identitySha256": actual_identity_sha,
+                             "reviewSha256": actual_review_sha,
+                             "disposition": candidate.get("disposition")},
+                "message": f"{event_id}: candidate no longer binds its immutable identity/context/review",
+                "recovery": ["reuse_reviewed_alternate", "reject_and_retry"],
+            }]
+            continue
         if (
             selection.get("candidateIdentitySha256") != candidate.get("identitySha256")
             or selection.get("reviewSha256") != candidate.get("reviewSha256")
