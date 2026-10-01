@@ -52,8 +52,9 @@ def _protected_bytes(project):
                                "checkpoint_scene_plan.json", "asset_manifest.json"})}
 
 
+@pytest.mark.parametrize("music_field", ["music", "musicTrack"])
 def test_initial_music_after_complete_early_visual_repair_keeps_scope_and_bindings(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path, monkeypatch, music_field,
 ):
     project, candidate, request, metadata, tool = _prepared(tmp_path, monkeypatch)
     before = _protected_bytes(project)
@@ -79,13 +80,13 @@ def test_initial_music_after_complete_early_visual_repair_keeps_scope_and_bindin
     with pytest.raises(workflow.PersianVideoWorkflowError, match="outside scoped"):
         workflow.stage_workflow_asset_candidate("run", unrelated, pipeline_dir=tmp_path)
     overrides = project / "manifest-with-music.json"
-    overrides.write_text(json.dumps({"musicTrack": fetched["track"]}))
+    overrides.write_text(json.dumps({music_field: fetched["track"]}))
     workflow.build_workflow_asset_manifest(
         "run", overrides_path=overrides, pipeline_dir=tmp_path)
     result = workflow.write_workflow_assets_checkpoint("run", pipeline_dir=tmp_path)
     assert result["status"] == "completed"
     checkpoint = json.loads((project / "checkpoint_assets.json").read_text())
-    assert checkpoint["artifacts"]["asset_manifest"]["musicTrack"] == fetched["track"]
+    assert checkpoint["artifacts"]["asset_manifest"][music_field] == fetched["track"]
 
 
 @pytest.mark.parametrize("damage", [
@@ -186,11 +187,12 @@ def test_cli_genuine_stop_still_blocks_initial_music(tmp_path: Path, monkeypatch
     assert json.loads(state_path.read_text())["status"] == "failed"
 
 
+@pytest.mark.parametrize("music_field", ["music", "musicTrack"])
 @pytest.mark.parametrize("field,value", [
     ("acknowledged", False), ("acknowledged", ""), ("unrecognized", "invented"),
 ])
 def test_music_manifest_still_rejects_malformed_or_unknown_risk_fields(
-    tmp_path: Path, monkeypatch, field, value,
+    tmp_path: Path, monkeypatch, field, value, music_field,
 ):
     from lib.persian_music import build_music_track
 
@@ -202,5 +204,5 @@ def test_music_manifest_still_rejects_malformed_or_unknown_risk_fields(
     track["contentIdRisk"][field] = value
     before = (project / "artifacts/asset_manifest.json").read_bytes()
     with pytest.raises(assets.PersianAssetCommandError):
-        assets.build_manifest(tmp_path, "run", overrides={"musicTrack": track})
+        assets.build_manifest(tmp_path, "run", overrides={music_field: track})
     assert (project / "artifacts/asset_manifest.json").read_bytes() == before
