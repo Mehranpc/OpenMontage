@@ -3293,6 +3293,74 @@ def reopen_asset_search(
         "nextStep": "run asset-search --retry-pass 0 with only the appended queries for these events",
     }
 
+def _weakening_evidence(
+    project_root: Path, event: Mapping[str, Any], fields: Mapping[str, Any],
+    amendment: Mapping[str, Any], index: int, event_id: str,
+) -> dict[str, str] | None:
+    """Bind a plan change that lowers scene intent to reviewed footage (#360).
+
+    Dropping ``shows_subject`` or moving ``fallback_level`` down the ladder is a
+    correction only when a reviewed, unrejected candidate of the same event shows the
+    new value. Without that it would just relabel the plan to fit a clip.
+    """
+    from lib.persian_scenes import FALLBACK_LEVELS
+
+    weakened: dict[str, Any] = {}
+    if "shows_subject" in fields and event.get("shows_subject") is True and fields["shows_subject"] is not True:
+        weakened["shows_subject"] = fields["shows_subject"]
+    if "fallback_level" in fields:
+        old_level, new_level = str(event.get("fallback_level") or ""), str(fields.get("fallback_level") or "")
+        if (
+            old_level in FALLBACK_LEVELS and new_level in FALLBACK_LEVELS
+            and FALLBACK_LEVELS.index(new_level) > FALLBACK_LEVELS.index(old_level)
+        ):
+            weakened["fallback_level"] = new_level
+    if not weakened:
+        return None
+    label = f"amendment[{index}] ({event_id})"
+    if "shows_subject" in weakened and str(event.get("semantic_role") or "") == "reward_problem_hook":
+        raise PersianVideoWorkflowError(
+            f"{label}: the opening reward_problem_hook must show its subject; reconciling it "
+            "away only moves the failure to the manifest. Select or find footage that shows it"
+        )
+    candidate_id = str(amendment.get("evidence_candidate_id") or "").strip()
+    if not candidate_id:
+        raise PersianVideoWorkflowError(
+            f"{label}: changing {', '.join(sorted(weakened))} lowers the planned scene intent; "
+            "give evidence_candidate_id, a reviewed candidate of this event whose review "
+            "records the corrected value"
+        )
+    try:
+        candidate = load_asset_candidate(project_root, candidate_id)
+    except PersianAssetWorkspaceError as exc:
+        raise PersianVideoWorkflowError(f"{label}: {exc}") from exc
+    review = candidate.get("review") if isinstance(candidate.get("review"), Mapping) else {}
+    if (
+        str((candidate.get("context") or {}).get("visualEventId") or "") != event_id
+        or not candidate.get("reviewSha256")
+        or candidate.get("disposition") == "rejected"
+    ):
+        raise PersianVideoWorkflowError(
+            f"{label}: evidence candidate {candidate_id!r} must be a reviewed, unrejected "
+            "candidate of this visual event"
+        )
+    from lib.persian_asset_workspace import _candidate_binding_diagnostics
+
+    integrity = _candidate_binding_diagnostics(candidate, event_id)
+    if integrity:
+        raise PersianVideoWorkflowError(
+            f"{label}: [CANDIDATE_EVIDENCE_STALE] evidence candidate {candidate_id!r} "
+            "no longer binds its immutable identity/context/review"
+        )
+    for field, value in sorted(weakened.items()):
+        if review.get(field) != value:
+            raise PersianVideoWorkflowError(
+                f"{label}: evidence candidate {candidate_id!r} review records {field}="
+                f"{review.get(field)!r}, not {value!r}; reviewed evidence does not support the change"
+            )
+    return {"candidateId": candidate_id, "reviewSha256": str(candidate["reviewSha256"])}
+
+
 @state_locked
 def reconcile_scene_plan(
     project_id: str,
@@ -3395,6 +3463,7 @@ def reconcile_scene_plan(
                 "Timing, queries and identity need a real replan (send-back)."
             )
         event = events[event_id]
+        evidence = _weakening_evidence(root, event, fields, amendment, index, event_id)
         before = {key: event.get(key) for key in fields}
         for key, value in fields.items():
             if value is None:
@@ -3418,6 +3487,8 @@ def reconcile_scene_plan(
                     "audit refuses it, so reconciling to it only moves the failure later"
                 )
         record = {"visual_event_id": event_id, "before": before, "after": dict(fields)}
+        if evidence:
+            record["evidence"] = evidence
         if appended_queries:
             event["reconciled_queries"] = [*(event.get("reconciled_queries") or []), *appended_queries]
             record["queries_appended"] = list(appended_queries)
