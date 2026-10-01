@@ -205,3 +205,38 @@ def test_an_unreadable_plan_is_never_a_clean_readiness(tmp_path: Path) -> None:
     assert acquisition["readiness"]["planProblem"]["code"] == "PLAN_INVALID"
     assert "cannot be built" in acquisition["nextStep"]
     assert json.loads(json.dumps(acquisition)) == acquisition
+
+
+@pytest.mark.parametrize("dependency", ["selection_binding", "identity", "review", "context"])
+def test_readiness_binds_the_ledger_and_actual_immutable_evidence(
+    tmp_path: Path, dependency: str,
+) -> None:
+    _run_at_acquire(tmp_path)
+    project = tmp_path / "run"
+    event = next(iter(_plan(tmp_path)["beats"][0]["visual_events"]))["id"]
+    candidate_id = _candidate(tmp_path, event, "bound-evidence")
+    select_workflow_asset_candidate(
+        "run", event, candidate_id, rejected_alternatives={}, pipeline_dir=tmp_path,
+    )
+    before = workspace.selection_readiness(project)
+    if dependency == "selection_binding":
+        selections = workspace._read_selections(project)
+        selections[event]["reviewSha256"] = "0" * 64
+        workspace._write_selections(project, selections)
+    else:
+        candidate = workspace.load_asset_candidate(project, candidate_id)
+        if dependency == "identity":
+            candidate["identity"]["sourceWindow"]["startSeconds"] += 0.25
+            candidate["identity"]["sourceWindow"]["endSeconds"] += 0.25
+        elif dependency == "review":
+            candidate["review"]["shows_subject"] = not candidate["review"]["shows_subject"]
+        else:
+            candidate["context"]["query"] = "changed without a new immutable review"
+        # Model a torn/legacy record: claimed hashes were not refreshed.
+        workspace._atomic_json(workspace._candidate_path(project, candidate_id), candidate)
+    durable = _project_bytes(project)
+    after = workspace.selection_readiness(project)
+    assert after["inputsSha256"] != before["inputsSha256"]
+    assert event in after["staleEvents"]
+    assert after["validSelectionCount"] == 0
+    assert _project_bytes(project) == durable

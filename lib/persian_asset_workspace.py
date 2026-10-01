@@ -25,6 +25,10 @@ _REJECTION_CATEGORIES = {"technical", "semantic", "editorial"}
 _STAGED_STOCK_RISKS = {"low", "medium", "high"}
 _RESOLUTION_QUALITIES = {"strong", "acceptable", "weak"}
 _EPSILON = 1e-9
+_REVIEWED_DECLARATION_FIELDS = (
+    "fallback_level", "fallback_reason", "semantic_role", "semantic_direction",
+    "opening_semantic_match",
+)
 
 
 class PersianAssetWorkspaceError(ValueError):
@@ -464,6 +468,11 @@ def _validate_review(review: Mapping[str, Any]) -> dict[str, Any]:
             result["fallback_reason"] = reason
         else:
             result.pop("fallback_reason", None)
+    for field in ("semantic_role", "semantic_direction"):
+        if field in result and (not isinstance(result[field], str) or not result[field].strip()):
+            raise PersianAssetWorkspaceError(f"{field} must be a non-empty string")
+    if "opening_semantic_match" in result and not isinstance(result["opening_semantic_match"], bool):
+        raise PersianAssetWorkspaceError("opening_semantic_match must be boolean")
     _validate_manifest_frame_review(frame)
     return result
 
@@ -679,6 +688,9 @@ def _manifest_evidence(candidate: Mapping[str, Any]) -> dict[str, Any]:
         "shows_subject": review.get("shows_subject"),
         "frame_review": _manifest_frame_review(review.get("frame_review")),
         **_reviewed_fallback(review),
+        **{field: review[field] for field in (
+            "semantic_role", "semantic_direction", "opening_semantic_match",
+        ) if field in review},
     }
 
 
@@ -966,7 +978,7 @@ def validate_asset_manifest_against_workspace(
                 raise PersianAssetWorkspaceError(
                     f"asset_manifest {event_id!r} {field} does not match persisted candidate review"
                 )
-        for field in ("fallback_level", "fallback_reason"):
+        for field in _REVIEWED_DECLARATION_FIELDS:
             if field in expected_evidence and row.get(field) != expected_evidence[field]:
                 raise PersianAssetWorkspaceError(
                     f"asset_manifest {event_id!r} {field} does not match persisted candidate review"
@@ -1312,7 +1324,7 @@ def build_asset_manifest_from_workspace(
                 f"manifest override for {event_id!r} cannot replace canonical fields: "
                 + ", ".join(unsupported_fields)
             )
-        for field in ("fallback_level", "fallback_reason"):
+        for field in _REVIEWED_DECLARATION_FIELDS:
             if field in evidence and field in event_override and event_override[field] != evidence[field]:
                 raise PersianAssetWorkspaceError(
                     f"manifest override for {event_id!r} cannot replace reviewed {field} "
