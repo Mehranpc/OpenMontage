@@ -1628,7 +1628,12 @@ def asset_workspace_status(project_dir: Path) -> dict[str, Any]:
 
     weak_warnings: list[dict[str, Any]] = []
     for event_id, selection in selections.items():
-        candidate = load_asset_candidate(project_dir, str(selection.get("candidateId") or ""))
+        try:
+            candidate = load_asset_candidate(project_dir, str(selection.get("candidateId") or ""))
+        except PersianAssetWorkspaceError:
+            # Optional weak-resolution warnings need readable evidence. Keep the
+            # ledger visible; selection_readiness diagnoses the stale record (#368).
+            continue
         role = str((candidate.get("context") or {}).get("narrativeRole") or "").strip().lower()
         review = candidate.get("review") or {}
         if role in {"resolution", "ending", "closing"} and review.get("resolution_quality") == "weak":
