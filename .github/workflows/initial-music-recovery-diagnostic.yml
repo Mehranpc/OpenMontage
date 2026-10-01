@@ -1,0 +1,16 @@
+name: Initial music recovery diagnostic
+on:
+  push:
+    branches: [codex/initial-music-scoped-recovery]
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: make install-dev
+      - run: .venv/bin/python -m pytest tests/lib/test_initial_music_scoped_recovery.py tests/lib/test_persian_asset_commands.py tests/lib/test_persian_music_commands.py -q
