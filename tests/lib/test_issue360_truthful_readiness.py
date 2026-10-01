@@ -245,14 +245,21 @@ def test_readiness_binds_the_ledger_and_actual_immutable_evidence(
     assert _project_bytes(project) == durable
 
 
-@pytest.mark.parametrize("shape", ["missing_beats", "empty_beats", "malformed_artifacts"])
+@pytest.mark.parametrize("shape", ["missing_beats", "empty_beats", "malformed_artifacts", "missing_completed_plan", "nonobject_checkpoint"])
 def test_malformed_plan_shape_is_diagnosed_without_clean_readiness(
     tmp_path: Path, shape: str,
 ) -> None:
     project = _run_at_acquire(tmp_path)
     path = project / "checkpoint_scene_plan.json"
     checkpoint = json.loads(path.read_text(encoding="utf-8"))
-    if shape == "malformed_artifacts":
+    artifact = project / "artifacts" / "scene_plan.json"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_text(json.dumps(checkpoint["artifacts"]["scene_plan"]), encoding="utf-8")
+    if shape == "nonobject_checkpoint":
+        checkpoint = ["not a checkpoint object"]
+    elif shape == "missing_completed_plan":
+        checkpoint["artifacts"] = {}
+    elif shape == "malformed_artifacts":
         checkpoint["artifacts"] = ["not an artifact mapping"]
     else:
         checkpoint["artifacts"]["scene_plan"] = (
@@ -265,4 +272,18 @@ def test_malformed_plan_shape_is_diagnosed_without_clean_readiness(
     assert acquisition["readiness"]["planProblem"]["code"] == "PLAN_INVALID"
     assert acquisition["validSelectionCount"] == 0
     assert "every footage event has a selection" not in acquisition["nextStep"]
+    assert _project_bytes(project) == before
+
+
+def test_readiness_retains_valid_artifact_only_legacy_plans(tmp_path: Path) -> None:
+    project = _run_at_acquire(tmp_path)
+    artifact = project / "artifacts" / "scene_plan.json"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_text(json.dumps(_plan(tmp_path)), encoding="utf-8")
+    (project / "checkpoint_scene_plan.json").unlink()
+    before = _project_bytes(project)
+    readiness = workspace.selection_readiness(project)
+    assert readiness["disposition"] == "incomplete"
+    assert readiness["requiredEventCount"] == 3
+    assert readiness["unresolvedEvents"] == ["event-0", "event-1", "event-2"]
     assert _project_bytes(project) == before
