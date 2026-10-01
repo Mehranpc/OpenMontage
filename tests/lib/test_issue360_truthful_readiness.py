@@ -243,3 +243,26 @@ def test_readiness_binds_the_ledger_and_actual_immutable_evidence(
     with pytest.raises(PersianAssetWorkspaceError, match="STALE"):
         workspace.select_asset_candidate(project, event, candidate_id, rejected_alternatives={})
     assert _project_bytes(project) == durable
+
+
+@pytest.mark.parametrize("shape", ["missing_beats", "empty_beats", "malformed_artifacts"])
+def test_malformed_plan_shape_is_diagnosed_without_clean_readiness(
+    tmp_path: Path, shape: str,
+) -> None:
+    project = _run_at_acquire(tmp_path)
+    path = project / "checkpoint_scene_plan.json"
+    checkpoint = json.loads(path.read_text(encoding="utf-8"))
+    if shape == "malformed_artifacts":
+        checkpoint["artifacts"] = ["not an artifact mapping"]
+    else:
+        checkpoint["artifacts"]["scene_plan"] = (
+            {"version": "2.0"} if shape == "missing_beats" else {"version": "2.0", "beats": []}
+        )
+    path.write_text(json.dumps(checkpoint), encoding="utf-8")
+    before = _project_bytes(project)
+    acquisition = workflow_status("run", pipeline_dir=tmp_path, now=BASE)["acquisition"]
+    assert acquisition["readiness"]["disposition"] == "plan_unavailable"
+    assert acquisition["readiness"]["planProblem"]["code"] == "PLAN_INVALID"
+    assert acquisition["validSelectionCount"] == 0
+    assert "every footage event has a selection" not in acquisition["nextStep"]
+    assert _project_bytes(project) == before
