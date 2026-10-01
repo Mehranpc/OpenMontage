@@ -260,7 +260,8 @@
           "required": ["level"],
           "properties": {
             "level": { "type": "string", "enum": ["low", "unknown", "high"], "description": "low must cite a recognised licence; high is refused; unknown passes only with a recorded acknowledgement." },
-            "reason": { "type": "string", "description": "The judgement's evidence." }
+            "reason": { "type": "string", "description": "The judgement's evidence." },
+            "acknowledged": { "type": "string", "minLength": 1, "description": "The producer's recorded Content-ID limitation acknowledgement." }
           },
           "additionalProperties": false
         }

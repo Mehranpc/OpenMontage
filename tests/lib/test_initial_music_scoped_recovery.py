@@ -19,6 +19,7 @@ def _prepared(tmp_path, monkeypatch):
     project = tmp_path / "run"
     candidate, _ = _selected_candidate(project)
     assets.build_manifest(tmp_path, "run")
+    assets.write_assets_checkpoint(tmp_path, "run", tool_gap="MUSIC_MISSING_SCOPED_RECOVERY")
     state = workflow.load_workflow_state("run", pipeline_dir=tmp_path)
     state["asset_reacquisition_scope"] = {
         "version": "1.0", "diagnosticCode": "ASSET_QUERY_EXHAUSTED",
@@ -183,3 +184,23 @@ def test_cli_genuine_stop_still_blocks_initial_music(tmp_path: Path, monkeypatch
         workflow.main(["assets", "music", "search", "run", "--json", str(request)])
     assert tool.calls == 0
     assert json.loads(state_path.read_text())["status"] == "failed"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("acknowledged", False), ("acknowledged", ""), ("unrecognized", "invented"),
+])
+def test_music_manifest_still_rejects_malformed_or_unknown_risk_fields(
+    tmp_path: Path, monkeypatch, field, value,
+):
+    from lib.persian_music import build_music_track
+
+    project, candidate, request, metadata, tool = _prepared(tmp_path, monkeypatch)
+    track = build_music_track({
+        **_metadata(), "path": str(project / "assets/music/bed.mp3"),
+        "source": "pixabay_music", "attribution": "Calm Track — Test Artist",
+    }).to_dict()
+    track["contentIdRisk"][field] = value
+    before = (project / "artifacts/asset_manifest.json").read_bytes()
+    with pytest.raises(assets.PersianAssetCommandError):
+        assets.build_manifest(tmp_path, "run", overrides={"musicTrack": track})
+    assert (project / "artifacts/asset_manifest.json").read_bytes() == before

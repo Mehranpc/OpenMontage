@@ -4115,7 +4115,7 @@ def _require_music_not_scoped(
     ):
         refuse()
     manifest = _read_json(str(project / "artifacts" / "asset_manifest.json"))
-    if manifest.get("musicTrack") or manifest.get("music"):
+    if "musicTrack" in manifest or "music" in manifest:
         refuse()
     readiness = selection_readiness(project)
     if (
