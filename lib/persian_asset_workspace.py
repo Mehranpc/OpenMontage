@@ -709,6 +709,65 @@ def _reviewed_fallback(review: Mapping[str, Any]) -> dict[str, Any]:
 
 
 
+def _candidate_evidence_snapshot(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    """Bind claimed hashes to the actual immutable bytes using canonical digests."""
+    return {
+        "candidateId": candidate.get("candidateId"),
+        "candidateIdentitySha256": candidate.get("identitySha256"),
+        "reviewSha256": candidate.get("reviewSha256"),
+        "actualIdentitySha256": _sha256(candidate.get("identity")),
+        "actualReviewSha256": _sha256({
+            "candidateIdentitySha256": candidate.get("identitySha256"),
+            "candidateContext": candidate.get("context") or {},
+            "review": candidate.get("review"),
+        }),
+        "sourceSha256": _sha256(candidate.get("source")),
+        "disposition": candidate.get("disposition"),
+    }
+
+
+def _candidate_binding_diagnostics(
+    candidate: Mapping[str, Any], event_id: str,
+    selection: Mapping[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    snapshot = _candidate_evidence_snapshot(candidate)
+    candidate_id = str(candidate.get("candidateId") or "")
+    if (
+        snapshot["actualIdentitySha256"] != candidate.get("identitySha256")
+        or snapshot["actualReviewSha256"] != candidate.get("reviewSha256")
+        or candidate_id != _candidate_id(candidate.get("identity") or {})
+        or candidate.get("disposition") == "rejected"
+    ):
+        return [{
+            "code": "CANDIDATE_EVIDENCE_STALE", "ruleClass": "event_local",
+            "candidateId": candidate_id, "visualEventId": event_id,
+            "field": "candidate.identity/context/review",
+            "expected": {"identitySha256": candidate.get("identitySha256"),
+                         "reviewSha256": candidate.get("reviewSha256")},
+            "observed": {"identitySha256": snapshot["actualIdentitySha256"],
+                         "reviewSha256": snapshot["actualReviewSha256"],
+                         "disposition": candidate.get("disposition")},
+            "message": f"{event_id}: candidate no longer binds its immutable identity/context/review",
+            "recovery": ["reuse_reviewed_alternate", "reject_and_retry"],
+        }]
+    if selection is not None and (
+        selection.get("candidateIdentitySha256") != candidate.get("identitySha256")
+        or selection.get("reviewSha256") != candidate.get("reviewSha256")
+    ):
+        return [{
+            "code": "SELECTION_STALE", "ruleClass": "event_local",
+            "candidateId": candidate_id, "visualEventId": event_id,
+            "field": "selection.identity/review",
+            "expected": {"candidateIdentitySha256": selection.get("candidateIdentitySha256"),
+                         "reviewSha256": selection.get("reviewSha256")},
+            "observed": {"candidateIdentitySha256": candidate.get("identitySha256"),
+                         "reviewSha256": candidate.get("reviewSha256")},
+            "message": f"{event_id}: selection no longer binds its candidate's identity/review",
+            "recovery": ["reuse_reviewed_alternate", "reject_and_retry"],
+        }]
+    return []
+
+
 def _same_number(left: object, right: object) -> bool:
     try:
         return abs(float(left) - float(right)) <= 1e-6
@@ -1062,6 +1121,11 @@ def assess_candidate_admission(
     event_id = str(visual_event_id or "").strip()
     candidate_id = str(candidate.get("candidateId") or "")
     requirement, diagnostics = _admission_requirement(project_dir, event_id)
+    existing_binding = selections.get(event_id)
+    diagnostics.extend(_candidate_binding_diagnostics(
+        candidate, event_id,
+        existing_binding if existing_binding and existing_binding.get("candidateId") == candidate_id else None,
+    ))
     declarations: list[dict[str, Any]] = []
     if requirement is not None:
         row = _manifest_row(candidate)
@@ -1452,49 +1516,10 @@ def selection_readiness(project_dir: Path) -> dict[str, Any]:
             stale[event_id] = [{"code": "SELECTION_CANDIDATE_MISSING", "candidateId": candidate_id,
                                 "message": str(exc)}]
             continue
-        actual_identity_sha = _sha256(candidate.get("identity"))
-        actual_review_sha = _sha256({
-            "candidateIdentitySha256": candidate.get("identitySha256"),
-            "candidateContext": candidate.get("context") or {},
-            "review": candidate.get("review"),
-        })
-        bound[event_id]["candidate"] = {
-            "candidateIdentitySha256": candidate.get("identitySha256"),
-            "reviewSha256": candidate.get("reviewSha256"),
-            "actualIdentitySha256": actual_identity_sha,
-            "actualReviewSha256": actual_review_sha,
-            "sourceSha256": _sha256(candidate.get("source")),
-            "disposition": candidate.get("disposition"),
-        }
-        if (
-            actual_identity_sha != candidate.get("identitySha256")
-            or actual_review_sha != candidate.get("reviewSha256")
-            or candidate.get("disposition") == "rejected"
-        ):
-            stale[event_id] = [{
-                "code": "CANDIDATE_EVIDENCE_STALE", "candidateId": candidate_id,
-                "visualEventId": event_id,
-                "expected": {"identitySha256": candidate.get("identitySha256"),
-                             "reviewSha256": candidate.get("reviewSha256")},
-                "observed": {"identitySha256": actual_identity_sha,
-                             "reviewSha256": actual_review_sha,
-                             "disposition": candidate.get("disposition")},
-                "message": f"{event_id}: candidate no longer binds its immutable identity/context/review",
-                "recovery": ["reuse_reviewed_alternate", "reject_and_retry"],
-            }]
-            continue
-        if (
-            selection.get("candidateIdentitySha256") != candidate.get("identitySha256")
-            or selection.get("reviewSha256") != candidate.get("reviewSha256")
-        ):
-            stale[event_id] = [{
-                "code": "SELECTION_STALE", "candidateId": candidate_id,
-                "expected": {"candidateIdentitySha256": selection.get("candidateIdentitySha256"),
-                             "reviewSha256": selection.get("reviewSha256")},
-                "observed": {"candidateIdentitySha256": candidate.get("identitySha256"),
-                             "reviewSha256": candidate.get("reviewSha256")},
-                "message": f"{event_id}: selection no longer binds its candidate's identity/review",
-            }]
+        bound[event_id]["candidate"] = _candidate_evidence_snapshot(candidate)
+        binding_problems = _candidate_binding_diagnostics(candidate, event_id, selection)
+        if binding_problems:
+            stale[event_id] = binding_problems
             continue
         if plan_problem is not None:
             continue
