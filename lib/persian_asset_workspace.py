@@ -645,7 +645,11 @@ def candidate_recovery_evidence(
             row.update(status="unavailable", codes=["CANDIDATE_RECORD_ID_MISMATCH"])
         elif candidate.get("disposition") == "rejected":
             rejection = candidate.get("rejection")
-            if isinstance(rejection, Mapping):
+            if (
+                isinstance(rejection, Mapping)
+                and rejection.get("category") in _REJECTION_CATEGORIES
+                and str(rejection.get("reason") or "").strip()
+            ):
                 row.update(status="rejected", rejection={
                     "category": str(rejection.get("category") or ""),
                     "reason": str(rejection.get("reason") or "")[:400],

@@ -186,3 +186,31 @@ def test_pending_pass_has_no_exhaustion_frontier(tmp_path):
     assert preparation['decisionRequired'] is None
     assert preparation['legalOperations'] == ['asset-result (reconcile pending pass 0)']
     assert _project_bytes(project) == before
+
+
+@pytest.mark.parametrize('kind', ['unreviewed', 'malformed_rejection'])
+def test_incomplete_or_unreviewed_evidence_never_grants_recovery(tmp_path, monkeypatch, kind):
+    from lib import persian_region_commands as regions
+
+    project = _exhaust(tmp_path)
+    candidate = _candidate(tmp_path, 'event-0', 'not-approved')
+    record = workspace.load_asset_candidate(project, candidate)
+    if kind == 'unreviewed':
+        record['review'] = None
+        record['reviewSha256'] = None
+        record['disposition'] = 'staged'
+    else:
+        record['disposition'] = 'rejected'
+        record['rejection'] = {}
+    workspace._atomic_json(workspace._candidate_path(project, candidate), record)
+    def forbidden(*args, **kwargs):
+        pytest.fail('read-only frontier attempted provider/browser work')
+    monkeypatch.setattr(workflow, 'bounded_asset_search_request', forbidden)
+    monkeypatch.setattr(regions, 'carrier_moment_placement', forbidden)
+    before = _project_bytes(project)
+    preparation = _preparation(tmp_path)
+    report = preparation['recoveryEvidence']
+    assert _row(report, candidate)['status'] == ('unreviewed' if kind == 'unreviewed' else 'unavailable')
+    assert report['complete'] is (kind == 'unreviewed')
+    assert preparation['decisionRequired'] == {'kind': 'send_back_budget_spent', 'events': ['event-0']}
+    assert _project_bytes(project) == before
