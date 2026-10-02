@@ -2246,6 +2246,33 @@ def _assert_no_open_explicit_work(state: Mapping[str, Any], phase: str) -> None:
         )
 
 
+def _phase_attempt_baseline(state: dict[str, Any], phase: str) -> int:
+    """Keep monotonic history while bounding attempts in an accepted recovery."""
+    baselines = dict(state.get("phase_attempt_baselines") or {})
+    if phase in baselines:
+        return int(baselines[phase])
+    # Compatibility for already accepted scoped rewinds predating explicit baselines.
+    # Their durable grant instant separates old attempts from actual recovery work.
+    if phase == "acquire_assets" and isinstance(state.get("asset_reacquisition_scope"), Mapping):
+        grant = state.get("asset_reacquisition_grant") or {}
+        try:
+            granted_at = _parse_timestamp(str(grant.get("grantedAt") or ""))
+        except (ValueError, TypeError):
+            return 0
+        prior = []
+        for entry in (state.get("phase_telemetry") or {}).get(phase) or []:
+            try:
+                if _parse_timestamp(str(entry.get("started_at") or "")) < granted_at:
+                    prior.append(int(entry.get("attempt") or 0))
+            except (ValueError, TypeError):
+                continue
+        baseline = max(prior, default=0)
+        baselines[phase] = baseline
+        state["phase_attempt_baselines"] = baselines
+        return baseline
+    return 0
+
+
 @state_locked
 def record_phase_attempt(
     project_id: str,
@@ -2267,9 +2294,13 @@ def record_phase_attempt(
     attempts = dict(state.get("attempts") or {})
     count = int(attempts.get(phase, 0)) + 1
     limit = 1 + int(state["budgets"]["max_revisions_per_stage"])
-    if count > limit:
+    baseline = _phase_attempt_baseline(state, phase)
+    if baseline < 0 or baseline > int(attempts.get(phase, 0)):
+        raise PersianVideoWorkflowError("invalid phase recovery attempt baseline")
+    cycle_count = count - baseline
+    if cycle_count > limit:
         raise PersianVideoWorkflowError(
-            f"retry budget exhausted for {phase}: {count - 1} retries > {limit - 1}"
+            f"retry budget exhausted for {phase}: {cycle_count - 1} retries > {limit - 1}"
         )
     attempts[phase] = count
     state["attempts"] = attempts
@@ -2991,6 +3022,7 @@ def request_send_back(
             "attempts": previous_attempts,
         })
         state["revision_cycle_archive"] = archive
+        state.pop("phase_attempt_baselines", None)
         state["user_revision_cycles"] = int(state.get("user_revision_cycles", 0)) + 1
         state["send_backs"] = 0
         state["budget_window_started_at"] = effective_now.isoformat()
@@ -3020,6 +3052,14 @@ def request_send_back(
             **({"editAttemptId": edit_attempt_id} if edit_attempt_id else {}),
         }
         state["asset_reacquisition_scope"] = scope
+        # A sanctioned rewind starts bounded attempts for its downstream phases;
+        # cumulative counters/telemetry remain unchanged for run-wide reporting.
+        baselines = dict(state.get("phase_attempt_baselines") or {})
+        baselines.update({
+            phase: int(previous_attempts.get(phase, 0))
+            for phase in PHASES[target_index:]
+        })
+        state["phase_attempt_baselines"] = baselines
         # A scoped repair has to be able to run the authored queries for the events it
         # is repairing. Without a bounded grant the whole-run candidate ceiling is
         # already spent, so the primary query consumes the remainder and the alternate
@@ -3111,6 +3151,7 @@ def request_send_back(
             "reason_code": str(scoped_plan["reasonCode"]),
             "shot_ids": list(scoped_plan["reacquireShotIds"]),
             "visual_event_ids": list(scoped_plan["reacquireVisualEventIds"]),
+            "phase_attempt_baselines": dict(state.get("phase_attempt_baselines") or {}),
         } if scoped_plan is not None else {}),
         **({
             "user_directed_revision": True,
