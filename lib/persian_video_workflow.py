@@ -19,7 +19,7 @@ import sys
 import time
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 from uuid import uuid4
@@ -1666,8 +1666,8 @@ def _granted_extension_seconds(
     return max(0.0, total)
 
 
-def _open_phase_attempt_started_at(state: Mapping[str, Any], phase: str) -> datetime | None:
-    """Start of the live cycle's latest attempt of ``phase`` while it is still open."""
+def _latest_phase_attempt_started_at(state: Mapping[str, Any], phase: str) -> datetime | None:
+    """Start of the live cycle's latest attempt, whether running or finished."""
     telemetry = state.get("phase_telemetry")
     entries = telemetry.get(phase) if isinstance(telemetry, Mapping) else None
     if not isinstance(entries, list):
@@ -1677,7 +1677,7 @@ def _open_phase_attempt_started_at(state: Mapping[str, Any], phase: str) -> date
         entry for entry in entries
         if isinstance(entry, Mapping) and _entry_revision_cycle(entry) == cycle
     ]
-    if not scoped or scoped[-1].get("duration_seconds") is not None:
+    if not scoped:
         return None
     started_at = scoped[-1].get("started_at")
     if not started_at:
@@ -1708,11 +1708,14 @@ def _budget_stop_payload(
         state, reason="wall_budget_exceeded", since=window_started
     )
     phase_seconds = _phase_elapsed_seconds(state, completed_phase, now=now)
-    phase_started = _open_phase_attempt_started_at(state, completed_phase)
+    phase_started = _latest_phase_attempt_started_at(state, completed_phase)
     if phase_started is not None:
-        # The same parked time is not charged to the phase that sat waiting (#342).
+        # Completion records the raw duration before this boundary check. Keep
+        # excluding parked time for a finished attempt too, and cap at its own
+        # finish so later waiting cannot erase genuine historical work (#375).
+        phase_finished = min(now, phase_started + timedelta(seconds=phase_seconds))
         phase_parked = parked_wall_seconds(
-            state, since=max(phase_started, window_started), now=now,
+            state, since=max(phase_started, window_started), now=phase_finished,
             silence_seconds=IDLE_STALL_SECONDS,
         )
         phase_seconds = max(0.0, phase_seconds - phase_parked["parked_seconds"])
