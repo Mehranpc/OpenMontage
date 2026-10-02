@@ -1,6 +1,6 @@
 # Asset Director — Persian Footage Pipeline
 
-Read the assets phase card first. Load `references/asset-acquisition.md` only for provider-budget, candidate-workspace/admission, music, or alignment details needed by the current event.
+Read the assets phase card first. Load `references/asset-acquisition.md` only for provider-budget, candidate-workspace/admission, music, pre-edit recovery, or alignment details needed by the current event.
 
 ## Output contract
 
@@ -62,8 +62,6 @@ After the completed assets checkpoint advances the run to `review_subject_region
 `regions propose` also reports `negativeSpaceCollisions`: every `carries_moment` event whose declared `negative_space` a reviewed hard region occupies, with the regions that stay clear. `review_subject_regions` refuses to complete while the current proposal lists any (`DECLARED_NEGATIVE_SPACE_OCCUPIED`, #214). Resolve them before edit with `reconcile-plan` (move the moment carrier or re-declare the region against the footage), or correct the annotation if the review drew it wrong. The edit stage refuses the same collision after spending candidates.
 
 The resulting `proposal.json` is derived, has `confirmationRequired: true`, and deliberately keeps candidate evidence under `proposedEvidence`; do not treat the proposal itself as confirmed review evidence. After explicit review, validate/use only the reviewed evidence through the existing subject-region validator. Do not recreate `build_region_sheets.py`, `grid_sheets.py`, or `build_subject_regions.py` under `.workspace/`.
-
-For blocked region-review shots, use `send-back <project-id> acquire_assets --code ASSET_SELECTION_HARD_REGION_COLLISION --shot-id <id> --reason "<finding>"` (#377). Current bound review authorizes only affected shots; no edit artifact is needed. Local-first options and ceilings still apply.
 
 Music-only manifest changes do not invalidate the visual subject-region sheet fingerprint. The index may refresh provenance, but cached PNG frames/sheets must be reused when visual asset windows and scene geometry are unchanged.
 
