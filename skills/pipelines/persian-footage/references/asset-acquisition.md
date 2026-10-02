@@ -44,3 +44,8 @@ When the review records `opening_semantic_match`, `semantic_role` or `semantic_d
 Readiness binds both the selection ledger's expected hashes and hashes recomputed from the candidate's actual identity, context and immutable review. A torn record is reported as `CANDIDATE_EVIDENCE_STALE`, excluded from valid coverage, and changes `inputsSha256`; inspecting it never rewrites its evidence. Admission uses the same integrity check: reselecting stale evidence, including an idempotent pick, refuses before any write even without an expected-readiness argument.
 
 A completed scene-plan checkpoint remains authoritative when damaged: malformed checkpoint/artifact mappings and absent or empty beat requirements produce `PLAN_INVALID`, never a clean readiness or fallback to an older plan artifact. Valid artifact-only legacy plans remain readable, and diagnosis does not materialise or rewrite either source.
+
+
+## Scoped recovery before edit (#377)
+
+For a current region proposal with protected-subject collisions or an unplaceable opening hook, use `send-back <project-id> acquire_assets --code ASSET_SELECTION_HARD_REGION_COLLISION --shot-id <affected-id> [...] --reason "<actual finding>"`. The front door validates current scene/manifest dependencies and sheet/frame digests, recomputes findings from reviewed proposal regions, and admits only affected shots. It derives a recovery-only shot/event view and writes no edit artifact. Existing-option priority, scoped asset/music guards, and send-back ceilings still apply. Stale evidence requires refreshed sheets/proposal; do not fabricate edit decisions to authorize this earlier-phase repair.
