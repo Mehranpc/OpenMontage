@@ -5521,7 +5521,12 @@ def acquisition_status(state: Mapping[str, Any]) -> dict[str, Any] | None:
     if pending is None and decision and decision["kind"] == "budget_stop":
         step = (
             f"the run is stopped by {decision['reason']}; diagnosis is read-only. "
-            "Use budget-revalidate to check the recorded stop or budget-decision to record "
+            + (
+                f"{len(blocked)} selected event(s) fail the asset contract: {', '.join(blocked)}. "
+                "Do not build the manifest yet (see readiness.diagnostics). "
+                if blocked else ""
+            )
+            + "Use budget-revalidate to check the recorded stop or budget-decision to record "
             "an explicit decision before any active recovery"
         )
     elif pending is None and next_pass is None and preparation["sendBacksRemaining"] == 0 and (blocked or unresolved):
