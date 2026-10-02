@@ -234,7 +234,10 @@ def test_status_never_advertises_exhausted_reacquisition(
     assert preparation["remainingRetryPasses"] == []
     operations = preparation["legalOperations"]
     if send_backs_left:
-        assert any("reopen-asset-search" in op for op in operations)
+        if blocked:
+            assert any("asset-candidate-select --replace-existing" in op for op in operations)
+        else:
+            assert any("reopen-asset-search" in op for op in operations)
     else:
         assert not any("reopen-asset-search" in op for op in operations)
         assert "reopen-asset-search" not in acquisition["nextStep"]
