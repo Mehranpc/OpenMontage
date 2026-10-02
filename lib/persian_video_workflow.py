@@ -5513,6 +5513,24 @@ def acquisition_status(state: Mapping[str, Any]) -> dict[str, Any] | None:
             "--visual-event-id <id> for exactly those events (one send-back). This is the only "
             "in-budget route, not a user decision; ask only if the send-back budget is spent"
         )
+    preparation = _acquisition_preparation(
+        state, readiness, unresolved=unresolved, blocked=blocked,
+        remaining=remaining, next_pass=next_pass,
+    )
+    if pending is None and next_pass is None and preparation["sendBacksRemaining"] == 0 and (blocked or unresolved):
+        decision = preparation["decisionRequired"]
+        if decision and decision["kind"] == "send_back_budget_spent":
+            step = (
+                "search passes and send-back allowance are spent; an explicit decision is required "
+                f"for footage still missing for {', '.join(decision['events'])}. "
+                "Retain valid selections and reviewed evidence; do not start another provider pass"
+            )
+        elif decision is None:
+            step = (
+                "search passes and send-back allowance are spent, but qualifying reviewed alternates "
+                "remain: select a reviewed alternate for each blocked or unresolved event "
+                "(use --replace-existing for a recorded selection), then recheck readiness"
+            )
     return {
         "completedPasses": completed,
         "pendingPass": pending,
@@ -5526,10 +5544,7 @@ def acquisition_status(state: Mapping[str, Any]) -> dict[str, Any] | None:
         "invalidEvents": readiness["invalidEvents"],
         "staleEvents": readiness["staleEvents"],
         "readiness": readiness,
-        "preparation": _acquisition_preparation(
-            state, readiness, unresolved=unresolved, blocked=blocked,
-            remaining=remaining, next_pass=next_pass,
-        ),
+        "preparation": preparation,
         "nextStep": step,
     }
 
@@ -5555,10 +5570,10 @@ def _acquisition_preparation(
                        "reconcile-plan (evidence-backed declaration)",
                        "asset-candidate-reject (reopens the event)"]
     if unresolved:
-        operations.append(
-            f"asset-search --retry-pass {next_pass}" if next_pass is not None
-            else "reconcile-plan queries_append + reopen-asset-search --visual-event-id"
-        )
+        if next_pass is not None:
+            operations.append(f"asset-search --retry-pass {next_pass}")
+        elif send_backs_left:
+            operations.append("reconcile-plan queries_append + reopen-asset-search --visual-event-id")
     if disposition == "ready_for_manifest_with_declarations":
         operations.append("assets build-manifest --overrides-json (declare fallback)")
     if disposition == "ready_for_manifest":
@@ -5590,6 +5605,8 @@ def _acquisition_preparation(
                     continue
                 if assessment["admissible"]:
                     reusable = True
+                    if event_id in unresolved and not any("asset-candidate-select" in op for op in operations):
+                        operations.append("asset-candidate-select (reviewed alternate)")
                     break
             if not reusable:
                 needs_footage.append(event_id)
