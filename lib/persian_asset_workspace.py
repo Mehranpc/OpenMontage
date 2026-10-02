@@ -613,7 +613,11 @@ def candidate_recovery_evidence(
         try:
             candidate = _read_object(path, label="recovery candidate")
             context = candidate.get("context")
-            if not isinstance(context, Mapping) or not context.get("visualEventId"):
+            if (
+                not isinstance(context, Mapping)
+                or not isinstance(context.get("visualEventId"), str)
+                or not context["visualEventId"].strip()
+            ):
                 raise PersianAssetWorkspaceError("candidate event context is unavailable")
         except PersianAssetWorkspaceError:
             unreadable.append(candidate_id)
@@ -647,8 +651,10 @@ def candidate_recovery_evidence(
             rejection = candidate.get("rejection")
             if (
                 isinstance(rejection, Mapping)
-                and rejection.get("category") in _REJECTION_CATEGORIES
-                and str(rejection.get("reason") or "").strip()
+                and isinstance(rejection.get("category"), str)
+                and rejection["category"] in _REJECTION_CATEGORIES
+                and isinstance(rejection.get("reason"), str)
+                and rejection["reason"].strip()
             ):
                 row.update(status="rejected", rejection={
                     "category": str(rejection.get("category") or ""),

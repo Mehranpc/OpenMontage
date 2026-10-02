@@ -188,7 +188,7 @@ def test_pending_pass_has_no_exhaustion_frontier(tmp_path):
     assert _project_bytes(project) == before
 
 
-@pytest.mark.parametrize('kind', ['unreviewed', 'malformed_rejection'])
+@pytest.mark.parametrize('kind', ['unreviewed', 'malformed_rejection', 'rejection_category_list', 'rejection_reason_bool'])
 def test_incomplete_or_unreviewed_evidence_never_grants_recovery(tmp_path, monkeypatch, kind):
     from lib import persian_region_commands as regions
 
@@ -201,7 +201,11 @@ def test_incomplete_or_unreviewed_evidence_never_grants_recovery(tmp_path, monke
         record['disposition'] = 'staged'
     else:
         record['disposition'] = 'rejected'
-        record['rejection'] = {}
+        record['rejection'] = {
+            'malformed_rejection': {},
+            'rejection_category_list': {'category': [], 'reason': 'finding'},
+            'rejection_reason_bool': {'category': 'semantic', 'reason': True},
+        }[kind]
     workspace._atomic_json(workspace._candidate_path(project, candidate), record)
     def forbidden(*args, **kwargs):
         pytest.fail('read-only frontier attempted provider/browser work')
