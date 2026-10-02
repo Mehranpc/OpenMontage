@@ -31,13 +31,13 @@ def _rewound_at_limit(tmp_path, monkeypatch):
     project = _prepared(tmp_path, monkeypatch)
     state = workflow.load_workflow_state("run", pipeline_dir=tmp_path)
     state["next_phase"] = "acquire_assets"
-    workflow._finish_phase_telemetry(state, "acquire_assets", outcome="completed", now=BASE)
+    workflow._finish_phase_telemetry(state, "acquire_assets", outcome="succeeded", now=BASE)
     workflow._write_state(project, state)
     ceiling = 1 + state["budgets"]["max_revisions_per_stage"]
     for n in range(2, ceiling + 1):
         state = workflow.record_phase_attempt("run", "acquire_assets", pipeline_dir=tmp_path,
             now=BASE + timedelta(seconds=n))
-        workflow._finish_phase_telemetry(state, "acquire_assets", outcome="completed",
+        workflow._finish_phase_telemetry(state, "acquire_assets", outcome="succeeded",
             now=BASE + timedelta(seconds=n + 1))
         workflow._write_state(project, state)
     state["next_phase"] = "review_subject_regions"
