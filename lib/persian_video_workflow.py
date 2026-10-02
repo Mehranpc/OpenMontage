@@ -5592,6 +5592,14 @@ def _acquisition_preparation(
     stop = state.get("budget_stop")
     pending = (state.get("asset_usage") or {}).get("pending_pass")
     decision = None
+    recovery_evidence = None
+    if pending is None and next_pass is None and send_backs_left == 0 and (blocked or unresolved):
+        from lib.persian_asset_workspace import candidate_recovery_evidence
+
+        recovery_evidence = candidate_recovery_evidence(
+            _project_root(state), sorted({*blocked, *unresolved}),
+            readiness_inputs_sha256=str(readiness.get("inputsSha256") or ""),
+        )
     if isinstance(stop, Mapping) and stop:
         decision = {"kind": "budget_stop", "reason": stop.get("reason"),
                     "operation": stop.get("boundary_before_operation")}
@@ -5604,29 +5612,13 @@ def _acquisition_preparation(
     elif (blocked or unresolved) and next_pass is None and send_backs_left == 0:
         # Exhausted search is not an exhausted recovery path: reviewed footage may
         # already satisfy the current plan without a new pass or send-back (#360).
-        from lib.persian_asset_workspace import (
-            _read_selections, assess_candidate_admission, reusable_asset_candidates,
-        )
-
-        root = _project_root(state)
-        selections = _read_selections(root)
         needs_footage = []
-        for event_id in sorted({*blocked, *unresolved}):
-            reusable = False
-            for item in reusable_asset_candidates(root, visual_event_id=event_id):
-                try:
-                    candidate = load_asset_candidate(root, str(item["candidateId"]))
-                    assessment = assess_candidate_admission(
-                        root, event_id, candidate, selections=selections,
-                    )
-                except (PersianAssetWorkspaceError, TypeError, ValueError):
-                    continue
-                if assessment["admissible"]:
-                    reusable = True
-                    if event_id in unresolved and "asset-candidate-select (reviewed alternate)" not in operations:
-                        operations.append("asset-candidate-select (reviewed alternate)")
-                    break
-            if not reusable:
+        for event_id, evidence in recovery_evidence["events"].items():
+            reusable = any(row["status"] == "admissible" for row in evidence)
+            if reusable:
+                if event_id in unresolved and "asset-candidate-select (reviewed alternate)" not in operations:
+                    operations.append("asset-candidate-select (reviewed alternate)")
+            else:
                 needs_footage.append(event_id)
         if needs_footage:
             decision = {"kind": "send_back_budget_spent", "events": needs_footage}
@@ -5643,6 +5635,7 @@ def _acquisition_preparation(
         "reacquisitionScope": scoped,
         "legalOperations": operations,
         "decisionRequired": decision,
+        "recoveryEvidence": recovery_evidence,
     }
 
 

@@ -101,7 +101,7 @@ def test_unknown_evidence_does_not_prove_impossibility_or_authorize_reuse(tmp_pa
     assert _project_bytes(project) == before
 
 
-@pytest.mark.parametrize('change', ['review', 'rejection', 'plan', 'selection', 'implementation'])
+@pytest.mark.parametrize('change', ['review', 'rejection', 'plan', 'selection', 'implementation', 'policy'])
 def test_frontier_digest_binds_relevant_inputs_but_is_not_mutation_authority(tmp_path, monkeypatch, change):
     project = _exhaust(tmp_path)
     candidate = _candidate(tmp_path, 'event-0', 'candidate')
@@ -120,8 +120,11 @@ def test_frontier_digest_binds_relevant_inputs_but_is_not_mutation_authority(tmp
     elif change == 'selection':
         _select(tmp_path, 'event-1', _candidate(tmp_path, 'event-1', 'replacement'),
                 replace_existing=True, rejected={workspace._read_selections(project)['event-1']['candidateId']: 'prefer replacement'})
-    else:
+    elif change == 'implementation':
         monkeypatch.setattr(workspace, '_implementation_sha', lambda: 'f' * 40)
+    else:
+        from lib import persian_assets
+        monkeypatch.setattr(persian_assets, 'ASSET_ADMISSION_POLICY_VERSION', '382.test')
     latest = _preparation(tmp_path)['recoveryEvidence']
     assert latest['inputsSha256'] != first['inputsSha256']
     before = _project_bytes(project)
@@ -137,3 +140,49 @@ def test_rejected_and_unreviewed_alone_keep_the_decision(tmp_path):
     preparation = _preparation(tmp_path)
     assert preparation['recoveryEvidence']['events']['event-0'][0]['status'] == 'rejected'
     assert preparation['decisionRequired'] == {'kind': 'send_back_budget_spent', 'events': ['event-0']}
+
+
+def test_distinct_windows_are_not_source_blacklisted_and_overlap_still_blocks(tmp_path):
+    from copy import deepcopy
+    from tests.lib.test_issue224_plan_reconcile import _event, _plan
+
+    project = _exhaust(tmp_path)
+    old = workspace._read_selections(project)['event-1']['candidateId']
+    selected = _candidate(tmp_path, 'event-1', 'shared-source')
+    _select(tmp_path, 'event-1', selected, replace_existing=True, rejected={old: 'prefer shared source'})
+    seed = workspace.load_asset_candidate(project, selected)
+    event = _event(_plan(tmp_path), 'event-0')
+    beat = next(b for b in _plan(tmp_path)['beats'] if any(e['id'] == 'event-0' for e in b['visual_events']))
+    candidates = []
+    for start in (1.0, 4.5):
+        candidate = workspace.stage_asset_candidate(
+            project, discovery_id=seed['discoveryId'], visual_event_id='event-0', semantic_beat_id=beat['id'],
+            source_in_seconds=start, duration_seconds=4.0, intended_crop={'mode': 'full_frame'},
+            candidate_rank=1, query=event['queries'][0], narration_span=event['narration_span'],
+        )['candidateId']
+        review = deepcopy(seed['review'])
+        if event.get('carries_moment'):
+            review['frame_review']['placement_space'] = event['negative_space']
+        workspace.record_candidate_review(project, candidate, review)
+        candidates.append(candidate)
+    overlap, distinct = candidates
+    report = _preparation(tmp_path)['recoveryEvidence']
+    assert 'SOURCE_WINDOW_OVERLAP' in _row(report, overlap)['codes']
+    assert _row(report, overlap)['status'] == 'blocked'
+    assert _row(report, distinct)['status'] == 'admissible'
+    _select(tmp_path, 'event-0', distinct, rejected={overlap: 'source-window overlap'})
+
+
+def test_pending_pass_has_no_exhaustion_frontier(tmp_path):
+    project = _run_at_acquire(tmp_path)
+    workflow.bounded_asset_search_request('run', {}, retry_pass=0, pipeline_dir=tmp_path, now=BASE)
+    path = project / workflow.STATE_FILENAME
+    state = json.loads(path.read_text())
+    state['send_backs'] = state['budgets']['max_send_backs']
+    path.write_text(json.dumps(state))
+    before = _project_bytes(project)
+    preparation = _preparation(tmp_path)
+    assert preparation['recoveryEvidence'] is None
+    assert preparation['decisionRequired'] is None
+    assert preparation['legalOperations'] == ['asset-result (reconcile pending pass 0)']
+    assert _project_bytes(project) == before
