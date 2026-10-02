@@ -251,6 +251,10 @@ class PixabayMusic(BaseTool):
             duration_seconds=round(time.time() - start, 2),
         )
 
+    def validate_direct_track(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Validate browser-observed direct-CDN provenance without network work."""
+        return self._direct_track(inputs)
+
     def _direct_track(self, inputs: dict[str, Any]) -> dict[str, Any]:
         audio_url = str(inputs.get("audio_url") or "").strip()
         self._validate_audio_url(audio_url)

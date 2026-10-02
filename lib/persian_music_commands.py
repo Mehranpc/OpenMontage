@@ -74,6 +74,39 @@ def _search_id(request: Mapping[str, Any]) -> str:
     return f"music-{hashlib.sha256(payload.encode('utf-8')).hexdigest()[:24]}"
 
 
+def validate_browser_download(project: Path, request: Mapping[str, Any]) -> Path | None:
+    """Validate an unpromoted browser acquisition against the direct-CDN request.
+
+    The caller owns browser observations; this binds their request to exact local
+    bytes, not a guarantee that a licence prevents third-party Content-ID claims.
+    """
+    receipt = request.get("browser_download")
+    if receipt is None:
+        return None
+    if not isinstance(receipt, Mapping) or set(receipt) != {"path", "sha256"}:
+        raise PersianMusicCommandError("browser_download requires exactly path and sha256")
+    if request.get("provider") != "pixabay_music":
+        raise PersianMusicCommandError("browser download requires approved Pixabay provider")
+    try:
+        PixabayMusic().validate_direct_track(dict(request))
+    except (ValueError, TypeError) as exc:
+        raise PersianMusicCommandError(str(exc)) from exc
+    raw_path = receipt.get("path")
+    digest = receipt.get("sha256")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise PersianMusicCommandError("browser download requires a path")
+    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        raise PersianMusicCommandError("browser download requires a SHA-256 digest")
+    path = _destination(project, raw_path)
+    if not path.is_relative_to((project / "assets/music").resolve()):
+        raise PersianMusicCommandError("browser download must stay inside project assets/music")
+    if path.suffix.lower() != ".mp3" or not path.is_file() or path.stat().st_size <= 0:
+        raise PersianMusicCommandError("browser download requires nonempty MP3 bytes")
+    if _sha256_file(path) != digest:
+        raise PersianMusicCommandError("browser download bytes do not match their recorded digest")
+    return path
+
+
 def search_music(
     pipeline_dir: Path,
     project_id: str,
@@ -97,6 +130,7 @@ def search_music(
     if not query:
         raise PersianMusicCommandError("music search requires a non-empty query")
     normalized["query"] = query
+    browser_path = validate_browser_download(project, {"provider": provider, **normalized})
     identity = {"provider": provider, **normalized}
     search_id = _search_id(identity)
     root = project / ".asset-workspace" / "music"
@@ -115,22 +149,41 @@ def search_music(
             f"music search cache is incomplete or corrupt: {search_id}"
         )
 
-    tool = tool_factory(provider)
-    if tool.get_status() != ToolStatus.AVAILABLE:
-        raise PersianMusicCommandError(f"music provider is unavailable: {provider}")
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-    inputs = dict(normalized)
-    inputs["output_path"] = str(cache_path)
-    try:
-        result = tool.execute(inputs)
-    except Exception as exc:
-        cache_path.unlink(missing_ok=True)
-        raise PersianMusicCommandError(f"{provider} music search failed: {exc}") from exc
-    if not result.success:
-        cache_path.unlink(missing_ok=True)
-        raise PersianMusicCommandError(result.error or f"{provider} music search failed")
-    if not cache_path.is_file() or cache_path.stat().st_size <= 0:
-        raise PersianMusicCommandError("music provider reported success without audio bytes")
+    if browser_path is not None:
+        track = PixabayMusic().validate_direct_track(dict(identity))
+        temporary = cache_path.with_name(f".{cache_path.name}.{uuid4().hex}.tmp")
+        try:
+            shutil.copyfile(browser_path, temporary)
+            if _sha256_file(temporary) != normalized["browser_download"]["sha256"]:
+                raise PersianMusicCommandError("browser download changed during import")
+            os.replace(temporary, cache_path)
+        finally:
+            temporary.unlink(missing_ok=True)
+        result_data = {
+            "provider": provider, "track_title": track["title"], "artist": track["artist"],
+            "duration_seconds": track["duration"], "query": query, "output": str(cache_path),
+            "format": "mp3", "license": "Pixabay Content License (free, no attribution required)",
+            "source_url": track["source_url"], "audio_url": track["audio_url"],
+            "search_strategy": "direct_cdn_browser_download",
+        }
+    else:
+        tool = tool_factory(provider)
+        if tool.get_status() != ToolStatus.AVAILABLE:
+            raise PersianMusicCommandError(f"music provider is unavailable: {provider}")
+        inputs = dict(normalized)
+        inputs["output_path"] = str(cache_path)
+        try:
+            result = tool.execute(inputs)
+        except Exception as exc:
+            cache_path.unlink(missing_ok=True)
+            raise PersianMusicCommandError(f"{provider} music search failed: {exc}") from exc
+        if not result.success:
+            cache_path.unlink(missing_ok=True)
+            raise PersianMusicCommandError(result.error or f"{provider} music search failed")
+        if not cache_path.is_file() or cache_path.stat().st_size <= 0:
+            raise PersianMusicCommandError("music provider reported success without audio bytes")
+        result_data = dict(result.data)
 
     record = {
         "version": "1.0",
@@ -140,7 +193,7 @@ def search_music(
         "cachedPath": str(cache_path),
         "audioSha256": _sha256_file(cache_path),
         "sizeBytes": cache_path.stat().st_size,
-        "result": dict(result.data),
+        "result": result_data,
     }
     _atomic_json(record_path, record)
     return {**record, "idempotent": False, "changed": True}
@@ -176,6 +229,7 @@ def fetch_music(
     )
     if record.get("searchId") != search_id:
         raise PersianMusicCommandError("music search cache identity does not match")
+    validate_browser_download(project, record.get("request") or {})
     cache_path = Path(str(record.get("cachedPath") or "")).expanduser().resolve()
     try:
         cache_path.relative_to(root.resolve())

@@ -21,6 +21,28 @@ For production work, prefer this sequence:
 4. Arm the browser download event **before** clicking `Free download`.
 5. Save the downloaded MP3 directly inside the current project, normally under `projects/<project-id>/assets/music/`.
 6. Capture the browser-reported download URL and pass it to `pixabay_music` using `audio_url`, together with `track_title`, `artist`, `source_url`, and `duration_seconds`.
+   For an already downloaded MP3, add `browser_download` to the official
+   `assets music search --json` request. It contains exactly the project-local
+   `path` and the lowercase SHA-256 of those bytes. The request still supplies
+   the real browser-observed `audio_url`, `track_title`, `artist`, `source_url`,
+   and `duration_seconds`. The command validates direct-CDN provenance and
+   imports the exact bytes into its normal cache without downloading them again.
+   Then use the returned `searchId` with `assets music fetch --metadata-json`.
+
+   ```json
+   "browser_download": {
+     "path": "assets/music/selected-track.mp3",
+     "sha256": "<actual lowercase SHA-256 of the saved MP3>"
+   }
+   ```
+
+   During early scoped visual recovery, only that bound, unpromoted file is
+   permitted in `assets/music`. Keep rejected discovery candidates in
+   project-local acquisition evidence rather than the selected music directory.
+   Other music files, a canonical music record, incomplete visuals, or late
+   edit recovery still refuse. Recheck the same bytes before fetch; a changed
+   file is not silently accepted. This binding records the agent's real browser
+   observations; it does not establish zero Content-ID risk.
 7. Persist the normalized `pixabay_music` result as the provenance source for the edit/music manifest, then probe the saved file with ffprobe before compose.
 
 Conceptually:
