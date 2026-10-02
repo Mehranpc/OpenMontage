@@ -240,3 +240,70 @@ def test_late_scoped_fetch_refuses_before_unrelated_cache_lookup(tmp_path: Path,
     assert tool.calls == 0
     assert before == {str(p.relative_to(project)): p.read_bytes()
                       for p in project.rglob("*") if p.is_file()}
+
+
+def _browser_request(project, request):
+    import hashlib
+    audio = project / "assets/music/browser.mp3"
+    audio.parent.mkdir(parents=True, exist_ok=True)
+    audio.write_bytes(b"browser-downloaded-music")
+    payload = {
+        **_request(), "audio_url": "https://cdn.pixabay.com/download/audio/2026/audio_test.mp3",
+        "source_url": "https://pixabay.com/music/ambient-calm-track-123/",
+        "track_title": "Calm Track", "artist": "Test Artist", "duration_seconds": 90,
+        "browser_download": {"path": "assets/music/browser.mp3",
+                             "sha256": hashlib.sha256(audio.read_bytes()).hexdigest()},
+    }
+    request.write_text(json.dumps(payload))
+    return audio, payload
+
+
+def test_browser_download_enters_initial_music_without_second_network_download(tmp_path, monkeypatch):
+    project, candidate, request, metadata, tool = _prepared(tmp_path, monkeypatch)
+    audio, payload = _browser_request(project, request)
+    original = audio.read_bytes()
+    before = _protected_bytes(project)
+    result = workflow.search_workflow_music("run", request, pipeline_dir=tmp_path)
+    repeat = workflow.search_workflow_music("run", request, pipeline_dir=tmp_path)
+    assert repeat["idempotent"]
+    assert tool.calls == 0
+    assert Path(result["cachedPath"]).read_bytes() == original
+    assert result["result"]["source_url"] == payload["source_url"]
+    assert result["result"]["search_strategy"] == "direct_cdn_browser_download"
+    fetched = workflow.fetch_workflow_music("run", result["searchId"], metadata,
+                                           pipeline_dir=tmp_path)
+    assert Path(fetched["audioPath"]).read_bytes() == original
+    assert audio.read_bytes() == original
+    assert _protected_bytes(project) == before
+    overrides = project / "browser-music-overrides.json"
+    overrides.write_text(json.dumps({"musicTrack": fetched["track"]}))
+    workflow.build_workflow_asset_manifest("run", overrides_path=overrides, pipeline_dir=tmp_path)
+    assert workflow.write_workflow_assets_checkpoint("run", pipeline_dir=tmp_path)["status"] == "completed"
+    with pytest.raises(workflow.PersianVideoWorkflowError):
+        workflow.search_workflow_music("run", request, pipeline_dir=tmp_path)
+
+
+@pytest.mark.parametrize("damage", ["digest", "foreign_path", "unbound_file", "cdn", "source", "provider", "changed_before_fetch"])
+def test_browser_import_refuses_unbound_or_changed_evidence(tmp_path, monkeypatch, damage):
+    project, candidate, request, metadata, tool = _prepared(tmp_path, monkeypatch)
+    audio, payload = _browser_request(project, request)
+    if damage == "changed_before_fetch":
+        result = workflow.search_workflow_music("run", request, pipeline_dir=tmp_path)
+        audio.write_bytes(b"changed")
+        with pytest.raises((workflow.PersianVideoWorkflowError, music.PersianMusicCommandError)):
+            workflow.fetch_workflow_music("run", result["searchId"], metadata, pipeline_dir=tmp_path)
+        assert not (project / "artifacts/music_track.json").exists()
+        assert tool.calls == 0
+        return
+    if damage == "digest": payload["browser_download"]["sha256"] = "0" * 64
+    elif damage == "foreign_path": payload["browser_download"]["path"] = "../outside.mp3"
+    elif damage == "unbound_file": (audio.parent / "unrelated.mp3").write_bytes(b"unrelated")
+    elif damage == "cdn": payload["audio_url"] = "https://example.com/audio/test.mp3"
+    elif damage == "source": payload["source_url"] = "https://example.com/music/test/"
+    elif damage == "provider": payload["provider"] = "freesound_music"
+    request.write_text(json.dumps(payload))
+    before = {str(p.relative_to(project)): p.read_bytes() for p in project.rglob("*") if p.is_file()}
+    with pytest.raises((workflow.PersianVideoWorkflowError, music.PersianMusicCommandError)):
+        workflow.search_workflow_music("run", request, pipeline_dir=tmp_path)
+    assert tool.calls == 0
+    assert before == {str(p.relative_to(project)): p.read_bytes() for p in project.rglob("*") if p.is_file()}

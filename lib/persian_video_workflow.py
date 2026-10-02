@@ -55,6 +55,7 @@ from lib.persian_music_commands import (
     PersianMusicCommandError,
     fetch_music as fetch_music_command,
     search_music as search_music_command,
+    validate_browser_download,
 )
 from lib.persian_region_commands import (
     PersianRegionCommandError,
@@ -4073,7 +4074,7 @@ def _scope_allows_candidate(state: Mapping[str, Any], candidate_id: str) -> None
 
 def _require_music_not_scoped(
     state: Mapping[str, Any], *, provider: str | None = None,
-    search_id: str | None = None,
+    search_id: str | None = None, request: Mapping[str, Any] | None = None,
 ) -> None:
     scope = state.get("asset_reacquisition_scope")
     if not isinstance(scope, Mapping):
@@ -4108,6 +4109,7 @@ def _require_music_not_scoped(
             project / ".asset-workspace" / "music" / "searches" / f"{search_id}.json"
         ))
         provider = str(record.get("provider") or "")
+        request = record.get("request")
     if provider != "pixabay_music":
         refuse()
     checkpoint_path = project / "checkpoint_assets.json"
@@ -4122,8 +4124,13 @@ def _require_music_not_scoped(
         or not str(metadata.get("music_plan") or "").strip()
         or not isinstance((state.get("input") or {}).get("narration"), Mapping)
         or (project / "artifacts" / "music_track.json").exists()
-        or any((project / "assets" / "music").glob("*"))
     ):
+        refuse()
+    browser_path = validate_browser_download(project, request or {})
+    # Only the exact unpromoted browser acquisition named by this request is
+    # admissible. Unrelated files and canonical music remain replacement guards.
+    if any(path.resolve() != browser_path
+           for path in (project / "assets/music").glob("*")):
         refuse()
     manifest = _read_json(str(project / "artifacts" / "asset_manifest.json"))
     if "musicTrack" in manifest or "music" in manifest:
@@ -4423,7 +4430,7 @@ def search_workflow_music(
     _require_asset_candidate_phase(state)
     source = assert_read_allowed(state, str(input_path))
     payload = _read_json(str(source))
-    _require_music_not_scoped(state, provider=str(payload.get("provider") or ""))
+    _require_music_not_scoped(state, provider=str(payload.get("provider") or ""), request=payload)
     project_root = _project_root(state)
     return search_music_command(
         project_root.parent, project_root.name, payload
