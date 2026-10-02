@@ -197,3 +197,56 @@ def test_exhausted_search_does_not_require_a_decision_for_a_reviewed_alternate(
         assert preparation["decisionRequired"] == {
             "kind": "send_back_budget_spent", "events": ["event-0"],
         }
+
+
+@pytest.mark.parametrize("blocked", [False, True])
+@pytest.mark.parametrize("reusable", [False, True])
+@pytest.mark.parametrize("send_backs_left", [0, 1])
+def test_status_never_advertises_exhausted_reacquisition(
+    tmp_path: Path, blocked: bool, reusable: bool, send_backs_left: int,
+) -> None:
+    """Production #360: decisionRequired and legalOperations must agree.
+
+    Exercise both absent and invalid selections. Exhausted search must preserve
+    reviewed-alternate recovery without pretending a forbidden rewind is legal.
+    """
+    from tests.lib.test_issue331_acquisition_next_step import _spend_both_passes
+    from tests.lib.test_issue360_truthful_readiness import _legacy_select
+
+    project = _run_at_acquire(tmp_path)
+    _spend_both_passes(tmp_path)
+    bad = _candidate(tmp_path, "event-0", "bad", shows_subject=False) if blocked else None
+    if bad:
+        _legacy_select(project, "event-0", bad)
+    alternate = _candidate(tmp_path, "event-0", "alternate") if reusable else None
+    for event in ("event-1", "event-2"):
+        _select(tmp_path, event, _candidate(tmp_path, event, event))
+    state_path = project / workflow.STATE_FILENAME
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["send_backs"] = state["budgets"]["max_send_backs"] - send_backs_left
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    before = _project_bytes(project)
+
+    acquisition = workflow.workflow_status("run", pipeline_dir=tmp_path, now=BASE)["acquisition"]
+    preparation = acquisition["preparation"]
+    assert _project_bytes(project) == before
+    assert preparation["sendBacksRemaining"] == send_backs_left
+    assert preparation["remainingRetryPasses"] == []
+    operations = preparation["legalOperations"]
+    if send_backs_left:
+        assert any("reopen-asset-search" in op for op in operations)
+    else:
+        assert not any("reopen-asset-search" in op for op in operations)
+        assert "reopen-asset-search" not in acquisition["nextStep"]
+        if reusable:
+            assert preparation["decisionRequired"] is None
+            assert any("asset-candidate-select" in op for op in operations)
+            assert "reviewed alternate" in acquisition["nextStep"]
+            _select(tmp_path, "event-0", alternate, replace_existing=blocked,
+                    rejected={bad: "subject is missing"} if bad else {})
+            assert workflow.load_workflow_state("run", pipeline_dir=tmp_path)["send_backs"] == state["send_backs"]
+        else:
+            assert preparation["decisionRequired"] == {
+                "kind": "send_back_budget_spent", "events": ["event-0"],
+            }
+            assert "decision" in acquisition["nextStep"]
