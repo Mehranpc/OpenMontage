@@ -57,3 +57,16 @@ def test_revalidation_releases_legacy_completed_phase_stop_without_grant(tmp_pat
         assert after.get(key) == before.get(key)
     assert workflow.revalidate_budget_stop("run", pipeline_dir=tmp_path,
             now=BASE+timedelta(hours=5)) == after
+
+
+def test_later_parked_wait_cannot_release_a_real_completed_phase_overrun(tmp_path, monkeypatch):
+    root, evidence = _phase(tmp_path, False, monkeypatch)
+    before = workflow.complete_phase("run", "prepare_inputs", evidence=evidence,
+                                     pipeline_dir=tmp_path, now=BASE+timedelta(seconds=7200))
+    assert before["budget_stop"]["observed_seconds"] == 7200
+    after = workflow.revalidate_budget_stop("run", pipeline_dir=tmp_path,
+                                           now=BASE+timedelta(hours=4))
+    assert after["status"] == "failed"
+    assert after["budget_stop"] == before["budget_stop"]
+    assert after["budget_stop_revalidations"][-1]["current_stop"]["observed_seconds"] == 7200
+    assert after["budget_stop_revalidations"][-1]["outcome"] == "still_exceeded"
