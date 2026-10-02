@@ -128,8 +128,12 @@ def test_frontier_digest_binds_relevant_inputs_but_is_not_mutation_authority(tmp
     latest = _preparation(tmp_path)['recoveryEvidence']
     assert latest['inputsSha256'] != first['inputsSha256']
     before = _project_bytes(project)
-    with pytest.raises(workspace.AssetAdmissionRefused, match='STALE_PREPARATION'):
+    with pytest.raises(workspace.AssetAdmissionRefused) as refused:
         workspace.require_current_preparation(project, latest['inputsSha256'])
+    [diagnostic] = refused.value.diagnostics
+    assert diagnostic['code'] == 'STALE_PREPARATION'
+    assert diagnostic['expected'] == latest['inputsSha256']
+    assert diagnostic['observed'] == latest['readinessInputsSha256']
     assert _project_bytes(project) == before
 
 
