@@ -5517,8 +5517,14 @@ def acquisition_status(state: Mapping[str, Any]) -> dict[str, Any] | None:
         state, readiness, unresolved=unresolved, blocked=blocked,
         remaining=remaining, next_pass=next_pass,
     )
-    if pending is None and next_pass is None and preparation["sendBacksRemaining"] == 0 and (blocked or unresolved):
-        decision = preparation["decisionRequired"]
+    decision = preparation["decisionRequired"]
+    if pending is None and decision and decision["kind"] == "budget_stop":
+        step = (
+            f"the run is stopped by {decision['reason']}; diagnosis is read-only. "
+            "Use budget-revalidate to check the recorded stop or budget-decision to record "
+            "an explicit decision before any active recovery"
+        )
+    elif pending is None and next_pass is None and preparation["sendBacksRemaining"] == 0 and (blocked or unresolved):
         if decision and decision["kind"] == "send_back_budget_spent":
             step = (
                 "search passes and send-back allowance are spent; an explicit decision is required "
@@ -5579,10 +5585,17 @@ def _acquisition_preparation(
     if disposition == "ready_for_manifest":
         operations.append("assets build-manifest")
     stop = state.get("budget_stop")
+    pending = (state.get("asset_usage") or {}).get("pending_pass")
     decision = None
     if isinstance(stop, Mapping) and stop:
         decision = {"kind": "budget_stop", "reason": stop.get("reason"),
                     "operation": stop.get("boundary_before_operation")}
+        operations = ["budget-revalidate", "budget-decision"]
+        if pending is not None:
+            operations.append(f"asset-result (settle pending pass {pending})")
+    elif pending is not None:
+        # A pending final pass is still evidence in flight, not exhausted search.
+        operations = [f"asset-result (reconcile pending pass {pending})"]
     elif (blocked or unresolved) and next_pass is None and send_backs_left == 0:
         # Exhausted search is not an exhausted recovery path: reviewed footage may
         # already satisfy the current plan without a new pass or send-back (#360).
@@ -5605,7 +5618,7 @@ def _acquisition_preparation(
                     continue
                 if assessment["admissible"]:
                     reusable = True
-                    if event_id in unresolved and not any("asset-candidate-select" in op for op in operations):
+                    if event_id in unresolved and "asset-candidate-select (reviewed alternate)" not in operations:
                         operations.append("asset-candidate-select (reviewed alternate)")
                     break
             if not reusable:

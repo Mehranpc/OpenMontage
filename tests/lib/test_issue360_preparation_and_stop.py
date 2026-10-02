@@ -126,6 +126,8 @@ def test_status_diagnoses_a_genuine_stop_without_granting_or_mutating(
     assert preparation["decisionRequired"]["kind"] == "budget_stop"
     assert preparation["decisionRequired"]["operation"] == "workflow:asset-candidate-select"
     assert preparation["remainingRetryPasses"] == [0, 1]
+    assert preparation["legalOperations"] == ["budget-revalidate", "budget-decision"]
+    assert "budget-decision" in status["acquisition"]["nextStep"]
     assert status["diagnostic_elapsed_seconds"] >= 0
     # Diagnosis time is reported beside, not subtracted from, the run's clocks.
     for key in ("total_elapsed_seconds", "charged_wall_seconds", "parked_seconds"):
@@ -202,8 +204,9 @@ def test_exhausted_search_does_not_require_a_decision_for_a_reviewed_alternate(
 @pytest.mark.parametrize("blocked", [False, True])
 @pytest.mark.parametrize("reusable", [False, True])
 @pytest.mark.parametrize("send_backs_left", [0, 1])
+@pytest.mark.parametrize("stopped", [False, True])
 def test_status_never_advertises_exhausted_reacquisition(
-    tmp_path: Path, blocked: bool, reusable: bool, send_backs_left: int,
+    tmp_path: Path, blocked: bool, reusable: bool, send_backs_left: int, stopped: bool,
 ) -> None:
     """Production #360: decisionRequired and legalOperations must agree.
 
@@ -225,6 +228,12 @@ def test_status_never_advertises_exhausted_reacquisition(
     state = json.loads(state_path.read_text(encoding="utf-8"))
     state["send_backs"] = state["budgets"]["max_send_backs"] - send_backs_left
     state_path.write_text(json.dumps(state), encoding="utf-8")
+    if stopped:
+        with pytest.raises(workflow.PersianVideoWorkflowError, match="wall_budget_exceeded"):
+            workflow.enforce_front_door_budget(
+                "run", operation="workflow:asset-candidate-select", pipeline_dir=tmp_path,
+                now=BASE + timedelta(days=1),
+            )
     before = _project_bytes(project)
 
     acquisition = workflow.workflow_status("run", pipeline_dir=tmp_path, now=BASE)["acquisition"]
@@ -233,7 +242,12 @@ def test_status_never_advertises_exhausted_reacquisition(
     assert preparation["sendBacksRemaining"] == send_backs_left
     assert preparation["remainingRetryPasses"] == []
     operations = preparation["legalOperations"]
-    if send_backs_left:
+    if stopped:
+        assert preparation["decisionRequired"]["kind"] == "budget_stop"
+        assert operations == ["budget-revalidate", "budget-decision"]
+        assert "budget-decision" in acquisition["nextStep"]
+        assert "reopen-asset-search" not in acquisition["nextStep"]
+    elif send_backs_left:
         if blocked:
             assert any("asset-candidate-select --replace-existing" in op for op in operations)
         else:
@@ -253,3 +267,72 @@ def test_status_never_advertises_exhausted_reacquisition(
                 "kind": "send_back_budget_spent", "events": ["event-0"],
             }
             assert "decision" in acquisition["nextStep"]
+
+
+@pytest.mark.parametrize("stopped", [False, True])
+def test_pending_final_pass_is_reconciled_before_exhaustion_decision(tmp_path: Path, stopped: bool) -> None:
+    from tests.lib.test_persian_video_workflow import _asset_result
+
+    project = _run_at_acquire(tmp_path)
+    request = workflow.bounded_asset_search_request("run", {}, retry_pass=0, pipeline_dir=tmp_path, now=BASE)
+    workflow.record_asset_search_result(
+        "run", retry_pass=0, result_data=_asset_result(request, candidates=0, downloaded_bytes=0),
+        pipeline_dir=tmp_path, now=BASE,
+    )
+    workflow.bounded_asset_search_request("run", {}, retry_pass=1, pipeline_dir=tmp_path, now=BASE)
+    state_path = project / workflow.STATE_FILENAME
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["send_backs"] = state["budgets"]["max_send_backs"]
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    if stopped:
+        with pytest.raises(workflow.PersianVideoWorkflowError, match="wall_budget_exceeded"):
+            workflow.enforce_front_door_budget(
+                "run", operation="workflow:asset-search", pipeline_dir=tmp_path,
+                now=BASE + timedelta(days=1),
+            )
+    before = _project_bytes(project)
+    acquisition = workflow.workflow_status("run", pipeline_dir=tmp_path, now=BASE)["acquisition"]
+    assert _project_bytes(project) == before
+    assert acquisition["pendingPass"] == 1
+    assert acquisition["remainingPasses"] == []
+    assert "pass 1 is running" in acquisition["nextStep"]
+    assert "reconcile" in acquisition["nextStep"]
+    preparation = acquisition["preparation"]
+    if stopped:
+        assert preparation["decisionRequired"]["kind"] == "budget_stop"
+        assert "asset-result (settle pending pass 1)" in preparation["legalOperations"]
+    else:
+        assert preparation["decisionRequired"] is None
+        assert preparation["legalOperations"] == ["asset-result (reconcile pending pass 1)"]
+    assert not any("reopen-asset-search" in op for op in preparation["legalOperations"])
+
+
+def test_mixed_blocked_and_missing_events_expose_both_alternate_selection_routes(tmp_path: Path) -> None:
+    from tests.lib.test_issue331_acquisition_next_step import _spend_both_passes
+    from tests.lib.test_issue360_truthful_readiness import _legacy_select
+
+    project = _run_at_acquire(tmp_path)
+    _spend_both_passes(tmp_path)
+    bad = _candidate(tmp_path, "event-0", "bad", shows_subject=False)
+    _legacy_select(project, "event-0", bad)
+    replacement = _candidate(tmp_path, "event-0", "replacement")
+    missing = _candidate(tmp_path, "event-1", "missing-alternate")
+    _select(tmp_path, "event-2", _candidate(tmp_path, "event-2", "keep"))
+    state_path = project / workflow.STATE_FILENAME
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["send_backs"] = state["budgets"]["max_send_backs"]
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    before = _project_bytes(project)
+    acquisition = workflow.workflow_status("run", pipeline_dir=tmp_path, now=BASE)["acquisition"]
+    assert _project_bytes(project) == before
+    preparation = acquisition["preparation"]
+    assert acquisition["invalidEvents"] == ["event-0"]
+    assert acquisition["unresolvedEvents"] == ["event-1"]
+    assert preparation["decisionRequired"] is None
+    assert "asset-candidate-select --replace-existing (reviewed alternate)" in preparation["legalOperations"]
+    assert "asset-candidate-select (reviewed alternate)" in preparation["legalOperations"]
+    _select(tmp_path, "event-0", replacement, replace_existing=True, rejected={bad: "subject missing"})
+    _select(tmp_path, "event-1", missing)
+    status = workflow.workflow_status("run", pipeline_dir=tmp_path, now=BASE)
+    assert status["acquisition"]["validSelectionCount"] == 3
+    assert status["acquisition"]["preparation"]["sendBacksRemaining"] == 0
