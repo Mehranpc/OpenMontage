@@ -6,7 +6,10 @@ from tests.lib.test_issue342_parked_time_not_wall_budget import _setup, _command
 from tests.lib.test_persian_video_workflow import _advance_to, _prepare_inputs_evidence
 
 
-def _phase(tmp_path, parked):
+def _phase(tmp_path, parked, monkeypatch):
+    # Input preparation isolates accounting from media contracts; install a
+    # controlled 600-second phase SLO, as the budgeted production phases have.
+    monkeypatch.setitem(workflow.PHASE_SLO_SECONDS, "prepare_inputs", 600)
     root, _ = _setup(tmp_path)
     state = _advance_to(tmp_path, "prepare_inputs")
     state["budgets"]["max_wall_time_minutes"] = 180
@@ -21,8 +24,8 @@ def _phase(tmp_path, parked):
 
 
 @pytest.mark.parametrize("parked", [True, False])
-def test_public_completion_preserves_parked_policy_and_real_overruns(tmp_path, parked):
-    root, evidence = _phase(tmp_path, parked)
+def test_public_completion_preserves_parked_policy_and_real_overruns(tmp_path, parked, monkeypatch):
+    root, evidence = _phase(tmp_path, parked, monkeypatch)
     result = workflow.complete_phase("run", "prepare_inputs", evidence=evidence,
                                      pipeline_dir=tmp_path, now=BASE+timedelta(seconds=7200))
     assert "prepare_inputs" in result["completed_phases"]
@@ -38,7 +41,7 @@ def test_public_completion_preserves_parked_policy_and_real_overruns(tmp_path, p
 
 
 def test_revalidation_releases_legacy_completed_phase_stop_without_grant(tmp_path, monkeypatch):
-    root, evidence = _phase(tmp_path, True)
+    root, evidence = _phase(tmp_path, True, monkeypatch)
     with monkeypatch.context() as old:
         old.setattr(workflow, "parked_wall_seconds", lambda *a, **kw: {"parked_seconds":0})
         before = workflow.complete_phase("run", "prepare_inputs", evidence=evidence,
