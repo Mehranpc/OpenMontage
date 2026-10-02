@@ -593,6 +593,116 @@ def reusable_asset_candidates(
     return result
 
 
+def candidate_recovery_evidence(
+    project_dir: Path, event_ids: Sequence[str], *, readiness_inputs_sha256: str,
+) -> dict[str, Any]:
+    """Read-only known-evidence frontier, not sourcing or mutation authority (#382).
+
+    Scan the workspace once. Rejections describe exact identities, never whole
+    providers/sources. Unknown records are visible; absence of admissible evidence
+    is not proof that suitable footage cannot exist. Shared admission stays decisive.
+    """
+    events: dict[str, list[dict[str, Any]]] = {event: [] for event in sorted(set(event_ids))}
+    selections = _read_selections(project_dir)
+    unreadable: list[str] = []
+    bindings: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    complete = True
+    for path in sorted((_root(project_dir) / "candidates").glob("asset-*.json")):
+        candidate_id = path.stem
+        try:
+            candidate = _read_object(path, label="recovery candidate")
+            context = candidate.get("context")
+            if (
+                not isinstance(context, Mapping)
+                or not isinstance(context.get("visualEventId"), str)
+                or not context["visualEventId"].strip()
+            ):
+                raise PersianAssetWorkspaceError("candidate event context is unavailable")
+        except PersianAssetWorkspaceError:
+            unreadable.append(candidate_id)
+            # Hash available raw bytes even when JSON cannot be projected.
+            try:
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            except OSError:
+                digest = None
+            bindings.append({"candidateId": candidate_id, "unreadableSha256": digest})
+            complete = False
+            continue
+        event_id = str(context["visualEventId"])
+        if event_id not in events:
+            continue
+        seen.add(candidate_id)
+        bindings.append({"candidateId": candidate_id, "recordSha256": _sha256(candidate)})
+        row: dict[str, Any] = {
+            "candidateId": candidate_id,
+            "candidateIdentitySha256": candidate.get("identitySha256"),
+            "reviewSha256": candidate.get("reviewSha256"),
+            "codes": [],
+        }
+        identity = candidate.get("identity")
+        if isinstance(identity, Mapping):
+            row["identity"] = {key: identity.get(key) for key in (
+                "provider", "sourceId", "sourceWindow", "intendedCrop",
+            )}
+        if candidate.get("candidateId") != candidate_id:
+            row.update(status="unavailable", codes=["CANDIDATE_RECORD_ID_MISMATCH"])
+        elif candidate.get("disposition") == "rejected":
+            rejection = candidate.get("rejection")
+            if (
+                isinstance(rejection, Mapping)
+                and isinstance(rejection.get("category"), str)
+                and rejection["category"] in _REJECTION_CATEGORIES
+                and isinstance(rejection.get("reason"), str)
+                and rejection["reason"].strip()
+            ):
+                row.update(status="rejected", rejection={
+                    "category": str(rejection.get("category") or ""),
+                    "reason": str(rejection.get("reason") or "")[:400],
+                })
+            else:
+                row.update(status="unavailable", codes=["REJECTION_EVIDENCE_UNAVAILABLE"])
+        elif not candidate.get("reviewSha256"):
+            row["status"] = "unreviewed"
+        else:
+            try:
+                assessed = assess_candidate_admission(
+                    project_dir, event_id, candidate, selections=selections,
+                )
+                codes = sorted({str(item["code"]) for item in assessed["diagnostics"]})
+                unknown_codes = {
+                    "CANDIDATE_EVIDENCE_STALE", "SELECTION_STALE", "PLAN_MISSING", "PLAN_INVALID",
+                    "EVENT_NOT_IN_PLAN",
+                }
+                row.update(
+                    status="unavailable" if unknown_codes.intersection(codes) else (
+                        "admissible" if assessed["admissible"] else "blocked"
+                    ),
+                    codes=codes,
+                    declarationsRequired=sorted({
+                        str(item["code"]) for item in assessed["declarationsRequired"]
+                    }),
+                )
+            except (PersianAssetWorkspaceError, AttributeError, KeyError, TypeError, ValueError, OSError):
+                row.update(status="unavailable", codes=["EVIDENCE_UNPROJECTABLE"])
+        if row["status"] == "unavailable":
+            complete = False
+        events[event_id].append(row)
+    for event_id, selection in sorted(selections.items()):
+        candidate_id = str(selection.get("candidateId") or "")
+        if event_id in events and candidate_id not in seen:
+            events[event_id].append({"candidateId": candidate_id, "status": "unavailable",
+                                     "codes": ["SELECTION_CANDIDATE_MISSING"]})
+            complete = False
+    for rows in events.values():
+        rows.sort(key=lambda row: row["candidateId"])
+    report = {
+        "version": "1.0", "readinessInputsSha256": readiness_inputs_sha256,
+        "complete": complete, "events": events, "unreadableRecordIds": unreadable,
+    }
+    return {**report, "inputsSha256": _sha256({"report": report, "candidateBindings": bindings})}
+
+
 def _read_selections(project_dir: Path) -> dict[str, dict[str, Any]]:
     path = _selections_path(project_dir)
     if not path.is_file():
@@ -1688,6 +1798,7 @@ __all__ = [
     "assess_candidate_admission",
     "asset_workspace_status",
     "build_asset_manifest_from_workspace",
+    "candidate_recovery_evidence",
     "load_asset_candidate",
     "record_candidate_review",
     "record_discovery_pass",
