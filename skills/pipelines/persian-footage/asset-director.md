@@ -63,6 +63,8 @@ After the completed assets checkpoint advances the run to `review_subject_region
 
 The resulting `proposal.json` is derived, has `confirmationRequired: true`, and deliberately keeps candidate evidence under `proposedEvidence`; do not treat the proposal itself as confirmed review evidence. After explicit review, validate/use only the reviewed evidence through the existing subject-region validator. Do not recreate `build_region_sheets.py`, `grid_sheets.py`, or `build_subject_regions.py` under `.workspace/`.
 
+When current region review proves an opening hook or declared carrier band is blocked and there is no usable reviewed existing option, run `send-back <project-id> acquire_assets --code ASSET_SELECTION_HARD_REGION_COLLISION --shot-id <affected-shot-id> [...] --reason "<actual reviewed finding>"` before edit (#377). The front door derives the shot/event mapping from the current bound sheet index, manifest, scene plan and proposal; it recomputes the reviewed hard-region findings and rejects unaffected shots or stale evidence. Do not create edit decisions to authorize this earlier-phase repair. Existing-option priority, scoped asset/music guards and send-back ceilings still apply.
+
 Music-only manifest changes do not invalidate the visual subject-region sheet fingerprint. The index may refresh provenance, but cached PNG frames/sheets must be reused when visual asset windows and scene geometry are unchanged.
 
 ## Shot-local recovery
