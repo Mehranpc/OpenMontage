@@ -1,0 +1,45 @@
+name: Issue 382 focused diagnostic
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  frontier-diagnostic:
+    name: Issue 382 public frontier diagnostics
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: make install-dev
+      - name: Emit public regression evidence
+        run: |
+          .venv/bin/python - <<'PY'
+          import pathlib, subprocess, sys
+          paths = [
+              'tests/lib/test_issue382_recovery_frontier.py',
+              'tests/lib/test_issue360_preparation_and_stop.py',
+              'tests/lib/test_issue360_truthful_readiness.py',
+              'tests/lib/test_issue331_acquisition_next_step.py',
+              'tests/lib/test_stale_selection_status.py',
+          ]
+          result = subprocess.run([sys.executable, '-m', 'pytest', *paths, '-q', '--tb=short'], capture_output=True, text=True)
+          text = result.stdout + result.stderr
+          pathlib.Path('issue382-diagnostic.txt').write_text(text)
+          print(text)
+          tail = text[-24000:]
+          for index in range(0, len(tail), 6000):
+              chunk = tail[index:index+6000].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              level = 'error' if result.returncode else 'notice'
+              print(f'::{level} title=Focused regression evidence::{chunk}')
+          sys.exit(result.returncode)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: issue382-diagnostic
+          path: issue382-diagnostic.txt
+          if-no-files-found: warn
