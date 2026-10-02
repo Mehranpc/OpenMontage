@@ -2917,13 +2917,20 @@ def request_send_back(
                 "automatic acquire_assets send-back requires --code and affected shot ids"
             )
         try:
+            if state.get("next_phase") == "review_subject_regions":
+                if code != "ASSET_SELECTION_HARD_REGION_COLLISION" or edit_attempt_id or edit_draft_json:
+                    raise PersianVideoWorkflowError(
+                        "region recovery requires hard-region findings and current region evidence"
+                    )
+                from lib.persian_region_commands import region_recovery_shots
+                recovery_shots = region_recovery_shots(_project_root(state), shots)
+            else:
+                recovery_shots = _recovery_edit_decisions(
+                    state, edit_attempt_id=edit_attempt_id, edit_draft_json=edit_draft_json,
+                )
             scoped_plan = shot_local_recovery_plan(
                 {"code": code, "details": {"shotIds": shots}},
-                _recovery_edit_decisions(
-                    state,
-                    edit_attempt_id=edit_attempt_id,
-                    edit_draft_json=edit_draft_json,
-                ),
+                recovery_shots,
                 asset_workspace_status(_project_root(state)),
             )
         except ValueError as exc:

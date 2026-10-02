@@ -1534,6 +1534,51 @@ def propose_regions(
     }
 
 
+def region_recovery_shots(project: Path, affected_shot_ids: Sequence[str]) -> dict[str, Any]:
+    """Derive a recovery-only shot view from current bound review; never author edit."""
+    index = _read_object(project / SHEET_DIR / INDEX_NAME, label="subject-region sheet index")
+    proposal = _read_object(project / SHEET_DIR / PROPOSAL_NAME, label="subject-region proposal")
+    manifest_path = project / "artifacts" / "asset_manifest.json"
+    scene_path = materialize_scene_plan(project) or project / "artifacts" / "scene_plan.json"
+    manifest = _read_object(manifest_path, label="asset manifest")
+    scene = _read_object(scene_path, label="scene plan")
+    inputs = {
+        "assetManifestPath": _relative(manifest_path, project),
+        "assetManifestSha256": _hash_file(manifest_path),
+        "assetVisualDependencySha256": asset_visual_dependency_digest(manifest),
+        "scenePlanPath": _relative(scene_path, project),
+        "scenePlanSha256": _hash_file(scene_path),
+        "sceneGeometryDependencySha256": scene_geometry_dependency_digest(scene),
+    }
+    shots = _validate_sheet_index(project, index, manifest=manifest, scene_plan=scene, input_record=inputs)
+    source = proposal.get("source") or {}
+    if (
+        proposal.get("scenePlanSha256") != inputs["scenePlanSha256"]
+        or source.get("indexFingerprint") != index.get("fingerprint")
+        or source.get("indexPath") != (SHEET_DIR / INDEX_NAME).as_posix()
+    ):
+        raise PersianRegionCommandError("region recovery requires a current bound proposal")
+    try:
+        evidence = validate_subject_region_review_evidence(
+            proposal.get("proposedEvidence"), expected_shot_ids=[str(s["shotId"]) for s in shots]
+        )
+    except SubjectRegionReviewError as exc:
+        raise PersianRegionCommandError(str(exc)) from exc
+    rows = evidence["shot_regions"]
+    collisions = declared_negative_space_collisions(scene, shots, rows)
+    hook = opening_hook_placement(shots, rows)
+    allowed = {str(row["shotId"]) for row in collisions}
+    if hook.get("feasible") is False:
+        allowed.update(str(item) for item in hook.get("shotIds") or [])
+    requested = set(affected_shot_ids)
+    if not requested or not requested.issubset(allowed):
+        raise PersianRegionCommandError("region recovery affected shots must have current reviewed hard-region findings")
+    return {"persian": {"shots": [
+        {"id": shot["shotId"], "visualEventId": shot["visualEventId"]}
+        for shot in shots if str(shot["shotId"]) in requested
+    ]}}
+
+
 def pending_opening_hook_block(project: Path) -> dict[str, Any] | None:
     """The current proposal's opening-hook finding when no hook zone is clear (#229)."""
     proposal_path = project / SHEET_DIR / PROPOSAL_NAME
