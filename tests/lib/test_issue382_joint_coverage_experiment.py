@@ -126,3 +126,18 @@ def test_real_public_frontier_round_trips_read_only(tmp_path, capsys):
     missing = tmp_path / 'none.json'
     missing.write_text(json.dumps({'acquisition': {'preparation': {'recoveryEvidence': None}}}))
     assert cli.main([str(missing)]) == 2
+
+
+def test_published_real_corpus_reproduces_recorded_h2_rejection():
+    """The frozen production frontier (docs/experiments) keeps its recorded verdict."""
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[2] / 'docs/experiments/issue382-corpus-p0-first-date.json'
+    corpus = json.loads(path.read_text(encoding='utf-8'))
+    assert corpus['corpusSha256'] == '8991aeb7b8fba7c62640eff842e255668e43523020409da7207b7be0a23cd0be'
+    certificate = experiment.joint_coverage_certificate(corpus)
+    assert certificate['status'] == 'no_known_admissible'
+    assert certificate['eventsWithoutKnownAdmissible'] == ['ev-01', 'ev-02', 'ev-03', 'ev-04', 'ev-11']
+    assert certificate['maxJointCoverage'] == 0 and certificate['conflicts'] == []
+    rows = [row for event in corpus['events'].values() for row in event]
+    assert len(rows) == 27 and {row['status'] for row in rows} == {'rejected'}
