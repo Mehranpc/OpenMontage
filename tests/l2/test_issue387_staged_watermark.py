@@ -92,14 +92,20 @@ def test_v3_keeps_every_slot_the_planner_chose(tmp_path: Path) -> None:
     assert planned == v2["watermarkPlan"]
 
 
-def test_where_v2_refuses_the_brand_v3_records_the_farthest_anchor(tmp_path: Path) -> None:
-    try:
-        _prepare(_props(staged=False, crowded=True), tmp_path)
-    except FilmTypePreflightError:
-        refused = True
+@pytest.mark.parametrize("crowded", [False, True])
+def test_v3_fills_only_when_the_planner_leaves_the_brand_below_its_floor(tmp_path: Path, crowded: bool) -> None:
+    # Font-independent: whether the planner meets the floor depends on the
+    # measured Film Type profile (2.15 locally, licensed 2.16 in CI). The
+    # invariant is what v3 does in either case.
+    v3 = _prepare(_props(staged=True, crowded=crowded), tmp_path)
+    plan = v3["watermarkPlan"]
+    planned = [slot for slot in plan if not slot["reason"].startswith("v3-farthest-from-text")]
+    floor = v3["design"]["resolved"]["watermark"].get("minCoverageRatio", 0.0)
+    filled = v3["filmType"]["stagedWatermark"]["filledSlots"]
+    warnings = v3["filmType"]["warnings"]
+    if _coverage(planned) + 1e-6 < floor:
+        assert filled, "below the floor, v3 must use the farthest in-safe-zone anchor"
+        assert any("watermark-farthest-from-text" in w for w in warnings)
     else:
-        refused = False
-    v3 = _prepare(_props(staged=True, crowded=True), tmp_path)
-    if refused:
-        assert v3["filmType"]["stagedWatermark"]["filledSlots"]
-        assert any("watermark-farthest-from-text" in w for w in v3["filmType"]["warnings"])
+        assert filled == [], "the planner met the floor; nothing is added"
+        assert not any("watermark-farthest-from-text" in w for w in warnings)
