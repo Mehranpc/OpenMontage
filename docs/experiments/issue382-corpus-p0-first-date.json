@@ -1,0 +1,315 @@
+{
+  "complete": true,
+  "corpusSha256": "8991aeb7b8fba7c62640eff842e255668e43523020409da7207b7be0a23cd0be",
+  "events": {
+    "ev-01": [
+      {
+        "codes": [],
+        "ref": "cand-4416a8816f0b06cc",
+        "rejectionCategory": "technical",
+        "source": "src-64a94616e9259539",
+        "status": "rejected",
+        "window": [
+          0.0,
+          4.66
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-6a496f12a9422643",
+        "rejectionCategory": "semantic",
+        "source": "src-a893cda6bad5ade7",
+        "status": "rejected",
+        "window": [
+          0.0,
+          4.66
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-a69e2ecca110f0db",
+        "rejectionCategory": "semantic",
+        "source": "src-6867e07c37327e51",
+        "status": "rejected",
+        "window": [
+          0.0,
+          4.66
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-aadd615d893f0bea",
+        "rejectionCategory": "technical",
+        "source": "src-e9b1cb4a5f48bb64",
+        "status": "rejected",
+        "window": [
+          0.0,
+          4.66
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-b540da52b7ad8243",
+        "rejectionCategory": "semantic",
+        "source": "src-d0c3dd9701844fc5",
+        "status": "rejected",
+        "window": [
+          0.0,
+          4.66
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-b56d492f48d0e54c",
+        "rejectionCategory": "semantic",
+        "source": "src-fc389c979f9fdd54",
+        "status": "rejected",
+        "window": [
+          0.0,
+          4.66
+        ]
+      }
+    ],
+    "ev-02": [
+      {
+        "codes": [],
+        "ref": "cand-005022f9d863a778",
+        "rejectionCategory": "semantic",
+        "source": "src-816b383b5cc25fb5",
+        "status": "rejected",
+        "window": [
+          0.0,
+          3.36
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-3b23553e29120277",
+        "rejectionCategory": "semantic",
+        "source": "src-1c1d1f0c0564ccb2",
+        "status": "rejected",
+        "window": [
+          0.0,
+          3.36
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-4c58e972b66712ea",
+        "rejectionCategory": "technical",
+        "source": "src-9011f37ca2ba7985",
+        "status": "rejected",
+        "window": [
+          0.0,
+          3.36
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-60acb8004e005d96",
+        "rejectionCategory": "semantic",
+        "source": "src-3cb46bc4f0adaf63",
+        "status": "rejected",
+        "window": [
+          0.0,
+          3.36
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-6e44782c106aba3f",
+        "rejectionCategory": "editorial",
+        "source": "src-ab542161fcba6186",
+        "status": "rejected",
+        "window": [
+          0.0,
+          3.36
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-9dc2038a971501d4",
+        "rejectionCategory": "editorial",
+        "source": "src-ec05ab44a9c2e9e8",
+        "status": "rejected",
+        "window": [
+          0.0,
+          3.36
+        ]
+      }
+    ],
+    "ev-03": [
+      {
+        "codes": [],
+        "ref": "cand-055f6e0df123a69a",
+        "rejectionCategory": "semantic",
+        "source": "src-82f7b970f56b1781",
+        "status": "rejected",
+        "window": [
+          0.0,
+          4.893333
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-07042f3933596611",
+        "rejectionCategory": "semantic",
+        "source": "src-a7e3bca7665e6b01",
+        "status": "rejected",
+        "window": [
+          0.0,
+          4.893333
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-20ef7605ef43df9e",
+        "rejectionCategory": "semantic",
+        "source": "src-4b2c8ec649d681e3",
+        "status": "rejected",
+        "window": [
+          0.0,
+          4.893333
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-d807e78756a08895",
+        "rejectionCategory": "semantic",
+        "source": "src-fc4c291e954002e2",
+        "status": "rejected",
+        "window": [
+          0.0,
+          4.893333
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-e7a2f4d4bd217267",
+        "rejectionCategory": "technical",
+        "source": "src-2e7517e0c06dd87a",
+        "status": "rejected",
+        "window": [
+          0.0,
+          4.893333
+        ]
+      }
+    ],
+    "ev-04": [
+      {
+        "codes": [],
+        "ref": "cand-0a3dde9f729090ea",
+        "rejectionCategory": "semantic",
+        "source": "src-0d3280e5dbcf6332",
+        "status": "rejected",
+        "window": [
+          0.0,
+          3.96
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-c3d0f66cab8a7a4d",
+        "rejectionCategory": "technical",
+        "source": "src-40e700ed2076917a",
+        "status": "rejected",
+        "window": [
+          0.0,
+          3.96
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-dc9995546dc37ad8",
+        "rejectionCategory": "semantic",
+        "source": "src-1c1d1f0c0564ccb2",
+        "status": "rejected",
+        "window": [
+          0.0,
+          3.96
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-f358af5c7ef89571",
+        "rejectionCategory": "editorial",
+        "source": "src-ccb9c7edf638465e",
+        "status": "rejected",
+        "window": [
+          0.0,
+          3.96
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-f39569b558e02318",
+        "rejectionCategory": "semantic",
+        "source": "src-b360a47eaa7a7285",
+        "status": "rejected",
+        "window": [
+          0.0,
+          3.96
+        ]
+      }
+    ],
+    "ev-11": [
+      {
+        "codes": [],
+        "ref": "cand-045c85070c4c7cd5",
+        "rejectionCategory": "semantic",
+        "source": "src-b35bb1eb21583119",
+        "status": "rejected",
+        "window": [
+          0.0,
+          3.52
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-18aa093b8ebc6bd4",
+        "rejectionCategory": "semantic",
+        "source": "src-fc389c979f9fdd54",
+        "status": "rejected",
+        "window": [
+          0.0,
+          3.7
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-37f41958e9930043",
+        "rejectionCategory": "semantic",
+        "source": "src-b49277c5dd621720",
+        "status": "rejected",
+        "window": [
+          0.0,
+          3.7
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-9cedd4efb78ef61d",
+        "rejectionCategory": "editorial",
+        "source": "src-7f5814f79712e7db",
+        "status": "rejected",
+        "window": [
+          0.0,
+          3.7
+        ]
+      },
+      {
+        "codes": [],
+        "ref": "cand-af4327966512ab0e",
+        "rejectionCategory": "semantic",
+        "source": "src-816b383b5cc25fb5",
+        "status": "rejected",
+        "window": [
+          0.0,
+          3.52
+        ]
+      }
+    ]
+  },
+  "sourceReportInputsSha256": "dd955322a8a1c68eed9afff9d77327a4d0c83e20da2fc6c21c58fd646abbf8dc",
+  "version": "issue382-joint-coverage-corpus/1.0"
+}
