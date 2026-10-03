@@ -160,8 +160,14 @@ def write_stage_lock(
     *,
     implementation_sha: str,
     now: datetime | None = None,
+    lock_version: int = 1,
+    provenance: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Lock one stage. Earlier stages must be locked; an existing lock is immutable."""
+    """Lock one stage. Earlier stages must be locked; an existing lock is immutable.
+
+    ``lock_version`` > 1 and ``provenance`` are used only by a human time-range
+    revision, after the previous lock was archived with :func:`archive_stage_lock`.
+    """
     if stage not in STAGE_NAMES:
         raise StageLockError(f"unknown stage {stage!r}")
     prior = verify_stage_locks(project_dir)
@@ -179,19 +185,42 @@ def write_stage_lock(
         "schema": LOCK_SCHEMA,
         "stage": stage,
         "name": STAGE_NAMES[stage],
-        "lock_version": 1,
+        "lock_version": int(lock_version),
         "files": digests,
         "content_digest": _digest(digests),
         "input_digests": {str(item["stage"]): item["content_digest"] for item in prior[:stage]},
         "implementation_sha": str(implementation_sha or "unknown"),
         "locked_at": (now or datetime.now(timezone.utc)).isoformat(),
     }
+    if provenance:
+        record["provenance"] = dict(provenance)
     path = lock_path(project_dir, stage)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     os.replace(tmp, path)
     return record
+
+
+def archive_stage_lock(project_dir: Path, stage: int, *, reason: str) -> dict[str, Any]:
+    """Move the active lock of ``stage`` to ``stage_locks/history/`` (human revision only).
+
+    The lock must still verify, and only the last locked stage may be reopened, so a
+    revision can never leave a later lock bound to a stage that is changing.
+    """
+    record = verify_stage_lock(project_dir, stage)
+    present = locked_stages(project_dir)
+    if present and present[-1] != stage:
+        raise StageLockError(f"stage {stage} cannot reopen while later stages {present} are locked")
+    history = Path(project_dir) / LOCK_DIR / "history"
+    history.mkdir(parents=True, exist_ok=True)
+    target = history / f"stage-{stage}.v{int(record.get('lock_version') or 1)}.json"
+    if target.exists():
+        raise StageLockError(f"stage {stage} lock version is already archived: {target.name}")
+    archived = {**record, "archived_reason": str(reason)}
+    target.write_text(json.dumps(archived, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    lock_path(project_dir, stage).unlink()
+    return archived
 
 
 def assert_stage_unlocked(project_dir: Path, stage: int, *, action: str) -> None:

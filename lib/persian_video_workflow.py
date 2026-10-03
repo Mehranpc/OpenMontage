@@ -2403,6 +2403,178 @@ def _refuse_locked_stage(state: Mapping[str, Any], stage: int, *, action: str) -
         raise PersianVideoWorkflowError(str(exc)) from exc
 
 
+def _revision_footage_lock_terms(root: Path) -> dict[str, Any] | None:
+    """For an open human range revision, prove events outside it kept their footage."""
+    from lib.persian_range_revision import (
+        RangeRevisionError, active_revision, manifest_event_digests, outside_changes,
+    )
+
+    try:
+        revision = active_revision(root)
+    except RangeRevisionError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+    if revision is None or revision.get("status") != "open":
+        return None
+    try:
+        checkpoint = json.loads((root / "checkpoint_assets.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PersianVideoWorkflowError("range revision needs the new assets checkpoint") from exc
+    manifest = ((checkpoint.get("artifacts") or {}).get("asset_manifest") or {})
+    after = manifest_event_digests(manifest)
+    changed = outside_changes(revision["eventDigestsBefore"], after, revision["visualEventIds"])
+    if changed:
+        raise PersianVideoWorkflowError(
+            f"range revision rev-{int(revision['revision']):03d} changed footage outside its range: {changed}"
+        )
+    missing = sorted(set(revision["visualEventIds"]) - set(after))
+    if missing:
+        raise PersianVideoWorkflowError(f"range revision has no footage yet for {missing}")
+    return {
+        "lock_version": int(revision["previousFootageLock"]["lock_version"]) + 1,
+        "provenance": {"revision": int(revision["revision"]), "visualEventIds": list(revision["visualEventIds"]),
+                       "range": dict(revision["range"]), "reason": revision["reason"],
+                       "eventDigestsAfter": after},
+    }
+
+
+def _mark_revision_footage_locked(root: Path, lock: Mapping[str, Any]) -> None:
+    from lib.persian_range_revision import active_revision, write_revision
+
+    revision = active_revision(root)
+    if revision is None:
+        return
+    revision = {**revision, "status": "footage_locked",
+                "footageLock": {"lock_version": lock["lock_version"], "content_digest": lock["content_digest"]},
+                "eventDigestsAfter": dict((lock.get("provenance") or {}).get("eventDigestsAfter") or {})}
+    write_revision(root, revision)
+
+
+def _close_range_revision(state: Mapping[str, Any], candidate: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Before a revised candidate stops for review, frames outside the range must match."""
+    if not _is_v3_staged(state):
+        return None
+    from lib.persian_range_revision import (
+        RangeRevisionError, active_revision, outside_range_frame_proof, write_revision,
+    )
+
+    root = _project_root(state)
+    try:
+        revision = active_revision(root)
+    except RangeRevisionError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+    if revision is None:
+        return None
+    if revision.get("status") != "footage_locked":
+        raise PersianVideoWorkflowError("range revision footage is not locked yet")
+    previous = root / revision["previousCandidate"]["path"]
+    try:
+        proof = outside_range_frame_proof(
+            previous, Path(str(candidate["candidate_path"])),
+            float(revision["range"]["startSeconds"]), float(revision["range"]["endSeconds"]),
+        )
+    except RangeRevisionError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+    attempts = list(revision.get("proofAttempts") or []) + [proof]
+    if proof["status"] != "pass":
+        write_revision(root, {**revision, "proofAttempts": attempts})
+        raise PersianVideoWorkflowError(
+            f"range revision rev-{int(revision['revision']):03d}: frames outside "
+            f"{revision['range']['startSeconds']}-{revision['range']['endSeconds']}s changed "
+            f"({proof['mismatchCount']} frames, counts equal={proof['frameCountsEqual']})"
+        )
+    write_revision(root, {**revision, "status": "closed", "proofAttempts": attempts,
+                          "candidate": {"path": str(candidate["candidate_path"]),
+                                        "sha256": str(candidate["candidate_sha256"])}})
+    return {"revision": int(revision["revision"]), "proof": proof}
+
+
+@state_locked
+def revise_time_range(
+    project_id: str,
+    from_seconds: float,
+    to_seconds: float,
+    *,
+    reason: str,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """#387 v3: the only backward path. A human names a range of the reviewed candidate.
+
+    The range expands to the footage events it overlaps; only those events re-enter
+    acquisition (scoped, with their own candidate grant). Narration and timing stay
+    locked; the previous footage lock is archived as history, not deleted.
+    """
+    from lib.persian_range_revision import (
+        SCHEMA, RangeRevisionError, active_revision, events_in_range, expanded_range,
+        footage_event_spans, keep_previous_candidate, list_revisions, manifest_event_digests,
+        write_revision,
+    )
+    from lib.persian_scene_plan_source import load_effective_scene_plan
+    from lib.persian_stage_locks import StageLockError, archive_stage_lock, verify_stage_locks
+
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    effective_now = now or datetime.now(timezone.utc)
+    if not _is_v3_staged(state):
+        raise PersianVideoWorkflowError("revise is the v3_staged range revision; v2 uses send-back")
+    if state.get("status") not in {"awaiting_human", "needs_revision"}:
+        raise PersianVideoWorkflowError("revise needs a candidate under human review (awaiting_human)")
+    if not str(reason or "").strip():
+        raise PersianVideoWorkflowError("revise requires a non-empty reason")
+    root = _project_root(state)
+    try:
+        locks = {int(item["stage"]): item for item in verify_stage_locks(root)}
+        if 1 not in locks:
+            raise PersianVideoWorkflowError("revise needs locked footage (stage 1)")
+        if active_revision(root) is not None:
+            raise PersianVideoWorkflowError("a range revision is already open")
+        requirements, _, _ = scene_asset_requirements(load_effective_scene_plan(root) or {})
+        spans = footage_event_spans(requirements)
+        events = events_in_range(spans, float(from_seconds), float(to_seconds))
+    except (RangeRevisionError, StageLockError) as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+    candidate = _validate_awaiting_human_candidate(state, require_final_review=False)
+    checkpoint = read_checkpoint(Path(str(state["projects_root"])).resolve(), project_id, "assets") or {}
+    manifest = ((checkpoint.get("artifacts") or {}).get("asset_manifest") or {})
+    number = len(list_revisions(root)) + 1
+    kept = keep_previous_candidate(root, number, Path(candidate["candidate_path"]))
+    grant = max(_REACQUISITION_CANDIDATE_GRANT, 2 * len(events))
+    record = {
+        "schema": SCHEMA, "revision": number, "status": "open",
+        "requestedBy": "human", "reason": str(reason).strip(),
+        "requestedRange": {"startSeconds": float(from_seconds), "endSeconds": float(to_seconds)},
+        "range": expanded_range(spans, events), "visualEventIds": events,
+        "requestedAt": effective_now.isoformat(),
+        "timingLock": {"content_digest": locks[0]["content_digest"]},
+        "previousFootageLock": {"lock_version": int(locks[1].get("lock_version") or 1),
+                                "content_digest": locks[1]["content_digest"]},
+        "previousCandidate": {"path": str(kept.relative_to(root)), "sha256": candidate["candidate_sha256"]},
+        "eventDigestsBefore": manifest_event_digests(manifest),
+        "budget": {"candidates": grant},
+    }
+    try:
+        archive_stage_lock(root, 1, reason=f"range revision rev-{number:03d}")
+    except StageLockError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+    write_revision(root, record)
+    request_send_back(
+        project_id, "acquire_assets", reason=f"range revision rev-{number:03d}: {record['reason']}",
+        pipeline_dir=pipeline_dir, now=effective_now, user_directed_revision=True,
+    )
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    state["asset_reacquisition_scope"] = {
+        "version": "1.0", "diagnosticCode": "HUMAN_RANGE_REVISION", "reasonCode": "HUMAN_RANGE_REVISION",
+        "shotIds": [], "visualEventIds": list(events), "reason": record["reason"], "revision": number,
+    }
+    usage = dict(state.get("asset_usage") or {})
+    state["asset_reacquisition_grant"] = {
+        "candidates": grant, "visualEventIds": list(events), "grantedAt": effective_now.isoformat(),
+        "candidateBaseline": int(usage.get("semantic_candidates_reviewed", usage.get("candidates_considered", 0))),
+    }
+    _write_state(root, state)
+    return {"revision": number, "visualEventIds": events, "range": record["range"],
+            "nextPhase": state.get("next_phase"), "candidateGrant": grant}
+
+
 def _apply_v3_stage_locks(state: Mapping[str, Any], phase: str, *, now: datetime | None) -> dict[str, Any] | None:
     """Verify every v3 lock, then lock the stage this phase completes (#387)."""
     if not _is_v3_staged(state):
@@ -2418,13 +2590,17 @@ def _apply_v3_stage_locks(state: Mapping[str, Any], phase: str, *, now: datetime
         if phase not in LOCKING_PHASES:
             return None
         stage, files = LOCKING_PHASES[phase]
+        revision = _revision_footage_lock_terms(root) if stage == 1 else None
         record = write_stage_lock(
             root, stage, files,
             implementation_sha=_code_revision(Path(__file__).resolve().parents[1]),
             now=now,
+            **(revision or {}),
         )
     except StageLockError as exc:
         raise PersianVideoWorkflowError(str(exc)) from exc
+    if revision is not None:
+        _mark_revision_footage_locked(root, record)
     return {
         "stage": record["stage"], "name": record["name"],
         "content_digest": record["content_digest"], "input_digests": record["input_digests"],
@@ -2650,6 +2826,9 @@ def _complete_phase_impl(
         )
     if phase == "awaiting_human":
         phase_evidence.update(_validate_awaiting_human_candidate(state))
+        revision_proof = _close_range_revision(state, phase_evidence)
+        if revision_proof is not None:
+            phase_evidence["rangeRevision"] = revision_proof
 
     if phase == "acquire_assets" and isinstance(state.get("asset_reacquisition_scope"), Mapping):
         phase_evidence["scopedReacquisition"] = dict(state["asset_reacquisition_scope"])
@@ -6336,6 +6515,13 @@ def build_parser() -> argparse.ArgumentParser:
     reconcile.add_argument("--json", required=True, metavar="PATH",
                            help='{"amendments":[{"visual_event_id":"ve-4","set":{"shows_subject":false}}]}')
     reconcile.add_argument("--reason", required=True)
+    revise = sub.add_parser(
+        "revise", help="v3 only: human time-range revision of the reviewed candidate (#387)"
+    )
+    revise.add_argument("project_id")
+    revise.add_argument("--from", dest="from_seconds", type=float, required=True)
+    revise.add_argument("--to", dest="to_seconds", type=float, required=True)
+    revise.add_argument("--reason", required=True)
     send_back = sub.add_parser("send-back", help="rewind within the send-back budget")
     reopen = sub.add_parser(
         "reopen-asset-search",
@@ -6807,6 +6993,10 @@ def _main(args: argparse.Namespace) -> int:
         elif args.command == "reopen-asset-search":
             _print_json(reopen_asset_search(
                 args.project_id, list(args.visual_event_ids), reason=args.reason,
+            ))
+        elif args.command == "revise":
+            _print_json(revise_time_range(
+                args.project_id, args.from_seconds, args.to_seconds, reason=args.reason,
             ))
         elif args.command == "send-back":
             _print_json(

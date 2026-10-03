@@ -97,3 +97,30 @@ then, staying put while the current anchor still keeps the text distance.
 Every added slot has reason `v3-farthest-from-text` and is listed in
 `filmType.stagedWatermark.filledSlots` with its measured text gap; a coverage
 shortfall is a warning, never a `WATERMARK_COVERAGE` refusal.
+
+## Human-directed range revision (#387 increment 5)
+
+The only way to reopen locked footage is an explicit human request on a
+candidate in review (`awaiting_human` or `needs_revision`):
+
+```
+python -m lib.persian_video_workflow revise <project> --from 12.0 --to 15.5 --reason "..."
+```
+
+- The requested seconds expand to whole visual events (footage spans from the
+  locked asset manifest). Only those events go back to `acquire_assets` with a
+  scoped reacquisition grant (`HUMAN_RANGE_REVISION`, `max(4, 2 × events)`
+  candidates). Stage 0 (script) stays locked.
+- The stage-1 lock is archived to `stage_locks/history/stage-1.vK.json` before
+  it is released; the new lock carries `lockVersion = K+1` and a provenance
+  block naming the revision. History is never overwritten.
+- The revision record lives at `stage_locks/revisions/rev-NNN/revision.json`
+  with the previous candidate copied next to it. Only one revision may be open.
+- Re-locking footage requires every event outside the range to keep its exact
+  manifest digest; any outside change refuses the lock.
+- Closing the revision at the next `awaiting_human` requires a decoded-frame
+  proof (ffmpeg `framemd5`): every frame outside the range (minus a 2-frame edge
+  guard) must be identical to the previous candidate. A failed proof refuses the
+  candidate and is recorded under `proofAttempts`. A range covering the whole
+  timeline is a recorded vacuous pass.
+- The agent never starts a revision on its own; `requestedBy` is always `human`.
