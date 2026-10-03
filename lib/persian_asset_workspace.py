@@ -411,7 +411,7 @@ def _validate_manifest_frame_review(frame: Mapping[str, Any]) -> None:
         ) from exc
 
 
-def _validate_review(review: Mapping[str, Any]) -> dict[str, Any]:
+def _validate_review(review: Mapping[str, Any], *, profile: str = "v2") -> dict[str, Any]:
     if not isinstance(review, Mapping):
         raise PersianAssetWorkspaceError("candidate review must be an object")
     result = {str(key): value for key, value in review.items()}
@@ -423,6 +423,8 @@ def _validate_review(review: Mapping[str, Any]) -> dict[str, Any]:
             raise PersianAssetWorkspaceError(f"frame_review.{key} must be true")
     if not str(frame.get("observed") or "").strip():
         raise PersianAssetWorkspaceError("frame_review.observed must be non-empty")
+    if profile == "v3_staged":
+        return _validate_v3_review(result, frame)
     for field in ("shows_subject", "human_presence", "affect_match"):
         if not isinstance(result.get(field), bool):
             raise PersianAssetWorkspaceError(f"{field} must be boolean")
@@ -485,11 +487,52 @@ def _validate_review(review: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _validate_v3_review(result: dict[str, Any], frame: Mapping[str, Any]) -> dict[str, Any]:
+    """#387 stage-1 review: frames, reasons and topic evidence; no geometry/affect gate."""
+    from lib.persian_pipeline_profile import PipelineProfileError, validate_topic_review
+
+    try:
+        result["topic_review"] = validate_topic_review(result.get("topic_review"))
+    except PipelineProfileError as exc:
+        raise PersianAssetWorkspaceError(str(exc)) from exc
+    for field in ("relevance_reason", "selection_reason"):
+        if not str(result.get(field) or "").strip():
+            raise PersianAssetWorkspaceError(f"{field} must be non-empty")
+    for field in ("shows_subject", "human_presence", "affect_match"):
+        if field in result and not isinstance(result[field], bool):
+            raise PersianAssetWorkspaceError(f"{field} must be boolean")
+    if "staged_stock_risk" in result:
+        risk = str(result.get("staged_stock_risk") or "").strip().lower()
+        if risk not in _STAGED_STOCK_RISKS:
+            raise PersianAssetWorkspaceError("staged_stock_risk must be low, medium, or high")
+        result["staged_stock_risk"] = risk
+    frame_copy = dict(frame)
+    from lib.persian_scenes import NEGATIVE_SPACE_REGIONS
+
+    if "placement_space" in frame_copy and frame_copy["placement_space"] not in NEGATIVE_SPACE_REGIONS:
+        raise PersianAssetWorkspaceError("frame_review.placement_space is not a known region")
+    _validate_manifest_frame_review(frame_copy)
+    return result
+
+
+def _review_profile(project_dir: Path) -> str:
+    """Profile of the effective plan; any doubt keeps the strict v2 contract."""
+    from lib.persian_pipeline_profile import PipelineProfileError, plan_profile
+    from lib.persian_scene_plan_source import ScenePlanUnreadable, load_effective_scene_plan
+
+    try:
+        return plan_profile(load_effective_scene_plan(project_dir))
+    except ScenePlanUnreadable:
+        return "v2"
+    except PipelineProfileError as exc:
+        raise PersianAssetWorkspaceError(str(exc)) from exc
+
+
 def record_candidate_review(
     project_dir: Path, candidate_id: str, review: Mapping[str, Any]
 ) -> dict[str, Any]:
     candidate = load_asset_candidate(project_dir, candidate_id)
-    normalized = _validate_review(review)
+    normalized = _validate_review(review, profile=_review_profile(project_dir))
     review_sha = _sha256({
         "candidateIdentitySha256": candidate["identitySha256"],
         "candidateContext": candidate.get("context") or {},
@@ -888,6 +931,24 @@ def _manifest_frame_review(raw: object) -> dict[str, Any]:
 
 
 def _manifest_evidence(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    evidence = _manifest_evidence_fields(candidate)
+    review = candidate.get("review") if isinstance(candidate.get("review"), Mapping) else {}
+    topic = review.get("topic_review")
+    if isinstance(topic, Mapping):
+        # #387 v3: on_topic is defined as visibly showing the scene's subject, so the
+        # manifest's subject fact comes from that review; v3 does not judge affect,
+        # staging or human presence, so unrecorded facts are omitted, never invented.
+        if not isinstance(evidence.get("shows_subject"), bool):
+            evidence["shows_subject"] = topic.get("topic_match") == "on_topic"
+        for field in ("human_presence", "affect_match"):
+            if not isinstance(evidence.get(field), bool):
+                evidence.pop(field, None)
+        if not evidence.get("staged_stock_risk"):
+            evidence.pop("staged_stock_risk", None)
+    return evidence
+
+
+def _manifest_evidence_fields(candidate: Mapping[str, Any]) -> dict[str, Any]:
     context = candidate.get("context") if isinstance(candidate.get("context"), Mapping) else {}
     review = candidate.get("review") if isinstance(candidate.get("review"), Mapping) else {}
     return {
@@ -905,7 +966,7 @@ def _manifest_evidence(candidate: Mapping[str, Any]) -> dict[str, Any]:
         "frame_review": _manifest_frame_review(review.get("frame_review")),
         **_reviewed_fallback(review),
         **{field: review[field] for field in (
-            "semantic_role", "semantic_direction", "opening_semantic_match",
+            "semantic_role", "semantic_direction", "opening_semantic_match", "topic_review",
         ) if field in review},
     }
 
@@ -1240,7 +1301,7 @@ def validate_asset_manifest_against_workspace(
             "visual_event_id", "semantic_beat_id", "query", "narration_span",
             "selection_reason", "relevance_reason", "staged_stock_risk",
         ):
-            if str(row.get(field) or "") != str(expected_evidence[field]):
+            if str(row.get(field) or "") != str(expected_evidence.get(field) or ""):
                 raise PersianAssetWorkspaceError(
                     f"asset_manifest {event_id!r} {field} does not match persisted candidate review/context"
                 )
@@ -1248,8 +1309,14 @@ def validate_asset_manifest_against_workspace(
             raise PersianAssetWorkspaceError(
                 f"asset_manifest {event_id!r} candidate_rank does not match persisted candidate context"
             )
-        for field in ("affect_match", "human_presence", "shows_subject"):
-            if row.get(field) is not expected_evidence[field]:
+        for field in ("affect_match", "human_presence", "shows_subject", "topic_review"):
+            if field in ("topic_review",):
+                if row.get(field) != expected_evidence.get(field):
+                    raise PersianAssetWorkspaceError(
+                        f"asset_manifest {event_id!r} {field} does not match persisted candidate review"
+                    )
+                continue
+            if row.get(field) is not expected_evidence.get(field):
                 raise PersianAssetWorkspaceError(
                     f"asset_manifest {event_id!r} {field} does not match persisted candidate review"
                 )
@@ -1357,7 +1424,7 @@ def assess_candidate_admission(
         declarations = assessed["declarationsRequired"]
     review = candidate.get("review") if isinstance(candidate.get("review"), Mapping) else {}
     geometry = review.get("geometry_review") if isinstance(review.get("geometry_review"), Mapping) else {}
-    if geometry.get("crop_safe") is not True:
+    if geometry.get("crop_safe") is not True and (requirement or {}).get("pipeline_profile") != "v3_staged":
         item = {
             "code": "CROP_UNSAFE", "ruleClass": "event_local", "visualEventId": event_id,
             "field": "geometry_review.crop_safe", "expected": True,

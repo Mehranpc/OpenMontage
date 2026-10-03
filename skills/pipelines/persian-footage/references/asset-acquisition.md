@@ -59,3 +59,10 @@ Prepare the next explicit decision from these facts, not by repeating a rejected
 `recoveryEvidence.localWindowCapacity` lists, per blocked/missing event, each exact source already known for that event: its duration, every known window of that source from any event or status, `openingWindowOnly`, the `unexploredSpans`/`unexploredSeconds` no record has examined, and `distinctWindowsFitting` (non-overlapping windows of the event's longest known window length). On the first real exhausted run 46/47 candidates used the opening window only (#382). Unexplored time is **not** evidence that footage fits: a semantic rejection may describe the whole clip. A later window is a new identity; stage it with an explicit `source_in_seconds`, review its actual frames and pass normal admission. Unknown or conflicting duration stays `null`. When allowances are spent, whether to examine such windows is an explicit decision; this report grants no pass, time or send-back.
 
 `asset-candidate-stage` returns `sourceWindowDeclared`; when it is `false` the payload omitted `source_in_seconds` and the opening window (0.0s) was staged, with `sourceWindowWarning`. Declare the reviewed window explicitly.
+
+## Experimental v3 topic-level admission (#387)
+
+Only when the scene plan sets `metadata.pipeline_profile: "v3_staged"` and the
+environment opts in (`OPENMONTAGE_PIPELINE_PROFILE=v3_staged`), stage-1
+admission is topic-level only; see `topic-review-v3.md`. Band, carrier and
+subject-region evidence do not apply to v3 candidates. Default profile is v2.
