@@ -116,6 +116,29 @@ def _quality_metadata_diagnostics(
             add("REASONING_MISSING", field,
                 f"{label}: missing {field}; selected footage needs inspectable reasoning")
 
+    if requirement.get("pipeline_profile") == "v3_staged":
+        # #387 stage 1: topic-level relevance plus the technical floor. No text or
+        # watermark geometry, affect, staged-stock, fallback-ladder or hook-role gate:
+        # later stages adapt text to the locked footage instead.
+        from lib.persian_pipeline_profile import topic_review_diagnostics
+
+        frame_review = entry.get("frame_review")
+        if not isinstance(frame_review, dict):
+            add("FRAME_REVIEW_MISSING", "frame_review",
+                f"{label}: missing frame_review evidence for start/middle/end inspection")
+        else:
+            for key in ("start", "middle", "end"):
+                if frame_review.get(key) is not True:
+                    add("FRAME_REVIEW_INCOMPLETE", f"frame_review.{key}",
+                        f"{label}: frame_review.{key} must be true after inspecting the clip",
+                        expected=True, observed=frame_review.get(key))
+            if not str(frame_review.get("observed") or "").strip():
+                add("FRAME_OBSERVED_MISSING", "frame_review.observed",
+                    f"{label}: frame_review.observed must state what was actually seen")
+        for code, field, expected, observed, reason in topic_review_diagnostics(entry.get("topic_review")):
+            add(code, field, f"{label}: {reason}", expected=expected, observed=observed)
+        return diagnostics
+
     # A unit that has to carry typography must be chosen with an eye to where that
     # typography can go. Without this the reviewer judges subject match alone, and
     # footage whose subject fills or crosses the frame is selected happily -- the
@@ -268,6 +291,9 @@ def _scene_asset_requirements(
     if beats is None:
         beats = (scene_plan.get("metadata") or {}).get("beats", [])
 
+    from lib.persian_pipeline_profile import plan_profile
+
+    profile = plan_profile(scene_plan)
     requirements: list[dict[str, Any]] = []
     typographic_ids: set[str] = set()
     explicit_event_beats: set[str] = set()
@@ -305,6 +331,7 @@ def _scene_asset_requirements(
                         "negative_space_alternates": [
                             str(name) for name in event.get("negative_space_alternates") or []
                         ],
+                        "pipeline_profile": profile,
                     }
                 )
         else:
@@ -313,6 +340,7 @@ def _scene_asset_requirements(
                     "beat_id": beat_id,
                     "visual_event_id": None,
                     "duration_seconds": beat.get("duration_seconds"),
+                    "pipeline_profile": profile,
                 }
             )
     return requirements, typographic_ids, explicit_event_beats

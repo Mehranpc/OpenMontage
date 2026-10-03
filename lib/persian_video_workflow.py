@@ -4374,13 +4374,24 @@ def review_workflow_asset_candidate(
     _scope_allows_candidate(state, candidate_id)
     source = assert_read_allowed(state, str(input_path))
     review = _read_json(str(source))
-    _refuse_candidate_occupying_declared_band(state, candidate_id, review)
+    from lib.persian_pipeline_profile import PipelineProfileError, plan_profile
     from lib.persian_region_commands import candidate_carrier_placement
     from lib.persian_scene_plan_source import materialize_scene_plan
 
     project = _project_root(state)
     plan_path = materialize_scene_plan(project) or project / "artifacts" / "scene_plan.json"
     plan = _read_json(str(plan_path)) if Path(plan_path).is_file() else {}
+    try:
+        profile = plan_profile(plan)
+    except PipelineProfileError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+    if profile == "v3_staged":
+        # #387 stage 1: footage is admitted on topic and technical floor only; text
+        # placement is decided later over the locked footage, so no band/carrier gate.
+        _refuse_dead_dark_source_window(state, candidate_id)
+        result = record_candidate_review(project, candidate_id, review)
+        return {**result, "carrierPremeasure": {"status": "not_applicable", "profile": profile}}
+    _refuse_candidate_occupying_declared_band(state, candidate_id, review)
     measurement = candidate_carrier_placement(
         plan, load_asset_candidate(project, candidate_id),
         (review.get("frame_review") or {}).get("subject_grid") or {},

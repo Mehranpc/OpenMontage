@@ -162,6 +162,19 @@
             "type": "boolean",
             "description": "Whether the inspected clip produces the visual event's desired_affect. False is not shippable for a selected Persian visual-event asset."
           },
+          "topic_review": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "#387 v3 stage-1 topic-level review of the inspected window.",
+            "required": ["topic_match", "inappropriate", "placeholder_screen", "technical_usable", "observed"],
+            "properties": {
+              "topic_match": {"type": "string", "enum": ["on_topic", "off_topic"]},
+              "inappropriate": {"type": "boolean"},
+              "placeholder_screen": {"type": "boolean"},
+              "technical_usable": {"type": "boolean"},
+              "observed": {"type": "string", "minLength": 1}
+            }
+          },
           "staged_stock_risk": {
             "type": "string",
             "enum": ["low", "medium", "high"],
