@@ -783,6 +783,13 @@ def write_checkpoint(
             "human_approved=True only on compose after explicit user approval "
             "of the rendered candidate; a continuation goal is not approval."
         )
+    # A v3 stage lock (#387) makes its checkpoints immutable for every writer.
+    from lib.persian_stage_locks import StageLockError, assert_checkpoint_writable
+
+    try:
+        assert_checkpoint_writable(pipeline_dir / project_id, stage)
+    except StageLockError as exc:
+        raise CheckpointValidationError(str(exc)) from exc
     if pipeline_type == "persian-footage":
         _validate_persian_compose_lifecycle(
             pipeline_dir, project_id, stage, status, artifacts, human_approved, metadata

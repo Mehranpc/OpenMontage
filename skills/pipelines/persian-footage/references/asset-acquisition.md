@@ -65,4 +65,6 @@ Prepare the next explicit decision from these facts, not by repeating a rejected
 Only when the scene plan sets `metadata.pipeline_profile: "v3_staged"` and the
 environment opts in (`OPENMONTAGE_PIPELINE_PROFILE=v3_staged`), stage-1
 admission is topic-level only; see `topic-review-v3.md`. Band, carrier and
-subject-region evidence do not apply to v3 candidates. Default profile is v2.
+subject-region evidence do not apply to v3 candidates. v3 is forward-only:
+stage locks freeze timing and footage, and agent send-backs are refused.
+Default profile is v2.

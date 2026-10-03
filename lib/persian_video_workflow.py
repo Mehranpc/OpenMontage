@@ -2384,6 +2384,53 @@ def _project_root(state: Mapping[str, Any]) -> Path:
     return Path(str(state["read_allowlist"]["project_root"])).resolve()
 
 
+def _is_v3_staged(state: Mapping[str, Any]) -> bool:
+    """Whether the project's effective plan selects the v3 staged profile (#387)."""
+    from lib.persian_pipeline_profile import PROFILE_V3, PipelineProfileError, project_profile
+
+    try:
+        return project_profile(_project_root(state)) == PROFILE_V3
+    except PipelineProfileError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+
+
+def _refuse_locked_stage(state: Mapping[str, Any], stage: int, *, action: str) -> None:
+    from lib.persian_stage_locks import StageLockError, assert_stage_unlocked
+
+    try:
+        assert_stage_unlocked(_project_root(state), stage, action=action)
+    except StageLockError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+
+
+def _apply_v3_stage_locks(state: Mapping[str, Any], phase: str, *, now: datetime | None) -> dict[str, Any] | None:
+    """Verify every v3 lock, then lock the stage this phase completes (#387)."""
+    if not _is_v3_staged(state):
+        return None
+    from lib.persian_stage_locks import (
+        LOCKING_PHASES, StageLockError, verify_stage_locks, write_stage_lock,
+    )
+    from lib.persian_workflow_telemetry import _code_revision
+
+    root = _project_root(state)
+    try:
+        verify_stage_locks(root)
+        if phase not in LOCKING_PHASES:
+            return None
+        stage, files = LOCKING_PHASES[phase]
+        record = write_stage_lock(
+            root, stage, files,
+            implementation_sha=_code_revision(Path(__file__).resolve().parents[1]),
+            now=now,
+        )
+    except StageLockError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+    return {
+        "stage": record["stage"], "name": record["name"],
+        "content_digest": record["content_digest"], "input_digests": record["input_digests"],
+    }
+
+
 def _valid_sha256(value: object) -> bool:
     raw = str(value or "").strip().lower()
     return len(raw) == 64 and all(ch in "0123456789abcdef" for ch in raw)
@@ -2601,6 +2648,10 @@ def _complete_phase_impl(
             validate_asset_manifest_against_workspace(_project_root(state), manifest)
         )
         _require_recorded_spend(checkpoint, manifest)
+
+    stage_lock = _apply_v3_stage_locks(state, phase, now=now)
+    if stage_lock is not None:
+        phase_evidence["stageLock"] = stage_lock
 
     completed = list(state.get("completed_phases") or [])
     if phase not in completed:
@@ -2938,6 +2989,16 @@ def request_send_back(
         )
     if not reason.strip():
         raise PersianVideoWorkflowError("send-back requires a non-empty reason")
+    if _is_v3_staged(state):
+        from lib.persian_stage_locks import StageLockError, assert_rewind_allowed
+
+        try:
+            assert_rewind_allowed(
+                _project_root(state), state.get("next_phase"), target_phase,
+                user_directed=user_directed_revision,
+            )
+        except StageLockError as exc:
+            raise PersianVideoWorkflowError(str(exc)) from exc
 
     scoped_plan: dict[str, Any] | None = None
     if target_phase == "acquire_assets" and not user_directed_revision:
@@ -3242,6 +3303,7 @@ def reopen_asset_search(
     assert_within_wall_time(state, now=effective_now)
     if state.get("status") != "active" or state.get("next_phase") != "acquire_assets":
         raise PersianVideoWorkflowError("reopen-asset-search is allowed only during active acquire_assets")
+    _refuse_locked_stage(state, 1, action="reopen-asset-search")
     if not str(reason or "").strip():
         raise PersianVideoWorkflowError("reopen-asset-search requires a non-empty reason")
     usage = dict(state.get("asset_usage") or {})
@@ -3449,6 +3511,7 @@ def reconcile_scene_plan(
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     effective_now = now or datetime.now(timezone.utc)
     assert_within_wall_time(state, now=effective_now)
+    _refuse_locked_stage(state, 0, action="reconcile-plan")
     if state.get("status") != "active":
         raise PersianVideoWorkflowError(
             f"reconcile-plan needs an active run, not {state.get('status')!r}"

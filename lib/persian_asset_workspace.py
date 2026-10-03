@@ -83,7 +83,22 @@ def _sha256(value: object) -> str:
     return hashlib.sha256(_stable_bytes(value)).hexdigest()
 
 
+def _refuse_locked_footage(path: Path) -> None:
+    """After the v3 footage lock (#387) the asset workspace is read-only."""
+    parts = path.parts
+    if ".asset-workspace" not in parts:
+        return
+    from lib.persian_stage_locks import StageLockError, assert_stage_unlocked
+
+    project_dir = Path(*parts[: parts.index(".asset-workspace")])
+    try:
+        assert_stage_unlocked(project_dir, 1, action="changing the asset workspace")
+    except StageLockError as exc:
+        raise PersianAssetWorkspaceError(str(exc)) from exc
+
+
 def _atomic_json(path: Path, value: Mapping[str, Any]) -> None:
+    _refuse_locked_footage(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
     temp.write_text(
