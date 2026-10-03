@@ -124,3 +124,22 @@ python -m lib.persian_video_workflow revise <project> --from 12.0 --to 15.5 --re
   candidate and is recorded under `proofAttempts`. A range covering the whole
   timeline is a recorded vacuous pass.
 - The agent never starts a revision on its own; `requestedBy` is always `human`.
+
+## Migration and the profile pin (#387 increment 6)
+
+- `v2` stays the default (`DEFAULT_PROFILE`). v3 needs both the plan field and
+  `OPENMONTAGE_PIPELINE_PROFILE=v3_staged`. Making v3 the default is an owner
+  decision after the #387 Mac acceptance (fresh run, 12/12 events, no
+  send-backs, rendered QA, exact-candidate human approval); it is never a side
+  effect of merging an increment.
+- Every project is pinned to one profile in `pipeline_profile.json`, written at
+  the first phase completion that has a plan (projects that predate the pin get
+  it at their next completion, with the profile they already run). Reads never
+  write the pin.
+- Existing projects are **not migrated in place**: a plan whose profile differs
+  from the pin is refused with `PIPELINE_PROFILE_MIGRATION_REFUSED` (workflow,
+  candidate review and admission). Start a fresh project instead.
+- Earlier rejections are never rehabilitated automatically. Candidate reviews are
+  immutable and a rejected candidate cannot be selected. Re-judging an old
+  rejected identity under topic-level relevance means a fresh, explicit
+  `topic_review` in a fresh v3 project.

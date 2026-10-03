@@ -2394,6 +2394,28 @@ def _is_v3_staged(state: Mapping[str, Any]) -> bool:
         raise PersianVideoWorkflowError(str(exc)) from exc
 
 
+def _pin_pipeline_profile(state: Mapping[str, Any], phase: str) -> dict[str, Any] | None:
+    """Pin the plan's profile at the first phase completion that has a plan (#387 inc 6).
+
+    Projects that predate the pin get it at their next completion with the profile they
+    already run, so a later plan edit cannot migrate them in place.
+    """
+    from lib.persian_pipeline_profile import PipelineProfileError, pin_project_profile, plan_profile
+    from lib.persian_scene_plan_source import ScenePlanUnreadable, load_effective_scene_plan
+
+    project = _project_root(state)
+    try:
+        plan = load_effective_scene_plan(project)
+    except ScenePlanUnreadable:
+        return None
+    if plan is None:
+        return None
+    try:
+        return dict(pin_project_profile(project, plan_profile(plan), phase=phase))
+    except PipelineProfileError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+
+
 def _refuse_locked_stage(state: Mapping[str, Any], stage: int, *, action: str) -> None:
     from lib.persian_stage_locks import StageLockError, assert_stage_unlocked
 
@@ -2844,6 +2866,9 @@ def _complete_phase_impl(
         )
         _require_recorded_spend(checkpoint, manifest)
 
+    profile_pin = _pin_pipeline_profile(state, phase)
+    if profile_pin is not None:
+        phase_evidence["pipelineProfilePin"] = profile_pin
     stage_lock = _apply_v3_stage_locks(state, phase, now=now)
     if stage_lock is not None:
         phase_evidence["stageLock"] = stage_lock
@@ -4632,7 +4657,7 @@ def review_workflow_asset_candidate(
     _scope_allows_candidate(state, candidate_id)
     source = assert_read_allowed(state, str(input_path))
     review = _read_json(str(source))
-    from lib.persian_pipeline_profile import PipelineProfileError, plan_profile
+    from lib.persian_pipeline_profile import PipelineProfileError, plan_profile, require_pinned_profile
     from lib.persian_region_commands import candidate_carrier_placement
     from lib.persian_scene_plan_source import materialize_scene_plan
 
@@ -4640,7 +4665,7 @@ def review_workflow_asset_candidate(
     plan_path = materialize_scene_plan(project) or project / "artifacts" / "scene_plan.json"
     plan = _read_json(str(plan_path)) if Path(plan_path).is_file() else {}
     try:
-        profile = plan_profile(plan)
+        profile = require_pinned_profile(project, plan_profile(plan))
     except PipelineProfileError as exc:
         raise PersianVideoWorkflowError(str(exc)) from exc
     if profile == "v3_staged":
