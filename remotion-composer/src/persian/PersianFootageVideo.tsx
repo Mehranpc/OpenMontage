@@ -179,7 +179,7 @@ export const calculatePersianMetadata: CalculateMetadataFunction<
 export const PersianFootageVideo: React.FC<PersianVideoProps> = ({
   format = "vertical",
   shots,
-  moments,
+  moments: authoredMoments,
   typographicBeats,
   captionMode,
   captions,
@@ -196,6 +196,8 @@ export const PersianFootageVideo: React.FC<PersianVideoProps> = ({
     : undefined;
   const { fps, durationInFrames } = useVideoConfig();
   const filmTypeEnabled = isFilmType(design);
+  // #387 v3: a subtitle-fallback moment paints nothing; its span keeps the stage-2 subtitle.
+  const moments = React.useMemo(() => authoredMoments.filter((moment) => !moment.subtitleFallback), [authoredMoments]);
   if (filmTypeEnabled && !filmType) throw new Error("Film Type needs its measured props; run persian_compose or calculatePersianMetadata before mounting the component.");
 
   const toFrames = React.useCallback(

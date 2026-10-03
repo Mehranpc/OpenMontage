@@ -65,3 +65,22 @@ There is no automatic backward transition: every agent `send-back` is
 refused, and a user-directed send-back into a locked stage is refused too.
 Text and watermark adapt to locked footage (increments 3–4); the only
 future backward path is the human time-range revision (increment 5).
+
+## Stage 3: styled text adapts to locked footage (#387 increment 3)
+
+A v3 edit sets `persian.pipelineProfile: "v3_staged"`; it must equal the plan's
+profile (checked at `no_copy_preflight` completion). Under v3 the geometric
+hard-region precheck and the review-region negative-space refusal do not run,
+and the browser prepass never refuses for subject geometry. Each moment is
+placed by a fixed ladder, recorded in `filmType.stagedText[<moment>].step`:
+
+1. `free_area` – the profile's own placement outside reviewed subject regions;
+2. `band` – explicit top/bottom band zone at the first fitting size;
+3. `scaled_band` – the same band at a smaller ladder size (never below the floor);
+4. `scrim` – band zone with the profile's strong field, subject regions ignored
+   (regions are evidence only; safe area, copy and timing stay hard);
+5. `subtitle_fallback` – no legible placement: the moment paints nothing
+   (`subtitleFallback: true`) and the stage-2 subtitle stays; a warning records it.
+
+Copy and timing contracts (well-formed segments, reading time) still refuse:
+they are stage-0 truth. Stage 3 never changes footage and never sends work back.

@@ -121,6 +121,9 @@ def prepare_film_type_props(
         if len(original) != len(output):
             raise ValueError("Film Type preparation changed the moment count")
         derived = {"layoutGeometry", "stackHeightPx", "stackWidthPx"}
+        if props.get("pipelineProfile") == "v3_staged":
+            # #387 stage 3 marks a moment it could not place legibly; the copy is unchanged.
+            derived = derived | {"subtitleFallback"}
         for before, after in zip(original, output):
             if {k: v for k, v in before.items() if k not in derived} != {k: v for k, v in after.items() if k not in derived}:
                 raise ValueError("Film Type preparation changed authored moment content")

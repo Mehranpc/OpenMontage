@@ -39,6 +39,13 @@ def plan_profile(scene_plan: Mapping[str, Any] | None) -> str:
     return str(raw)
 
 
+def edit_profile(edit: Mapping[str, Any] | None) -> str:
+    """The profile an edit declares in ``persian.pipelineProfile`` (default v2)."""
+    persian = (edit or {}).get("persian") if isinstance(edit, Mapping) else None
+    raw = persian.get("pipelineProfile") if isinstance(persian, Mapping) else None
+    return plan_profile({"metadata": {"pipeline_profile": raw}} if raw is not None else None)
+
+
 def project_profile(project_dir: Any) -> str:
     """Profile of a project's effective scene plan; no or unreadable plan means v2."""
     from lib.persian_scene_plan_source import ScenePlanUnreadable, load_effective_scene_plan

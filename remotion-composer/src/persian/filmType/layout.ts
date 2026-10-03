@@ -69,7 +69,12 @@ export type FilmLockup = {rows: FilmRow[]; widthPx: number; heightPx: number; la
 export type FilmTypeLayout = {
   version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16; inputHash: string; moments: Record<string, FilmMomentLayout>;
   lockup: FilmLockup | null; warnings: string[];
+  /** #387 v3 only: which deterministic adaptation step placed each moment. */
+  stagedText?: Record<string, StagedTextDecision>;
 };
+/** #387 stage-3 ladder: free area -> top/bottom band -> scale down -> scrim -> subtitle. */
+export type StagedTextStep = "free_area" | "band" | "scaled_band" | "scrim" | "subtitle_fallback";
+export type StagedTextDecision = {step: StagedTextStep; placement?: string; fontSizePx?: number; reason?: string};
 type TimedRect = Rect & {
   startSeconds: number; endSeconds: number;
   priority?: "hard" | "soft";
@@ -801,6 +806,62 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
   throw new Error(`Moment ${moment.id}: no readable Film Type placement fits the safe area and supplied subject regions. Shorten the authored phrase, choose another legal placement, or change the shot; do not clip, hide text, or shrink below the profile floors. Diagnostics: ${blocked.join("; ") || "no size fits; check copy length and height"}`);
 }
 
+/** Band zones for stage-3 step 2, in fixed order; 2.16 Persian text never sits left. */
+function stagedBandZones(p: FilmProfile): string[] {
+  return p.profileVersion === "2.16.0"
+    ? ["upper-center","upper-right","lower-right"]
+    : ["upper-center","upper-right","upper-left","lower-right","lower-left"];
+}
+
+function heroFontPx(layout: FilmMomentLayout): number | undefined {
+  const sizes = layout.rows.filter(row => row.role === "hero").map(row => row.fontSizePx);
+  return sizes.length ? Math.max(...sizes) : undefined;
+}
+
+/**
+ * #387 stage 3: styled text adapts to locked footage and never sends work back.
+ * The order is deterministic: (1) the free area outside reviewed subject regions,
+ * (2) an explicit top/bottom band at the profile's first size, (3) the same band
+ * scaled down along the profile ladder (never below its floor), (4) the band with the
+ * profile's strong field as a scrim, ignoring subject regions, which are evidence only,
+ * (5) otherwise the moment paints nothing and the stage-2 subtitle stays.
+ */
+export function placeMomentStaged(moment: PersianMoment, props: PersianVideoProps, p: FilmProfile, avoid: TimedRect[]): {layout: FilmMomentLayout | null; decision: StagedTextDecision} {
+  // Copy and timing contracts are stage-0 truth, not geometry: they still refuse.
+  assertMomentIsWellFormed(moment);
+  assertFilmTiming(moment,p);
+  const reasons: string[] = [];
+  const attempt = (step: StagedTextStep, candidate: PersianMoment, candidateProps: PersianVideoProps, regions: TimedRect[]) => {
+    try {
+      const layout = placeMoment(candidate, candidateProps, p, regions);
+      return {layout, decision: {step, placement: layout.placement, fontSizePx: heroFontPx(layout)} as StagedTextDecision};
+    } catch (error) {
+      reasons.push(`${step}: ${String((error as Error)?.message ?? error).split(" OPENMONTAGE_DIAGNOSTICS=")[0].slice(0, 160)}`);
+      return null;
+    }
+  };
+  const free = attempt("free_area", moment, props, avoid);
+  if (free) return free;
+  const ladder = moment.kind === "hook" ? p.typography.titleLadderPx : p.typography.statementLadderPx;
+  for (const zone of stagedBandZones(p)) {
+    const banded = {...moment, presentation: {...(moment.presentation ?? {}), placement: zone}} as PersianMoment;
+    const placed = attempt("band", banded, props, avoid);
+    if (!placed) continue;
+    const size = placed.decision.fontSizePx;
+    if (size !== undefined && ladder.length && size < ladder[0]) placed.decision.step = "scaled_band";
+    return placed;
+  }
+  // Subject regions are evidence, not a gate: a strong bounded field (the profile's
+  // own scrim) keeps text legible over the subject. Safe area, copy and floors stay hard.
+  const clear = {...props, shots: props.shots.map(shot => ({...shot, avoidRegions: []}))} as PersianVideoProps;
+  for (const zone of stagedBandZones(p)) {
+    const scrim = {...moment, presentation: {...(moment.presentation ?? {}), placement: zone, contrastStrength: "strong"}} as PersianMoment;
+    const placed = attempt("scrim", scrim, clear, []);
+    if (placed) return placed;
+  }
+  return {layout: null, decision: {step: "subtitle_fallback", reason: reasons.slice(-3).join(" | ")}};
+}
+
 export function watermarkSafeArea(p: FilmProfile, format: PersianFormat) {
   const base = p.formats[format].safeArea;
   if (p.profileVersion !== "2.3.0" && p.profileVersion !== "2.4.0" && p.profileVersion !== "2.5.0" && p.profileVersion !== "2.6.0" && p.profileVersion !== "2.7.0" && p.profileVersion !== "2.8.0" && p.profileVersion !== "2.9.0" && p.profileVersion !== "2.10.0" && p.profileVersion !== "2.11.0" && p.profileVersion !== "2.12.0" && p.profileVersion !== "2.13.0" && p.profileVersion !== "2.14.0" && p.profileVersion !== "2.15.0" && p.profileVersion !== "2.16.0") return {top:base.top,bottom:base.bottom,left:base.side,right:base.side};
@@ -1258,8 +1319,12 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
   await document.fonts.load(`${profile.watermark.latinWeight} ${profile.watermark.latinFontPx}px "${profile.watermark.latinFontFamily}"`, "Pathway");
   const input={format:props.format,durationSeconds:props.durationSeconds,captionMode:props.captionMode,design:props.design,shots:props.shots,
     moments:props.moments.map(m=>({id:m.id,kind:m.kind,startSeconds:m.startSeconds,endSeconds:m.endSeconds,segments:m.segments,presentation:m.presentation,exactText:m.exactText})),
-    watermark:props.watermark??DEFAULT_WATERMARK};
+    watermark:props.watermark??DEFAULT_WATERMARK,
+    ...(props.pipelineProfile==="v3_staged"?{pipelineProfile:"v3_staged"}:{})};
   const inputHash=await sha256(input);
+  const staged=props.pipelineProfile==="v3_staged";
+  if(props.pipelineProfile!==undefined&&props.pipelineProfile!=="v2"&&!staged) throw new Error("pipelineProfile must be v2 or v3_staged.");
+  const stagedText: Record<string,StagedTextDecision>=Object.create(null);
   if(!Number.isFinite(props.durationSeconds)||props.durationSeconds<=0) throw new Error("Film Type duration must be positive.");
   const avoid=timedAvoidRegions(props),layouts: Record<string,FilmMomentLayout>=Object.create(null),warnings:string[]=[],placementFailures:{id:string,error:unknown}[]=[];
   const contrastReviewMoments: string[]=[], unreviewedMoments: string[]=[];
@@ -1272,7 +1337,13 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
     // reporting one per round turns convergence into one repair cycle per latent defect.
     // The message for a single failure is unchanged, so existing diagnostics parsing and
     // recovery routing see exactly what they saw before (#164).
-    try {
+    if(staged) {
+      // #387: stage 3 always completes. No placement refusal, no asset send-back.
+      const result=placeMomentStaged(moment,props,profile,avoid);
+      stagedText[moment.id]=result.decision;
+      if(!result.layout) { warnings.push(`${moment.id}: styled-text-subtitle-fallback: no legible placement on the locked footage; the stage-2 subtitle stays.`); continue; }
+      layouts[moment.id]=result.layout;
+    } else try {
       layouts[moment.id]=placeMoment(moment,props,profile,avoid);
     } catch (error) {
       placementFailures.push({id: moment.id, error});
@@ -1304,11 +1375,13 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
   if(profile.profileVersion === "2.9.0" || profile.profileVersion === "2.10.0" || profile.profileVersion === "2.11.0") warnings.push(`Film Type ${profile.profileVersion}: subject-region enforcement is OFF by default. Text and brand are kept inside the platform safe area only; overlap with people or objects in the footage is NOT evaluated and subjectSafety stays not-checked. Pin profileVersion 2.8.0 to restore reviewed-region enforcement.`);
   if(profile.profileVersion === "2.10.0" || profile.profileVersion === "2.11.0" || profile.profileVersion === "2.12.0" || (profile.profileVersion === "2.13.0" || profile.profileVersion === "2.14.0" || (profile.profileVersion === "2.15.0" || profile.profileVersion === "2.16.0"))) warnings.push("Film Type 2.10+: legibility comes from a small per-row field plus a two-layer glyph shadow. This is a readability aid, not a measured contrast guarantee; review bright footage yourself. Pin profileVersion 2.9.0 to restore the previous single-block field.");
   const lockup=measureLockup(props,profile);
-  const filmType: FilmTypeLayout={version:profile.layoutVersion,inputHash,moments:layouts,lockup,warnings};
+  const filmType: FilmTypeLayout={version:profile.layoutVersion,inputHash,moments:layouts,lockup,warnings,...(staged?{stagedText}:{})};
+  // A subtitle-fallback moment paints nothing, so captions and the brand treat its span as caption time.
+  const paintedProps: PersianVideoProps=staged?{...props,moments:props.moments.filter(m=>layouts[m.id]!==undefined)}:props;
   const watermarkDiagnosticSink:WatermarkDiagnosticSink={candidateZones:[],rejectedIntervals:[]};
   const watermarkAvoid=(profile.profileVersion==="2.15.0" || profile.profileVersion==="2.16.0")?[]:avoid;
-  const watermarkPlan=planWatermark(props,profile,layouts,lockup,watermarkAvoid,watermarkDiagnosticSink);
-  const watermarkDiagnostics=lockup?buildWatermarkDiagnostics(props,profile,watermarkPlan,watermarkDiagnosticSink):undefined;
+  const watermarkPlan=planWatermark(paintedProps,profile,layouts,lockup,watermarkAvoid,watermarkDiagnosticSink);
+  const watermarkDiagnostics=lockup?buildWatermarkDiagnostics(paintedProps,profile,watermarkPlan,watermarkDiagnosticSink):undefined;
   if((profile.profileVersion==="2.12.0" || profile.profileVersion==="2.13.0" || profile.profileVersion==="2.14.0" || (profile.profileVersion==="2.15.0" || profile.profileVersion==="2.16.0"))&&lockup){
     const slots=[...watermarkPlan].sort((a,b)=>a.startSeconds-b.startSeconds),gaps:string[]=[];
     let cursor=profile.watermark.introDelaySeconds??0;
@@ -1369,5 +1442,7 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
   }
   return {...props,filmType,watermarkPlan,watermarkPlanMeasured:true,watermarkDiagnostics,
     watermarkMeasurement:lockup?{widthPx:lockup.widthPx,heightPx:lockup.heightPx,layout:"two-line" as const,measured:true as const}:undefined,
-    moments:props.moments.map(m=>({...m,layoutGeometry:layouts[m.id].rect,stackHeightPx:layouts[m.id].heightPx,stackWidthPx:layouts[m.id].widthPx}))};
+    moments:props.moments.map(m=>layouts[m.id]===undefined
+      ? {...m,subtitleFallback:true}
+      : {...m,layoutGeometry:layouts[m.id].rect,stackHeightPx:layouts[m.id].heightPx,stackWidthPx:layouts[m.id].widthPx,...(staged?{subtitleFallback:false}:{})})};
 }

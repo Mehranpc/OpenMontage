@@ -206,6 +206,12 @@ export interface PersianMoment {
   readonly stackHeightPx?: number;
   /** Browser-fitted placement geometry, normalized to the nominal composition. */
   readonly layoutGeometry?: { x: number; y: number; w: number; h: number };
+  /**
+   * v3 staged pipeline (#387) only: no legible styled-text placement exists on the
+   * locked footage, so this moment paints nothing and the stage-2 subtitle stays.
+   * Derived by the browser prepass; never authored.
+   */
+  readonly subtitleFallback?: boolean;
 }
 
 /**
@@ -348,6 +354,8 @@ export type PersianDesignSnapshot = {
 export type PersianVideoProps = {
   readonly format: PersianFormat;
   readonly design?: PersianDesignSnapshot;
+  /** #387: `v3_staged` makes styled text adapt to locked footage; absent means v2. */
+  readonly pipelineProfile?: "v2" | "v3_staged";
   /** Browser-measured, frozen Film Type layout; produced before render, not authored by hand. */
   readonly filmType?: FilmTypeLayout;
   /** Verification only (#252): paint every Film Type layer except the glyphs, so a lossless still pair isolates the ink. Never set on a delivery render. */
