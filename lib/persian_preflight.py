@@ -558,7 +558,18 @@ def aggregate_preflight_edit_decisions(
         "collisionInputs": ["subtitle", "editorial_text"],
     }
 
-    if not blocking:
+    from lib.persian_pipeline_profile import PROFILE_V3, PipelineProfileError, edit_profile
+
+    try:
+        staged = edit_profile(edit) == PROFILE_V3
+    except PipelineProfileError as exc:
+        staged = False
+        layers.append("pipeline_profile")
+        blocking.append({"code": "PIPELINE_PROFILE", "message": str(exc), "recoveryClass": "EDIT_ARTIFACT"})
+    if not blocking and staged:
+        # #387: v3 text adapts to locked footage; subject geometry never blocks the edit.
+        evidence["geometricPrecheck"] = {"status": "not_applicable", "profile": PROFILE_V3}
+    elif not blocking:
         geometry = geometric_hard_region_precheck(edit, repo_root=root)
         evidence["geometricPrecheck"] = geometry
         geometry_blockers = geometry.get("blockingIssues")

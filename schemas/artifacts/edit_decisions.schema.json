@@ -621,6 +621,14 @@
           ],
           "description": "Delivery surface copied from the production profile. Instagram and Instagram Reels default to hybrid captions when captionMode is omitted; new Persian productions still persist captionMode explicitly."
         },
+        "pipelineProfile": {
+          "type": "string",
+          "enum": [
+            "v2",
+            "v3_staged"
+          ],
+          "description": "#387: v3_staged lets styled text adapt to locked footage (free area, band, scaled band, scrim, subtitle fallback) instead of refusing on subject geometry. Must equal the scene plan's metadata.pipeline_profile; v3 is opt-in via OPENMONTAGE_PIPELINE_PROFILE. Absent means v2."
+        },
         "captionMode": {
           "type": "string",
           "enum": [
@@ -985,6 +993,10 @@
                 "type": "number",
                 "exclusiveMinimum": 0,
                 "description": "Fitted total ink+gap height in px at nominal width (FittedMoment.heightPx in remotion-composer/src/persian/layout.ts, produced by fitMoment against the vendored Estedad). Attached by persian_compose._maybe_attach_stack_heights when node-canvas is available, so the verifier can scope ink measurement to the scrim plateau (stackHeightPx/2 + margin around the optical centre) instead of the whole zone envelope. Omitted when the bridge is unavailable — the verifier then falls back to zone-scoped measurement."
+              },
+              "subtitleFallback": {
+                "type": "boolean",
+                "description": "#387 v3_staged only, derived by the browser prepass: no legible styled-text placement exists on the locked footage, so the moment paints nothing and the stage-2 subtitle stays. Never authored."
               },
               "layoutGeometry": {
                 "type": "object",

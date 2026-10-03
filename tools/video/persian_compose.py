@@ -1022,6 +1022,11 @@ class PersianCompose(BaseTool):
         }
         if design_snapshot is not None:
             props["design"] = design_snapshot
+        # #387: only an opted-in v3 edit carries the profile, so v2 props stay byte-identical.
+        from lib.persian_pipeline_profile import PROFILE_V3, edit_profile
+
+        if edit_profile({"persian": persian}) == PROFILE_V3:
+            props["pipelineProfile"] = PROFILE_V3
         if audio_props:
             props["audio"] = audio_props
         # Always persist the resolved canonical/authorized brand and exact hashes.

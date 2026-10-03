@@ -2487,6 +2487,20 @@ def _phase_index(phase: str) -> int:
         raise PersianVideoWorkflowError(f"unknown workflow phase: {phase!r}") from exc
 
 
+def _require_edit_profile_matches_plan(state: Mapping[str, Any], edit: Mapping[str, Any]) -> None:
+    """An edit may not pick a laxer text policy than its plan, nor drop v3 (#387)."""
+    from lib.persian_pipeline_profile import PipelineProfileError, edit_profile, project_profile
+
+    try:
+        declared, planned = edit_profile(edit), project_profile(_project_root(state))
+    except PipelineProfileError as exc:
+        raise PersianVideoWorkflowError(str(exc)) from exc
+    if declared != planned:
+        raise PersianVideoWorkflowError(
+            f"edit persian.pipelineProfile {declared!r} must equal the scene plan's {planned!r}"
+        )
+
+
 def _validate_no_copy_preflight_completion(
     state: Mapping[str, Any], evidence: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -2528,6 +2542,7 @@ def _validate_no_copy_preflight_completion(
         raise PersianVideoWorkflowError(
             "checkpoint_edit.json does not match the promoted canonical edit bytes"
         )
+    _require_edit_profile_matches_plan(state, canonical)
     return {
         "attempt_id": attempt_id,
         "artifact_sha256": digest,
@@ -2620,7 +2635,8 @@ def _complete_phase_impl(
         # The declared duration-coverage rule, enforced: the plan's beats must cover the
         # authoritative narration within one frame, or the phase refuses to advance.
         phase_evidence.update(_validate_scene_plan_duration_binding(state, checkpoint))
-    if phase == "review_subject_regions":
+    if phase == "review_subject_regions" and not _is_v3_staged(state):
+        # #387: under v3 subject regions are stage-3 evidence, never a gate.
         _refuse_declared_negative_space_collisions(state)
     if phase == "no_copy_preflight":
         phase_evidence.update(_validate_no_copy_preflight_completion(state, phase_evidence))
