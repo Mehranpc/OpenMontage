@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -593,6 +594,95 @@ def reusable_asset_candidates(
     return result
 
 
+def _record_source_window(
+    source_windows: dict[tuple[str, str], dict[str, Any]], candidate: Mapping[str, Any],
+) -> None:
+    identity = candidate.get("identity")
+    if not isinstance(identity, Mapping):
+        return
+    provider, source_id = identity.get("provider"), identity.get("sourceId")
+    window = identity.get("sourceWindow")
+    if not isinstance(provider, str) or not isinstance(source_id, str) or not isinstance(window, Mapping):
+        return
+    try:
+        start, end = float(window["startSeconds"]), float(window["endSeconds"])
+    except (KeyError, TypeError, ValueError):
+        return
+    if not (math.isfinite(start) and math.isfinite(end) and end - start > _EPSILON):
+        return
+    entry = source_windows.setdefault((provider, source_id), {"durations": set(), "windows": set()})
+    entry["windows"].add((round(start, 6), round(end, 6)))
+    source = candidate.get("source")
+    duration = source.get("durationSeconds") if isinstance(source, Mapping) else None
+    if isinstance(duration, (int, float)) and not isinstance(duration, bool) and math.isfinite(duration) and duration > 0:
+        entry["durations"].add(round(float(duration), 6))
+
+
+def _local_window_capacity(
+    rows: Sequence[Mapping[str, Any]], source_windows: Mapping[tuple[str, str], Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Unexamined time in already-known sources of one event (#382 H1); evidence only.
+
+    Known windows of every readable record of the same exact source, any event or
+    status, count as examined. Unexplored time grants nothing: a new window is a new
+    identity that still needs staging with an explicit ``source_in_seconds``, actual
+    frame review and normal admission. Unknown/conflicting duration stays unknown.
+    """
+    lengths = [
+        float(row["identity"]["sourceWindow"]["endSeconds"]) - float(row["identity"]["sourceWindow"]["startSeconds"])
+        for row in rows
+        if isinstance(row.get("identity"), Mapping)
+        and isinstance(row["identity"].get("sourceWindow"), Mapping)
+        and _record_window_ok(row["identity"]["sourceWindow"])
+    ]
+    needed = max(lengths) if lengths else None
+    keys = sorted({
+        (str(row["identity"].get("provider")), str(row["identity"].get("sourceId")))
+        for row in rows if isinstance(row.get("identity"), Mapping)
+    })
+    result: list[dict[str, Any]] = []
+    for key in keys:
+        entry = source_windows.get(key)
+        if entry is None:
+            continue
+        windows = sorted(entry["windows"])
+        durations = sorted(entry["durations"])
+        duration = durations[0] if len(durations) == 1 else None
+        item: dict[str, Any] = {
+            "provider": key[0], "sourceId": key[1],
+            "sourceDurationSeconds": duration,
+            "knownWindows": [list(window) for window in windows],
+            "openingWindowOnly": all(start <= _EPSILON for start, _ in windows),
+            "unexploredSpans": None, "unexploredSeconds": None, "distinctWindowsFitting": None,
+        }
+        if duration is not None:
+            spans: list[list[float]] = []
+            cursor = 0.0
+            for start, end in windows:
+                if start - cursor > _EPSILON:
+                    spans.append([round(cursor, 6), round(min(start, duration), 6)])
+                cursor = max(cursor, end)
+            if duration - cursor > _EPSILON:
+                spans.append([round(cursor, 6), round(duration, 6)])
+            spans = [span for span in spans if span[1] - span[0] > _EPSILON]
+            item["unexploredSpans"] = spans
+            item["unexploredSeconds"] = round(sum(end - start for start, end in spans), 6)
+            if needed is not None and needed > _EPSILON:
+                item["distinctWindowsFitting"] = sum(
+                    int((end - start + _EPSILON) // needed) for start, end in spans
+                )
+        result.append(item)
+    return result
+
+
+def _record_window_ok(window: Mapping[str, Any]) -> bool:
+    try:
+        start, end = float(window["startSeconds"]), float(window["endSeconds"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return math.isfinite(start) and math.isfinite(end) and end - start > _EPSILON
+
+
 def candidate_recovery_evidence(
     project_dir: Path, event_ids: Sequence[str], *, readiness_inputs_sha256: str,
 ) -> dict[str, Any]:
@@ -608,6 +698,8 @@ def candidate_recovery_evidence(
     bindings: list[dict[str, Any]] = []
     seen: set[str] = set()
     complete = True
+    # Every readable record's window, by exact source, across all events (H1 capacity).
+    source_windows: dict[tuple[str, str], dict[str, Any]] = {}
     for path in sorted((_root(project_dir) / "candidates").glob("asset-*.json")):
         candidate_id = path.stem
         try:
@@ -630,6 +722,7 @@ def candidate_recovery_evidence(
             complete = False
             continue
         event_id = str(context["visualEventId"])
+        _record_source_window(source_windows, candidate)
         if event_id not in events:
             continue
         seen.add(candidate_id)
@@ -699,6 +792,10 @@ def candidate_recovery_evidence(
     report = {
         "version": "1.0", "readinessInputsSha256": readiness_inputs_sha256,
         "complete": complete, "events": events, "unreadableRecordIds": unreadable,
+        "localWindowCapacity": {
+            event_id: _local_window_capacity(rows, source_windows)
+            for event_id, rows in events.items()
+        },
     }
     return {**report, "inputsSha256": _sha256({"report": report, "candidateBindings": bindings})}
 
