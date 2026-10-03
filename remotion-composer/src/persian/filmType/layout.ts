@@ -71,6 +71,8 @@ export type FilmTypeLayout = {
   lockup: FilmLockup | null; warnings: string[];
   /** #387 v3 only: which deterministic adaptation step placed each moment. */
   stagedText?: Record<string, StagedTextDecision>;
+  /** #387 v3 only: brand slots added at the in-safe-zone anchor farthest from text. */
+  stagedWatermark?: {filledSlots: {zone: string; startSeconds: number; endSeconds: number; textGapPx: number | null}[]};
 };
 /** #387 stage-3 ladder: free area -> top/bottom band -> scale down -> scrim -> subtitle. */
 export type StagedTextStep = "free_area" | "band" | "scaled_band" | "scrim" | "subtitle_fallback";
@@ -1026,6 +1028,78 @@ function brandCoveragePolicy(p: FilmProfile): FilmProfile["watermark"] & {maxCov
     targetCoverageRatio:FILM_TYPE_216_BRAND_COVERAGE.target,maxCoverageRatio:FILM_TYPE_216_BRAND_COVERAGE.max};
 }
 
+/** The six brand anchors for this lockup, in normalized frame coordinates. */
+function watermarkAnchorRects(props: PersianVideoProps, p: FilmProfile, lockup: FilmLockup): Record<string,Rect> {
+  const dims=FORMAT_DIMENSIONS[props.format],safe=watermarkSafeArea(p,props.format),l=p.layout,cfg=p.watermark;
+  const w=lockup.widthPx/dims.width,h=lockup.heightPx/dims.height;
+  const padPx = safePadPx(p);
+  const left=safe.left+(l.edgeInsetPx+padPx)/dims.width,right=1-safe.right-(l.edgeInsetPx+padPx)/dims.width-w;
+  const top=safe.top+(l.edgeInsetPx+padPx)/dims.height,bottom=1-safe.bottom-(l.edgeInsetPx+padPx)/dims.height-h;
+  const captionTop=(props.captionMode === "burned_captions" || props.captionMode === "hybrid")&&p.profileVersion==="2.16.0"
+    ? captionBandRect(props.format, props.design).y-(2*Math.max(cfg.minTextClearancePx??0,lockup.heightPx)+2)/dims.height-h : bottom;
+  const lowerY=Math.min(bottom,captionTop);
+  return {
+    "lower-left":{x:left,y:lowerY,w,h},"lower-right":{x:right,y:lowerY,w,h},
+    "mid-left":{x:left,y:.5-h/2,w,h},"mid-right":{x:right,y:.5-h/2,w,h},
+    "upper-left":{x:left,y:top,w,h},"upper-right":{x:right,y:top,w,h},
+  };
+}
+
+/**
+ * #387 stage 4 (v3_staged): the brand never blocks and never sends work back. The
+ * planner's own schedule stands; only where it leaves the brand absent below the
+ * coverage floor, each uncovered interval (after the intro delay, in timeline order)
+ * gets the in-safe-zone anchor farthest from every text box painting then. Faces and
+ * subjects are not obstacles. Each added slot is recorded with its text distance.
+ */
+export function fillStagedWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record<string,FilmMomentLayout>, lockup: FilmLockup | null, plan: NonNullable<PersianVideoProps["watermarkPlan"]>): {plan: NonNullable<PersianVideoProps["watermarkPlan"]>; filled: {zone:string;startSeconds:number;endSeconds:number;textGapPx:number|null}[]} {
+  if(!lockup) return {plan, filled: []};
+  const dims=FORMAT_DIMENSIONS[props.format],safe=watermarkSafeArea(p,props.format),cfg=p.watermark;
+  const rects=watermarkAnchorRects(props,p,lockup);
+  const names=((p.profileVersion==="2.15.0"||p.profileVersion==="2.16.0")?cfg.approvedAnchors:cfg.allowedZones) ?? Object.keys(rects);
+  const zones=names.filter(z=>z in rects&&inWatermarkSafe(rects[z],safe));
+  const duration=props.durationSeconds,intro=Math.min(duration,cfg.introDelaySeconds??0);
+  const policy=brandCoveragePolicy(p),floor=duration*(policy.minCoverageRatio??0);
+  const captionActive=props.captionMode==="burned_captions"||props.captionMode==="hybrid";
+  const text: TimedRect[]=[
+    ...props.moments.filter(m=>layouts[m.id]).map(m=>({...layouts[m.id].rect,startSeconds:m.startSeconds,endSeconds:m.endSeconds})),
+    ...(captionActive?(props.captions??[]).flatMap(c=>paintedCaptionIntervals(c.startSeconds,c.endSeconds,props.moments)
+      .map(([startSeconds,endSeconds])=>({...captionBandRect(props.format,props.design),startSeconds,endSeconds}))):[]),
+  ];
+  const cuts=[...new Set([intro,duration,...text.flatMap(t=>[t.startSeconds,t.endSeconds]),...plan.flatMap(s=>[s.startSeconds,s.endSeconds])]
+    .filter(t=>t>=intro-1e-9&&t<=duration+1e-9).map(t=>round(t)))].sort((a,b)=>a-b);
+  const covered=(t:number)=>plan.some(s=>s.startSeconds<=t+1e-9&&t<s.endSeconds-1e-9);
+  let seconds=watermarkCoveredSeconds(plan);
+  const minSlot=2*(cfg.transitionSeconds??0.3);
+  const clearancePx=Math.max(cfg.minTextClearancePx??0,lockup.heightPx);
+  const added: {zone:string;startSeconds:number;endSeconds:number;textGapPx:number|null}[]=[];
+  const gapPx=(r:Rect,t:Rect)=>Math.hypot(Math.max(0,t.x-(r.x+r.w),r.x-(t.x+t.w))*dims.width,Math.max(0,t.y-(r.y+r.h),r.y-(t.y+t.h))*dims.height);
+  for(let i=0;i+1<cuts.length&&zones.length;i++){
+    if(seconds+1e-6>=floor) break;
+    const a=cuts[i],b=cuts[i+1];
+    if(b-a<minSlot||covered((a+b)/2)) continue;
+    const live=text.filter(t=>t.startSeconds<b&&t.endSeconds>a);
+    const gapOf=(zone:string)=>live.length?Math.min(...live.map(t=>gapPx(rects[zone],t))):Infinity;
+    let best=zones[0],bestGap=-1;
+    for(const zone of zones){
+      const gap=gapOf(zone);
+      if(gap>bestGap){best=zone;bestGap=gap;}
+    }
+    const last=added[added.length-1];
+    // Stay put while the current anchor still keeps the text distance: fewer jumps.
+    if(last&&Math.abs(last.endSeconds-a)<1e-9&&gapOf(last.zone)+1e-6>=clearancePx){best=last.zone;bestGap=gapOf(last.zone);}
+    const textGapPx=Number.isFinite(bestGap)?round(bestGap):null;
+    if(last&&last.zone===best&&Math.abs(last.endSeconds-a)<1e-9){
+      last.endSeconds=b;
+      last.textGapPx=last.textGapPx===null?textGapPx:textGapPx===null?last.textGapPx:Math.min(last.textGapPx,textGapPx);
+    } else added.push({zone:best,startSeconds:a,endSeconds:b,textGapPx});
+    seconds+=b-a;
+  }
+  const slots=added.map(item=>({zone:item.zone,startSeconds:item.startSeconds,endSeconds:item.endSeconds,rect:rects[item.zone],
+    transition:"relocate-fade",reason:`v3-farthest-from-text: no anchor met the safe zone and text distance; farthest in-safe-zone anchor (${item.textGapPx===null?"no text":`${item.textGapPx}px from text`})`}));
+  return {plan:[...plan,...slots].sort((x,y)=>x.startSeconds-y.startSeconds),filled:added};
+}
+
 function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record<string,FilmMomentLayout>, lockup: FilmLockup | null, avoid: TimedRect[], diagnosticSink?: WatermarkDiagnosticSink): NonNullable<PersianVideoProps["watermarkPlan"]> {
   if (!lockup) return [];
   const dims=FORMAT_DIMENSIONS[props.format],safe=watermarkSafeArea(p,props.format),l=p.layout,cfg=p.watermark;
@@ -1038,18 +1112,7 @@ function planWatermark(props: PersianVideoProps, p: FilmProfile, layouts: Record
   // schedule" error fails loudly instead of parking the brand on a face.
   // Older pins plan exactly as before.
   const subjectAvoid = (p.profileVersion === "2.9.0" || p.profileVersion === "2.10.0" || (p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0")) ? [] : avoid;
-  const w=lockup.widthPx/dims.width,h=lockup.heightPx/dims.height;
-  const padPx = safePadPx(p);
-  const left=safe.left+(l.edgeInsetPx+padPx)/dims.width,right=1-safe.right-(l.edgeInsetPx+padPx)/dims.width-w;
-  const top=safe.top+(l.edgeInsetPx+padPx)/dims.height,bottom=1-safe.bottom-(l.edgeInsetPx+padPx)/dims.height-h;
-  const captionTop=(props.captionMode === "burned_captions" || props.captionMode === "hybrid")&&p.profileVersion==="2.16.0"
-    ? captionBandRect(props.format, props.design).y-(2*Math.max(cfg.minTextClearancePx??0,lockup.heightPx)+2)/dims.height-h : bottom;
-  const lowerY=Math.min(bottom,captionTop);
-  const rects: Record<string,Rect> = {
-    "lower-left":{x:left,y:lowerY,w,h},"lower-right":{x:right,y:lowerY,w,h},
-    "mid-left":{x:left,y:.5-h/2,w,h},"mid-right":{x:right,y:.5-h/2,w,h},
-    "upper-left":{x:left,y:top,w,h},"upper-right":{x:right,y:top,w,h},
-  };
+  const rects=watermarkAnchorRects(props,p,lockup);
   const names=(p.profileVersion === "2.15.0" || p.profileVersion === "2.16.0") ? cfg.approvedAnchors : repair ? cfg.allowedZones : Object.keys(rects);
   if (!names?.length || names.some(z => !(z in rects) || (repair && p.profileVersion !== "2.8.0" && p.profileVersion !== "2.9.0" && p.profileVersion !== "2.10.0" && p.profileVersion !== "2.11.0" && p.profileVersion !== "2.12.0" && p.profileVersion !== "2.13.0" && p.profileVersion !== "2.14.0" && p.profileVersion !== "2.15.0" && p.profileVersion !== "2.16.0" && z.startsWith("upper")))) {
     throw new Error("Film Type 2.3 watermark candidates must be explicit non-top zones.");
@@ -1380,7 +1443,17 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
   const paintedProps: PersianVideoProps=staged?{...props,moments:props.moments.filter(m=>layouts[m.id]!==undefined)}:props;
   const watermarkDiagnosticSink:WatermarkDiagnosticSink={candidateZones:[],rejectedIntervals:[]};
   const watermarkAvoid=(profile.profileVersion==="2.15.0" || profile.profileVersion==="2.16.0")?[]:avoid;
-  const watermarkPlan=planWatermark(paintedProps,profile,layouts,lockup,watermarkAvoid,watermarkDiagnosticSink);
+  let watermarkPlan: NonNullable<PersianVideoProps["watermarkPlan"]>;
+  if(staged) {
+    // #387 stage 4 never blocks: a planner refusal leaves an empty schedule to fill.
+    let planned: NonNullable<PersianVideoProps["watermarkPlan"]>=[];
+    try { planned=planWatermark(paintedProps,profile,layouts,lockup,watermarkAvoid,watermarkDiagnosticSink); }
+    catch (error) { warnings.push(`watermark-planner-refused: ${String((error as Error)?.message ?? error).split(" OPENMONTAGE_DIAGNOSTICS=")[0].slice(0,200)}`); }
+    const filled=fillStagedWatermark(paintedProps,profile,layouts,lockup,planned);
+    watermarkPlan=filled.plan;
+    filmType.stagedWatermark={filledSlots:filled.filled};
+    if(filled.filled.length) warnings.push(`watermark-farthest-from-text: ${filled.filled.map(s=>`${s.zone} ${s.startSeconds}-${s.endSeconds}s`).join(", ")}; recorded, not blocking.`);
+  } else watermarkPlan=planWatermark(paintedProps,profile,layouts,lockup,watermarkAvoid,watermarkDiagnosticSink);
   const watermarkDiagnostics=lockup?buildWatermarkDiagnostics(paintedProps,profile,watermarkPlan,watermarkDiagnosticSink):undefined;
   if((profile.profileVersion==="2.12.0" || profile.profileVersion==="2.13.0" || profile.profileVersion==="2.14.0" || (profile.profileVersion==="2.15.0" || profile.profileVersion==="2.16.0"))&&lockup){
     const slots=[...watermarkPlan].sort((a,b)=>a.startSeconds-b.startSeconds),gaps:string[]=[];
@@ -1398,7 +1471,9 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
     const coverage=watermarkDiagnostics?.coverageRatio??(watermarkCoveredSeconds(watermarkPlan)/props.durationSeconds);
     const minimum=watermarkDiagnostics?.coverageFloor??cfg.minCoverageRatio!;
     const target=watermarkDiagnostics?.coverageTarget??cfg.targetCoverageRatio!;
-    if(coverage+1e-6<minimum){
+    if(coverage+1e-6<minimum&&staged){
+      warnings.push(`watermark-coverage-below-floor: ${(coverage*100).toFixed(1)}% vs ${(minimum*100).toFixed(1)}%; v3 stage 4 records this and never blocks.`);
+    } else if(coverage+1e-6<minimum){
       const human=`Film Type ${profile.profileVersion} watermark coverage ${(coverage*100).toFixed(1)}% is below the required ${(minimum*100).toFixed(1)}%. Re-edit text/subject timing or footage so the brand can occupy legal slots; do not ship a brief isolated watermark dwell.`;
       throw new Error(`${human} OPENMONTAGE_DIAGNOSTICS=${JSON.stringify({code:"WATERMARK_COVERAGE",watermarkDiagnostics})}`);
     }
