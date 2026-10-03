@@ -532,13 +532,10 @@ def _validate_v3_review(result: dict[str, Any], frame: Mapping[str, Any]) -> dic
 
 def _review_profile(project_dir: Path) -> str:
     """Profile of the effective plan; any doubt keeps the strict v2 contract."""
-    from lib.persian_pipeline_profile import PipelineProfileError, plan_profile
-    from lib.persian_scene_plan_source import ScenePlanUnreadable, load_effective_scene_plan
+    from lib.persian_pipeline_profile import PipelineProfileError, project_profile
 
     try:
-        return plan_profile(load_effective_scene_plan(project_dir))
-    except ScenePlanUnreadable:
-        return "v2"
+        return project_profile(project_dir)
     except PipelineProfileError as exc:
         raise PersianAssetWorkspaceError(str(exc)) from exc
 
