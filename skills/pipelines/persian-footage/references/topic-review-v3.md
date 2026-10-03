@@ -45,3 +45,23 @@ Unknown fields are refused. Rejection codes:
 
 Under v3 the candidate-review response reports
 `carrierPremeasure: {"status": "not_applicable", "profile": "v3_staged"}`.
+
+## Stage locks and forward-only flow (#387 increment 2)
+
+Under `v3_staged`, completing `plan_scenes_moments` writes
+`stage_locks/stage-0.json` (narration & timing: script + scene-plan
+checkpoints) and completing `acquire_assets` writes `stage_locks/stage-1.json`
+(footage: assets checkpoint). Each lock records file SHA-256s, the digests
+of the earlier locks it consumed, and the implementation SHA.
+
+After a lock:
+
+- rewriting its checkpoints is refused (`write_checkpoint`);
+- the `.asset-workspace` is read-only after the footage lock;
+- `reconcile-plan` (stage 0) and `reopen-asset-search` (stage 1) are refused;
+- every phase completion re-verifies all locks; any mutation stops the run.
+
+There is no automatic backward transition: every agent `send-back` is
+refused, and a user-directed send-back into a locked stage is refused too.
+Text and watermark adapt to locked footage (increments 3–4); the only
+future backward path is the human time-range revision (increment 5).

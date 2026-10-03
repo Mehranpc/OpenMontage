@@ -39,6 +39,16 @@ def plan_profile(scene_plan: Mapping[str, Any] | None) -> str:
     return str(raw)
 
 
+def project_profile(project_dir: Any) -> str:
+    """Profile of a project's effective scene plan; no or unreadable plan means v2."""
+    from lib.persian_scene_plan_source import ScenePlanUnreadable, load_effective_scene_plan
+
+    try:
+        return plan_profile(load_effective_scene_plan(project_dir))
+    except ScenePlanUnreadable:
+        return PROFILE_V2
+
+
 def validate_topic_review(raw: object) -> dict[str, Any]:
     """Stage-1 topic-level review evidence (#387); shape only, never a verdict."""
     if not isinstance(raw, Mapping):
