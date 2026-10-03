@@ -4214,7 +4214,8 @@ def stage_workflow_asset_candidate(
     _scope_allows_visual_event(
         state, str(payload.get("visual_event_id") or payload.get("visualEventId") or "")
     )
-    return stage_asset_candidate(
+    declared = "source_in_seconds" in payload or "sourceInSeconds" in payload
+    result = stage_asset_candidate(
         _project_root(state),
         discovery_id=str(payload.get("discovery_id") or payload.get("discoveryId") or ""),
         visual_event_id=str(payload.get("visual_event_id") or payload.get("visualEventId") or ""),
@@ -4227,6 +4228,14 @@ def stage_workflow_asset_candidate(
         query=str(payload.get("query") or ""),
         narration_span=str(payload.get("narration_span") or payload.get("narrationSpan") or ""),
     )
+    # #382 H1: 46/47 real candidates silently used the opening window. Make it visible.
+    result = {**result, "sourceWindowDeclared": declared}
+    if not declared:
+        result["sourceWindowWarning"] = (
+            "source_in_seconds was omitted, so the opening window (0.0s) was staged; "
+            "declare the reviewed window explicitly"
+        )
+    return result
 
 
 
