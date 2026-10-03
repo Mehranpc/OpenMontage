@@ -84,3 +84,16 @@ placed by a fixed ladder, recorded in `filmType.stagedText[<moment>].step`:
 
 Copy and timing contracts (well-formed segments, reading time) still refuse:
 they are stage-0 truth. Stage 3 never changes footage and never sends work back.
+
+## Stage 4: the brand never blocks (#387 increment 4)
+
+Under v3 the watermark keeps today's dynamic planner (including the #230
+spacing rules) but can never refuse the render. Only two constraints apply:
+inside the watermark safe zone, and the text distance. Faces and subjects are
+not obstacles. If the planner refuses or leaves the brand below its coverage
+floor, each uncovered interval after the intro delay (in timeline order, until
+the floor is met) uses the in-safe-zone anchor farthest from the text painting
+then, staying put while the current anchor still keeps the text distance.
+Every added slot has reason `v3-farthest-from-text` and is listed in
+`filmType.stagedWatermark.filledSlots` with its measured text gap; a coverage
+shortfall is a warning, never a `WATERMARK_COVERAGE` refusal.
