@@ -2529,13 +2529,17 @@ def _staged_hook_gate_applies(state: Mapping[str, Any]) -> bool:
 
 def _require_strong_staged_hook(
     state: Mapping[str, Any], hook_review: Mapping[str, Any], *, phase: str
-) -> None:
-    """v3: an automatic hook passes a rendered review only on a ``strong`` verdict (#387).
+) -> dict[str, Any] | None:
+    """v3: an automatic hook passes a rendered review on a ``strong`` verdict (#387).
 
+    While hook rewrites remain, anything below ``strong`` must be rewritten. Once the
+    rewrite budget is spent the run does not dead-end on a reviewer's opinion: an
+    ``acceptable`` hook goes on to the human with a notice (returned here and kept
+    in phase evidence/status) so the human decides. A ``weak`` hook still blocks.
     A user-supplied hook is the user's authority and keeps the v2 bar.
     """
     if not _staged_hook_gate_applies(state):
-        return
+        return None
     selection = state["hook_selection"]
     rejected = {str(item.get("sha256") or "") for item in state.get("hook_rewrites") or []
                 if isinstance(item, Mapping)}
@@ -2547,6 +2551,25 @@ def _require_strong_staged_hook(
         verdict = validate_staged_hook_verdict(hook_review)
     except PersianRenderedReviewError as exc:
         raise PersianVideoWorkflowError(f"{phase} hook-quality review failed: {exc}") from exc
+    if verdict["strong"]:
+        return None
+    rewrites = [item for item in state.get("hook_rewrites") or [] if isinstance(item, Mapping)]
+    if len(rewrites) >= MAX_HOOK_REWRITES:
+        if verdict["strength"] != "acceptable":
+            raise PersianVideoWorkflowError(
+                f"{phase}: the hook is rated {verdict['strength']!r} and the rewrite budget "
+                f"({MAX_HOOK_REWRITES}) is spent; a weak hook cannot be presented - ask the user "
+                "for a hook (hook-override) or stop"
+            )
+        return {
+            "strength": verdict["strength"],
+            "criteriaScores": verdict["criteriaScores"],
+            "total": verdict["total"],
+            "rewritesUsed": len(rewrites),
+            "hookText": str(selection.get("text") or ""),
+            "userDecisionRequired": True,
+            "message": "hook below strong after the rewrite budget; the user decides",
+        }
     if not verdict["strong"]:
         raise PersianVideoWorkflowError(
             f"{phase}: v3 requires a strong rendered hook verdict, got {verdict['strength']!r} "
@@ -5257,17 +5280,19 @@ def _validate_opening_review_completion(
     if not isinstance(hook_review, Mapping):
         raise PersianVideoWorkflowError("opening review requires a rendered hookQualityReview")
     passing = str(review.get("status") or "") == "pass"
+    hook_notice: dict[str, Any] | None = None
     if str(hook_review.get("version") or "") in HOOK_RENDER_REVIEW_VERSIONS:
         try:
             validate_rendered_hook_review(
                 hook_review, candidate_sha256=opening_sha, require_pass=passing,
                 hook_timing=resolve_hook_timing_authority(state.get("hook_selection")),
+                allow_pipeline_agent=_is_v3_staged(state),
             )
         except PersianRenderedReviewError as exc:
             raise PersianVideoWorkflowError(f"opening_review hook-quality review failed: {exc}") from exc
         if passing:
             _validate_cold_viewer_input_artifact(state, review, hook_review, candidate_sha256=opening_sha)
-            _require_strong_staged_hook(state, hook_review, phase="opening_review")
+            hook_notice = _require_strong_staged_hook(state, hook_review, phase="opening_review")
     elif passing:
         raise PersianVideoWorkflowError(
             "a passing opening review requires a rendered Hook Quality review "
@@ -5278,6 +5303,7 @@ def _validate_opening_review_completion(
         "opening_review_sha256": actual_sha,
         "opening_candidate_sha256": opening_sha,
         "opening_review_status": str(review.get("status") or ""),
+        **({"hook_strength_notice": hook_notice} if hook_notice else {}),
     }
 
 
@@ -5372,6 +5398,7 @@ def _validate_final_review_completion(
     # late-payoff exception, so it is resolved here and enforced by the durable-aware
     # validator. The artifact-contract layer only checks evidence shape.
     hook_timing = resolve_hook_timing_authority(state.get("hook_selection"))
+    hook_notice: dict[str, Any] | None = None
     if (
         isinstance(hook_review, Mapping)
         and str(hook_review.get("version") or "") in HOOK_RENDER_REVIEW_VERSIONS
@@ -5382,13 +5409,14 @@ def _validate_final_review_completion(
                 candidate_sha256=candidate["candidate_sha256"],
                 require_pass=review.get("status") == "pass",
                 hook_timing=hook_timing,
+                allow_pipeline_agent=_is_v3_staged(state),
             )
         except PersianRenderedReviewError as exc:
             raise PersianVideoWorkflowError(
                 f"final_review hook-quality review failed: {exc}"
             ) from exc
         if review.get("status") == "pass":
-            _require_strong_staged_hook(state, hook_review, phase="final_review")
+            hook_notice = _require_strong_staged_hook(state, hook_review, phase="final_review")
     elif preflight_hook is not None and str(preflight_hook.get("version") or "") == "2.0":
         raise PersianVideoWorkflowError(
             "final_review hook-quality review must use rendered Hook Quality v2 evidence"
@@ -5502,6 +5530,7 @@ def _validate_final_review_completion(
             "cold_viewer_input_path": cold_input["path"],
             "cold_viewer_input_sha256": cold_input["sha256"],
         } if cold_input is not None else {}),
+        **({"hook_strength_notice": hook_notice} if hook_notice else {}),
     }
 
 
@@ -5827,6 +5856,7 @@ def workflow_status(
         "performance_summary": state.get("performance_summary"),
         "budget_stop": state.get("budget_stop"),
         "work_spans": _work_span_view(state),
+        "hook_strength_notice": _hook_strength_notice(state),
         "operational_summary": {
             "phase": phase,
             "phase_elapsed_seconds": round(phase_elapsed, 3),
@@ -5845,6 +5875,16 @@ def workflow_status(
     # subtracted from wall or phase time (#360).
     status["diagnostic_elapsed_seconds"] = round(time.perf_counter() - diagnostic_started, 6)
     return status
+
+
+def _hook_strength_notice(state: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The latest below-strong hook notice the human must see (#387, v3)."""
+    evidence = state.get("evidence") or {}
+    for phase in ("final_review", "opening_review"):
+        notice = (evidence.get(phase) or {}).get("hook_strength_notice")
+        if isinstance(notice, Mapping):
+            return dict(notice)
+    return None
 
 
 def acquisition_status(state: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -6075,7 +6115,14 @@ def format_status_line(status: Mapping[str, Any]) -> str:
         f"last_write={summary.get('last_written_file') or '-'} "
         f"activity={summary.get('activity') or 'idle'}"
         + _acquisition_suffix(status.get("acquisition"))
+        + _hook_notice_suffix(status.get("hook_strength_notice"))
     )
+
+
+def _hook_notice_suffix(notice: Any) -> str:
+    if not isinstance(notice, Mapping):
+        return ""
+    return f" hook below strong ({notice.get('strength')}): user decides"
 
 
 def _acquisition_suffix(acquisition: Any) -> str:

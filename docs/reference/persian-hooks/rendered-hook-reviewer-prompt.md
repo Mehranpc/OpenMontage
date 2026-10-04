@@ -7,6 +7,12 @@ rendered opening (`opening_review`) and of the final candidate's opening
 softer prompt. Attach the rendered opening frames (0.5s, 1.5s, 2.5s, 3.5s, 4.5s) and
 the opening narration with word timings; give the reviewer nothing else.
 
+The reviewer does not have to be an outside model. When no separate context-free
+reviewer is available, the pipeline agent applies this prompt to its own render and
+records `reviewerRole: "pipeline_agent"` (and `coldViewer.contextIsolated: false`).
+The pipeline never waits on an outside reviewer: after the rewrite budget is spent an
+`acceptable` hook is shown to the human with a notice, and the human decides.
+
 ---
 
 You are a senior short-form editor judging only the first five seconds of a Persian
@@ -38,6 +44,9 @@ Rules:
   `strong`.
 - A hook that only repeats the narrator's first sentence on screen earns at most 1 on D.
 - Do not reward legibility or layout here; typography is judged separately.
+- The on-screen phrases must read as one connected thought. If any phrase is a
+  detached label that does not follow from the others (for example a study size
+  tacked on after the claim), C and E are at most 1 and the verdict is not `strong`.
 
 Answer as JSON with exactly these fields, then nothing else:
 
