@@ -238,13 +238,22 @@ def assert_checkpoint_writable(project_dir: Path, checkpoint_stage: str) -> None
 
 
 def assert_rewind_allowed(
-    project_dir: Path, current_phase: str | None, target_phase: str, *, user_directed: bool
+    project_dir: Path, current_phase: str | None, target_phase: str, *, user_directed: bool,
+    hook_rewrite: bool = False,
 ) -> None:
-    """v3 is forward-only: no automatic rewind, and no rewind into a locked stage."""
+    """v3 is forward-only: no automatic rewind, and no rewind into a locked stage.
+
+    The single automatic exception is a hook rewrite: a rendered review judged an
+    automatic hook below strong, so the edit (stage 2) is reopened. It never reaches
+    a locked stage (#387).
+    """
     target_stage = PHASE_STAGE.get(target_phase)
     if target_stage is None:
         raise StageLockError(f"unknown target phase {target_phase!r}")
-    if not user_directed:
+    if hook_rewrite:
+        if target_phase != "no_copy_preflight" or current_phase not in {"opening_review", "final_review"}:
+            raise StageLockError("a hook rewrite only rewinds opening/final review to no_copy_preflight")
+    elif not user_directed:
         raise StageLockError(
             "v3_staged is forward-only: automatic send-back is refused; later stages adapt to "
             "locked footage, and only a human time-range revision may reopen it (#387)"

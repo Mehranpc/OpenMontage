@@ -437,6 +437,55 @@ def _validate_rendered_hook_review(
             raise PersianRenderedReviewError("passing rendered hook review requires visual/voice alignment")
 
 
+#: Canonical prompt for the independent rendered-hook reviewer (#387, v3_staged).
+HOOK_REVIEWER_PROMPT_PATH = "docs/reference/persian-hooks/rendered-hook-reviewer-prompt.md"
+STRONG_HOOK_MIN_TOTAL = 8
+_HOOK_CRITERIA = ("A", "B", "C", "D", "E")
+
+
+def hook_reviewer_prompt_sha256(repo_root: Path | None = None) -> str:
+    root = repo_root or Path(__file__).resolve().parents[1]
+    return hashlib.sha256((root / HOOK_REVIEWER_PROMPT_PATH).read_bytes()).hexdigest()
+
+
+def validate_staged_hook_verdict(
+    review: Mapping[str, Any], *, repo_root: Path | None = None
+) -> dict[str, Any]:
+    """v3 rendered-hook verdict (#387): the canonical prompt's A..E scores, and only
+    ``strong`` passes.
+
+    The 2026-10-04 acceptance opening passed on ``acceptable`` although the reviewer
+    had written why it was not strong. Under v3 an automatic hook must be judged with
+    the repo's prompt, its verdict must agree with its own scores, and anything below
+    ``strong`` is returned for a hook rewrite instead of being presented.
+    """
+    declared = str(review.get("reviewerPromptSha256") or "").strip().lower()
+    if declared != hook_reviewer_prompt_sha256(repo_root):
+        raise PersianRenderedReviewError(
+            f"v3 rendered hook review must use the canonical reviewer prompt {HOOK_REVIEWER_PROMPT_PATH} "
+            "(reviewerPromptSha256 does not match)"
+        )
+    raw = review.get("criteriaScores")
+    if not isinstance(raw, Mapping) or set(map(str, raw)) != set(_HOOK_CRITERIA):
+        raise PersianRenderedReviewError("v3 rendered hook review requires criteriaScores A..E")
+    scores: dict[str, int] = {}
+    for key in _HOOK_CRITERIA:
+        value = raw[key]
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 2:
+            raise PersianRenderedReviewError(f"criteriaScores.{key} must be an integer 0..2")
+        scores[key] = value
+    total = sum(scores.values())
+    strength = str(review.get("strength") or "")
+    earns_strong = total >= STRONG_HOOK_MIN_TOTAL and min(scores.values()) > 0 and scores["E"] == 2
+    if strength == "strong" and not earns_strong:
+        raise PersianRenderedReviewError(
+            f"a strong verdict needs total >= {STRONG_HOOK_MIN_TOTAL}, no zero criterion and E=2; "
+            f"scores {scores} (total {total}) do not support it"
+        )
+    return {"strength": strength, "criteriaScores": scores, "total": total,
+            "strong": strength == "strong"}
+
+
 def _validate_rendered_payoff_timing(
     review: Mapping[str, Any], *, payoff_seconds: float, require_pass: bool,
     hook_timing: Mapping[str, Any] | None, verify_hook_authority: bool,
@@ -680,6 +729,10 @@ def measure_rendered_audio_output(path: Path, *, timeout: int = 180) -> dict[str
 
 
 __all__ = [
+    "HOOK_REVIEWER_PROMPT_PATH",
+    "STRONG_HOOK_MIN_TOTAL",
+    "hook_reviewer_prompt_sha256",
+    "validate_staged_hook_verdict",
     "HOOK_RENDER_REVIEW_VERSION",
     "LEGACY_HOOK_RENDER_REVIEW_VERSION",
     "HOOK_RENDER_REVIEW_VERSIONS",

@@ -20,6 +20,12 @@ HOOK_REFERENCE_CORPUS = (
 )
 MIN_AUTOMATIC_HOOK_SCORE = 7.0
 REQUIRED_CONTENT_MATCH_SCORE = 2
+#: v3_staged hook selection (#387): a real comparison, scored per criterion of
+#: docs/reference/persian-hooks/hook-selector-helper.md section 2 (A..E, 0..2 each).
+STAGED_HOOK_SELECTION_POLICY_VERSION = "retention-first-v2-staged"
+STAGED_MIN_HOOK_CANDIDATES = 5
+STAGED_MIN_HOOK_FAMILIES = 3
+HOOK_CRITERIA = ("A", "B", "C", "D", "E")
 SEMANTIC_POSTER_ROLES = frozenset(
     {"setup", "bridge", "subject_hero", "connector", "payoff"}
 )
@@ -336,8 +342,15 @@ def finalize_automatic_hook_selection(
     evidence_checked: bool,
     unsupported_claims_rejected: bool,
     rationale: str,
+    staged: bool = False,
+    rejected_texts: Sequence[str] = (),
 ) -> dict[str, Any]:
-    """Persist the winning automatic hook with retention and truth evidence."""
+    """Persist the winning automatic hook with retention and truth evidence.
+
+    ``staged`` (v3_staged) additionally requires the per-criterion comparison of
+    ``validate_staged_hook_candidates``; ``rejected_texts`` are hooks a rendered
+    review already sent back for rewrite and may not be selected again.
+    """
     if str(initial.get("mode") or "") != "automatic":
         raise PersianEditorialHookError("automatic selection cannot replace a user-supplied hook")
     text = _clean_text(selected_text, "selected hook")
@@ -357,6 +370,11 @@ def finalize_automatic_hook_selection(
         )
     if not isinstance(candidates, Sequence) or isinstance(candidates, (str, bytes)) or len(candidates) < 2:
         raise PersianEditorialHookError("automatic hook selection requires comparative candidates")
+    staged_terms: dict[str, Any] = {}
+    if staged:
+        staged_terms = validate_staged_hook_candidates(
+            candidates, selected_text=text, score=float(score), rejected_texts=rejected_texts,
+        )
     return {
         "version": "1.0",
         "mode": "automatic",
@@ -374,6 +392,83 @@ def finalize_automatic_hook_selection(
         "unsupported_claims_rejected": True,
         "candidate_count": len(candidates),
         "rationale": reason,
+        **staged_terms,
+    }
+
+
+def _criteria_scores(raw: object, label: str) -> dict[str, int]:
+    if not isinstance(raw, Mapping):
+        raise PersianEditorialHookError(f"{label} requires criteria scores A..E")
+    if set(map(str, raw)) != set(HOOK_CRITERIA):
+        raise PersianEditorialHookError(f"{label} criteria must be exactly A, B, C, D, E")
+    scores: dict[str, int] = {}
+    for key in HOOK_CRITERIA:
+        value = raw[key]
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 2:
+            raise PersianEditorialHookError(f"{label} criterion {key} must be an integer 0..2")
+        scores[key] = value
+    return scores
+
+
+def validate_staged_hook_candidates(
+    candidates: Sequence[Mapping[str, Any]],
+    *,
+    selected_text: str,
+    score: float,
+    rejected_texts: Sequence[str] = (),
+) -> dict[str, Any]:
+    """v3 hook comparison (#387): >=5 candidates from >=3 families, scored A..E.
+
+    The 2026-10-04 acceptance hook was the narration's first clause, picked from three
+    near-paraphrases with one self-assigned total. Each candidate now carries its own
+    criterion scores; the winner must be the top total, reach the 7/10 bar with E=2,
+    and differ from any hook a rendered review already rejected.
+    """
+    rows: list[dict[str, Any]] = []
+    for index, item in enumerate(candidates):
+        label = f"hook candidate {index + 1}"
+        if not isinstance(item, Mapping):
+            raise PersianEditorialHookError(f"{label} must be an object")
+        text = _clean_text(item.get("text"), f"{label} text")
+        family = _clean_text(item.get("family") or item.get("hook_family"), f"{label} family")
+        criteria = _criteria_scores(item.get("criteria"), label)
+        rows.append({"text": text, "family": family, "criteria": criteria,
+                     "total": sum(criteria.values())})
+    if len(rows) < STAGED_MIN_HOOK_CANDIDATES:
+        raise PersianEditorialHookError(
+            f"v3 hook selection requires at least {STAGED_MIN_HOOK_CANDIDATES} candidates"
+        )
+    if len({row["text"] for row in rows}) != len(rows):
+        raise PersianEditorialHookError("v3 hook candidates must be distinct texts")
+    families = sorted({row["family"].casefold() for row in rows})
+    if len(families) < STAGED_MIN_HOOK_FAMILIES:
+        raise PersianEditorialHookError(
+            f"v3 hook candidates must span at least {STAGED_MIN_HOOK_FAMILIES} hook families; "
+            f"got {len(families)}"
+        )
+    winner = next((row for row in rows if row["text"] == selected_text), None)
+    if winner is None:
+        raise PersianEditorialHookError("the selected v3 hook must be one of the scored candidates")
+    if winner["criteria"]["E"] != REQUIRED_CONTENT_MATCH_SCORE:
+        raise PersianEditorialHookError("the selected v3 hook requires E (content match) = 2")
+    if abs(float(score) - winner["total"]) > 1e-9:
+        raise PersianEditorialHookError(
+            "v3 hook score must equal the winner's A..E total "
+            f"({winner['total']}), not a separate overall rating"
+        )
+    eligible = [row for row in rows if row["criteria"]["E"] == REQUIRED_CONTENT_MATCH_SCORE]
+    if winner["total"] < max(row["total"] for row in eligible):
+        raise PersianEditorialHookError("the selected v3 hook must have the highest A..E total among E=2 candidates")
+    rejected = {_sha256_text(str(t).strip()) for t in rejected_texts if str(t or "").strip()}
+    if _sha256_text(selected_text) in rejected:
+        raise PersianEditorialHookError(
+            "this hook was already rejected by a rendered hook review; write a new one"
+        )
+    return {
+        "selection_policy": STAGED_HOOK_SELECTION_POLICY_VERSION,
+        "family_count": len(families),
+        "criteria": dict(winner["criteria"]),
+        "scored_candidates": rows,
     }
 
 
@@ -381,6 +476,11 @@ __all__ = [
     "HOOK_SELECTION_POLICY_VERSION",
     "HOOK_REFERENCE_CORPUS",
     "MIN_AUTOMATIC_HOOK_SCORE",
+    "STAGED_HOOK_SELECTION_POLICY_VERSION",
+    "STAGED_MIN_HOOK_CANDIDATES",
+    "STAGED_MIN_HOOK_FAMILIES",
+    "HOOK_CRITERIA",
+    "validate_staged_hook_candidates",
     "REQUIRED_CONTENT_MATCH_SCORE",
     "SEMANTIC_POSTER_ROLES",
     "PersianEditorialHookError",
