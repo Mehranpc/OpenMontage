@@ -1398,7 +1398,9 @@ def record_user_hook_override(
     This is intentionally narrower than automatic hook selection. It is available
     only at an active ``no_copy_preflight``, either in an explicit user-directed
     revision or before any candidate was rendered (a user answer to the preflight
-    hook gate), and only for a hook that was previously selected automatically. The superseded decision
+    hook gate), and only for a hook that was previously selected automatically. Under v3 it is
+    also available at an active opening/final review, where it reopens the edit as a
+    user-directed revision first (#387). The superseded decision
     is retained verbatim in durable history before the new user authority is stored.
     """
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
@@ -1408,6 +1410,24 @@ def record_user_hook_override(
         raise PersianVideoWorkflowError("user hook override requires non-empty selected text")
     if not why:
         raise PersianVideoWorkflowError("user hook override requires a non-empty reason")
+    # v3 (#387): a rendered review hands the hook decision to the human (hook
+    # below strong). Their own hook is explicit feedback: reopen only the edit
+    # (stage 2) as a user-directed revision, then bind it below. Footage and
+    # narration stay locked.
+    previous_selection = state.get("hook_selection")
+    if (
+        _is_v3_staged(state)
+        and state.get("status") == "active"
+        and state.get("next_phase") in {"opening_review", "final_review"}
+        and isinstance(previous_selection, Mapping)
+        and str(previous_selection.get("mode") or "") == "automatic"
+    ):
+        request_send_back(
+            project_id, "no_copy_preflight",
+            reason=f"user hook decision at {state.get('next_phase')}: {why}",
+            pipeline_dir=pipeline_dir, now=now, user_directed_revision=True,
+        )
+        state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     # The plan-time proof gate (#262) hands the same decision to the user before any
     # footage exists, so the answer is bindable there too.
     at_plan = state.get("next_phase") == "plan_scenes_moments"

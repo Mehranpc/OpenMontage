@@ -107,3 +107,21 @@ def test_canonical_prompt_requires_one_connected_thought():
             / "docs/reference/persian-hooks/rendered-hook-reviewer-prompt.md").read_text(encoding="utf-8")
     assert "one connected thought" in text
     assert "pipeline agent" in text
+
+
+# --- the human's own hook can be bound where the run hands them the decision ----------
+
+def test_user_hook_at_v3_review_reopens_only_the_edit_and_binds_it(tmp_path, v3):
+    from lib import persian_stage_locks as locks
+
+    project = _at_review(tmp_path)
+    _exhaust_rewrites(project)
+    mine = "دیر پیام می‌دی که مشتاق به نظر نرسی؟ یه آزمایش نشون داد به ضررته"
+    workflow.record_user_hook_override("run", selected_text=mine, reason="user chose this hook",
+                                       pipeline_dir=tmp_path)
+    state = load_workflow_state("run", pipeline_dir=tmp_path)
+    assert state["next_phase"] == "no_copy_preflight"
+    assert state["hook_selection"]["mode"] == "user_supplied"
+    assert state["hook_selection"]["text"] == mine
+    assert state["send_back_history"][-1]["user_directed_revision"] is True
+    assert locks.is_locked(project, 0) and locks.is_locked(project, 1)
