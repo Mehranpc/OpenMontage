@@ -373,6 +373,8 @@ export type PersianVideoProps = {
   /** Structured planner evidence. Derived by browser preflight; never authored. */
   readonly watermarkDiagnostics?: WatermarkDiagnostics;
   readonly watermarkMeasurement?: { widthPx: number; heightPx: number; layout: "single-line" | "two-line"; measured: true };
+  /** #387 v3: measured footage brightness under each placed text block, per shot. Derived; never authored. */
+  readonly filmTypeBackdrop?: import("./filmType/backdrop").FilmTypeBackdrop;
   /** Total duration. Authoritative — `calculateMetadata` uses it directly. */
   readonly durationSeconds: number;
 };

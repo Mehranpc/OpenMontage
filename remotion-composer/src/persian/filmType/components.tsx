@@ -6,6 +6,7 @@ import { compareKey } from "../text";
 import { ensureKahrobaReady, isKahrobaLoaded } from "../fonts";
 import { FORMAT_DIMENSIONS, type PersianFormat } from "../tokens";
 import type { PersianMoment, PersianDesignSnapshot, PersianVideoProps } from "../types";
+import { backdropMultiplier } from "./backdrop";
 import { filmProfile, filmRowDelay, isFilmTypePolish, type FilmRow, type FilmMomentLayout, type FilmLockup, type FilmProfile, type Rect } from "./layout";
 
 import { gentleLife, featherLayers, compactPath } from "./motion24";
@@ -154,8 +155,8 @@ const EditorialBurst: React.FC<{
 export const PersianFilmTypeMoment: React.FC<{
   moment: PersianMoment; layout: FilmMomentLayout; format: PersianFormat;
   durationFrames: number; design: PersianDesignSnapshot; shots: PersianVideoProps["shots"];
-  hideGlyphs?: boolean;
-}> = ({moment,layout,format,durationFrames,design,shots,hideGlyphs=false}) => {
+  hideGlyphs?: boolean; backdrop?: PersianVideoProps["filmTypeBackdrop"];
+}> = ({moment,layout,format,durationFrames,design,shots,hideGlyphs=false,backdrop}) => {
   const frame = useCurrentFrame(), {fps} = useVideoConfig();
   const p = filmProfile(design), dims = FORMAT_DIMENSIONS[format];
   const kahrobaPromise = p.profileVersion === "2.16.0"
@@ -174,7 +175,7 @@ export const PersianFilmTypeMoment: React.FC<{
   const absoluteSeconds = moment.startSeconds + seconds;
   const activeShot = shots.find(shot => absoluteSeconds >= shot.startSeconds && absoluteSeconds < shot.endSeconds);
   const busyBackground = p.profileVersion === "2.16.0" && activeShot?.visualComplexity === "busy";
-  const fieldPeakMultiplier = busyBackground ? 1.55 : 1;
+  const fieldPeakMultiplier = (busyBackground ? 1.55 : 1) * backdropMultiplier(backdrop, moment.id, activeShot?.id);
   const firstReveal = Math.min(...layout.rows.map(row => row.revealAfterSeconds));
   const replaceSequence = moment.presentation?.sequenceMode === "replace";
   const sequenceReveals = replaceSequence

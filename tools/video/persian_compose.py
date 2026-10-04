@@ -770,11 +770,13 @@ class PersianCompose(BaseTool):
         film_type = design_snapshot is not None and design_snapshot["profile"] == "film-type"
 
         shots: list[dict[str, Any]] = []
+        shot_sources: dict[str, Path] = {}
         for index, shot in enumerate(persian.get("shots") or []):
             source = shot.get("source") or shot.get("path")
             if not source:
                 raise ValueError(f"shot[{index}] has no source path")
             staged = self._stage(Path(source), staging_dir, run_id)
+            shot_sources[str(shot.get("id") or f"shot-{index + 1}")] = Path(source).expanduser().resolve()
 
             attribution = str(shot.get("attribution") or "").strip()
             if not attribution:
@@ -1037,7 +1039,13 @@ class PersianCompose(BaseTool):
             # Real Chromium font measurement, one shared Film Type layout for
             # rendering and collision planning. Optional Legacy bridge flags do
             # not disable this mandatory prepass.
-            return prepare_film_type_props(props, _composer_dir()), attributions
+            prepared = prepare_film_type_props(props, _composer_dir())
+            if prepared.get("pipelineProfile") == PROFILE_V3:
+                # #387: the shadow follows the measured footage brightness under the text.
+                from lib.persian_backdrop_luma import measure_backdrop
+
+                prepared["filmTypeBackdrop"] = measure_backdrop(prepared, shot_sources)
+            return prepared, attributions
         if design_snapshot is not None:
             # Resolve after fitted stack geometry is attached, so collision checks
             # receive real text bounds rather than an empty placeholder.
