@@ -60,10 +60,13 @@ function betterCoverage(a:CoverageState,b:CoverageState|undefined,requiredMoves:
  // Coverage counts only up to the cap; beyond it, less is better (#230: 92% crowded the frame).
  const ac=Math.min(a.covered,capSeconds),bc=Math.min(b.covered,capSeconds);
  if(Math.abs(ac-bc)>1e-8)return ac>bc;
- const ax=Math.max(0,a.covered-capSeconds),bx=Math.max(0,b.covered-capSeconds);
- if(Math.abs(ax-bx)>1e-8)return ax<bx;
+ // #387: the long-form relocation target outranks a small overshoot of the cap. With
+ // the cap first, a 34s single dwell (0.3s over the cap) beat a three-anchor schedule
+ // (1.2s over) and the brand sat locked in one corner for the last 60% of the film.
  const am=Math.min(a.moves,requiredMoves),bm=Math.min(b.moves,requiredMoves);
  if(am!==bm)return am>bm;
+ const ax=Math.max(0,a.covered-capSeconds),bx=Math.max(0,b.covered-capSeconds);
+ if(Math.abs(ax-bx)>1e-8)return ax<bx;
  const az=bitCount(a.mask),bz=bitCount(b.mask);if(az!==bz)return az>bz;
  if(Math.abs(a.cost-b.cost)>1e-8)return a.cost<b.cost;
  return a.slots.length<b.slots.length;
