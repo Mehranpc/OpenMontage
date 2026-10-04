@@ -129,7 +129,9 @@ def _composer_dir() -> Path:
 
 # Brief narration pauses are not editorial music breaks. Holding the duck through
 # sub-second gaps prevents severe gain pumping between adjacent spoken phrases.
-SHORT_SPEECH_GAP_HOLD_SECONDS = 0.9
+# #387: a sentence pause up to 1.5s stays ducked. At 0.9s the 0.94s pause at 7s of the
+# 2026-10-04 run released the bed and the music jumped for under a second.
+SHORT_SPEECH_GAP_HOLD_SECONDS = 1.5
 
 PERSIAN_VALIDATION_LADDER_VERSION = "1.0"
 _PERSIAN_VALIDATION_LADDER = (

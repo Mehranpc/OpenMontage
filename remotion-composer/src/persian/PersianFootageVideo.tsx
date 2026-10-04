@@ -37,6 +37,7 @@
  */
 
 import React from "react";
+import { musicLevelAt } from "./musicEnvelope";
 import {
   AbsoluteFill,
   Audio,
@@ -222,24 +223,12 @@ export const PersianFootageVideo: React.FC<PersianVideoProps> = ({
     if (!audio?.narration) return () => levels.flat;
 
     // Duck only against real narration timing. Captions and editorial moments are
-    // visual systems and must never drive the mix. Short attack/release ramps avoid
-    // audible pumping while still letting the bed breathe in genuine speech pauses.
+    // visual systems and must never drive the mix. Pauses inside narration lift the
+    // bed by at most +6 dB with smooth ramps (#387); see musicEnvelope.ts.
     const intervals = audio?.speechIntervals ?? [];
-    const attack = 0.18, release = 0.28;
     return (frame: number) => {
       const seconds = frame / fps;
-      let level = levels.base;
-      for (const interval of intervals) {
-        const start = interval.startSeconds, end = interval.endSeconds;
-        if (seconds >= start && seconds <= end) level = Math.min(level, levels.duck);
-        else if (seconds >= start - attack && seconds < start) {
-          const t = (seconds - (start - attack)) / attack;
-          level = Math.min(level, levels.base + (levels.duck - levels.base) * t);
-        } else if (seconds > end && seconds <= end + release) {
-          const t = (seconds - end) / release;
-          level = Math.min(level, levels.duck + (levels.base - levels.duck) * t);
-        }
-      }
+      const level = musicLevelAt(seconds, intervals, levels);
       const fadeSeconds = audio?.musicFadeSeconds ?? DEFAULT_AUDIO_LEVELS.musicFadeSeconds;
       const totalSeconds = durationInFrames / fps;
       const head = fadeSeconds > 0 ? Math.min(1, seconds / fadeSeconds) : 1;

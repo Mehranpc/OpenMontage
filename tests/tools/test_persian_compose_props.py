@@ -616,13 +616,28 @@ class TestAudioProps:
         props, _ = _build(
             _persian(clip, audio={"wordTimings": [
                 {"word": "سلام", "start": 0.4, "end": 0.9},
-                {"word": "بعد", "start": 2.0, "end": 2.3},
+                {"word": "بعد", "start": 2.6, "end": 2.9},
             ]}),
             staging,
         )
         assert props["audio"]["speechIntervals"] == [
             {"startSeconds": 0.4, "endSeconds": 0.9},
-            {"startSeconds": 2.0, "endSeconds": 2.3},
+            {"startSeconds": 2.6, "endSeconds": 2.9},
+        ]
+
+    def test_issue387_sentence_pause_of_the_acceptance_run_stays_ducked(
+        self, clip: Path, staging: Path
+    ) -> None:
+        # 2026-10-04: speech 0-7.08s, resume 8.02s; the 0.94s pause swelled the bed.
+        props, _ = _build(_persian(clip, durationSeconds=30, audio={"wordTimings": [
+            {"word": "سلام", "start": 0.4, "end": 0.6},
+            {"word": "دنیا", "start": 0.7, "end": 0.9},
+            {"word": "قبل", "start": 6.78, "end": 7.08},
+            {"word": "بعد", "start": 8.02, "end": 8.32},
+        ]}), staging)
+        assert props["audio"]["speechIntervals"] == [
+            {"startSeconds": 0.4, "endSeconds": 0.9},
+            {"startSeconds": 6.78, "endSeconds": 8.32},
         ]
 
 
