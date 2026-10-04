@@ -36,6 +36,10 @@ def execute(project_id: str, phase: str) -> dict[str, Any]:
     if phase == "master_final_candidate":
         mastering = master_final_candidate(project / "renders" / "rendered.mp4", output)
         evidence = {**mastering, "edit_artifact_sha256": edit_digest}
+        # A render that already meets the audio policy is canonical as-is: the
+        # mastering result names the render itself, and nothing is written at
+        # ``candidate.mp4``. Report the file mastering declared (#387).
+        output = Path(str(mastering["candidatePath"])).resolve()
     else:
         params: dict[str, Any] = {
             "edit_decisions": edit, "output_path": str(output), "crf": 16,
