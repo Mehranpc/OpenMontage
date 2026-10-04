@@ -169,6 +169,10 @@ def _validate_cold_viewer(review: Mapping[str, Any], *, self_review: bool = Fals
         raise PersianRenderedReviewError(
             "cold-viewer evidenceSource must be rendered_opening_only"
         )
+    if self_review and raw.get("contextIsolated") is not False:
+        raise PersianRenderedReviewError(
+            "the pipeline agent cannot claim a context-isolated cold view; record contextIsolated: false"
+        )
     if raw.get("contextIsolated") is not True and not (
         self_review and raw.get("contextIsolated") is False
     ):
@@ -369,6 +373,10 @@ def validate_rendered_hook_review_shape(
         require_pass=require_pass,
         hook_timing=None,
         verify_hook_authority=False,
+        # Shape only: an honestly disclosed pipeline-agent self-review is well formed.
+        # Whether self-review is allowed (v3_staged only) is decided by the durable
+        # workflow through ``validate_rendered_hook_review`` (#387).
+        allow_pipeline_agent=True,
     )
 
 
