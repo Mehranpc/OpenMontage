@@ -368,7 +368,7 @@ def test_send_back_budget_and_resume_preserve_durable_counters(tmp_path):
 
 def test_wall_time_target_is_advisory_and_does_not_block_phase_attempt(tmp_path):
     _bootstrap(tmp_path)
-    expired = BASE + timedelta(minutes=46)
+    expired = BASE + timedelta(minutes=61)
     state = record_phase_attempt("run", "prepare_inputs", pipeline_dir=tmp_path, now=expired)
     assert state["attempts"]["prepare_inputs"] == 1
     assert state["performance_slo"]["policy"] == "engineering-target-not-correctness-shortcut"
@@ -607,7 +607,7 @@ def test_second_asset_pass_rejects_slots_outside_scene_importance_order(tmp_path
 
 def test_asset_actions_and_send_back_are_not_killed_by_runtime_target(tmp_path):
     _bootstrap_to_assets(tmp_path)
-    expired = BASE + timedelta(minutes=46)
+    expired = BASE + timedelta(minutes=61)
     request = bounded_asset_search_request("run", {}, retry_pass=0, pipeline_dir=tmp_path, now=expired)
     record_asset_search_result(
         "run", retry_pass=0, result_data=_asset_result(request, candidates=0, downloaded_bytes=0),
@@ -1232,7 +1232,7 @@ def test_wall_budget_stops_at_next_phase_boundary(tmp_path: Path) -> None:
         "prepare_inputs",
         evidence=_prepare_inputs_evidence(state),
         pipeline_dir=tmp_path,
-        now=BASE + timedelta(minutes=46),
+        now=BASE + timedelta(minutes=61),
     )
 
     assert stopped["status"] == "failed"
@@ -1246,7 +1246,7 @@ def test_wall_budget_stops_at_next_phase_boundary(tmp_path: Path) -> None:
     with pytest.raises(PersianVideoWorkflowError, match="workflow status"):
         record_phase_attempt(
             "run", "align_script_timing", pipeline_dir=tmp_path,
-            now=BASE + timedelta(minutes=46, seconds=1),
+            now=BASE + timedelta(minutes=61, seconds=1),
         )
 
 
@@ -1302,12 +1302,12 @@ def test_status_summary_reports_budget_last_write_and_idle_state(tmp_path: Path)
     summary = status["operational_summary"]
     assert summary["phase"] == "prepare_inputs"
     assert summary["total_elapsed_seconds"] == 1020.0
-    assert summary["wall_budget_seconds"] == 2700
+    assert summary["wall_budget_seconds"] == 3600
     assert summary["last_written_file"] == "artifacts/latest.json"
     assert summary["activity"] == "idle"
     line = workflow.format_status_line(status)
     assert "phase=prepare_inputs" in line
-    assert "total=1020.000/2700s" in line
+    assert "total=1020.000/3600s" in line
     assert "last_write=artifacts/latest.json" in line
     assert line.endswith("activity=idle")
 

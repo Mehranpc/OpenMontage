@@ -194,5 +194,5 @@ def test_preflight_phase_slo_is_recorded_without_weakening_correctness(tmp_path:
     assert entry["slo_seconds"] == 300
     assert entry["slo_exceeded"] is True
     persisted = load_workflow_state("run", pipeline_dir=tmp_path)
-    assert persisted["performance_slo"]["endToEndSeconds"] == 2700
+    assert persisted["performance_slo"]["endToEndSeconds"] == 3600
     assert persisted["next_phase"] == "no_copy_preflight"
