@@ -25,7 +25,7 @@ def test_run_kernel_blocks_new_external_work_after_wall_budget(tmp_path: Path):
             argv=[sys.executable, "-c", child],
             idempotence_key="late-execution-v1",
             pipeline_dir=tmp_path,
-            now=BASE + timedelta(minutes=46),
+            now=BASE + timedelta(minutes=61),
         )
 
     state = workflow.load_workflow_state("run", pipeline_dir=tmp_path)
@@ -46,7 +46,7 @@ def test_cli_front_door_stops_before_new_work_span(tmp_path: Path, monkeypatch):
     _bootstrap(tmp_path)
     state = workflow.load_workflow_state("run", pipeline_dir=tmp_path)
     state["budget_window_started_at"] = (
-        datetime.now(timezone.utc) - timedelta(minutes=46)
+        datetime.now(timezone.utc) - timedelta(minutes=61)
     ).isoformat()
     workflow._write_state(tmp_path / "run", state)
     monkeypatch.setattr(workflow, "PROJECTS_DIR", tmp_path)

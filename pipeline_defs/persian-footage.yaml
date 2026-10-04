@@ -41,7 +41,7 @@ orchestration:
   budget_default_usd: 0.50
   max_revisions_per_stage: 3
   max_send_backs: 2
-  max_wall_time_minutes: 45
+  max_wall_time_minutes: 60
   # Provider search is only one part of the 10-minute acquisition SLO. Keep it
   # bounded so review/selection still has time, and cache identical provider
   # metadata inside the project to avoid repeated network search on retries.

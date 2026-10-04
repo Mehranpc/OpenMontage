@@ -1,7 +1,7 @@
 """#138 F4: `resume` must not refresh the wall window of a still-active workflow.
 
 An active caller could call ``resume_workflow`` repeatedly and, because it reset
-``budget_window_started_at`` unconditionally, keep the 45-minute wall window from
+``budget_window_started_at`` unconditionally, keep the 60-minute wall window from
 ever expiring. The real failed run recorded four resumes and ~12531s of true wall
 time while enforcement only ever measured ~3032s.
 
@@ -40,7 +40,7 @@ def test_repeated_resume_does_not_extend_active_wall_window(tmp_path: Path) -> N
     assert created == BASE.isoformat()
 
     # A live session keeps writing project files, so each resume lands within
-    # seconds of the last write. Four resumes inside the 45-minute horizon must
+    # seconds of the last write. Four resumes inside the 60-minute horizon must
     # therefore never look idle enough to refresh the window.
     marker = tmp_path / "resumed-work-ran.txt"
     for offset in (10, 20, 30, 40):
@@ -64,7 +64,7 @@ def test_repeated_resume_does_not_extend_active_wall_window(tmp_path: Path) -> N
             argv=[sys.executable, "-c", child],
             idempotence_key="post-resume-work-v1",
             pipeline_dir=tmp_path,
-            now=BASE + timedelta(minutes=46),
+            now=BASE + timedelta(minutes=61),
         )
 
     stopped = workflow.load_workflow_state(PROJECT, pipeline_dir=tmp_path)

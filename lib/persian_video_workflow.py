@@ -127,7 +127,7 @@ PHASE_SLO_SECONDS = {
     "master_final_candidate": 5 * 60,
     "final_review": 3 * 60,
 }
-END_TO_END_SLO_SECONDS = 45 * 60
+END_TO_END_SLO_SECONDS = 60 * 60
 # #107 P2: a workflow whose project files have not moved for this long is
 # reported as idle/stalled. Reused so a resume only refreshes the wall window
 # for a session that has genuinely gone idle, never for one still being driven.

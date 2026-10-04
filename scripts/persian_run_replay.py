@@ -105,7 +105,7 @@ def _age_budget_window(project: Path) -> None:
     state = json.loads(path.read_text(encoding="utf-8"))
     if state.get("budget_stop"):
         return
-    limit = float((state.get("budgets") or {}).get("max_wall_time_minutes") or 45)
+    limit = float((state.get("budgets") or {}).get("max_wall_time_minutes") or 60)
     started = str(state.get("budget_window_started_at") or state.get("created_at") or "")
     try:
         at = datetime.fromisoformat(started.replace("Z", "+00:00"))
