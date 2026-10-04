@@ -153,8 +153,13 @@ def validate_cold_viewer_review_input(
         )
 
 
-def _validate_cold_viewer(review: Mapping[str, Any]) -> bool:
-    """Validate context-isolated muted-opening evidence and return comprehension."""
+def _validate_cold_viewer(review: Mapping[str, Any], *, self_review: bool = False) -> bool:
+    """Validate muted-opening evidence and return comprehension.
+
+    An outside reviewer must be context-isolated. Under v3 the pipeline agent may
+    review its own render (``self_review``); it cannot honestly claim isolation, so
+    it records ``contextIsolated: false`` instead of being refused (#387).
+    """
     raw = review.get("coldViewer")
     if not isinstance(raw, Mapping):
         raise PersianRenderedReviewError(
@@ -164,7 +169,9 @@ def _validate_cold_viewer(review: Mapping[str, Any]) -> bool:
         raise PersianRenderedReviewError(
             "cold-viewer evidenceSource must be rendered_opening_only"
         )
-    if raw.get("contextIsolated") is not True:
+    if raw.get("contextIsolated") is not True and not (
+        self_review and raw.get("contextIsolated") is False
+    ):
         raise PersianRenderedReviewError(
             "cold-viewer review must be context-isolated from script, hook metadata, rationale, and scene labels"
         )
@@ -323,8 +330,13 @@ def _validate_visual_typography(review: Mapping[str, Any], *, require_pass: bool
 def validate_rendered_hook_review(
     review: Mapping[str, Any], *, candidate_sha256: str, require_pass: bool,
     hook_timing: Mapping[str, Any] | None = None,
+    allow_pipeline_agent: bool = False,
 ) -> None:
-    """Authorize independent review of what a cold viewer actually receives.
+    """Authorize review of what a cold viewer actually receives.
+
+    ``allow_pipeline_agent`` (v3_staged, #387) lets the pipeline agent review its own
+    render with the canonical prompt, so the gate never depends on an outside
+    reviewer that may not be available.
 
     ``hook_timing`` carries the authority resolved from the durable workflow
     hook-selection record. It is required before a late payoff can be accepted as
@@ -337,6 +349,7 @@ def validate_rendered_hook_review(
         require_pass=require_pass,
         hook_timing=hook_timing,
         verify_hook_authority=True,
+        allow_pipeline_agent=allow_pipeline_agent,
     )
 
 
@@ -362,6 +375,7 @@ def validate_rendered_hook_review_shape(
 def _validate_rendered_hook_review(
     review: Mapping[str, Any], *, candidate_sha256: str, require_pass: bool,
     hook_timing: Mapping[str, Any] | None, verify_hook_authority: bool,
+    allow_pipeline_agent: bool = False,
 ) -> None:
     version = str(review.get("version") or "")
     if version not in HOOK_RENDER_REVIEW_VERSIONS:
@@ -370,8 +384,13 @@ def _validate_rendered_hook_review(
         )
     if str(review.get("reviewSource") or "") != "rendered_mp4":
         raise PersianRenderedReviewError("rendered hook review must inspect the rendered MP4")
-    if str(review.get("reviewerRole") or "") != "independent_reviewer":
-        raise PersianRenderedReviewError("rendered hook review requires an independent reviewer role")
+    role = str(review.get("reviewerRole") or "")
+    self_review = allow_pipeline_agent and role == "pipeline_agent"
+    if role != "independent_reviewer" and not self_review:
+        raise PersianRenderedReviewError(
+            "rendered hook review requires an independent reviewer role"
+            + (" or the pipeline agent (pipeline_agent)" if allow_pipeline_agent else "")
+        )
     actual_digest = _digest(review.get("reviewedCandidateSha256"), "reviewed candidate digest")
     if actual_digest != _digest(candidate_sha256, "candidate digest"):
         raise PersianRenderedReviewError("rendered hook review digest does not match the candidate digest")
@@ -386,7 +405,7 @@ def _validate_rendered_hook_review(
     if not str(review.get("rationale") or "").strip():
         raise PersianRenderedReviewError("rendered hook review requires rationale")
 
-    cold_comprehension = _validate_cold_viewer(review)
+    cold_comprehension = _validate_cold_viewer(review, self_review=self_review)
     declared_muted = review.get("mutedHookDirectionConfirmed")
     if not isinstance(declared_muted, bool):
         raise PersianRenderedReviewError("mutedHookDirectionConfirmed must be boolean")
