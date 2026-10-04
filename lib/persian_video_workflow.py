@@ -86,6 +86,7 @@ from lib.persian_rendered_review import (
     validate_rendered_audio_review,
     validate_rendered_hook_review,
     validate_cold_viewer_review_input,
+    validate_staged_hook_verdict,
 )
 from lib.persian_hook_quality import HOOK_TIMING_POLICY_VERSION, resolve_hook_timing_authority
 from lib.persian_preflight import PREFLIGHT_POLICY_VERSION
@@ -1375,6 +1376,9 @@ def record_hook_selection(
         initial, selected_text=selected_text, hook_family=hook_family, candidates=candidates,
         score=score, content_match_score=content_match_score, evidence_checked=evidence_checked,
         unsupported_claims_rejected=unsupported_claims_rejected, rationale=rationale,
+        staged=_is_v3_staged(state),
+        rejected_texts=[str(item.get("text") or "") for item in state.get("hook_rewrites") or []
+                        if isinstance(item, Mapping)],
     )
     _write_state(_project_root(state), state)
     return state
@@ -2510,6 +2514,116 @@ def _close_range_revision(state: Mapping[str, Any], candidate: Mapping[str, Any]
     return {"revision": int(revision["revision"]), "proof": proof}
 
 
+#: v3: how many times a rendered review may send an automatic hook back for rewrite.
+MAX_HOOK_REWRITES = 2
+
+
+def _staged_hook_gate_applies(state: Mapping[str, Any]) -> bool:
+    selection = state.get("hook_selection")
+    return (
+        _is_v3_staged(state)
+        and isinstance(selection, Mapping)
+        and str(selection.get("mode") or "") == "automatic"
+    )
+
+
+def _require_strong_staged_hook(
+    state: Mapping[str, Any], hook_review: Mapping[str, Any], *, phase: str
+) -> None:
+    """v3: an automatic hook passes a rendered review only on a ``strong`` verdict (#387).
+
+    A user-supplied hook is the user's authority and keeps the v2 bar.
+    """
+    if not _staged_hook_gate_applies(state):
+        return
+    selection = state["hook_selection"]
+    rejected = {str(item.get("sha256") or "") for item in state.get("hook_rewrites") or []
+                if isinstance(item, Mapping)}
+    if str(selection.get("sha256") or "") in rejected:
+        raise PersianVideoWorkflowError(
+            f"{phase}: the selected hook was already rejected for rewrite; run hook-select with a new hook"
+        )
+    try:
+        verdict = validate_staged_hook_verdict(hook_review)
+    except PersianRenderedReviewError as exc:
+        raise PersianVideoWorkflowError(f"{phase} hook-quality review failed: {exc}") from exc
+    if not verdict["strong"]:
+        raise PersianVideoWorkflowError(
+            f"{phase}: v3 requires a strong rendered hook verdict, got {verdict['strength']!r} "
+            f"(A..E {verdict['criteriaScores']}, total {verdict['total']}); rewrite it with "
+            "`hook-rewrite <project-id> --review-json <review> --reason ...` "
+            f"(at most {MAX_HOOK_REWRITES} per run)"
+        )
+
+
+@state_locked
+def request_hook_rewrite(
+    project_id: str,
+    *,
+    review_path: str | Path,
+    reason: str,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """v3: send a non-strong automatic hook back to ``no_copy_preflight`` (#387).
+
+    This is the one automatic rewind v3 allows. It touches only stage 2 (edit), keeps
+    footage and narration locks, needs the rendered review that judged the hook below
+    ``strong``, records the rejected text so it cannot be selected again, and is
+    bounded by ``MAX_HOOK_REWRITES`` and the send-back budget.
+    """
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    if not _staged_hook_gate_applies(state):
+        raise PersianVideoWorkflowError("hook-rewrite is the v3_staged rewrite of an automatic hook")
+    phase = state.get("next_phase")
+    if state.get("status") != "active" or phase not in {"opening_review", "final_review"}:
+        raise PersianVideoWorkflowError("hook-rewrite runs at an active opening_review or final_review")
+    why = str(reason or "").strip()
+    if not why:
+        raise PersianVideoWorkflowError("hook-rewrite requires a non-empty reason")
+    rewrites = [item for item in state.get("hook_rewrites") or [] if isinstance(item, Mapping)]
+    if len(rewrites) >= MAX_HOOK_REWRITES:
+        raise PersianVideoWorkflowError(
+            f"hook rewrite budget exhausted ({MAX_HOOK_REWRITES}); present the best attempt and ask the user"
+        )
+    path = assert_read_allowed(state, review_path)
+    document = _read_json(str(path))
+    hook_review = document.get("hookQualityReview") if isinstance(document, Mapping) else None
+    if hook_review is None and isinstance(document, Mapping):
+        metadata = document.get("metadata")
+        hook_review = metadata.get("hookQualityReview") if isinstance(metadata, Mapping) else None
+    if not isinstance(hook_review, Mapping):
+        raise PersianVideoWorkflowError("hook-rewrite needs a review with a hookQualityReview")
+    try:
+        verdict = validate_staged_hook_verdict(hook_review)
+    except PersianRenderedReviewError as exc:
+        raise PersianVideoWorkflowError(f"hook-rewrite review is invalid: {exc}") from exc
+    if verdict["strong"]:
+        raise PersianVideoWorkflowError("hook-rewrite refused: the rendered review already rates the hook strong")
+    selection = state["hook_selection"]
+    record = {
+        "text": str(selection.get("text") or ""),
+        "sha256": str(selection.get("sha256") or ""),
+        "phase": phase,
+        "strength": verdict["strength"],
+        "criteriaScores": verdict["criteriaScores"],
+        "review_path": str(path),
+        "review_sha256": _hash_file(path),
+        "reason": why,
+        "requested_at": (now or datetime.now(timezone.utc)).isoformat(),
+    }
+    request_send_back(
+        project_id, "no_copy_preflight",
+        reason=f"hook rewrite {len(rewrites) + 1}/{MAX_HOOK_REWRITES}: {why}",
+        pipeline_dir=pipeline_dir, now=now, hook_rewrite=True,
+    )
+    state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
+    state["hook_rewrites"] = rewrites + [record]
+    _write_state(_project_root(state), state)
+    return {"rewrite": len(rewrites) + 1, "limit": MAX_HOOK_REWRITES, "rejected": record,
+            "nextPhase": state.get("next_phase")}
+
+
 @state_locked
 def revise_time_range(
     project_id: str,
@@ -3188,8 +3302,12 @@ def request_send_back(
     affected_shot_ids: Sequence[str] | None = None,
     edit_attempt_id: str | None = None,
     edit_draft_json: str | None = None,
+    hook_rewrite: bool = False,
 ) -> dict[str, Any]:
-    """Rewind a bounded production; explicit user feedback may open one fresh cycle."""
+    """Rewind a bounded production; explicit user feedback may open one fresh cycle.
+
+    ``hook_rewrite`` is reserved for ``request_hook_rewrite`` (v3 only).
+    """
     state = load_workflow_state(project_id, pipeline_dir=pipeline_dir)
     effective_now = now or datetime.now(timezone.utc)
     prior_status = str(state.get("status") or "")
@@ -3215,7 +3333,7 @@ def request_send_back(
         try:
             assert_rewind_allowed(
                 _project_root(state), state.get("next_phase"), target_phase,
-                user_directed=user_directed_revision,
+                user_directed=user_directed_revision, hook_rewrite=hook_rewrite,
             )
         except StageLockError as exc:
             raise PersianVideoWorkflowError(str(exc)) from exc
@@ -5149,6 +5267,7 @@ def _validate_opening_review_completion(
             raise PersianVideoWorkflowError(f"opening_review hook-quality review failed: {exc}") from exc
         if passing:
             _validate_cold_viewer_input_artifact(state, review, hook_review, candidate_sha256=opening_sha)
+            _require_strong_staged_hook(state, hook_review, phase="opening_review")
     elif passing:
         raise PersianVideoWorkflowError(
             "a passing opening review requires a rendered Hook Quality review "
@@ -5268,6 +5387,8 @@ def _validate_final_review_completion(
             raise PersianVideoWorkflowError(
                 f"final_review hook-quality review failed: {exc}"
             ) from exc
+        if review.get("status") == "pass":
+            _require_strong_staged_hook(state, hook_review, phase="final_review")
     elif preflight_hook is not None and str(preflight_hook.get("version") or "") == "2.0":
         raise PersianVideoWorkflowError(
             "final_review hook-quality review must use rendered Hook Quality v2 evidence"
@@ -6600,6 +6721,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="object with text, hook_family, candidates, score, content_match_score, "
              "evidence_checked, unsupported_claims_rejected, rationale",
     )
+    hook_rewrite = sub.add_parser(
+        "hook-rewrite",
+        help="v3: send a non-strong automatic hook from opening/final review back to no_copy_preflight",
+    )
+    hook_rewrite.add_argument("project_id")
+    hook_rewrite.add_argument("--review-json", required=True, metavar="PATH",
+                              help="the opening/final review whose hookQualityReview is below strong")
+    hook_rewrite.add_argument("--reason", required=True)
     hook_override = sub.add_parser(
         "hook-override",
         help="bind explicit user hook feedback as authoritative copy in a revision cycle",
@@ -7062,6 +7191,10 @@ def _main(args: argparse.Namespace) -> int:
                 rationale=str(hook["rationale"]),
             )
             _print_json({"hook_selection": after.get("hook_selection")})
+        elif args.command == "hook-rewrite":
+            _print_json(request_hook_rewrite(
+                args.project_id, review_path=args.review_json, reason=args.reason,
+            ))
         elif args.command == "hook-override":
             _print_json(record_user_hook_override(
                 args.project_id, selected_text=args.text, reason=args.reason,
