@@ -1075,6 +1075,16 @@ def _assert_edit_schema_before_candidate(edit: Mapping[str, Any]) -> None:
     )
 
 
+def _project_is_v3_staged(project_dir: Path) -> bool:
+    """Whether the project's pinned/effective plan selects the v3 staged profile (#387)."""
+    from lib.persian_pipeline_profile import PROFILE_V3, PipelineProfileError, project_profile
+
+    try:
+        return project_profile(project_dir) == PROFILE_V3
+    except PipelineProfileError as exc:
+        raise PersianEditWorkspaceError(str(exc)) from exc
+
+
 def _assert_declared_regions_are_clear(
     project_dir: Path, edit: Mapping[str, Any]
 ) -> None:
@@ -1306,9 +1316,17 @@ def stage_edit_draft(
     if enforce_edit_schema:
         _assert_edit_schema_before_candidate(edit)
 
-    _assert_declared_regions_are_clear(project_dir, edit)
+    # #387: under v3_staged, text adapts to the locked footage, so subject geometry
+    # (declared negative space, reviewed hard regions) is evidence, never an edit-stage
+    # refusal. Preflight already skips its geometric precheck for v3; staging must agree.
+    staged_v3 = _project_is_v3_staged(project_dir)
+    if not staged_v3:
+        _assert_declared_regions_are_clear(project_dir, edit)
 
-    geometry = geometric_hard_region_precheck(edit, repo_root=REPO_ROOT)
+    geometry = (
+        {"status": "not_applicable", "blockingIssues": []}
+        if staged_v3 else geometric_hard_region_precheck(edit, repo_root=REPO_ROOT)
+    )
     geometry_blockers = geometry.get("blockingIssues")
     if isinstance(geometry_blockers, list) and geometry_blockers:
         blocker = next((dict(item) for item in geometry_blockers if isinstance(item, Mapping)), {})
