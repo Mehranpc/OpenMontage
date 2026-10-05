@@ -89,6 +89,47 @@ export function isKahrobaLoaded(): boolean {
   return kahrobaLoaded;
 }
 
+/**
+ * #387 v3 opening hook (Mehran's approved design): question and bridge are set in
+ * Vazirmatn (SIL OFL 1.1, vendored under public/fonts/vazirmatn). Only the three
+ * weights the design uses are shipped, so Chrome never synthesizes a weight.
+ * Loaded on demand, like Kahroba, so v2 renders never touch these files.
+ */
+export const VAZIRMATN_FAMILY = "Vazirmatn";
+export type VazirmatnWeight = 600 | 800 | 900;
+export const VAZIRMATN_FILES: Record<VazirmatnWeight, string> = {
+  600: "fonts/vazirmatn/Vazirmatn-SemiBold.ttf",
+  800: "fonts/vazirmatn/Vazirmatn-ExtraBold.ttf",
+  900: "fonts/vazirmatn/Vazirmatn-Black.ttf",
+};
+let vazirmatnLoaded = false;
+let vazirmatnPromise: Promise<void> | null = null;
+
+export function ensureVazirmatnReady(): Promise<void> {
+  if (vazirmatnLoaded) return Promise.resolve();
+  if (vazirmatnPromise) return vazirmatnPromise;
+  const vazirHandle = delayRender("Loading Vazirmatn (v3 opening hook typeface)");
+  vazirmatnPromise = (async () => {
+    await Promise.all((Object.entries(VAZIRMATN_FILES) as Array<[string, string]>).map(async ([weight, path]) => {
+      const face = new FontFace(VAZIRMATN_FAMILY, `url(${staticFile(path)}) format("truetype")`,
+        {weight, style: "normal", display: "block"});
+      document.fonts.add(await face.load());
+    }));
+    await Promise.all(Object.keys(VAZIRMATN_FILES).map(weight =>
+      document.fonts.load(`${weight} 68px "${VAZIRMATN_FAMILY}"`, "پیام")));
+    vazirmatnLoaded = true;
+  })();
+  vazirmatnPromise.then(
+    () => continueRender(vazirHandle),
+    (error) => { continueRender(vazirHandle); throw error; },
+  );
+  return vazirmatnPromise;
+}
+
+export function isVazirmatnLoaded(): boolean {
+  return vazirmatnLoaded;
+}
+
 const handle = delayRender("Loading Estedad (Persian typeface)");
 
 /**

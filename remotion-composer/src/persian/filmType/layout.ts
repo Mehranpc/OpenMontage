@@ -7,7 +7,8 @@ import { assertCaptionsFit, captionBandRect } from "../captionLayout";
  * deliberately unchanged. The same browser measurement feeds paint and planning.
  */
 import { planCoverageAwareBrand, planMovingBrand } from "./watermark24";
-import { estedadReady, ensureKahrobaReady, isEstedadLoaded, isKahrobaLoaded, ESTEDAD_FAMILY, KAHROBA_FAMILY } from "../fonts";
+import { DESIGNED_HOOK_BOX, measureDesignedHook, type DesignedHook, type DesignedHookSegments } from "./designedHook";
+import { estedadReady, ensureKahrobaReady, ensureVazirmatnReady, isEstedadLoaded, isKahrobaLoaded, ESTEDAD_FAMILY, KAHROBA_FAMILY } from "../fonts";
 import { breakClass, splitWords, visibleLength } from "../text";
 import { deriveListPhraseLocks, lockedBreakBoundaries } from "../semanticPhraseLocks";
 import { FORMAT_DIMENSIONS, MOMENT_MIN_SECONDS, type PersianFormat } from "../tokens";
@@ -57,7 +58,7 @@ export type FilmPosterDecor = {
   band: {alpha: number; padTopPx: number; padBottomPx: number};
 };
 export type FilmRow = {
-  text: string; role: string; segmentIndex: number; fontSizePx: number; weight: 400 | 500 | 700 | 900;
+  text: string; role: string; segmentIndex: number; fontSizePx: number; weight: 400 | 500 | 600 | 700 | 800 | 900;
   family: string; direction: "rtl" | "ltr"; abovePx: number; belowPx: number;
   widthPx: number; baselinePx: number; revealAfterSeconds: number; accentWords: readonly string[];
   /** Fallback-only horizontal displacement from the ordinary measured anchor.
@@ -75,6 +76,8 @@ export type FilmMomentLayout = {
   recipeId?: "editorial-hero-balanced" | "editorial-hero-compact" | "editorial-callout-balanced";
   occupancyRatio?: number; lineBalanceRatio?: number;
   posterDecor?: FilmPosterDecor;
+  /** #387 v3 only: Mehran's approved opening-hook design, painted as DOM. */
+  designedHook?: DesignedHook;
 };
 export type FilmLockup = {rows: FilmRow[]; widthPx: number; heightPx: number; layout: "two-line"; measured: true};
 export type FilmTypeLayout = {
@@ -86,7 +89,7 @@ export type FilmTypeLayout = {
   stagedWatermark?: {filledSlots: {zone: string; startSeconds: number; endSeconds: number; textGapPx: number | null}[]};
 };
 /** #387 stage-3 ladder: free area -> top/bottom band -> scale down -> scrim -> subtitle. */
-export type StagedTextStep = "free_area" | "band" | "scaled_band" | "scrim" | "subtitle_fallback";
+export type StagedTextStep = "designed_hook" | "free_area" | "band" | "scaled_band" | "scrim" | "subtitle_fallback";
 export type StagedTextDecision = {step: StagedTextStep; placement?: string; fontSizePx?: number; reason?: string};
 type TimedRect = Rect & {
   startSeconds: number; endSeconds: number;
@@ -874,6 +877,35 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
   throw new Error(`Moment ${moment.id}: no readable Film Type placement fits the safe area and supplied subject regions. Shorten the authored phrase, choose another legal placement, or change the shot; do not clip, hide text, or shrink below the profile floors. Diagnostics: ${blocked.join("; ") || "no size fits; check copy length and height"}`);
 }
 
+/**
+ * #387 v3 opening hook: Mehran's approved design (Hook_v2_photo.html, Kahroba 140px hero).
+ * Its geometry is the design's own: the hook box sits at left/right 110px, top 455px of
+ * the 1080x1920 frame, independent of the footage, with its shade and frame treatment.
+ * Only setup -> bridge -> subject_hero (each optional except the hero, in that order)
+ * maps onto the design; any other stack returns null and keeps the previous staged path.
+ */
+function designedHookLayout(moment: PersianMoment): FilmMomentLayout | null {
+  if (moment.exactText) return null;
+  const order = ["setup", "bridge", "subject_hero"] as const;
+  const segments: Partial<DesignedHookSegments> = {};
+  let last = -1;
+  for (const [index, segment] of moment.segments.entries()) {
+    const at = order.indexOf(segment.semanticRole as typeof order[number]);
+    if (segment.role === "source" || at < 0 || at <= last) return null;
+    last = at;
+    const entry = {text: segment.text, index};
+    if (at === 0) segments.question = entry; else if (at === 1) segments.bridge = entry; else segments.hero = entry;
+  }
+  if (!segments.hero) return null;
+  const measured = measureDesignedHook(segments as DesignedHookSegments);
+  if (!measured) return null;
+  const box = DESIGNED_HOOK_BOX;
+  return {id: moment.id, rows: measured.rows, widthPx: measured.widthPx, heightPx: measured.heightPx,
+    rect: {x: box.left / box.stageWidth, y: box.top / box.stageHeight, w: measured.widthPx / box.stageWidth, h: measured.heightPx / box.stageHeight},
+    placement: "upper-center", subjectSafety: "not-checked", contrastMode: "dark", strength: "strong",
+    designedHook: measured.hook};
+}
+
 /** Band zones for stage-3 step 2, in fixed order; 2.16 Persian text never sits left. */
 function stagedBandZones(p: FilmProfile): string[] {
   return p.profileVersion === "2.16.0"
@@ -901,6 +933,10 @@ export function placeMomentStaged(moment: PersianMoment, props: PersianVideoProp
   let posterHook = false;
   try { posterHook = p.profileVersion === "2.16.0" && isPosterStackHook(moment); } catch { posterHook = false; }
   if (posterHook) p = {...p, stagedPoster: true};
+  if (posterHook && props.format === "vertical") {
+    const designed = designedHookLayout(moment);
+    if (designed) return {layout: designed, decision: {step: "designed_hook", placement: designed.placement, fontSizePx: heroFontPx(designed)}};
+  }
   const reasons: string[] = [];
   const attempt = (step: StagedTextStep, candidate: PersianMoment, candidateProps: PersianVideoProps, regions: TimedRect[]) => {
     try {
@@ -1420,6 +1456,7 @@ export async function prepareFilmTypeProps(props: PersianVideoProps): Promise<Pe
   assertCaptionsFit(props.format, props.captions ?? [], props.durationSeconds, props.design);
   const profile=filmProfile(props.design!);
   if (profile.profileVersion === "2.16.0") await ensureKahrobaReady(profile.typography.editorial!.assetSha256);
+  if (profile.profileVersion === "2.16.0" && props.pipelineProfile === "v3_staged") await ensureVazirmatnReady();
   const expectedHash = {
     "2.1.0":"c56aac71643bdeff4c27b75fa1ef1bb4e2997a3216a886d61dac78c3a021af0c",
     "2.2.0":"6d71bee9de74a627f393544bbcf9caf37b7349c422397b016f1f10597a1c43c2",

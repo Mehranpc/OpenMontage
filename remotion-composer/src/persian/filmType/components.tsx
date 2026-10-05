@@ -3,7 +3,8 @@ import {diffuseRadii,diffuseStops} from "./diffuse27";
 import React, { useEffect, useId, useMemo, useState } from "react";
 import { AbsoluteFill, Easing, useCurrentFrame, useVideoConfig } from "remotion";
 import { compareKey } from "../text";
-import { ensureKahrobaReady, isKahrobaLoaded } from "../fonts";
+import { ensureKahrobaReady, ensureVazirmatnReady, isKahrobaLoaded, isVazirmatnLoaded } from "../fonts";
+import { DesignedHookPaint } from "./designedHook";
 import { FORMAT_DIMENSIONS, type PersianFormat } from "../tokens";
 import type { PersianMoment, PersianDesignSnapshot, PersianVideoProps } from "../types";
 import { backdropMultiplier } from "./backdrop";
@@ -258,6 +259,15 @@ export const PersianFilmTypeMoment: React.FC<{
     kahrobaPromise.then(() => { if (active) setKahrobaReady(true); });
     return () => { active = false; };
   }, [kahrobaPromise, kahrobaReady]);
+  const designedHook = layout?.designedHook;
+  const vazirmatnPromise = designedHook ? ensureVazirmatnReady() : null;
+  const [vazirmatnReady, setVazirmatnReady] = useState(() => !designedHook || isVazirmatnLoaded());
+  useEffect(() => {
+    if (!vazirmatnPromise || vazirmatnReady) return;
+    let active = true;
+    vazirmatnPromise.then(() => { if (active) setVazirmatnReady(true); });
+    return () => { active = false; };
+  }, [vazirmatnPromise, vazirmatnReady]);
   const polished = isFilmTypePolish(design);
   if (!layout || layout.id !== moment.id) throw new Error(`Missing measured Film Type layout for ${moment.id}; run persian_compose.`);
   const span = durationFrames / fps, seconds = frame / fps;
@@ -289,7 +299,9 @@ export const PersianFilmTypeMoment: React.FC<{
   const cut = moment.presentation?.motion === "cut-in";
   const align = layout.placement === "center" || layout.placement.endsWith("-center") ? "center" : polished ? "right" : layout.placement.endsWith("left") ? "left" : "right";
   const anchor = align === "center" ? layout.widthPx/2 : align === "left" ? p.layout.inkPaddingPx : layout.widthPx-p.layout.inkPaddingPx;
-  if (!kahrobaReady) return null;
+  if (!kahrobaReady || !vazirmatnReady) return null;
+  // #387 v3: Mehran's approved opening hook, static from its first frame (no animation).
+  if (designedHook) return <DesignedHookPaint momentId={moment.id} hook={designedHook} hideGlyphs={hideGlyphs}/>;
   const decor = layout.posterDecor;
   return <AbsoluteFill data-film-type-moment={moment.id} data-film-type-placement={layout.placement} style={{pointerEvents:"none"}}>
     {busyBackground && !layout.subjectWrap ? <FilmContrastField rect={layout.rect} format={format} color={p.contrast.darkField}

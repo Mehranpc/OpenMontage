@@ -39,6 +39,8 @@ _REPO = Path(__file__).resolve().parents[1]
 _FONTS = _REPO / "remotion-composer" / "public" / "fonts"
 _ESTEDAD = {500: "estedad/Estedad-Medium.ttf", 700: "estedad/Estedad-Bold.ttf", 900: "estedad/Estedad-Black.ttf"}
 _KAHROBA = "kahroba/Kahroba-EB-LC.woff2"
+# #387 v3 opening hook (Mehran's design): question 800, bridge 600, highlight 900.
+_VAZIRMATN = {600: "vazirmatn/Vazirmatn-SemiBold.ttf", 800: "vazirmatn/Vazirmatn-ExtraBold.ttf", 900: "vazirmatn/Vazirmatn-Black.ttf"}
 GLYPH_ORDER_MIN_CORRELATION = 0.8
 GLYPH_ORDER_MIN_MARGIN = 0.15
 
@@ -46,7 +48,13 @@ GLYPH_ORDER_MIN_MARGIN = 0.15
 def _row_font(row, scale):
     from PIL import ImageFont
     family = str(row.get("family") or "")
-    rel = _KAHROBA if "kahroba" in family.lower() else _ESTEDAD.get(int(row.get("weight") or 700), _ESTEDAD[700])
+    weight = int(row.get("weight") or 700)
+    if "kahroba" in family.lower():
+        rel = _KAHROBA
+    elif family.lower() == "vazirmatn":
+        rel = _VAZIRMATN.get(weight, _VAZIRMATN[800])
+    else:
+        rel = _ESTEDAD.get(weight, _ESTEDAD[700])
     path = _FONTS / rel
     if not path.is_file():
         return None
