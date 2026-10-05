@@ -45,6 +45,16 @@ export type FilmProfile = {
     minCoverageRatio?: number; targetCoverageRatio?: number; longFormThresholdSeconds?: number; minLongFormRelocations?: number; minLongFormVerticalBands?: number; verticalDiversityMinDwellSeconds?: number;
     planningMode?: "fixed-anchors-text-only"; approvedAnchors?: string[];
     glyphShadow?: {color:string;nearOffsetPx:number;nearBlurPx:number;nearAlpha:number;haloBlurPx:number;haloAlpha:number}};
+  /** #387 v3_staged only, never in the frozen token JSON: set in memory by
+   * placeMomentStaged for semantic poster hooks. */
+  stagedPoster?: true;
+};
+/** #387 v3 poster hook ornaments, in text-box pixels. Drawn outside every row's ink box. */
+export type FilmPosterDecor = {
+  version: 1;
+  divider?: {centerYPx: number; widthPx: number; thicknessPx: number; afterRow: number};
+  underline?: {topPx: number; heightPx: number; widthPx: number; underRow: number};
+  band: {alpha: number; padTopPx: number; padBottomPx: number};
 };
 export type FilmRow = {
   text: string; role: string; segmentIndex: number; fontSizePx: number; weight: 400 | 500 | 700 | 900;
@@ -64,6 +74,7 @@ export type FilmMomentLayout = {
   contrastMode: "dark" | "light"; strength: Strength; fieldFeatherPx?: number; fieldPeakAlpha?: number;
   recipeId?: "editorial-hero-balanced" | "editorial-hero-compact" | "editorial-callout-balanced";
   occupancyRatio?: number; lineBalanceRatio?: number;
+  posterDecor?: FilmPosterDecor;
 };
 export type FilmLockup = {rows: FilmRow[]; widthPx: number; heightPx: number; layout: "two-line"; measured: true};
 export type FilmTypeLayout = {
@@ -305,6 +316,31 @@ function semanticPosterRoles(moment: PersianMoment): readonly PersianSemanticPos
   return roles;
 }
 
+/** #387 v3: the subject hero dominates like a poster (about 2.7x the setup line),
+ * and the bridge is close to the setup size so it never reads as a footnote. */
+const STAGED_POSTER_SCALE: Readonly<Record<PersianSemanticPosterRole, number>> = {
+  setup: .37,
+  bridge: .33,
+  subject_hero: 1,
+  connector: .33,
+  payoff: .46,
+};
+
+export function stagedPosterScale(segment: PersianMoment["segments"][number]): number {
+  const semanticRole = segment.semanticRole;
+  if (!semanticRole) throw new Error("stagedPosterScale requires explicit semanticRole.");
+  return STAGED_POSTER_SCALE[semanticRole];
+}
+
+/** Room for the divider after the setup and the brush underline after the hero. */
+function stagedPosterGapPx(previousRole: PersianSemanticPosterRole, nextRole: PersianSemanticPosterRole, heroPx: number): number {
+  if (previousRole === "setup") return Math.max(30, Math.round(heroPx * .30));
+  if (previousRole === "subject_hero") return Math.max(24, Math.round(heroPx * .34));
+  if (nextRole === "subject_hero") return Math.max(8, Math.round(heroPx * .06));
+  return Math.max(10, Math.round(heroPx * .08));
+}
+const STAGED_UNDERLINE_TAIL = .30;
+
 export function isPosterStackHook(moment: PersianMoment): boolean {
   return semanticPosterRoles(moment) !== null;
 }
@@ -341,10 +377,31 @@ function editorialRecipe(moment: PersianMoment, p: FilmProfile): {id: EditorialR
 }
 
 
+/** Divider sits in the middle of the setup gap; the brush starts below the hero's ink. */
+function stagedPosterDecor(moment: PersianMoment, rows: FilmRow[], main: number): FilmPosterDecor {
+  const decor: FilmPosterDecor = {version: 1, band: {alpha: .58, padTopPx: Math.round(main * 1.0), padBottomPx: Math.round(main * .9)}};
+  const setupIndex = rows.findIndex(row => moment.segments[row.segmentIndex]?.semanticRole === "setup");
+  const next = setupIndex >= 0 ? rows[setupIndex + 1] : undefined;
+  if (setupIndex >= 0 && next) {
+    const setup = rows[setupIndex];
+    const bottom = setup.baselinePx + setup.belowPx, top = next.baselinePx - next.abovePx;
+    decor.divider = {centerYPx: round((bottom + top) / 2), widthPx: round(setup.widthPx * .80),
+      thicknessPx: Math.max(3, Math.round(main * .024)), afterRow: setupIndex};
+  }
+  const heroIndex = rows.findIndex(row => row.role === "hero");
+  if (heroIndex >= 0) {
+    const hero = rows[heroIndex];
+    decor.underline = {topPx: round(hero.baselinePx + hero.belowPx + Math.max(2, main * .02)),
+      heightPx: Math.max(12, Math.round(main * .22)), widthPx: round(hero.widthPx * .78), underRow: heroIndex};
+  }
+  return decor;
+}
+
 function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, column: number, selectedSize?: number): Omit<FilmMomentLayout,"rect"|"placement"|"subjectSafety"|"contrastMode"|"strength"> | null {
   const t = p.typography, l = p.layout, dims = FORMAT_DIMENSIONS[fmt], recipe = editorialRecipe(moment,p);
   const posterRoles = p.profileVersion === "2.16.0" ? semanticPosterRoles(moment) : null;
   const posterStack = posterRoles !== null;
+  const stagedPoster = posterStack && p.stagedPoster === true;
   const replaceSequence = moment.presentation?.sequenceMode === "replace";
   const numeric = !moment.exactText && moment.kind === "figure" && moment.segments.some(s => s.role === "hero" && splitQuantity(s.text));
   const ladder = numeric ? t.figureLadderPx : moment.kind === "hook" ? t.titleLadderPx : t.statementLadderPx;
@@ -362,7 +419,7 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
         const semanticGap = posterStack && previous.role !== "source" && segment.role !== "source";
         if (replaceSequence && reveal > previousReveal) y = l.inkPaddingPx;
         else y += semanticGap
-          ? posterStackGapPx(previous.semanticRole!, segment.semanticRole!, main)
+          ? (stagedPoster ? stagedPosterGapPx : posterStackGapPx)(previous.semanticRole!, segment.semanticRole!, main)
           : reveal > previousReveal ? l.revealGroupGapPx : segment.role === "source" ? l.sourceGapPx : segment.role === "hero" && previous.role === "lead" ? l.contextGapPx : l.phraseGapPx;
       }
       previousReveal = reveal;
@@ -374,7 +431,7 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
         {text: quantity[0], role: "quantity", size: main, weight: editorial ? editorialWeight : 500 as 500|900, max: 1, family: editorialFamily},
         {text: quantity[1], role: "quantity-unit", size: t.quantityUnitPx, weight: editorial ? editorialWeight : 500 as 500|900, max: 2, family: editorialFamily},
       ] : [{text: segment.text, role: segment.role,
-        size: segment.role === "source" ? t.sourcePx : posterStack ? Math.round(main * posterStackScale(segment)) : segment.role === "lead" ? (editorial ? Math.round(main * .72) : t.contextPx) : segment.role === "tail" ? (editorial ? Math.round(main * .72) : (moment.kind === "hook" ? Math.round(main * t.titleTailRatio) : t.supportPx)) : main,
+        size: segment.role === "source" ? t.sourcePx : posterStack ? Math.round(main * (stagedPoster ? stagedPosterScale(segment) : posterStackScale(segment))) : segment.role === "lead" ? (editorial ? Math.round(main * .72) : t.contextPx) : segment.role === "tail" ? (editorial ? Math.round(main * .72) : (moment.kind === "hook" ? Math.round(main * t.titleTailRatio) : t.supportPx)) : main,
         weight: segment.role === "source" ? t.supportWeight : (editorial ? editorialWeight : (segment.role === "hero" ? t.heroWeight : t.supportWeight)),
         max: posterStack ? 1 : segment.role === "hero" ? (recipe?.config.maxHeroLines ?? editorial?.maxHookLines ?? 3) : (recipe?.config.maxSupportLines ?? 2),
         family: segment.role === "source" ? ESTEDAD_FAMILY : editorialFamily}];
@@ -408,6 +465,15 @@ function fitAtWidth(moment: PersianMoment, p: FilmProfile, fmt: PersianFormat, c
         }
       }
       if (failed) break;
+    }
+    if (!failed && stagedPoster) {
+      const heroIndex = rows.findIndex(row => row.role === "hero");
+      if (heroIndex === rows.length - 1) tallest += Math.round(main * STAGED_UNDERLINE_TAIL);
+      if (tallest + l.inkPaddingPx <= maxHeight) {
+        return {id: moment.id,rows,widthPx: Math.ceil(widest + l.inkPaddingPx * 2),heightPx: Math.ceil(tallest + l.inkPaddingPx),
+          posterDecor: stagedPosterDecor(moment, rows, main)};
+      }
+      continue;
     }
     if (!failed && tallest + l.inkPaddingPx <= maxHeight) return {id: moment.id,rows,widthPx: Math.ceil(widest + l.inkPaddingPx * 2),heightPx: Math.ceil(tallest + l.inkPaddingPx)};
   }
@@ -649,7 +715,7 @@ function placeMoment(moment: PersianMoment, props: PersianVideoProps, p: FilmPro
   }
   const zones = authored !== "auto" ? [authored]
     : p.profileVersion === "2.16.0"
-      ? (moment.kind === "hook" ? ["upper-right","upper-center","mid-right","center","lower-right"] : ["mid-right","center","upper-right","upper-center","lower-right"])
+      ? (moment.kind === "hook" ? (p.stagedPoster ? ["upper-center","upper-right","center","mid-right","lower-right"] : ["upper-right","upper-center","mid-right","center","lower-right"]) : ["mid-right","center","upper-right","upper-center","lower-right"])
       : moment.presentation?.treatment === "inline-statement" || moment.kind === "statement"
         ? ["lower-right","mid-right","lower-left","mid-left","upper-right","upper-left"]
         : (p.profileVersion === "2.14.0" || p.profileVersion === "2.15.0") && moment.kind === "hook"
@@ -832,10 +898,15 @@ export function placeMomentStaged(moment: PersianMoment, props: PersianVideoProp
   // Copy and timing contracts are stage-0 truth, not geometry: they still refuse.
   assertMomentIsWellFormed(moment);
   assertFilmTiming(moment,p);
+  let posterHook = false;
+  try { posterHook = p.profileVersion === "2.16.0" && isPosterStackHook(moment); } catch { posterHook = false; }
+  if (posterHook) p = {...p, stagedPoster: true};
   const reasons: string[] = [];
   const attempt = (step: StagedTextStep, candidate: PersianMoment, candidateProps: PersianVideoProps, regions: TimedRect[]) => {
     try {
       const layout = placeMoment(candidate, candidateProps, p, regions);
+      // A subject wrap moves rows, so the measured ornaments no longer apply.
+      if (layout.subjectWrap) delete layout.posterDecor;
       return {layout, decision: {step, placement: layout.placement, fontSizePx: heroFontPx(layout)} as StagedTextDecision};
     } catch (error) {
       reasons.push(`${step}: ${String((error as Error)?.message ?? error).split(" OPENMONTAGE_DIAGNOSTICS=")[0].slice(0, 160)}`);
