@@ -7,7 +7,7 @@ import { ensureKahrobaReady, isKahrobaLoaded } from "../fonts";
 import { FORMAT_DIMENSIONS, type PersianFormat } from "../tokens";
 import type { PersianMoment, PersianDesignSnapshot, PersianVideoProps } from "../types";
 import { backdropMultiplier } from "./backdrop";
-import { filmProfile, filmRowDelay, isFilmTypePolish, type FilmRow, type FilmMomentLayout, type FilmLockup, type FilmProfile, type Rect } from "./layout";
+import { filmProfile, filmRowDelay, isFilmTypePolish, type FilmRow, type FilmMomentLayout, type FilmLockup, type FilmProfile, type FilmPosterDecor, type Rect } from "./layout";
 
 import { gentleLife, featherLayers, compactPath } from "./motion24";
 
@@ -118,6 +118,54 @@ const DiffuseField: React.FC<{layout:FilmMomentLayout;rows?:readonly FilmRow[];f
  {fields.map((f,i)=><ellipse key={i} cx={f.cx} cy={f.cy} rx={f.rx} ry={f.ry} fill={`url(#${id})`}/>)}</svg>;
 };
 
+/** #387 v3 poster hook: a full-width, vertically feathered dark band behind the
+ * hook block only (never the whole frame), so the hook stays readable when the
+ * footage under it turns bright. */
+const PosterBand: React.FC<{layout:FilmMomentLayout;decor:FilmPosterDecor;format:PersianFormat;opacity:number;boost:number}>=({layout,decor,format,opacity,boost})=>{
+ const id=useId(),d=FORMAT_DIMENSIONS[format];
+ const top=Math.max(0,layout.rect.y*d.height-decor.band.padTopPx), bottom=Math.min(d.height,(layout.rect.y+layout.rect.h)*d.height+decor.band.padBottomPx);
+ const alpha=Math.min(.68,decor.band.alpha*boost);
+ // The flat core spans the whole text block; only the padding feathers out.
+ const span=Math.max(1,bottom-top);
+ const coreTop=clamp01((layout.rect.y*d.height-top)/span), coreBottom=clamp01(((layout.rect.y+layout.rect.h)*d.height-top)/span);
+ return <svg data-film-poster-band="hook" width={d.width} height={d.height} style={{position:"absolute",inset:0,opacity,zIndex:1,pointerEvents:"none"}} aria-hidden="true">
+  <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+   {/* Eased feather (smoothstep samples) so the band dissolves into the footage. */}
+   {[0,.2,.4,.6,.8,1].map(t=><stop key={`t${t}`} offset={coreTop*t} stopColor="#000" stopOpacity={alpha*t*t*(3-2*t)}/>)}
+   {[0,.2,.4,.6,.8,1].map(t=><stop key={`b${t}`} offset={coreBottom+(1-coreBottom)*t} stopColor="#000" stopOpacity={alpha*(1-t)*(1-t)*(1+2*t)}/>)}
+  </linearGradient></defs>
+  <rect x={0} y={top} width={d.width} height={bottom-top} fill={`url(#${id})`}/>
+ </svg>;
+};
+
+/** Thin accent rule after the setup and a tapered brush stroke under the hero. */
+const PosterOrnaments: React.FC<{decor:FilmPosterDecor;rows:readonly FilmRow[];anchor:number;align:"left"|"right"|"center";accent:string;progress:number;opacity:number}>=({decor,rows,anchor,align,accent,progress,opacity})=>{
+ const id=useId(),p=Math.max(0,Math.min(1,progress));
+ const centerOf=(row:FilmRow)=>{const a=anchor+(row.offsetXPx??0);return align==="center"?a:align==="right"?a-row.widthPx/2:a+row.widthPx/2;};
+ const out:React.ReactNode[]=[];
+ if(decor.divider){
+  const dv=decor.divider,cx=centerOf(rows[dv.afterRow]),w=dv.widthPx*p;
+  out.push(<rect key="divider" data-film-poster-ornament="divider" x={cx-w/2} y={dv.centerYPx-dv.thicknessPx/2} width={w} height={dv.thicknessPx} rx={dv.thicknessPx/2} fill={`url(#${id})`}/>);
+ }
+ if(decor.underline){
+  const u=decor.underline,cx=centerOf(rows[u.underRow]),w=u.widthPx,h=u.heightPx;
+  // RTL: the stroke is drawn from right to left as the hook arrives.
+  const x1=cx+w/2,x0=x1-w*p,y=u.topPx;
+  // Brush: a thin tip at the left, full body through the middle, a soft lift at the right.
+  const mx=(x0+x1)/2;
+  const path=`M ${x0} ${y+h*.72} C ${x0+(x1-x0)*.25} ${y+h*.30}, ${mx} ${y+h*.12}, ${x1} ${y} L ${x1} ${y+h*.55} C ${mx} ${y+h*.70}, ${x0+(x1-x0)*.25} ${y+h*.92}, ${x0} ${y+h} Z`;
+  out.push(<path key="underline" data-film-poster-ornament="underline" d={path} fill={accent}/>);
+ }
+ return <g opacity={opacity*.96} aria-hidden="true">
+  <defs><linearGradient id={id} x1="0" y1="0" x2="1" y2="0">
+   <stop offset="0" stopColor={accent} stopOpacity={0}/><stop offset=".2" stopColor={accent} stopOpacity={1}/>
+   <stop offset=".8" stopColor={accent} stopOpacity={1}/><stop offset="1" stopColor={accent} stopOpacity={0}/>
+  </linearGradient></defs>
+  {out}
+ </g>;
+};
+const POSTER_GLYPH_SHADOW="drop-shadow(0 3px 5px rgba(0,0,0,.70)) drop-shadow(0 0 22px rgba(0,0,0,.50))";
+
 const Run: React.FC<{row: FilmRow; x: number; color: string; accent: string; emphasis: boolean; semanticHero?: boolean; align?: "left" | "right" | "center"}> = ({row,x,color,accent,emphasis,semanticHero=false,align="right"}) => {
   const accents = new Set(row.accentWords.map(compareKey));
   const hasInlineAccent = emphasis && accents.size > 0;
@@ -201,17 +249,19 @@ export const PersianFilmTypeMoment: React.FC<{
   const align = layout.placement === "center" || layout.placement.endsWith("-center") ? "center" : polished ? "right" : layout.placement.endsWith("left") ? "left" : "right";
   const anchor = align === "center" ? layout.widthPx/2 : align === "left" ? p.layout.inkPaddingPx : layout.widthPx-p.layout.inkPaddingPx;
   if (!kahrobaReady) return null;
+  const decor = layout.posterDecor;
   return <AbsoluteFill data-film-type-moment={moment.id} data-film-type-placement={layout.placement} style={{pointerEvents:"none"}}>
     {busyBackground && !layout.subjectWrap ? <FilmContrastField rect={layout.rect} format={format} color={p.contrast.darkField}
       alpha={0.42} plateau={0.56} paddingPx={92} opacity={fieldLife.opacity} kind="text"/> : null}
-    {diffuse ? <DiffuseField layout={layout} rows={visibleRows} format={format} design={design} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)} anchor={anchor} align={align} peakMultiplier={fieldPeakMultiplier}/> : modern ? <CompactFilmField featherPx={layout.fieldFeatherPx} rect={layout.rect} format={format} design={design} color={dark?p.contrast.darkField:p.contrast.lightField}
+    {decor ? <PosterBand layout={layout} decor={decor} format={format} opacity={fieldLife.opacity} boost={busyBackground ? 1.12 : 1}/> : diffuse ? <DiffuseField layout={layout} rows={visibleRows} format={format} design={design} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)} anchor={anchor} align={align} peakMultiplier={fieldPeakMultiplier}/> : modern ? <CompactFilmField featherPx={layout.fieldFeatherPx} rect={layout.rect} format={format} design={design} color={dark?p.contrast.darkField:p.contrast.lightField}
       alpha={p.contrast.strengths[layout.strength]} opacity={fieldLife.opacity} travel={p.motion.travelPx*(1-fieldLife.arrive)}/> : <FilmContrastField rect={layout.rect} format={format} color={dark?p.contrast.darkField:p.contrast.lightField}
       alpha={p.contrast.strengths[layout.strength]} plateau={p.contrast.plateauStop}
       paddingPx={p.contrast.plateauPaddingPx + p.motion.travelPx} opacity={fieldLife.opacity} kind="text"/>}
     <svg data-film-type-text={moment.id} width={layout.widthPx} height={layout.heightPx}
       viewBox={`0 0 ${layout.widthPx} ${layout.heightPx}`}
       data-film-background-complexity={busyBackground ? "busy" : "simple"}
-      style={{position:"absolute",left:layout.rect.x*dims.width,top:layout.rect.y*dims.height,overflow:"visible",zIndex:2,filter:glyphShadowFilter(p,busyBackground)}}>
+      style={{position:"absolute",left:layout.rect.x*dims.width,top:layout.rect.y*dims.height,overflow:"visible",zIndex:2,filter:decor ? POSTER_GLYPH_SHADOW : glyphShadowFilter(p,busyBackground)}}>
+      {decor ? <PosterOrnaments decor={decor} rows={layout.rows} anchor={anchor} align={align} accent={accent} progress={fieldLife.arrive} opacity={fieldLife.opacity}/> : null}
       {layout.rows.map((row,index) => {
         if (replaceSequence && row.revealAfterSeconds !== activeSequenceReveal) return null;
         // A quantity and its unit share the same authored segment and entrance.
