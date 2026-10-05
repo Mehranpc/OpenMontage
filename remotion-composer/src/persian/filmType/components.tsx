@@ -118,49 +118,90 @@ const DiffuseField: React.FC<{layout:FilmMomentLayout;rows?:readonly FilmRow[];f
  {fields.map((f,i)=><ellipse key={i} cx={f.cx} cy={f.cy} rx={f.rx} ry={f.ry} fill={`url(#${id})`}/>)}</svg>;
 };
 
-/** #387 v3 poster hook: a full-width, vertically feathered dark band behind the
- * hook block only (never the whole frame), so the hook stays readable when the
- * footage under it turns bright. */
+/** #387 v3 poster hook: a soft elliptical glow behind the hook block only. It is
+ * darkest behind the text and dissolves on every side (no band edges), so the hook
+ * stays readable over bright footage without a visible box. */
+const smooth01=(e0:number,e1:number,x:number)=>{const t=clamp01((x-e0)/Math.max(1e-6,e1-e0));return t*t*(3-2*t);};
+const POSTER_GLOW_STOPS=Array.from({length:17},(_,i)=>i/16);
 const PosterBand: React.FC<{layout:FilmMomentLayout;decor:FilmPosterDecor;format:PersianFormat;opacity:number;boost:number}>=({layout,decor,format,opacity,boost})=>{
  const id=useId(),d=FORMAT_DIMENSIONS[format];
- const top=Math.max(0,layout.rect.y*d.height-decor.band.padTopPx), bottom=Math.min(d.height,(layout.rect.y+layout.rect.h)*d.height+decor.band.padBottomPx);
- const alpha=Math.min(.68,decor.band.alpha*boost);
- // The flat core spans the whole text block; only the padding feathers out.
- const span=Math.max(1,bottom-top);
- const coreTop=clamp01((layout.rect.y*d.height-top)/span), coreBottom=clamp01(((layout.rect.y+layout.rect.h)*d.height-top)/span);
- return <svg data-film-poster-band="hook" width={d.width} height={d.height} style={{position:"absolute",inset:0,opacity,zIndex:1,pointerEvents:"none"}} aria-hidden="true">
-  <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-   {/* Eased feather (smoothstep samples) so the band dissolves into the footage. */}
-   {[0,.2,.4,.6,.8,1].map(t=><stop key={`t${t}`} offset={coreTop*t} stopColor="#000" stopOpacity={alpha*t*t*(3-2*t)}/>)}
-   {[0,.2,.4,.6,.8,1].map(t=><stop key={`b${t}`} offset={coreBottom+(1-coreBottom)*t} stopColor="#000" stopOpacity={alpha*(1-t)*(1-t)*(1+2*t)}/>)}
-  </linearGradient></defs>
-  <rect x={0} y={top} width={d.width} height={bottom-top} fill={`url(#${id})`}/>
+ const alpha=Math.min(.78,decor.band.alpha*boost);
+ const blockW=layout.rect.w*d.width, blockH=layout.rect.h*d.height;
+ const cx=(layout.rect.x+layout.rect.w/2)*d.width, cy=(layout.rect.y+layout.rect.h*.44)*d.height;
+ const rx=Math.max(d.width*.62,blockW*.78), ry=blockH*.56+(decor.band.padTopPx+decor.band.padBottomPx)*.85;
+ return <svg data-film-poster-band="hook" data-film-poster-band-shape="glow" width={d.width} height={d.height} style={{position:"absolute",inset:0,opacity,zIndex:1,pointerEvents:"none"}} aria-hidden="true">
+  <defs><radialGradient id={id} cx="50%" cy="50%" r="50%">
+   {POSTER_GLOW_STOPS.map(t=><stop key={t} offset={t} stopColor="#000" stopOpacity={alpha*(1-smooth01(.30,1,t))}/>)}
+  </radialGradient></defs>
+  <ellipse cx={cx} cy={cy} rx={rx} ry={ry} fill={`url(#${id})`}/>
  </svg>;
 };
 
-/** Thin accent rule after the setup and a tapered brush stroke under the hero. */
+/** Deterministic PRNG so every render of the same hook paints the same brush. */
+const brushRandom=(seedText:string)=>{let h=2166136261;for(const ch of seedText){h^=ch.codePointAt(0)!;h=Math.imul(h,16777619);}
+ let a=h>>>0;return ()=>{a=(a+0x6D2B79F5)>>>0;let t=a;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296;};};
+const pathOf=(top:readonly [number,number][],bottom:readonly [number,number][])=>
+ `M ${top.map(([x,y])=>`${x.toFixed(1)} ${y.toFixed(1)}`).join(" L ")} L ${[...bottom].reverse().map(([x,y])=>`${x.toFixed(1)} ${y.toFixed(1)}`).join(" L ")} Z`;
+
+/** Tapered accent rule: thick in the middle, hair-thin and faded at both ends. */
+const dividerPath=(cx:number,cy:number,w:number,t:number)=>{
+ const n=40,top:[number,number][]=[],bottom:[number,number][]=[];
+ for(let i=0;i<=n;i++){const u=i/n,half=t/2*Math.pow(Math.sin(Math.PI*u),1.6),x=cx-w/2+w*u;top.push([x,cy-half]);bottom.push([x,cy+half]);}
+ return pathOf(top,bottom);
+};
+
+/** Hand-painted brush stroke (RTL: loaded at the right, dry bristles trailing left). */
+const brushStroke=(x0:number,x1:number,y:number,h:number,seed:string)=>{
+ const rnd=brushRandom(seed),w=x1-x0,n=72;
+ // Rises to the right like a hand stroke (about 3.5 degrees), body sits below the hero.
+ const centre=(u:number)=>y+h*.85+w*.03-w*.06*u+h*.08*Math.sin(Math.PI*u);
+ const half=(u:number)=>h*.47*(.22+.78*smooth01(0,.26,u))*(1-.80*smooth01(.80,1,u));
+ const top:[number,number][]=[],bottom:[number,number][]=[];
+ for(let i=0;i<=n;i++){const u=i/n,x=x0+w*u,c=centre(u),k=half(u);
+  top.push([x,c-k+h*.13*(rnd()-.5)]);bottom.push([x,c+k+h*.13*(rnd()-.5)]);}
+ const body=pathOf(top,bottom);
+ // Dry gaps: hairline scratches cut through the trailing (left) part of the body.
+ const scratches:{d:string;width:number}[]=[];
+ for(let i=0;i<4;i++){const off=(i+.5)/4-.5+(rnd()-.5)*.10,len=.16+.18*rnd(),u1=len;
+  const pts=[0,.25,.5,.75,1].map(f=>{const u=u1*f;return `${(x0+w*u-w*.06).toFixed(1)} ${(centre(u)+off*2*half(u)).toFixed(1)}`;});
+  scratches.push({d:`M ${pts.join(" L ")}`,width:Math.max(1.2,h*(.025+.025*rnd()))});}
+ // Loose bristles that run past the body's dry end.
+ const bristles:string[]=[];
+ for(let i=0;i<7;i++){const off=(rnd()-.5)*1.5,ext=w*(.03+.10*rnd()),start=.08+.10*rnd(),th=Math.max(1.2,h*(.05+.06*rnd()));
+  const cy0=centre(start)+off*half(start),xs=x0+w*start,xe=x0-ext,cye=cy0+h*.06*(rnd()-.5)+h*.08;
+  bristles.push(`M ${xs.toFixed(1)} ${(cy0-th/2).toFixed(1)} Q ${((xs+xe)/2).toFixed(1)} ${(cy0-th*.4).toFixed(1)} ${xe.toFixed(1)} ${cye.toFixed(1)} Q ${((xs+xe)/2).toFixed(1)} ${(cy0+th*.4).toFixed(1)} ${xs.toFixed(1)} ${(cy0+th/2).toFixed(1)} Z`);}
+ return {body,scratches,bristles,minX:x0-w*.14};
+};
+
 const PosterOrnaments: React.FC<{decor:FilmPosterDecor;rows:readonly FilmRow[];anchor:number;align:"left"|"right"|"center";accent:string;progress:number;opacity:number}>=({decor,rows,anchor,align,accent,progress,opacity})=>{
- const id=useId(),p=Math.max(0,Math.min(1,progress));
+ const id=useId().replace(/:/g,""),p=Math.max(0,Math.min(1,progress));
  const centerOf=(row:FilmRow)=>{const a=anchor+(row.offsetXPx??0);return align==="center"?a:align==="right"?a-row.widthPx/2:a+row.widthPx/2;};
- const out:React.ReactNode[]=[];
+ const out:React.ReactNode[]=[],defs:React.ReactNode[]=[];
  if(decor.divider){
-  const dv=decor.divider,cx=centerOf(rows[dv.afterRow]),w=dv.widthPx*p;
-  out.push(<rect key="divider" data-film-poster-ornament="divider" x={cx-w/2} y={dv.centerYPx-dv.thicknessPx/2} width={w} height={dv.thicknessPx} rx={dv.thicknessPx/2} fill={`url(#${id})`}/>);
+  const dv=decor.divider,cx=centerOf(rows[dv.afterRow]),w=Math.max(1,dv.widthPx*p);
+  out.push(<path key="divider" data-film-poster-ornament="divider" data-film-poster-divider-shape="tapered" d={dividerPath(cx,dv.centerYPx,w,dv.thicknessPx)} fill={`url(#${id}-fade)`}/>);
  }
  if(decor.underline){
-  const u=decor.underline,cx=centerOf(rows[u.underRow]),w=u.widthPx,h=u.heightPx;
-  // RTL: the stroke is drawn from right to left as the hook arrives.
-  const x1=cx+w/2,x0=x1-w*p,y=u.topPx;
-  // Brush: a thin tip at the left, full body through the middle, a soft lift at the right.
-  const mx=(x0+x1)/2;
-  const path=`M ${x0} ${y+h*.72} C ${x0+(x1-x0)*.25} ${y+h*.30}, ${mx} ${y+h*.12}, ${x1} ${y} L ${x1} ${y+h*.55} C ${mx} ${y+h*.70}, ${x0+(x1-x0)*.25} ${y+h*.92}, ${x0} ${y+h} Z`;
-  out.push(<path key="underline" data-film-poster-ornament="underline" d={path} fill={accent}/>);
+  const u=decor.underline,row=rows[u.underRow],cx=centerOf(row),w=u.widthPx,h=u.heightPx;
+  const x1=cx+w/2,x0=x1-w;
+  const brush=brushStroke(x0,x1,u.topPx,h,row.text);
+  // RTL reveal: the stroke is painted from right to left as the hook arrives.
+  const revealX=x1-(x1-brush.minX)*p;
+  defs.push(<clipPath key="clip" id={`${id}-reveal`}><rect x={revealX} y={u.topPx-h*2} width={x1+h-revealX} height={h*5}/></clipPath>);
+  defs.push(<mask key="mask" id={`${id}-dry`} maskUnits="userSpaceOnUse" x={brush.minX-h} y={u.topPx-h*2} width={w*1.3+2*h} height={h*5}>
+   <rect x={brush.minX-h} y={u.topPx-h*2} width={w*1.3+2*h} height={h*5} fill="#000"/>
+   <path d={brush.body} fill="#fff"/>{brush.bristles.map((d,i)=><path key={i} d={d} fill="#fff"/>)}
+   {brush.scratches.map((s,i)=><path key={`s${i}`} d={s.d} stroke="#000" strokeWidth={s.width} strokeLinecap="round" fill="none"/>)}
+  </mask>);
+  out.push(<g key="underline" data-film-poster-ornament="underline" data-film-poster-underline-shape="brush" clipPath={`url(#${id}-reveal)`}>
+   <rect x={brush.minX-h} y={u.topPx-h*2} width={w*1.3+2*h} height={h*5} fill={accent} mask={`url(#${id}-dry)`}/>
+  </g>);
  }
  return <g opacity={opacity*.96} aria-hidden="true">
-  <defs><linearGradient id={id} x1="0" y1="0" x2="1" y2="0">
-   <stop offset="0" stopColor={accent} stopOpacity={0}/><stop offset=".2" stopColor={accent} stopOpacity={1}/>
-   <stop offset=".8" stopColor={accent} stopOpacity={1}/><stop offset="1" stopColor={accent} stopOpacity={0}/>
-  </linearGradient></defs>
+  <defs><linearGradient id={`${id}-fade`} x1="0" y1="0" x2="1" y2="0">
+   <stop offset="0" stopColor={accent} stopOpacity={0}/><stop offset=".3" stopColor={accent} stopOpacity={.85}/><stop offset=".5" stopColor={accent} stopOpacity={1}/>
+   <stop offset=".7" stopColor={accent} stopOpacity={.85}/><stop offset="1" stopColor={accent} stopOpacity={0}/>
+  </linearGradient>{defs}</defs>
   {out}
  </g>;
 };

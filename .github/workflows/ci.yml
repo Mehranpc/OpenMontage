@@ -137,7 +137,7 @@ jobs:
           OPENMONTAGE_L2_MEDIA_TESTS: "1"
           OPENMONTAGE_L2_EVIDENCE_PATH: test-artifacts/issue138-l2/evidence.json
           OPENMONTAGE_REHEARSAL_ARTIFACT_DIR: test-artifacts/issue138-l2/rehearsal
-        run: .venv/bin/python -m pytest tests/l2/test_issue138_targeted_media_smoke.py tests/l2/test_issue215_watermark_relocates_beside_text.py tests/l2/test_issue230_watermark_keeps_distance.py tests/l2/test_issue232_hook_hierarchy_and_caption_band.py tests/l2/test_issue252_glyph_order_on_lossless_stills.py tests/l2/test_issue312_moment_placement_probe.py tests/l2/test_issue387_staged_text_adapts.py tests/l2/test_issue387_staged_watermark.py tests/l2/test_issue387_v3_poster_hook.py tests/rehearsal -v
+        run: .venv/bin/python -m pytest tests/l2/test_issue138_targeted_media_smoke.py tests/l2/test_issue215_watermark_relocates_beside_text.py tests/l2/test_issue230_watermark_keeps_distance.py tests/l2/test_issue232_hook_hierarchy_and_caption_band.py tests/l2/test_issue252_glyph_order_on_lossless_stills.py tests/l2/test_issue312_moment_placement_probe.py tests/l2/test_issue387_staged_text_adapts.py tests/l2/test_issue387_staged_watermark.py tests/l2/test_issue387_v3_poster_hook.py tests/l2/test_issue387_v3_poster_finish.py tests/rehearsal -v
 
       - name: Upload targeted smoke evidence
         if: always()

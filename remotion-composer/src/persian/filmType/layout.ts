@@ -339,7 +339,7 @@ function stagedPosterGapPx(previousRole: PersianSemanticPosterRole, nextRole: Pe
   if (nextRole === "subject_hero") return Math.max(8, Math.round(heroPx * .06));
   return Math.max(10, Math.round(heroPx * .08));
 }
-const STAGED_UNDERLINE_TAIL = .30;
+const STAGED_UNDERLINE_TAIL = .44;
 
 export function isPosterStackHook(moment: PersianMoment): boolean {
   return semanticPosterRoles(moment) !== null;
@@ -379,20 +379,20 @@ function editorialRecipe(moment: PersianMoment, p: FilmProfile): {id: EditorialR
 
 /** Divider sits in the middle of the setup gap; the brush starts below the hero's ink. */
 function stagedPosterDecor(moment: PersianMoment, rows: FilmRow[], main: number): FilmPosterDecor {
-  const decor: FilmPosterDecor = {version: 1, band: {alpha: .58, padTopPx: Math.round(main * 1.0), padBottomPx: Math.round(main * .9)}};
+  const decor: FilmPosterDecor = {version: 1, band: {alpha: .70, padTopPx: Math.round(main * 1.0), padBottomPx: Math.round(main * .9)}};
   const setupIndex = rows.findIndex(row => moment.segments[row.segmentIndex]?.semanticRole === "setup");
   const next = setupIndex >= 0 ? rows[setupIndex + 1] : undefined;
   if (setupIndex >= 0 && next) {
     const setup = rows[setupIndex];
     const bottom = setup.baselinePx + setup.belowPx, top = next.baselinePx - next.abovePx;
     decor.divider = {centerYPx: round((bottom + top) / 2), widthPx: round(setup.widthPx * .80),
-      thicknessPx: Math.max(3, Math.round(main * .024)), afterRow: setupIndex};
+      thicknessPx: Math.max(4, Math.round(main * .042)), afterRow: setupIndex};
   }
   const heroIndex = rows.findIndex(row => row.role === "hero");
   if (heroIndex >= 0) {
     const hero = rows[heroIndex];
-    decor.underline = {topPx: round(hero.baselinePx + hero.belowPx + Math.max(2, main * .02)),
-      heightPx: Math.max(12, Math.round(main * .22)), widthPx: round(hero.widthPx * .78), underRow: heroIndex};
+    decor.underline = {topPx: round(hero.baselinePx + hero.belowPx + Math.max(2, main * .06)),
+      heightPx: Math.max(12, Math.round(main * .20)), widthPx: round(hero.widthPx * .76), underRow: heroIndex};
   }
   return decor;
 }
