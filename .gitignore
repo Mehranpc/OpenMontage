@@ -99,6 +99,8 @@ remotion-composer/public/*
 # every line width would be wrong. See public/fonts/estedad/README.md.
 !remotion-composer/public/fonts/
 !remotion-composer/public/fonts/estedad/
+# #387 v3 opening hook typeface (Vazirmatn, SIL OFL 1.1). See public/fonts/vazirmatn/README.md.
+!remotion-composer/public/fonts/vazirmatn/
 # Ignore test/scratch compositions in demo-props (keep only curated demos)
 remotion-composer/public/demo-props/test-*
 remotion-composer/public/demo-props/talking-head-*
