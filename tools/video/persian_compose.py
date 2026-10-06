@@ -1190,11 +1190,16 @@ class PersianCompose(BaseTool):
         lockup_measurement = None
         if v2 and measure_layout and not __import__("os").environ.get("PERSIAN_SKIP_OPTIONAL_BRIDGE"):
             lockup_measurement = _maybe_attach_stack_heights(built, str(persian.get("format") or "vertical"), enforce_silhouette=v2, watermark=persian.get("watermark") or {})
+        # #387: under v3_staged the opening hook is the first frame (starts at 0.0s).
+        from lib.persian_pipeline_profile import PROFILE_V3, edit_profile
+
+        opening_hook_at_zero = edit_profile({"persian": persian}) == PROFILE_V3
         audit = audit_moments(
             built, duration_seconds=duration_seconds, v2=v2,
             adaptive_pixel_typography=adaptive_pixel_typography,
             simultaneous_hook_typography=simultaneous_hook_typography,
             film_motion=film_motion,
+            opening_hook_at_zero=opening_hook_at_zero,
         )
         if not audit.passed:
             raise ValueError(
@@ -1209,7 +1214,7 @@ class PersianCompose(BaseTool):
         word_timings = audio.get("wordTimings")
         if word_timings:
             timed = TimedWord.from_dicts(word_timings)
-            sync = audit_sync(built, timed)
+            sync = audit_sync(built, timed, opening_hook_at_zero=opening_hook_at_zero)
             if not sync.passed:
                 raise ValueError(
                     "the moment timings disagree with the narration they are set "

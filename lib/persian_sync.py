@@ -82,6 +82,12 @@ MAX_START_DRIFT_SECONDS = 0.5
 SIMULTANEOUS_HOOK_MIN_SECONDS = 3.0
 SIMULTANEOUS_HOOK_MAX_SECONDS = 5.0
 
+#: v3_staged (#387): the opening hook owns the first frame. A hook whose anchor is
+#: spoken within this window starts at 0.0 instead of the anchor's lead-in, so the
+#: first frame of the video already carries the hook (owner review of acceptance-3:
+#: the hook appeared 0.347s late). Mirrors `persian_moments.OPENING_MAX_START_SECONDS`.
+OPENING_HOOK_ZERO_WINDOW_SECONDS = 0.6
+
 #: Shortest anchor phrase, in visible characters. An anchor of one or two letters
 #: matches words all over the transcript and the derived position is noise.
 MIN_ANCHOR_CHARS = 3
@@ -279,9 +285,14 @@ class AnchorBinding:
         return self.derived_start is not None
 
 
+def _opens_on_first_frame(moment: PersianMoment, index: int, start: float) -> bool:
+    return index == 0 and moment.kind == "hook" and start <= OPENING_HOOK_ZERO_WINDOW_SECONDS
+
+
 def anchor_moments(
     moments: Sequence[PersianMoment], words: Sequence[TimedWord], *,
     film_motion: Mapping[str, Any] | None = None,
+    opening_hook_at_zero: bool = False,
 ) -> list[AnchorBinding]:
     """Derive each moment's timing from the narration words it names.
 
@@ -292,9 +303,12 @@ def anchor_moments(
     last word plus `ANCHOR_HOLD_SECONDS`. Reading time may extend the end — the
     phrase must be readable, not merely coextensive with its own speech — so the
     binding's `derived_end` also respects `min_read_seconds`.
+
+    With ``opening_hook_at_zero`` (v3_staged, #387) an opening hook anchored within
+    `OPENING_HOOK_ZERO_WINDOW_SECONDS` starts at 0.0: the hook is the first frame.
     """
     bindings: list[AnchorBinding] = []
-    for moment in moments:
+    for index, moment in enumerate(moments):
         anchor = moment.anchor_text or (moment.hero.text if moment.hero else "")
         span = find_anchor_span(words, anchor) if anchor else None
         if span is None:
@@ -313,6 +327,8 @@ def anchor_moments(
 
         first, last = span
         start = max(0.0, words[first].start - ANCHOR_LEAD_IN_SECONDS)
+        if opening_hook_at_zero and _opens_on_first_frame(moment, index, start):
+            start = 0.0
         speech_end = words[last].end + ANCHOR_HOLD_SECONDS
         # The moment must remain readable for its own content even if the speaker
         # moves on: reading time extends past the speech, never shortens it.
@@ -376,7 +392,8 @@ class SyncAudit:
 
 
 def audit_sync(
-    moments: Sequence[PersianMoment], words: Sequence[TimedWord]
+    moments: Sequence[PersianMoment], words: Sequence[TimedWord], *,
+    opening_hook_at_zero: bool = False,
 ) -> SyncAudit:
     """Compare authored timings against the narration-derived ones.
 
@@ -394,7 +411,7 @@ def audit_sync(
     if not words:
         return SyncAudit(problems=problems, bindings=[])
 
-    bindings = anchor_moments(moments, words)
+    bindings = anchor_moments(moments, words, opening_hook_at_zero=opening_hook_at_zero)
 
     for moment, binding in zip(moments, bindings):
         problems.extend(_enumerated_display_anchor_problems(moment))
@@ -434,6 +451,7 @@ def retime_moments(
     moments: Sequence[PersianMoment], words: Sequence[TimedWord], *,
     simultaneous_hook_typography: bool = False,
     film_motion: Mapping[str, Any] | None = None,
+    opening_hook_at_zero: bool = False,
 ) -> list[PersianMoment]:
     """Return a *new* moment list with timings re-derived from the narration.
 
@@ -450,7 +468,9 @@ def retime_moments(
         from lib.persian_scenes import _film_motion
 
         film_motion = _film_motion()
-    bindings = anchor_moments(moments, words, film_motion=film_motion)
+    bindings = anchor_moments(
+        moments, words, film_motion=film_motion, opening_hook_at_zero=opening_hook_at_zero
+    )
     retimed: list[PersianMoment] = []
     for moment, binding in zip(moments, bindings):
         if not binding.located:
@@ -464,6 +484,15 @@ def retime_moments(
                 max(SIMULTANEOUS_HOOK_MIN_SECONDS, moment.duration),
             )
             derived_end = binding.derived_start + product_duration
+            if opening_hook_at_zero and binding.derived_start == 0.0:
+                # Pulling the hook to the first frame must not cut it short of where
+                # the anchored hook would have ended.
+                anchored = anchor_moments([moment], words, film_motion=film_motion)[0]
+                if anchored.derived_start is not None:
+                    derived_end = min(
+                        SIMULTANEOUS_HOOK_MAX_SECONDS,
+                        max(derived_end, anchored.derived_start + product_duration),
+                    )
         retimed.append(
             replace(
                 moment,
@@ -482,6 +511,7 @@ __all__ = [
     "SIMULTANEOUS_HOOK_MIN_SECONDS",
     "SIMULTANEOUS_HOOK_MAX_SECONDS",
     "MIN_ANCHOR_CHARS",
+    "OPENING_HOOK_ZERO_WINDOW_SECONDS",
     "TimedWord",
     "AnchorBinding",
     "SyncAudit",
@@ -497,10 +527,12 @@ def retime_moments_from_dicts(
     moments: Sequence[PersianMoment], word_dicts: Iterable[dict[str, Any]], *,
     simultaneous_hook_typography: bool = False,
     film_motion: Mapping[str, Any] | None = None,
+    opening_hook_at_zero: bool = False,
 ) -> list[PersianMoment]:
     """`retime_moments` for callers holding raw transcriber rows."""
     return retime_moments(
         moments, TimedWord.from_dicts(word_dicts),
         simultaneous_hook_typography=simultaneous_hook_typography,
         film_motion=film_motion,
+        opening_hook_at_zero=opening_hook_at_zero,
     )
