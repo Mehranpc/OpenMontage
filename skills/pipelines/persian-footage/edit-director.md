@@ -36,6 +36,8 @@ moments = retime_moments(
 assert not audit_sync(moments, words).problems
 ```
 
+Under `v3_staged` the opening hook is the first frame: pass `opening_hook_at_zero=True` to `retime_moments` and `audit_sync` so the hook starts at 0.0s and keeps its end; a later start is refused (#387).
+
 Every reveal step must satisfy the canonical reading model; moments remain 2.4–9s, adjacent gaps ≥0.9s, density 7–9 per 60s, and total editorial text coverage ≤55%.
 
 ## Captions and music

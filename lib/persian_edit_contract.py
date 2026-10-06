@@ -622,11 +622,15 @@ def _moment_pacing_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnost
         moments = build_moments(authored)
     except (ValueError, TypeError, KeyError):
         return []  # malformed moments are the schema layer's refusal
+    from lib.persian_pipeline_profile import PROFILE_V3, edit_profile
+
     motion = _film_motion()
+    # #387: under v3_staged the opening hook starts on the first frame.
+    at_zero = edit_profile({"persian": persian}) == PROFILE_V3
     audit = audit_moments(
         moments, duration_seconds=duration, v2=True,
         adaptive_pixel_typography=True, simultaneous_hook_typography=True,
-        film_motion=motion,
+        film_motion=motion, opening_hook_at_zero=at_zero,
     )
     if not audit.problems:
         return []
@@ -637,7 +641,7 @@ def _moment_pacing_diagnostics(persian: dict[str, Any]) -> list[ContractDiagnost
             from lib.persian_sync import TimedWord, anchor_moments
 
             for moment, binding in zip(
-                moments, anchor_moments(moments, TimedWord.from_dicts(words), film_motion=motion)
+                moments, anchor_moments(moments, TimedWord.from_dicts(words), film_motion=motion, opening_hook_at_zero=at_zero)
             ):
                 if binding.located and binding.derived_end is not None:
                     derived[moment.id] = float(binding.derived_end)

@@ -1308,8 +1308,12 @@ def audit_moments(
     adaptive_pixel_typography: bool = False,
     simultaneous_hook_typography: bool = False,
     film_motion: Mapping[str, Any] | None = None,
+    opening_hook_at_zero: bool = False,
 ) -> MomentAudit:
     """Audit a moment set against every rule that can be checked without rendering.
+
+    ``opening_hook_at_zero`` (v3_staged, #387): an opening hook must start on the
+    video's first frame (0.0s), not at its anchor's lead-in.
 
     `problems` are faults: the set should not be rendered. `advisories` are
     observations a reviewer should see but which do not block, because the honest
@@ -1385,6 +1389,15 @@ def audit_moments(
                 "of the start. Feeds autoplay muted, so a video that opens on silent "
                 "footage has nothing on screen to hold a thumb — the one place where "
                 "«the narration will explain it» is false by construction."
+            )
+        first = ordered[0]
+        if (opening_hook_at_zero and first.kind == "hook"
+                and first.start_seconds > TIMING_EPSILON_SECONDS):
+            audit.problems.append(
+                f"{first.id} starts at {first.start_seconds:.3f}s; under v3_staged the "
+                "opening hook is the video's first frame and must start at 0.0s. "
+                "Re-derive with lib.persian_sync.retime_moments(..., "
+                "opening_hook_at_zero=True), which keeps its end."
             )
         last = ordered[-1]
         if last.end_seconds > duration_seconds + 0.05:

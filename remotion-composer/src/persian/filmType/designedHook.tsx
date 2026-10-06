@@ -1,8 +1,10 @@
 /**
  * #387 v3 opening hook = Mehran's approved design (`Hook_v2_photo.html`).
  *
- * The owner approved that HTML/CSS exactly, with two changes only: the hero face is
- * Kahroba (not Lalezar) and the hero size is 140px (not 150px). The CSS below is that
+ * The owner approved that HTML/CSS exactly, with these changes only: the hero face is
+ * Kahroba (not Lalezar), the hero size is 140px (not 150px), and the soft shade behind
+ * the text spans the full frame width (left/right -110px, not -55px; owner review of the
+ * acceptance-3 render, which showed a 55px gap on each side). The CSS below is that
  * file's CSS, class names prefixed, nothing else changed. It is painted as real DOM so
  * Chrome lays it out exactly like the approved preview (frosted pill, CSS brush, shade,
  * full-frame treatment). No animation: the composition is complete on its first frame.
@@ -31,7 +33,8 @@ export type DesignedHook = {
 };
 
 /** The approved CSS (Hook_v2_photo.html), prefixed `omh-`. Only the hero font family
- * (Kahroba) and size (140px, overridable per line fit) differ, as approved. */
+ * (Kahroba) and size (140px, overridable per line fit) and the full-width shade differ,
+ * as approved. */
 export const DESIGNED_HOOK_CSS = `
 .omh-stage{position:absolute;inset:0;width:1080px;height:1920px;overflow:hidden;
   font-family:'${VAZIRMATN_FAMILY}',sans-serif;font-size:16px;line-height:normal;font-weight:400;
@@ -40,7 +43,7 @@ export const DESIGNED_HOOK_CSS = `
 .omh-treatment{position:absolute;inset:0;pointer-events:none;
   background:linear-gradient(to bottom,rgba(0,0,0,.05) 0%,rgba(0,0,0,.10) 24%,rgba(0,0,0,.24) 44%,rgba(0,0,0,.32) 62%,rgba(0,0,0,.22) 78%,rgba(0,0,0,.08) 100%)}
 .omh-wrap{position:absolute;left:110px;right:110px;top:455px;text-align:center;z-index:3;isolation:isolate}
-.omh-wrap::before{content:"";position:absolute;z-index:-2;left:-55px;right:-55px;top:-105px;bottom:-135px;
+.omh-wrap::before{content:"";position:absolute;z-index:-2;left:-110px;right:-110px;top:-105px;bottom:-135px;
   background:radial-gradient(ellipse at 50% 46%,rgba(0,0,0,.60) 0%,rgba(0,0,0,.48) 34%,rgba(0,0,0,.22) 66%,rgba(0,0,0,0) 88%);
   filter:blur(2px)}
 .omh-accent{width:100px;height:5px;margin:0 auto 38px;border-radius:999px;

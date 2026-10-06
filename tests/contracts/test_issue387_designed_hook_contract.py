@@ -2,7 +2,8 @@
 
 Owner decision (#387 comment 5999195805): `Hook_v2_photo.html` exactly, with two approved
 changes only: hero Lalezar -> Kahroba and hero 150px -> 140px (Kahroba's single face is
-its heavy weight, so the hero asks for 800 instead of Lalezar's 400). Every other rule of
+its heavy weight, so the hero asks for 800 instead of Lalezar's 400). Owner review of the
+acceptance-3 render added one more: the soft shade spans the full frame width. Every other rule of
 the file must reach the renderer unchanged. Pure file checks, no browser.
 """
 from __future__ import annotations
@@ -23,6 +24,9 @@ SELECTORS = {  # design selector -> renderer selector
     ".brush::before,.brush::after": ".omh-brush::before,.omh-brush::after",
     ".brush::before": ".omh-brush::before", ".brush::after": ".omh-brush::after",
 }
+#: Owner review of the acceptance-3 render: the soft shade spans the full 1080px frame
+#: (the 110px-inset hook box plus 110px each side), not 55px short of each edge.
+APPROVED_SHADE = {"left": "-110px", "right": "-110px"}
 APPROVED_HERO = {"font-family": "'KahrobaEditorial','Vazirmatn',sans-serif", "font-size": "140px", "font-weight": "800"}
 
 
@@ -67,6 +71,9 @@ def test_every_design_rule_reaches_the_renderer_unchanged() -> None:
             assert expected.pop("font-family") == "'Lalezar','Vazirmatn',sans-serif"
             assert expected.pop("font-size") == "150px" and expected.pop("font-weight") == "400"
             expected.update(APPROVED_HERO)
+        if selector == ".hook-wrap::before":
+            assert expected["left"] == "-55px" and expected["right"] == "-55px"
+            expected.update(APPROVED_SHADE)
         assert renderer[target] == expected, selector
 
 

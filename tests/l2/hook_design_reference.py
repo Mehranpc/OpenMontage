@@ -27,6 +27,8 @@ APPROVED_EDITS = (
     ("font-family:'Lalezar','Vazirmatn',sans-serif;", "font-family:'Kahroba','Vazirmatn',sans-serif;"),
     ("font-size:150px;", "font-size:140px;"),
     ("font-weight:400;\n    letter-spacing:-1px;", "font-weight:800;\n    letter-spacing:-1px;"),
+    # Owner review of the acceptance-3 render: the shade spans the full frame width.
+    ("left:-55px;\n    right:-55px;", "left:-110px;\n    right:-110px;"),
 )
 
 
